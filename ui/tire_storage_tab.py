@@ -108,7 +108,7 @@ class TireStorageTab:
         btn_frame.pack(fill='x', pady=10)
         styles.create_button(btn_frame, "Принять на хранение", 
                            self.accept_storage, 'Primary.TButton').pack(side='left')
-        self.print_accept_btn = styles.create_button(btn_frame, "Печать чека", 
+        self.print_accept_btn = styles.create_button(btn_frame, "Печать", 
                            self.print_accept_receipt, 'Success.TButton')
         
         self.current_accept_storage = None
@@ -162,7 +162,7 @@ class TireStorageTab:
         btn_frame.pack(fill='x', pady=10)
         styles.create_button(btn_frame, "Выдать комплект", 
                            self.release_storage, 'Success.TButton').pack(side='left')
-        self.print_release_btn = styles.create_button(btn_frame, "Печать чека", 
+        self.print_release_btn = styles.create_button(btn_frame, "Печать", 
                            self.print_release_receipt_action, 'Success.TButton')
         
         self.current_release_storage = None
@@ -202,10 +202,11 @@ class TireStorageTab:
                 car_number, driver_license, storage_type, diameter, brand, damage, wear, comments, wheel_type
             )
             
+            self.print_receipt(storage, copies=2)
             self.current_accept_storage = storage
             self.print_accept_btn.pack(side='left', padx=(10, 0))
             
-            messagebox.showinfo("Успех", f"Комплект #{storage.id} принят на хранение.\nНажмите 'Печать чека' для печати.")
+            messagebox.showinfo("Успех", f"Комплект #{storage.id} принят на хранение.\nДокумент создан: receipts/storage_{storage.id}.pdf\n\nНажмите 'Печать' для отправки на печать.")
             
             self.car_number_entry.delete(0, tk.END)
             self.driver_license_entry.delete(0, tk.END)
@@ -223,8 +224,10 @@ class TireStorageTab:
             return
         
         try:
-            self.print_receipt(self.current_accept_storage, copies=2)
-            messagebox.showinfo("Успех", f"Чек сохранён в receipts/storage_{self.current_accept_storage.id}.pdf")
+            import subprocess
+            filepath = f"receipts/storage_{self.current_accept_storage.id}.pdf"
+            subprocess.Popen(['xdg-open', filepath])
+            messagebox.showinfo("Печать", f"Документ {filepath} открыт для печати")
             self.print_accept_btn.pack_forget()
             self.current_accept_storage = None
         except Exception as e:
@@ -264,9 +267,10 @@ class TireStorageTab:
             storage = self.service.release_storage(storage_id)
             
             if storage:
+                self.print_release_receipt(storage)
                 self.current_release_storage = storage
                 self.print_release_btn.pack(side='left', padx=(10, 0))
-                messagebox.showinfo("Успех", f"Комплект #{storage.id} выдан.\nНажмите 'Печать чека' для печати.")
+                messagebox.showinfo("Успех", f"Комплект #{storage.id} выдан.\nДокумент создан: receipts/release_{storage.id}.pdf\n\nНажмите 'Печать' для отправки на печать.")
                 self.search_storage()
             else:
                 messagebox.showerror("Ошибка", "Комплект не найден")
@@ -279,8 +283,10 @@ class TireStorageTab:
             return
         
         try:
-            self.print_release_receipt(self.current_release_storage)
-            messagebox.showinfo("Успех", f"Чек сохранён в receipts/release_{self.current_release_storage.id}.pdf")
+            import subprocess
+            filepath = f"receipts/release_{self.current_release_storage.id}.pdf"
+            subprocess.Popen(['xdg-open', filepath])
+            messagebox.showinfo("Печать", f"Документ {filepath} открыт для печати")
             self.print_release_btn.pack_forget()
             self.current_release_storage = None
         except Exception as e:
