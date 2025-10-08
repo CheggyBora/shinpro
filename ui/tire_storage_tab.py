@@ -197,8 +197,20 @@ class TireStorageTab:
             self.print_receipt(storage, copies=2)
             
             import subprocess
+            import os
             filepath = f"receipts/storage_{storage.id}.pdf"
-            subprocess.Popen(['evince', filepath])
+            
+            # Читаем переменные X-сервера из файла
+            env = os.environ.copy()
+            try:
+                with open('/tmp/x_display.env', 'r') as f:
+                    for line in f:
+                        key, value = line.strip().split('=', 1)
+                        env[key] = value
+            except:
+                pass
+            
+            subprocess.Popen(['evince', filepath], env=env)
             
             messagebox.showinfo("Успех", f"Комплект #{storage.id} принят на хранение.\nДокумент открыт для печати.")
             
@@ -249,8 +261,20 @@ class TireStorageTab:
                 self.print_release_receipt(storage)
                 
                 import subprocess
+                import os
                 filepath = f"receipts/release_{storage.id}.pdf"
-                subprocess.Popen(['evince', filepath])
+                
+                # Читаем переменные X-сервера из файла
+                env = os.environ.copy()
+                try:
+                    with open('/tmp/x_display.env', 'r') as f:
+                        for line in f:
+                            key, value = line.strip().split('=', 1)
+                            env[key] = value
+                except:
+                    pass
+                
+                subprocess.Popen(['evince', filepath], env=env)
                 
                 messagebox.showinfo("Успех", f"Комплект #{storage.id} выдан.\nДокумент открыт для печати.")
                 self.search_storage()
