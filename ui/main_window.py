@@ -3,6 +3,7 @@ from tkinter import ttk
 from ui.employees_tab import EmployeesTab
 from ui.orders_tab import OrdersTab
 from ui.history_tab import HistoryTab
+from ui.tire_storage_tab import TireStorageTab
 from config import get_db
 import styles
 
@@ -22,7 +23,9 @@ class MainWindow:
         self.employees_tab = EmployeesTab(self.notebook, self.db)
         self.orders_tab = OrdersTab(self.notebook, self.db)
         self.history_tab = HistoryTab(self.notebook, self.db)
+        self.tire_storage_tab = TireStorageTab(self.notebook, self.db)
         
         self.notebook.add(self.employees_tab.frame, text='  Сотрудники  ')
         self.notebook.add(self.orders_tab.frame, text='  Наряды  ')
         self.notebook.add(self.history_tab.frame, text='  История автомобиля  ')
+        self.notebook.add(self.tire_storage_tab.frame, text='  Хранение шин  ')

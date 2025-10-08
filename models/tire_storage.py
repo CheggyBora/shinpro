@@ -1,0 +1,19 @@
+from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean
+from sqlalchemy.sql import func
+from config import Base
+
+class TireStorage(Base):
+    __tablename__ = 'tire_storage'
+    
+    id = Column(Integer, primary_key=True)
+    car_number = Column(String(20), nullable=False)
+    storage_type = Column(String(50), nullable=False)
+    diameter = Column(String(10), nullable=False)
+    brand = Column(String(100))
+    damage = Column(String(500))
+    wear = Column(String(100))
+    price = Column(Float, nullable=False)
+    status = Column(String(20), default='stored', nullable=False)
+    accepted_date = Column(DateTime(timezone=True), server_default=func.now())
+    released_date = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
