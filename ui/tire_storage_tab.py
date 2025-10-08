@@ -108,10 +108,6 @@ class TireStorageTab:
         btn_frame.pack(fill='x', pady=10)
         styles.create_button(btn_frame, "Принять на хранение", 
                            self.accept_storage, 'Primary.TButton').pack(side='left')
-        self.print_accept_btn = styles.create_button(btn_frame, "Печать", 
-                           self.print_accept_receipt, 'Success.TButton')
-        
-        self.current_accept_storage = None
     
     def setup_release_tab(self, parent):
         card = styles.create_card_frame(parent)
@@ -162,10 +158,6 @@ class TireStorageTab:
         btn_frame.pack(fill='x', pady=10)
         styles.create_button(btn_frame, "Выдать комплект", 
                            self.release_storage, 'Success.TButton').pack(side='left')
-        self.print_release_btn = styles.create_button(btn_frame, "Печать", 
-                           self.print_release_receipt_action, 'Success.TButton')
-        
-        self.current_release_storage = None
     
     def update_price(self, event=None):
         diameter = self.diameter_var.get()
@@ -203,10 +195,12 @@ class TireStorageTab:
             )
             
             self.print_receipt(storage, copies=2)
-            self.current_accept_storage = storage
-            self.print_accept_btn.pack(side='left', padx=(10, 0))
             
-            messagebox.showinfo("Успех", f"Комплект #{storage.id} принят на хранение.\nДокумент создан: receipts/storage_{storage.id}.pdf\n\nНажмите 'Печать' для отправки на печать.")
+            import subprocess
+            filepath = f"receipts/storage_{storage.id}.pdf"
+            subprocess.Popen(['xdg-open', filepath])
+            
+            messagebox.showinfo("Успех", f"Комплект #{storage.id} принят на хранение.\nДокумент открыт для печати.")
             
             self.car_number_entry.delete(0, tk.END)
             self.driver_license_entry.delete(0, tk.END)
@@ -215,21 +209,6 @@ class TireStorageTab:
             self.wear_entry.delete(0, tk.END)
             self.comments_entry.delete(0, tk.END)
             
-        except Exception as e:
-            messagebox.showerror("Ошибка", str(e))
-    
-    def print_accept_receipt(self):
-        if not self.current_accept_storage:
-            messagebox.showerror("Ошибка", "Нет документа для печати")
-            return
-        
-        try:
-            import subprocess
-            filepath = f"receipts/storage_{self.current_accept_storage.id}.pdf"
-            subprocess.Popen(['xdg-open', filepath])
-            messagebox.showinfo("Печать", f"Документ {filepath} открыт для печати")
-            self.print_accept_btn.pack_forget()
-            self.current_accept_storage = None
         except Exception as e:
             messagebox.showerror("Ошибка", str(e))
     
@@ -268,27 +247,15 @@ class TireStorageTab:
             
             if storage:
                 self.print_release_receipt(storage)
-                self.current_release_storage = storage
-                self.print_release_btn.pack(side='left', padx=(10, 0))
-                messagebox.showinfo("Успех", f"Комплект #{storage.id} выдан.\nДокумент создан: receipts/release_{storage.id}.pdf\n\nНажмите 'Печать' для отправки на печать.")
+                
+                import subprocess
+                filepath = f"receipts/release_{storage.id}.pdf"
+                subprocess.Popen(['xdg-open', filepath])
+                
+                messagebox.showinfo("Успех", f"Комплект #{storage.id} выдан.\nДокумент открыт для печати.")
                 self.search_storage()
             else:
                 messagebox.showerror("Ошибка", "Комплект не найден")
-        except Exception as e:
-            messagebox.showerror("Ошибка", str(e))
-    
-    def print_release_receipt_action(self):
-        if not self.current_release_storage:
-            messagebox.showerror("Ошибка", "Нет документа для печати")
-            return
-        
-        try:
-            import subprocess
-            filepath = f"receipts/release_{self.current_release_storage.id}.pdf"
-            subprocess.Popen(['xdg-open', filepath])
-            messagebox.showinfo("Печать", f"Документ {filepath} открыт для печати")
-            self.print_release_btn.pack_forget()
-            self.current_release_storage = None
         except Exception as e:
             messagebox.showerror("Ошибка", str(e))
     
