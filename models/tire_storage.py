@@ -7,6 +7,7 @@ class TireStorage(Base):
     
     id = Column(Integer, primary_key=True)
     car_number = Column(String(20), nullable=False)
+    driver_license = Column(String(50))
     storage_type = Column(String(50), nullable=False)
     diameter = Column(String(10), nullable=False)
     brand = Column(String(100))
