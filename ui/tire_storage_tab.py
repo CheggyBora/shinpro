@@ -200,17 +200,13 @@ class TireStorageTab:
             import os
             filepath = f"receipts/storage_{storage.id}.pdf"
             
-            # Читаем переменные X-сервера из файла
-            env = os.environ.copy()
+            # Открываем PDF через source переменных окружения
             try:
-                with open('/tmp/x_display.env', 'r') as f:
-                    for line in f:
-                        key, value = line.strip().split('=', 1)
-                        env[key] = value
-            except:
-                pass
-            
-            subprocess.Popen(['evince', filepath], env=env)
+                abs_path = os.path.abspath(filepath)
+                cmd = f"source /tmp/x_display.env && /nix/store/wf5zp2d4jqpdl184dv6lzdj5gwk00adw-evince-48.0/bin/evince {abs_path} &"
+                subprocess.Popen(cmd, shell=True, executable='/bin/bash')
+            except Exception as e:
+                print(f"Ошибка открытия PDF: {e}")
             
             messagebox.showinfo("Успех", f"Комплект #{storage.id} принят на хранение.\nДокумент открыт для печати.")
             
@@ -264,17 +260,13 @@ class TireStorageTab:
                 import os
                 filepath = f"receipts/release_{storage.id}.pdf"
                 
-                # Читаем переменные X-сервера из файла
-                env = os.environ.copy()
+                # Открываем PDF через source переменных окружения
                 try:
-                    with open('/tmp/x_display.env', 'r') as f:
-                        for line in f:
-                            key, value = line.strip().split('=', 1)
-                            env[key] = value
-                except:
-                    pass
-                
-                subprocess.Popen(['evince', filepath], env=env)
+                    abs_path = os.path.abspath(filepath)
+                    cmd = f"source /tmp/x_display.env && /nix/store/wf5zp2d4jqpdl184dv6lzdj5gwk00adw-evince-48.0/bin/evince {abs_path} &"
+                    subprocess.Popen(cmd, shell=True, executable='/bin/bash')
+                except Exception as e:
+                    print(f"Ошибка открытия PDF: {e}")
                 
                 messagebox.showinfo("Успех", f"Комплект #{storage.id} выдан.\nДокумент открыт для печати.")
                 self.search_storage()
