@@ -1,8 +1,8 @@
-modules = ["python-3.11", "nodejs-20"]
+modules = ["python-3.11", "nodejs-20", "postgresql-16"]
 
 [nix]
 channel = "stable-25_05"
-packages = ["freetype", "glibcLocales"]
+packages = ["freetype", "glibcLocales", "xorg.xorgserver", "xorg.xauth", "x11vnc", "fluxbox", "xvfb-run"]
 
 [workflows]
 runButton = "Project"
@@ -14,35 +14,18 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
-args = "Backend"
-
-[[workflows.workflow.tasks]]
-task = "workflow.run"
-args = "Frontend"
+args = "Tire Shop App"
 
 [[workflows.workflow]]
-name = "Backend"
+name = "Tire Shop App"
 author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "node server/server.js"
-waitForPort = 3000
+args = "bash run_app.sh"
 
 [workflows.workflow.metadata]
-outputType = "console"
-
-[[workflows.workflow]]
-name = "Frontend"
-author = "agent"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "npx vite --host 0.0.0.0 --port 5000"
-waitForPort = 5000
-
-[workflows.workflow.metadata]
-outputType = "webview"
+outputType = "vnc"
 
 [[ports]]
 localPort = 3000
