@@ -25,6 +25,9 @@ done
 echo "Using DISPLAY: $DISPLAY"
 echo "Using XAUTHORITY: $XAUTHORITY"
 
+# Разрешаем доступ к X серверу
+xhost + 2>/dev/null || true
+
 # Запускаем window manager
 fluxbox 2>&1 | grep -v "Failed to read" &
 
@@ -33,4 +36,4 @@ sleep 2
 
 # Запускаем приложение с полным логированием
 echo "Starting Python application..."
-python -u /home/runner/workspace/main.py 2>&1
+DISPLAY=$DISPLAY XAUTHORITY=$XAUTHORITY python -u /home/runner/workspace/main.py 2>&1
