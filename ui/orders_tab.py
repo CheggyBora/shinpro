@@ -41,9 +41,11 @@ class OrdersTab:
     
     def load_service_buttons(self):
         services = self.order_service.get_all_services()
-        for i, service in enumerate(services):
-            btn = ttk.Button(self.services_frame, text=service.name, 
-                           command=lambda s=service: self.add_service_to_current_order(s),
+        unique_names = list(dict.fromkeys([s.name for s in services]))
+        
+        for i, service_name in enumerate(unique_names):
+            btn = ttk.Button(self.services_frame, text=service_name, 
+                           command=lambda name=service_name: self.add_service_to_current_order_by_name(name),
                            style='Service.TButton')
             btn.grid(row=i//5, column=i%5, padx=3, pady=3, sticky='ew')
         
@@ -130,6 +132,17 @@ class OrdersTab:
             widget = self.active_orders[order_id]
             self.order_notebook.forget(widget.frame)
             del self.active_orders[order_id]
+    
+    def add_service_to_current_order_by_name(self, service_name):
+        current_tab = self.order_notebook.select()
+        if not current_tab:
+            messagebox.showwarning("Предупреждение", "Создайте наряд")
+            return
+        
+        for order_id, widget in self.active_orders.items():
+            if str(widget.frame) == current_tab:
+                widget.add_service_by_name(service_name)
+                break
     
     def add_service_to_current_order(self, service):
         current_tab = self.order_notebook.select()
@@ -248,6 +261,26 @@ class OrderWidget:
         styles.create_button(button_frame, "Закрыть вкладку", lambda: self.close_callback(order.id), 'Secondary.TButton').pack(side='left')
         
         self.refresh_items()
+    
+    def add_service_by_name(self, service_name):
+        from models import Service
+        vehicle_type = self.order.vehicle_type
+        
+        service = self.db.query(Service).filter(
+            Service.name == service_name,
+            Service.vehicle_type == vehicle_type
+        ).first()
+        
+        if not service:
+            service = self.db.query(Service).filter(
+                Service.name == service_name,
+                Service.vehicle_type == 'all'
+            ).first()
+        
+        if service:
+            self.add_service(service)
+        else:
+            messagebox.showerror("Ошибка", f"Услуга '{service_name}' не найдена")
     
     def add_service(self, service):
         try:
