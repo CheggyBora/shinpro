@@ -12,6 +12,8 @@ class TireStorage(Base):
     brand = Column(String(100))
     damage = Column(String(500))
     wear = Column(String(100))
+    comments = Column(String(1000))
+    wheel_type = Column(String(20), nullable=True)
     price = Column(Float, nullable=False)
     status = Column(String(20), default='stored', nullable=False)
     accepted_date = Column(DateTime(timezone=True), server_default=func.now())

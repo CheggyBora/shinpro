@@ -19,7 +19,7 @@ class TireStorageService:
             return 0.0
     
     @staticmethod
-    def accept_storage(car_number, storage_type, diameter, brand, damage, wear):
+    def accept_storage(car_number, storage_type, diameter, brand, damage, wear, comments='', wheel_type=None):
         db = SessionLocal()
         try:
             price = TireStorageService.calculate_price(diameter)
@@ -31,6 +31,8 @@ class TireStorageService:
                 brand=brand,
                 damage=damage,
                 wear=wear,
+                comments=comments,
+                wheel_type=wheel_type,
                 price=price,
                 status='stored'
             )
