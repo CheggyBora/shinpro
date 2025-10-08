@@ -241,6 +241,7 @@ dependencies = [
     { name = "python-dotenv" },
     { name = "reportlab" },
     { name = "sqlalchemy" },
+    { name = "ttkthemes" },
 ]
 
 [package.metadata]
@@ -249,6 +250,7 @@ requires-dist = [
     { name = "python-dotenv", specifier = ">=1.1.1" },
     { name = "reportlab", specifier = ">=4.4.4" },
     { name = "sqlalchemy", specifier = ">=2.0.43" },
+    { name = "ttkthemes", specifier = ">=3.2.2" },
 ]
 
 [[package]]
@@ -300,6 +302,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/ac/a5/ca2f07a2a201f9497de1928f787926613db6307992fe5cda97624eb07c2f/sqlalchemy-2.0.43-cp313-cp313-win_amd64.whl", hash = "sha256:971ba928fcde01869361f504fcff3b7143b47d30de188b11c6357c0505824197", size = 2123200 },
     { url = "https://files.pythonhosted.org/packages/b8/d9/13bdde6521f322861fab67473cec4b1cc8999f3871953531cf61945fad92/sqlalchemy-2.0.43-py3-none-any.whl", hash = "sha256:1681c21dd2ccee222c2fe0bef671d1aef7c504087c9c4e800371cfcc8ac966fc", size = 1924759 },
 ]
+
+[[package]]
+name = "ttkthemes"
+version = "3.2.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pillow" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/fa/45/ab8ada55281af99a03bc0f8be53a502eb37ee34b94819a9ced89e8b0c12f/ttkthemes-3.2.2.tar.gz", hash = "sha256:01daed001f2ff0e4f32832a0d9ea48176c0c505203b030756bdde3bd1bcb21d2", size = 891159 }
 
 [[package]]
 name = "typing-extensions"
