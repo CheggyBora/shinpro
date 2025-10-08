@@ -2,7 +2,7 @@ modules = ["python-3.11", "nodejs-20", "postgresql-16"]
 
 [nix]
 channel = "stable-25_05"
-packages = ["fluxbox", "freetype", "glibcLocales", "x11vnc", "xorg.xauth", "xorg.xorgserver", "xvfb-run"]
+packages = ["fluxbox", "freetype", "glibcLocales", "x11vnc", "xorg.xauth", "xorg.xorgserver", "xvfb-run", "evince"]
 
 [workflows]
 runButton = "Project"

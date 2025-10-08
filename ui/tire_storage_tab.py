@@ -198,7 +198,7 @@ class TireStorageTab:
             
             import subprocess
             filepath = f"receipts/storage_{storage.id}.pdf"
-            subprocess.Popen(['xdg-open', filepath])
+            subprocess.Popen(['evince', filepath])
             
             messagebox.showinfo("Успех", f"Комплект #{storage.id} принят на хранение.\nДокумент открыт для печати.")
             
@@ -250,7 +250,7 @@ class TireStorageTab:
                 
                 import subprocess
                 filepath = f"receipts/release_{storage.id}.pdf"
-                subprocess.Popen(['xdg-open', filepath])
+                subprocess.Popen(['evince', filepath])
                 
                 messagebox.showinfo("Успех", f"Комплект #{storage.id} выдан.\nДокумент открыт для печати.")
                 self.search_storage()
