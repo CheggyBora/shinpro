@@ -199,7 +199,7 @@ class OrderWidget:
             for shift in active_shifts:
                 employee = db.query(Employee).filter(Employee.id == shift.employee_id).first()
                 if employee:
-                    employee_names.append(f"#{employee.employee_number} ({employee.salary_percent}%)")
+                    employee_names.append(f"#{employee.id} ({employee.salary_percent}%)")
             
             if employee_names:
                 emp_label = styles.create_label(info_inner, f"Сотрудники на смене: {', '.join(employee_names)}", 'Card.TLabel')
