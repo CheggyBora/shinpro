@@ -7,7 +7,9 @@ def init_database():
     
     db = SessionLocal()
     
-    db.query(Service).delete()
+    # Удаляем старые услуги (только если нет связанных записей)
+    # Обновляем существующие вместо удаления
+    db.query(Service).delete(synchronize_session=False)
     
     services_data = []
     
