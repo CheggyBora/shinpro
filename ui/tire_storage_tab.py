@@ -266,6 +266,9 @@ class TireStorageTab:
             y -= 20
             c.drawString(50, y, f"Тип хранения: {storage.storage_type}")
             y -= 20
+            if storage.wheel_type:
+                c.drawString(50, y, f"Тип дисков: {storage.wheel_type}")
+                y -= 20
             c.drawString(50, y, f"Диаметр: {storage.diameter}")
             y -= 20
             c.drawString(50, y, f"Марка шины: {storage.brand or '-'}")
@@ -273,7 +276,11 @@ class TireStorageTab:
             c.drawString(50, y, f"Повреждения: {storage.damage or 'нет'}")
             y -= 20
             c.drawString(50, y, f"Износ: {storage.wear or '-'}")
-            y -= 40
+            y -= 20
+            if storage.comments:
+                c.drawString(50, y, f"Комментарии: {storage.comments}")
+                y -= 20
+            y -= 20
             
             c.setFont("Helvetica-Bold", 14)
             c.drawString(50, y, f"Цена хранения: {int(storage.price)} ₽")
@@ -306,10 +313,17 @@ class TireStorageTab:
         y -= 20
         c.drawString(50, y, f"Тип хранения: {storage.storage_type}")
         y -= 20
+        if storage.wheel_type:
+            c.drawString(50, y, f"Тип дисков: {storage.wheel_type}")
+            y -= 20
         c.drawString(50, y, f"Диаметр: {storage.diameter}")
         y -= 20
         c.drawString(50, y, f"Марка шины: {storage.brand or '-'}")
-        y -= 40
+        y -= 20
+        if storage.comments:
+            c.drawString(50, y, f"Комментарии: {storage.comments}")
+            y -= 20
+        y -= 20
         
         c.setFont("Helvetica-Bold", 14)
         c.drawString(50, y, f"Стоимость хранения: {int(storage.price)} ₽")
