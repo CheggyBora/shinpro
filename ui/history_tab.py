@@ -2,23 +2,41 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 from models import Car, WorkOrder, WorkOrderItem
 from sqlalchemy.orm import joinedload
+import styles
 
 class HistoryTab:
     def __init__(self, parent, db):
         self.db = db
-        self.frame = ttk.Frame(parent)
+        self.frame = ttk.Frame(parent, style='BG.TFrame')
         
-        search_frame = ttk.Frame(self.frame)
-        search_frame.pack(fill='x', padx=10, pady=10)
+        search_card = styles.create_card_frame(self.frame)
+        search_card.pack(fill='x', padx=15, pady=(15, 10))
         
-        ttk.Label(search_frame, text="Номер автомобиля:", font=('Arial', 12, 'bold')).pack(side='left', padx=5)
-        self.license_entry = ttk.Entry(search_frame, width=20)
-        self.license_entry.pack(side='left', padx=5)
-        ttk.Button(search_frame, text="Найти", command=self.search_history).pack(side='left', padx=5)
+        search_inner = ttk.Frame(search_card, style='White.TFrame')
+        search_inner.pack(fill='both', expand=True, padx=20, pady=20)
         
-        ttk.Label(self.frame, text="История нарядов:", font=('Arial', 12, 'bold')).pack(anchor='w', padx=10, pady=5)
+        styles.create_label(search_inner, "Поиск по номеру автомобиля", 'CardHeading.TLabel').pack(anchor='w', pady=(0, 15))
         
-        self.history_tree = ttk.Treeview(self.frame, columns=('Дата', 'Наряд №', 'Услуги', 'Сумма', 'Оплата'), show='headings')
+        search_frame = ttk.Frame(search_inner, style='White.TFrame')
+        search_frame.pack(fill='x')
+        
+        styles.create_label(search_frame, "Номер автомобиля:", 'Card.TLabel').pack(side='left', padx=(0, 10))
+        self.license_entry = styles.create_entry(search_frame, width=20)
+        self.license_entry.pack(side='left', padx=(0, 10))
+        styles.create_button(search_frame, "Найти", self.search_history, 'Primary.TButton').pack(side='left')
+        
+        history_card = styles.create_card_frame(self.frame)
+        history_card.pack(fill='both', expand=True, padx=15, pady=(0, 15))
+        
+        history_inner = ttk.Frame(history_card, style='White.TFrame')
+        history_inner.pack(fill='both', expand=True, padx=20, pady=20)
+        
+        styles.create_label(history_inner, "История нарядов", 'CardHeading.TLabel').pack(anchor='w', pady=(0, 10))
+        
+        tree_frame = ttk.Frame(history_inner, style='White.TFrame')
+        tree_frame.pack(fill='both', expand=True)
+        
+        self.history_tree = ttk.Treeview(tree_frame, columns=('Дата', 'Наряд №', 'Услуги', 'Сумма', 'Оплата'), show='headings')
         self.history_tree.heading('Дата', text='Дата')
         self.history_tree.heading('Наряд №', text='Наряд №')
         self.history_tree.heading('Услуги', text='Услуги')
@@ -29,7 +47,12 @@ class HistoryTab:
         self.history_tree.column('Услуги', width=400)
         self.history_tree.column('Сумма', width=100)
         self.history_tree.column('Оплата', width=150)
-        self.history_tree.pack(fill='both', expand=True, padx=10, pady=5)
+        self.history_tree.pack(side='left', fill='both', expand=True)
+        
+        tree_scroll = ttk.Scrollbar(tree_frame, orient='vertical', command=self.history_tree.yview)
+        tree_scroll.pack(side='right', fill='y')
+        self.history_tree.config(yscrollcommand=tree_scroll.set)
+        
         self.history_tree.bind('<Double-1>', self.show_order_details)
     
     def search_history(self):
@@ -78,30 +101,44 @@ class HistoryTab:
         
         dialog = tk.Toplevel(self.frame)
         dialog.title(f"Детали наряда #{order_id}")
-        dialog.geometry("500x400")
+        dialog.geometry("600x550")
+        dialog.configure(bg=styles.COLORS['bg'])
         
-        info_frame = ttk.Frame(dialog)
-        info_frame.pack(fill='x', padx=10, pady=10)
+        content = ttk.Frame(dialog, style='White.TFrame')
+        content.pack(fill='both', expand=True, padx=20, pady=20)
         
-        ttk.Label(info_frame, text=f"Наряд #{order.id}", font=('Arial', 14, 'bold')).pack(anchor='w')
-        ttk.Label(info_frame, text=f"Дата: {order.paid_at.strftime('%d.%m.%Y %H:%M')}").pack(anchor='w')
-        ttk.Label(info_frame, text=f"Автомобиль: {order.car.license_plate}").pack(anchor='w')
+        styles.create_label(content, f"Наряд #{order.id}", 'CardHeading.TLabel').pack(anchor='w', pady=(0, 15))
+        
+        info_frame = ttk.Frame(content, style='White.TFrame')
+        info_frame.pack(fill='x', pady=(0, 15))
+        
+        styles.create_label(info_frame, f"Дата: {order.paid_at.strftime('%d.%m.%Y %H:%M')}", 'Card.TLabel').pack(anchor='w', pady=2)
+        styles.create_label(info_frame, f"Автомобиль: {order.car.license_plate}", 'Card.TLabel').pack(anchor='w', pady=2)
+        
         if order.client:
             client_info = f"{order.client.name or ''}"
             if order.client.client_number:
                 client_info += f" (#{order.client.client_number})"
-            ttk.Label(info_frame, text=f"Клиент: {client_info}").pack(anchor='w')
-        ttk.Label(info_frame, text=f"Диаметр: {order.wheel_diameter}").pack(anchor='w')
+            styles.create_label(info_frame, f"Клиент: {client_info}", 'Card.TLabel').pack(anchor='w', pady=2)
         
-        ttk.Label(dialog, text="Услуги:", font=('Arial', 12, 'bold')).pack(anchor='w', padx=10, pady=5)
+        styles.create_label(info_frame, f"Диаметр: {order.wheel_diameter}", 'Card.TLabel').pack(anchor='w', pady=2)
         
-        items_tree = ttk.Treeview(dialog, columns=('Услуга', 'Цена', 'Скидка', 'Итого', 'Комментарий'), show='headings')
+        styles.create_label(content, "Список услуг:", 'CardHeading.TLabel').pack(anchor='w', pady=(0, 10))
+        
+        tree_frame = ttk.Frame(content, style='White.TFrame')
+        tree_frame.pack(fill='both', expand=True, pady=(0, 15))
+        
+        items_tree = ttk.Treeview(tree_frame, columns=('Услуга', 'Цена', 'Скидка', 'Итого', 'Комментарий'), show='headings')
         items_tree.heading('Услуга', text='Услуга')
         items_tree.heading('Цена', text='Цена')
         items_tree.heading('Скидка', text='Скидка %')
         items_tree.heading('Итого', text='Итого')
         items_tree.heading('Комментарий', text='Комментарий')
-        items_tree.pack(fill='both', expand=True, padx=10, pady=5)
+        items_tree.pack(side='left', fill='both', expand=True)
+        
+        items_scroll = ttk.Scrollbar(tree_frame, orient='vertical', command=items_tree.yview)
+        items_scroll.pack(side='right', fill='y')
+        items_tree.config(yscrollcommand=items_scroll.set)
         
         items = self.db.query(WorkOrderItem).filter(WorkOrderItem.work_order_id == order_id).all()
         for item in items:
@@ -114,13 +151,19 @@ class HistoryTab:
                 item.comment or ""
             ))
         
-        total_frame = ttk.Frame(dialog)
-        total_frame.pack(fill='x', padx=10, pady=10)
+        total_frame = ttk.Frame(content, style='White.TFrame')
+        total_frame.pack(fill='x', pady=(0, 10))
         
-        ttk.Label(total_frame, text=f"Общая скидка: {order.general_discount}%").pack(anchor='w')
-        ttk.Label(total_frame, text=f"Автоскидка 5%: {'Да' if order.auto_discount else 'Нет'}").pack(anchor='w')
+        styles.create_label(total_frame, f"Общая скидка: {order.general_discount}%", 'Card.TLabel').pack(anchor='w', pady=2)
+        
+        auto_discount_text = f"Автоскидка 5%: {'Да' if order.auto_discount else 'Нет'}"
+        styles.create_label(total_frame, auto_discount_text, 'Card.TLabel').pack(anchor='w', pady=2)
+        
         payment_method = 'Наличные' if order.payment_method == 'cash' else 'Безналичный'
-        ttk.Label(total_frame, text=f"Способ оплаты: {payment_method}").pack(anchor='w')
-        ttk.Label(total_frame, text=f"ИТОГО: {order.total_amount:.2f} руб.", font=('Arial', 14, 'bold')).pack(anchor='w', pady=5)
+        styles.create_label(total_frame, f"Способ оплаты: {payment_method}", 'Card.TLabel').pack(anchor='w', pady=2)
         
-        ttk.Button(dialog, text="Закрыть", command=dialog.destroy).pack(pady=10)
+        total_label = styles.create_label(total_frame, f"ИТОГО: {order.total_amount:.2f} руб.", 'CardHeading.TLabel')
+        total_label.pack(anchor='w', pady=(10, 0))
+        total_label.configure(font=('Segoe UI', 16, 'bold'), foreground=styles.COLORS['primary'])
+        
+        styles.create_button(content, "Закрыть", dialog.destroy, 'Secondary.TButton').pack(fill='x', pady=(10, 0))

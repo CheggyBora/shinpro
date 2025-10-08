@@ -2,88 +2,133 @@ import tkinter as tk
 from tkinter import ttk, messagebox, simpledialog
 from services import EmployeeService
 from datetime import datetime, timedelta
+import styles
 
 class EmployeesTab:
     def __init__(self, parent, db):
         self.db = db
         self.service = EmployeeService(db)
-        self.frame = ttk.Frame(parent)
+        self.frame = ttk.Frame(parent, style='BG.TFrame')
         
-        left_frame = ttk.Frame(self.frame)
-        left_frame.pack(side='left', fill='both', expand=True, padx=10, pady=10)
+        left_frame = ttk.Frame(self.frame, style='BG.TFrame')
+        left_frame.pack(side='left', fill='both', expand=True, padx=15, pady=15)
         
-        ttk.Label(left_frame, text="Регистрация сотрудника", font=('Arial', 12, 'bold')).pack(pady=5)
+        reg_card = styles.create_card_frame(left_frame)
+        reg_card.pack(fill='x', pady=(0, 15))
         
-        reg_frame = ttk.Frame(left_frame)
+        card_inner = ttk.Frame(reg_card, style='White.TFrame')
+        card_inner.pack(fill='both', expand=True, padx=20, pady=20)
+        
+        styles.create_label(card_inner, "Регистрация сотрудника", 'CardHeading.TLabel').pack(anchor='w', pady=(0, 15))
+        
+        reg_frame = ttk.Frame(card_inner, style='White.TFrame')
         reg_frame.pack(fill='x', pady=5)
-        ttk.Label(reg_frame, text="Номер сотрудника:").pack(side='left')
-        self.employee_id_entry = ttk.Entry(reg_frame, width=15)
-        self.employee_id_entry.pack(side='left', padx=5)
-        ttk.Button(reg_frame, text="Зарегистрировать", command=self.register_employee).pack(side='left', padx=5)
+        styles.create_label(reg_frame, "Номер сотрудника:", 'Card.TLabel').pack(side='left', padx=(0, 10))
+        self.employee_id_entry = styles.create_entry(reg_frame, width=15)
+        self.employee_id_entry.pack(side='left', padx=(0, 10))
+        styles.create_button(reg_frame, "Зарегистрировать", self.register_employee, 'Primary.TButton').pack(side='left')
         
-        ttk.Separator(left_frame, orient='horizontal').pack(fill='x', pady=10)
+        shift_card = styles.create_card_frame(left_frame)
+        shift_card.pack(fill='x', pady=(0, 15))
         
-        ttk.Label(left_frame, text="Управление сменами", font=('Arial', 12, 'bold')).pack(pady=5)
+        shift_inner = ttk.Frame(shift_card, style='White.TFrame')
+        shift_inner.pack(fill='both', expand=True, padx=20, pady=20)
         
-        shift_frame = ttk.Frame(left_frame)
+        styles.create_label(shift_inner, "Управление сменами", 'CardHeading.TLabel').pack(anchor='w', pady=(0, 15))
+        
+        shift_frame = ttk.Frame(shift_inner, style='White.TFrame')
         shift_frame.pack(fill='x', pady=5)
-        ttk.Label(shift_frame, text="Номер сотрудника:").pack(side='left')
-        self.shift_employee_entry = ttk.Entry(shift_frame, width=15)
-        self.shift_employee_entry.pack(side='left', padx=5)
-        ttk.Button(shift_frame, text="Начать смену", command=self.start_shift).pack(side='left', padx=5)
-        ttk.Button(shift_frame, text="Закончить смену", command=self.end_shift).pack(side='left', padx=5)
+        styles.create_label(shift_frame, "Номер сотрудника:", 'Card.TLabel').pack(side='left', padx=(0, 10))
+        self.shift_employee_entry = styles.create_entry(shift_frame, width=15)
+        self.shift_employee_entry.pack(side='left', padx=(0, 10))
+        styles.create_button(shift_frame, "Начать смену", self.start_shift, 'Success.TButton').pack(side='left', padx=(0, 5))
+        styles.create_button(shift_frame, "Закончить смену", self.end_shift, 'Danger.TButton').pack(side='left')
         
-        ttk.Label(left_frame, text="Текущие смены:").pack(pady=5)
-        self.active_shifts_list = tk.Listbox(left_frame, height=5)
-        self.active_shifts_list.pack(fill='x', pady=5)
+        styles.create_label(shift_inner, "Текущие смены:", 'Card.TLabel').pack(anchor='w', pady=(15, 5))
         
-        ttk.Separator(left_frame, orient='horizontal').pack(fill='x', pady=10)
+        shifts_frame = ttk.Frame(shift_inner, style='White.TFrame')
+        shifts_frame.pack(fill='x')
+        self.active_shifts_list = tk.Listbox(shifts_frame, height=5, font=styles.FONTS['normal'], 
+                                            bg=styles.COLORS['bg'], fg=styles.COLORS['text'],
+                                            selectbackground=styles.COLORS['primary'],
+                                            relief='flat', borderwidth=1)
+        self.active_shifts_list.pack(side='left', fill='both', expand=True)
+        scrollbar = ttk.Scrollbar(shifts_frame, orient='vertical', command=self.active_shifts_list.yview)
+        scrollbar.pack(side='right', fill='y')
+        self.active_shifts_list.config(yscrollcommand=scrollbar.set)
         
-        ttk.Label(left_frame, text="Список сотрудников", font=('Arial', 12, 'bold')).pack(pady=5)
+        emp_card = styles.create_card_frame(left_frame)
+        emp_card.pack(fill='both', expand=True)
         
-        self.employees_tree = ttk.Treeview(left_frame, columns=('ID', 'Ставка %', 'Дата регистрации'), show='headings', height=8)
+        emp_inner = ttk.Frame(emp_card, style='White.TFrame')
+        emp_inner.pack(fill='both', expand=True, padx=20, pady=20)
+        
+        header_frame = ttk.Frame(emp_inner, style='White.TFrame')
+        header_frame.pack(fill='x', pady=(0, 10))
+        styles.create_label(header_frame, "Список сотрудников", 'CardHeading.TLabel').pack(side='left')
+        styles.create_button(header_frame, "Изменить ставку", self.change_salary_percent, 'Secondary.TButton').pack(side='right')
+        
+        tree_frame = ttk.Frame(emp_inner, style='White.TFrame')
+        tree_frame.pack(fill='both', expand=True)
+        
+        self.employees_tree = ttk.Treeview(tree_frame, columns=('ID', 'Ставка %', 'Дата регистрации'), show='headings', height=8)
         self.employees_tree.heading('ID', text='Номер')
         self.employees_tree.heading('Ставка %', text='Ставка %')
         self.employees_tree.heading('Дата регистрации', text='Дата регистрации')
         self.employees_tree.column('ID', width=100)
         self.employees_tree.column('Ставка %', width=100)
         self.employees_tree.column('Дата регистрации', width=150)
-        self.employees_tree.pack(fill='both', expand=True, pady=5)
+        self.employees_tree.pack(side='left', fill='both', expand=True)
         
-        ttk.Button(left_frame, text="Изменить ставку", command=self.change_salary_percent).pack(pady=5)
+        tree_scroll = ttk.Scrollbar(tree_frame, orient='vertical', command=self.employees_tree.yview)
+        tree_scroll.pack(side='right', fill='y')
+        self.employees_tree.config(yscrollcommand=tree_scroll.set)
         
-        right_frame = ttk.Frame(self.frame)
-        right_frame.pack(side='right', fill='both', expand=True, padx=10, pady=10)
+        right_frame = ttk.Frame(self.frame, style='BG.TFrame')
+        right_frame.pack(side='right', fill='both', expand=True, padx=15, pady=15)
         
-        ttk.Label(right_frame, text="Просмотр зарплаты", font=('Arial', 12, 'bold')).pack(pady=5)
+        salary_card = styles.create_card_frame(right_frame)
+        salary_card.pack(fill='both', expand=True)
         
-        salary_frame = ttk.Frame(right_frame)
-        salary_frame.pack(fill='x', pady=5)
-        ttk.Label(salary_frame, text="Номер сотрудника:").pack(side='left')
-        self.salary_employee_entry = ttk.Entry(salary_frame, width=15)
-        self.salary_employee_entry.pack(side='left', padx=5)
+        salary_inner = ttk.Frame(salary_card, style='White.TFrame')
+        salary_inner.pack(fill='both', expand=True, padx=20, pady=20)
         
-        date_frame = ttk.Frame(right_frame)
-        date_frame.pack(fill='x', pady=5)
-        ttk.Label(date_frame, text="Дата от:").pack(side='left')
-        self.date_from_entry = ttk.Entry(date_frame, width=12)
+        styles.create_label(salary_inner, "Просмотр зарплаты", 'CardHeading.TLabel').pack(anchor='w', pady=(0, 15))
+        
+        salary_frame = ttk.Frame(salary_inner, style='White.TFrame')
+        salary_frame.pack(fill='x', pady=(0, 10))
+        styles.create_label(salary_frame, "Номер сотрудника:", 'Card.TLabel').pack(side='left', padx=(0, 10))
+        self.salary_employee_entry = styles.create_entry(salary_frame, width=15)
+        self.salary_employee_entry.pack(side='left')
+        
+        date_frame = ttk.Frame(salary_inner, style='White.TFrame')
+        date_frame.pack(fill='x', pady=(0, 10))
+        styles.create_label(date_frame, "Дата от:", 'Card.TLabel').pack(side='left', padx=(0, 5))
+        self.date_from_entry = styles.create_entry(date_frame, width=12)
         self.date_from_entry.insert(0, (datetime.now() - timedelta(days=30)).strftime('%d.%m.%Y'))
-        self.date_from_entry.pack(side='left', padx=5)
-        ttk.Label(date_frame, text="до:").pack(side='left')
-        self.date_to_entry = ttk.Entry(date_frame, width=12)
+        self.date_from_entry.pack(side='left', padx=(0, 15))
+        styles.create_label(date_frame, "до:", 'Card.TLabel').pack(side='left', padx=(0, 5))
+        self.date_to_entry = styles.create_entry(date_frame, width=12)
         self.date_to_entry.insert(0, datetime.now().strftime('%d.%m.%Y'))
-        self.date_to_entry.pack(side='left', padx=5)
+        self.date_to_entry.pack(side='left')
         
-        ttk.Button(right_frame, text="Показать зарплату", command=self.show_salary).pack(pady=5)
+        styles.create_button(salary_inner, "Показать зарплату", self.show_salary, 'Primary.TButton').pack(pady=(0, 15))
         
-        self.salary_tree = ttk.Treeview(right_frame, columns=('Дата', 'Наряд', 'Сумма'), show='headings')
+        salary_tree_frame = ttk.Frame(salary_inner, style='White.TFrame')
+        salary_tree_frame.pack(fill='both', expand=True, pady=(0, 10))
+        
+        self.salary_tree = ttk.Treeview(salary_tree_frame, columns=('Дата', 'Наряд', 'Сумма'), show='headings')
         self.salary_tree.heading('Дата', text='Дата')
         self.salary_tree.heading('Наряд', text='Наряд №')
         self.salary_tree.heading('Сумма', text='Заработано')
-        self.salary_tree.pack(fill='both', expand=True, pady=5)
+        self.salary_tree.pack(side='left', fill='both', expand=True)
         
-        self.total_label = ttk.Label(right_frame, text="Итого: 0.00 руб.", font=('Arial', 11, 'bold'))
-        self.total_label.pack(pady=5)
+        salary_scroll = ttk.Scrollbar(salary_tree_frame, orient='vertical', command=self.salary_tree.yview)
+        salary_scroll.pack(side='right', fill='y')
+        self.salary_tree.config(yscrollcommand=salary_scroll.set)
+        
+        self.total_label = styles.create_label(salary_inner, "Итого: 0.00 руб.", 'CardHeading.TLabel')
+        self.total_label.pack(anchor='e', pady=(10, 0))
         
         self.refresh_employees()
         self.refresh_active_shifts()

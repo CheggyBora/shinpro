@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox, simpledialog
 from services import OrderService, SalaryService, PrintService
 from datetime import datetime
+import styles
 
 class OrdersTab:
     def __init__(self, parent, db):
@@ -9,30 +10,32 @@ class OrdersTab:
         self.order_service = OrderService(db)
         self.salary_service = SalaryService(db)
         self.print_service = PrintService()
-        self.frame = ttk.Frame(parent)
+        self.frame = ttk.Frame(parent, style='BG.TFrame')
         self.active_orders = {}
         
-        top_frame = ttk.Frame(self.frame)
-        top_frame.pack(fill='x', padx=10, pady=5)
+        top_card = styles.create_card_frame(self.frame)
+        top_card.pack(fill='x', padx=15, pady=(15, 10))
         
-        services_label = ttk.Label(top_frame, text="Кнопки услуг:", font=('Arial', 10, 'bold'))
-        services_label.pack(anchor='w')
+        top_inner = ttk.Frame(top_card, style='White.TFrame')
+        top_inner.pack(fill='both', expand=True, padx=20, pady=15)
         
-        self.services_frame = ttk.Frame(top_frame)
-        self.services_frame.pack(fill='x', pady=5)
+        styles.create_label(top_inner, "Панель услуг", 'CardHeading.TLabel').pack(anchor='w', pady=(0, 10))
+        
+        self.services_frame = ttk.Frame(top_inner, style='White.TFrame')
+        self.services_frame.pack(fill='x')
         
         self.load_service_buttons()
         
-        tabs_frame = ttk.Frame(self.frame)
-        tabs_frame.pack(fill='x', padx=10, pady=5)
+        tabs_frame = ttk.Frame(self.frame, style='BG.TFrame')
+        tabs_frame.pack(fill='x', padx=15, pady=(0, 10))
         
-        ttk.Button(tabs_frame, text="+ Новый наряд", command=self.create_new_order).pack(side='left', padx=5)
+        styles.create_button(tabs_frame, "+ Новый наряд", self.create_new_order, 'Primary.TButton').pack(side='left', padx=(0, 10))
         
         self.order_notebook = ttk.Notebook(tabs_frame)
         self.order_notebook.pack(side='left', fill='both', expand=True)
         
-        self.content_frame = ttk.Frame(self.frame)
-        self.content_frame.pack(fill='both', expand=True, padx=10, pady=5)
+        self.content_frame = ttk.Frame(self.frame, style='BG.TFrame')
+        self.content_frame.pack(fill='both', expand=True, padx=15, pady=(0, 15))
         
         self.order_notebook.bind('<<NotebookTabChanged>>', self.on_tab_change)
     
@@ -40,32 +43,42 @@ class OrdersTab:
         services = self.order_service.get_all_services()
         for i, service in enumerate(services):
             btn = ttk.Button(self.services_frame, text=service.name, 
-                           command=lambda s=service: self.add_service_to_current_order(s))
-            btn.grid(row=i//5, column=i%5, padx=2, pady=2, sticky='ew')
+                           command=lambda s=service: self.add_service_to_current_order(s),
+                           style='Service.TButton')
+            btn.grid(row=i//5, column=i%5, padx=3, pady=3, sticky='ew')
+        
+        for col in range(5):
+            self.services_frame.columnconfigure(col, weight=1)
     
     def create_new_order(self):
         dialog = tk.Toplevel(self.frame)
         dialog.title("Новый наряд")
-        dialog.geometry("400x250")
+        dialog.geometry("450x420")
+        dialog.configure(bg=styles.COLORS['bg'])
         
-        ttk.Label(dialog, text="Номер машины*:").pack(pady=5)
-        license_entry = ttk.Entry(dialog, width=30)
-        license_entry.pack(pady=5)
+        content = ttk.Frame(dialog, style='White.TFrame')
+        content.pack(fill='both', expand=True, padx=20, pady=20)
         
-        ttk.Label(dialog, text="Диаметр колеса*:").pack(pady=5)
+        styles.create_label(content, "Создание нового наряда", 'CardHeading.TLabel').pack(anchor='w', pady=(0, 20))
+        
+        styles.create_label(content, "Номер машины*:", 'Card.TLabel').pack(anchor='w', pady=(0, 5))
+        license_entry = styles.create_entry(content, width=40)
+        license_entry.pack(fill='x', pady=(0, 15))
+        
+        styles.create_label(content, "Диаметр колеса*:", 'Card.TLabel').pack(anchor='w', pady=(0, 5))
         diameter_var = tk.StringVar()
-        diameter_combo = ttk.Combobox(dialog, textvariable=diameter_var, 
+        diameter_combo = ttk.Combobox(content, textvariable=diameter_var, 
                                       values=['R13', 'R14', 'R15', 'R16', 'R17', 'R18', 'R19', 'R20', 'R21', 'R22'],
-                                      width=28)
-        diameter_combo.pack(pady=5)
+                                      font=styles.FONTS['normal'])
+        diameter_combo.pack(fill='x', pady=(0, 15))
         
-        ttk.Label(dialog, text="Номер клиента:").pack(pady=5)
-        client_number_entry = ttk.Entry(dialog, width=30)
-        client_number_entry.pack(pady=5)
+        styles.create_label(content, "Номер клиента:", 'Card.TLabel').pack(anchor='w', pady=(0, 5))
+        client_number_entry = styles.create_entry(content, width=40)
+        client_number_entry.pack(fill='x', pady=(0, 15))
         
-        ttk.Label(dialog, text="Имя клиента:").pack(pady=5)
-        client_name_entry = ttk.Entry(dialog, width=30)
-        client_name_entry.pack(pady=5)
+        styles.create_label(content, "Имя клиента:", 'Card.TLabel').pack(anchor='w', pady=(0, 5))
+        client_name_entry = styles.create_entry(content, width=40)
+        client_name_entry.pack(fill='x', pady=(0, 20))
         
         def create():
             license = license_entry.get().strip()
@@ -84,11 +97,11 @@ class OrdersTab:
             except Exception as e:
                 messagebox.showerror("Ошибка", str(e))
         
-        ttk.Button(dialog, text="Создать", command=create).pack(pady=10)
+        styles.create_button(content, "Создать наряд", create, 'Primary.TButton').pack(fill='x')
     
     def open_order_tab(self, order):
         tab_frame = ttk.Frame(self.order_notebook)
-        tab_title = f"#{order.id}: {order.car.license_plate}"
+        tab_title = f"  #{order.id}: {order.car.license_plate}  "
         self.order_notebook.add(tab_frame, text=tab_title)
         
         order_widget = OrderWidget(tab_frame, order, self.db, self.order_service, 
@@ -127,46 +140,81 @@ class OrderWidget:
         self.print_service = print_service
         self.close_callback = close_callback
         
-        info_frame = ttk.Frame(frame)
-        info_frame.pack(fill='x', padx=10, pady=5)
+        main_frame = ttk.Frame(frame, style='BG.TFrame')
+        main_frame.pack(fill='both', expand=True, padx=15, pady=15)
         
-        ttk.Label(info_frame, text=f"Номер машины: {order.car.license_plate}", font=('Arial', 10, 'bold')).pack(anchor='w')
-        ttk.Label(info_frame, text=f"Диаметр: {order.wheel_diameter}").pack(anchor='w')
+        info_card = styles.create_card_frame(main_frame)
+        info_card.pack(fill='x', pady=(0, 15))
+        
+        info_inner = ttk.Frame(info_card, style='White.TFrame')
+        info_inner.pack(fill='both', expand=True, padx=20, pady=15)
+        
+        styles.create_label(info_inner, f"Номер машины: {order.car.license_plate}", 'CardHeading.TLabel').pack(anchor='w', pady=(0, 5))
+        styles.create_label(info_inner, f"Диаметр: {order.wheel_diameter}", 'Card.TLabel').pack(anchor='w', pady=2)
+        
         if order.client:
             client_info = order.client.name or ""
             if order.client.client_number:
                 client_info += f" (#{order.client.client_number})"
-            ttk.Label(info_frame, text=f"Клиент: {client_info}").pack(anchor='w')
-        ttk.Label(info_frame, text=f"Автоскидка 5%: {'✓' if order.auto_discount else '✗'}").pack(anchor='w')
+            styles.create_label(info_inner, f"Клиент: {client_info}", 'Card.TLabel').pack(anchor='w', pady=2)
         
-        ttk.Label(frame, text="Список услуг:", font=('Arial', 10, 'bold')).pack(anchor='w', padx=10, pady=5)
+        auto_discount_text = "Автоскидка 5%: ✓" if order.auto_discount else "Автоскидка 5%: ✗"
+        auto_discount_color = styles.COLORS['success'] if order.auto_discount else styles.COLORS['text_secondary']
+        label = styles.create_label(info_inner, auto_discount_text, 'Card.TLabel')
+        label.pack(anchor='w', pady=2)
+        label.configure(foreground=auto_discount_color)
         
-        self.items_tree = ttk.Treeview(frame, columns=('Услуга', 'Цена', 'Скидка', 'Итого'), show='headings', height=10)
+        items_card = styles.create_card_frame(main_frame)
+        items_card.pack(fill='both', expand=True, pady=(0, 15))
+        
+        items_inner = ttk.Frame(items_card, style='White.TFrame')
+        items_inner.pack(fill='both', expand=True, padx=20, pady=15)
+        
+        styles.create_label(items_inner, "Список услуг", 'CardHeading.TLabel').pack(anchor='w', pady=(0, 10))
+        
+        tree_frame = ttk.Frame(items_inner, style='White.TFrame')
+        tree_frame.pack(fill='both', expand=True, pady=(0, 10))
+        
+        self.items_tree = ttk.Treeview(tree_frame, columns=('Услуга', 'Цена', 'Скидка', 'Итого'), show='headings', height=10)
         self.items_tree.heading('Услуга', text='Услуга')
         self.items_tree.heading('Цена', text='Цена')
         self.items_tree.heading('Скидка', text='Скидка %')
         self.items_tree.heading('Итого', text='Итого')
-        self.items_tree.pack(fill='both', expand=True, padx=10, pady=5)
+        self.items_tree.pack(side='left', fill='both', expand=True)
+        
+        tree_scroll = ttk.Scrollbar(tree_frame, orient='vertical', command=self.items_tree.yview)
+        tree_scroll.pack(side='right', fill='y')
+        self.items_tree.config(yscrollcommand=tree_scroll.set)
+        
         self.items_tree.bind('<Double-1>', self.edit_item)
         self.items_tree.bind('<Delete>', self.delete_item)
         
-        discount_frame = ttk.Frame(frame)
-        discount_frame.pack(fill='x', padx=10, pady=5)
+        discount_frame = ttk.Frame(items_inner, style='White.TFrame')
+        discount_frame.pack(fill='x')
         
-        ttk.Label(discount_frame, text="Общая скидка:").pack(side='left')
+        styles.create_label(discount_frame, "Общая скидка:", 'Card.TLabel').pack(side='left', padx=(0, 10))
         self.general_discount_var = tk.StringVar(value='0')
         discount_combo = ttk.Combobox(discount_frame, textvariable=self.general_discount_var, 
-                                      values=['0', '5', '10', '15'], width=10)
-        discount_combo.pack(side='left', padx=5)
-        ttk.Button(discount_frame, text="Применить", command=self.apply_general_discount).pack(side='left', padx=5)
+                                      values=['0', '5', '10', '15'], width=10,
+                                      font=styles.FONTS['normal'])
+        discount_combo.pack(side='left', padx=(0, 10))
+        styles.create_button(discount_frame, "Применить", self.apply_general_discount, 'Secondary.TButton').pack(side='left')
         
-        self.total_label = ttk.Label(frame, text="ИТОГО: 0.00 руб.", font=('Arial', 14, 'bold'))
-        self.total_label.pack(pady=10)
+        total_card = styles.create_card_frame(main_frame)
+        total_card.pack(fill='x', pady=(0, 15))
         
-        button_frame = ttk.Frame(frame)
-        button_frame.pack(pady=5)
-        ttk.Button(button_frame, text="Оплатить", command=self.process_payment).pack(side='left', padx=5)
-        ttk.Button(button_frame, text="Закрыть вкладку", command=lambda: self.close_callback(order.id)).pack(side='left', padx=5)
+        total_inner = ttk.Frame(total_card, style='White.TFrame')
+        total_inner.pack(fill='both', expand=True, padx=20, pady=20)
+        
+        self.total_label = styles.create_label(total_inner, "ИТОГО: 0.00 руб.", 'CardHeading.TLabel')
+        self.total_label.pack(anchor='center')
+        self.total_label.configure(font=('Segoe UI', 18, 'bold'), foreground=styles.COLORS['primary'])
+        
+        button_frame = ttk.Frame(main_frame, style='BG.TFrame')
+        button_frame.pack(fill='x')
+        
+        styles.create_button(button_frame, "Оплатить", self.process_payment, 'Success.TButton').pack(side='left', padx=(0, 10))
+        styles.create_button(button_frame, "Закрыть вкладку", lambda: self.close_callback(order.id), 'Secondary.TButton').pack(side='left')
         
         self.refresh_items()
     
@@ -190,26 +238,31 @@ class OrderWidget:
         
         dialog = tk.Toplevel(self.frame)
         dialog.title("Редактировать услугу")
-        dialog.geometry("350x200")
+        dialog.geometry("450x320")
+        dialog.configure(bg=styles.COLORS['bg'])
         
-        ttk.Label(dialog, text=f"Услуга: {item.service.name}").pack(pady=5)
+        content = ttk.Frame(dialog, style='White.TFrame')
+        content.pack(fill='both', expand=True, padx=20, pady=20)
         
-        ttk.Label(dialog, text="Комментарий:").pack(pady=5)
-        comment_entry = ttk.Entry(dialog, width=40)
+        styles.create_label(content, f"Услуга: {item.service.name}", 'CardHeading.TLabel').pack(anchor='w', pady=(0, 20))
+        
+        styles.create_label(content, "Комментарий:", 'Card.TLabel').pack(anchor='w', pady=(0, 5))
+        comment_entry = styles.create_entry(content, width=50)
         comment_entry.insert(0, item.comment or "")
-        comment_entry.pack(pady=5)
+        comment_entry.pack(fill='x', pady=(0, 15))
         
-        ttk.Label(dialog, text="Скидка (для правки дисков):").pack(pady=5)
+        styles.create_label(content, "Скидка (для правки дисков):", 'Card.TLabel').pack(anchor='w', pady=(0, 5))
         discount_var = tk.StringVar(value=str(item.discount_percent))
-        discount_combo = ttk.Combobox(dialog, textvariable=discount_var, values=['0', '10', '20'], width=10)
-        discount_combo.pack(pady=5)
+        discount_combo = ttk.Combobox(content, textvariable=discount_var, values=['0', '10', '20'],
+                                      font=styles.FONTS['normal'])
+        discount_combo.pack(fill='x', pady=(0, 20))
         
         def save():
             self.order_service.update_item_discount(item_id, int(discount_var.get()), comment_entry.get())
             self.refresh_items()
             dialog.destroy()
         
-        ttk.Button(dialog, text="Сохранить", command=save).pack(pady=10)
+        styles.create_button(content, "Сохранить", save, 'Primary.TButton').pack(fill='x')
     
     def delete_item(self, event):
         selected = self.items_tree.selection()
@@ -232,13 +285,23 @@ class OrderWidget:
         
         dialog = tk.Toplevel(self.frame)
         dialog.title("Оплата")
-        dialog.geometry("300x150")
+        dialog.geometry("400x250")
+        dialog.configure(bg=styles.COLORS['bg'])
         
-        ttk.Label(dialog, text=f"Сумма к оплате: {total:.2f} руб.", font=('Arial', 12, 'bold')).pack(pady=10)
+        content = ttk.Frame(dialog, style='White.TFrame')
+        content.pack(fill='both', expand=True, padx=20, pady=20)
+        
+        total_label = styles.create_label(content, f"Сумма к оплате: {total:.2f} руб.", 'CardHeading.TLabel')
+        total_label.pack(pady=(0, 20))
+        total_label.configure(font=('Segoe UI', 16, 'bold'), foreground=styles.COLORS['primary'])
         
         payment_var = tk.StringVar(value='cash')
-        ttk.Radiobutton(dialog, text="Наличные", variable=payment_var, value='cash').pack(pady=5)
-        ttk.Radiobutton(dialog, text="Безналичный расчёт", variable=payment_var, value='card').pack(pady=5)
+        
+        radio_frame = ttk.Frame(content, style='White.TFrame')
+        radio_frame.pack(fill='x', pady=(0, 20))
+        
+        ttk.Radiobutton(radio_frame, text="Наличные", variable=payment_var, value='cash').pack(anchor='w', pady=5)
+        ttk.Radiobutton(radio_frame, text="Безналичный расчёт", variable=payment_var, value='card').pack(anchor='w', pady=5)
         
         def pay():
             try:
@@ -254,7 +317,7 @@ class OrderWidget:
             except Exception as e:
                 messagebox.showerror("Ошибка", str(e))
         
-        ttk.Button(dialog, text="Оплатить", command=pay).pack(pady=10)
+        styles.create_button(content, "Оплатить", pay, 'Success.TButton').pack(fill='x')
     
     def refresh_items(self):
         for item in self.items_tree.get_children():
