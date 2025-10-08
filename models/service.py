@@ -6,6 +6,7 @@ class Service(Base):
     
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String(200), nullable=False)
+    vehicle_type = Column(String(50), default='car')
     price_r13 = Column(Float, default=0.0)
     price_r14 = Column(Float, default=0.0)
     price_r15 = Column(Float, default=0.0)
@@ -16,4 +17,6 @@ class Service(Base):
     price_r20 = Column(Float, default=0.0)
     price_r21 = Column(Float, default=0.0)
     price_r22 = Column(Float, default=0.0)
+    price_r23 = Column(Float, default=0.0)
+    price_r24 = Column(Float, default=0.0)
     is_active = Column(Boolean, default=True)

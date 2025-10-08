@@ -10,6 +10,7 @@ class WorkOrder(Base):
     car_id = Column(Integer, ForeignKey('cars.id'), nullable=False)
     client_id = Column(Integer, ForeignKey('clients.id'), nullable=True)
     wheel_diameter = Column(String(10), nullable=False)
+    vehicle_type = Column(String(50), default='car')
     auto_discount = Column(Boolean, default=False)
     general_discount = Column(Integer, default=0)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
