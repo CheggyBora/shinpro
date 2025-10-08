@@ -1564,3 +1564,4 @@ The XKEYBOARD keymap compiler (xkbcomp) reports:
 > Warning:          Could not resolve keysym XF86Accessibility
 > Warning:          Could not resolve keysym XF86DoNotDisturb
 Errors from xkbcomp are not fatal to the X server
+(EE) Failed to open authorization file "/tmp/.xas2765525530.UMBb9O": No such file or directory
