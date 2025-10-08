@@ -43,9 +43,15 @@ class TireStorageTab:
         self.car_number_entry = styles.create_entry(row1, width=20)
         self.car_number_entry.pack(side='left', padx=(0, 20))
         
-        styles.create_label(row1, "Тип хранения:", 'Card.TLabel').pack(side='left', padx=(0, 10))
+        styles.create_label(row1, "Вод. удостоверение:", 'Card.TLabel').pack(side='left', padx=(0, 10))
+        self.driver_license_entry = styles.create_entry(row1, width=20)
+        self.driver_license_entry.pack(side='left')
+        
+        row1a = ttk.Frame(form_frame, style='White.TFrame')
+        row1a.pack(fill='x', pady=5)
+        styles.create_label(row1a, "Тип хранения:", 'Card.TLabel').pack(side='left', padx=(0, 10))
         self.storage_type_var = tk.StringVar(value='Шины')
-        storage_combo = ttk.Combobox(row1, textvariable=self.storage_type_var, 
+        storage_combo = ttk.Combobox(row1a, textvariable=self.storage_type_var, 
                                      values=['Шины', 'Шины с дисками'], 
                                      state='readonly', width=18, font=styles.FONTS['normal'])
         storage_combo.pack(side='left')
@@ -100,8 +106,12 @@ class TireStorageTab:
         
         btn_frame = ttk.Frame(card_inner, style='White.TFrame')
         btn_frame.pack(fill='x', pady=10)
-        styles.create_button(btn_frame, "Принять на хранение и печать чека", 
+        styles.create_button(btn_frame, "Принять на хранение", 
                            self.accept_storage, 'Primary.TButton').pack(side='left')
+        self.print_accept_btn = styles.create_button(btn_frame, "Печать чека", 
+                           self.print_accept_receipt, 'Success.TButton')
+        
+        self.current_accept_storage = None
     
     def setup_release_tab(self, parent):
         card = styles.create_card_frame(parent)
@@ -152,6 +162,10 @@ class TireStorageTab:
         btn_frame.pack(fill='x', pady=10)
         styles.create_button(btn_frame, "Выдать комплект", 
                            self.release_storage, 'Success.TButton').pack(side='left')
+        self.print_release_btn = styles.create_button(btn_frame, "Печать чека", 
+                           self.print_release_receipt_action, 'Success.TButton')
+        
+        self.current_release_storage = None
     
     def update_price(self, event=None):
         diameter = self.diameter_var.get()
@@ -167,6 +181,7 @@ class TireStorageTab:
     
     def accept_storage(self):
         car_number = self.car_number_entry.get().strip()
+        driver_license = self.driver_license_entry.get().strip()
         storage_type = self.storage_type_var.get()
         diameter = self.diameter_var.get()
         brand = self.brand_entry.get().strip()
@@ -184,19 +199,34 @@ class TireStorageTab:
         
         try:
             storage = self.service.accept_storage(
-                car_number, storage_type, diameter, brand, damage, wear, comments, wheel_type
+                car_number, driver_license, storage_type, diameter, brand, damage, wear, comments, wheel_type
             )
             
-            self.print_receipt(storage, copies=2)
+            self.current_accept_storage = storage
+            self.print_accept_btn.pack(side='left', padx=(10, 0))
             
-            messagebox.showinfo("Успех", f"Комплект принят на хранение.\nЧек сохранён в receipts/storage_{storage.id}.pdf")
+            messagebox.showinfo("Успех", f"Комплект #{storage.id} принят на хранение.\nНажмите 'Печать чека' для печати.")
             
             self.car_number_entry.delete(0, tk.END)
+            self.driver_license_entry.delete(0, tk.END)
             self.brand_entry.delete(0, tk.END)
             self.damage_entry.delete(0, tk.END)
             self.wear_entry.delete(0, tk.END)
             self.comments_entry.delete(0, tk.END)
             
+        except Exception as e:
+            messagebox.showerror("Ошибка", str(e))
+    
+    def print_accept_receipt(self):
+        if not self.current_accept_storage:
+            messagebox.showerror("Ошибка", "Нет документа для печати")
+            return
+        
+        try:
+            self.print_receipt(self.current_accept_storage, copies=2)
+            messagebox.showinfo("Успех", f"Чек сохранён в receipts/storage_{self.current_accept_storage.id}.pdf")
+            self.print_accept_btn.pack_forget()
+            self.current_accept_storage = None
         except Exception as e:
             messagebox.showerror("Ошибка", str(e))
     
@@ -234,11 +264,25 @@ class TireStorageTab:
             storage = self.service.release_storage(storage_id)
             
             if storage:
-                self.print_release_receipt(storage)
-                messagebox.showinfo("Успех", f"Комплект выдан.\nЧек сохранён в receipts/release_{storage.id}.pdf")
+                self.current_release_storage = storage
+                self.print_release_btn.pack(side='left', padx=(10, 0))
+                messagebox.showinfo("Успех", f"Комплект #{storage.id} выдан.\nНажмите 'Печать чека' для печати.")
                 self.search_storage()
             else:
                 messagebox.showerror("Ошибка", "Комплект не найден")
+        except Exception as e:
+            messagebox.showerror("Ошибка", str(e))
+    
+    def print_release_receipt_action(self):
+        if not self.current_release_storage:
+            messagebox.showerror("Ошибка", "Нет документа для печати")
+            return
+        
+        try:
+            self.print_release_receipt(self.current_release_storage)
+            messagebox.showinfo("Успех", f"Чек сохранён в receipts/release_{self.current_release_storage.id}.pdf")
+            self.print_release_btn.pack_forget()
+            self.current_release_storage = None
         except Exception as e:
             messagebox.showerror("Ошибка", str(e))
     
@@ -264,6 +308,9 @@ class TireStorageTab:
             y -= 30
             c.drawString(50, y, f"Номер автомобиля: {storage.car_number}")
             y -= 20
+            if storage.driver_license:
+                c.drawString(50, y, f"Водительское удостоверение: {storage.driver_license}")
+                y -= 20
             c.drawString(50, y, f"Тип хранения: {storage.storage_type}")
             y -= 20
             if storage.wheel_type:
@@ -311,6 +358,9 @@ class TireStorageTab:
         y -= 30
         c.drawString(50, y, f"Номер автомобиля: {storage.car_number}")
         y -= 20
+        if storage.driver_license:
+            c.drawString(50, y, f"Водительское удостоверение: {storage.driver_license}")
+            y -= 20
         c.drawString(50, y, f"Тип хранения: {storage.storage_type}")
         y -= 20
         if storage.wheel_type:
