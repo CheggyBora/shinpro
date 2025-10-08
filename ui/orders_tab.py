@@ -53,7 +53,7 @@ class OrdersTab:
     def create_new_order(self):
         dialog = tk.Toplevel(self.frame)
         dialog.title("Новый наряд")
-        dialog.geometry("450x420")
+        dialog.geometry("450x550")
         dialog.configure(bg=styles.COLORS['bg'])
         
         content = ttk.Frame(dialog, style='White.TFrame')
@@ -65,10 +65,17 @@ class OrdersTab:
         license_entry = styles.create_entry(content, width=40)
         license_entry.pack(fill='x', pady=(0, 15))
         
+        styles.create_label(content, "Тип транспорта*:", 'Card.TLabel').pack(anchor='w', pady=(0, 5))
+        vehicle_type_var = tk.StringVar(value='Легковой')
+        vehicle_type_combo = ttk.Combobox(content, textvariable=vehicle_type_var, 
+                                          values=['Легковой', 'Джип/Кроссовер/Пикап', 'Категория С (коммерческий)'],
+                                          font=styles.FONTS['normal'], state='readonly')
+        vehicle_type_combo.pack(fill='x', pady=(0, 15))
+        
         styles.create_label(content, "Диаметр колеса*:", 'Card.TLabel').pack(anchor='w', pady=(0, 5))
         diameter_var = tk.StringVar()
         diameter_combo = ttk.Combobox(content, textvariable=diameter_var, 
-                                      values=['R13', 'R14', 'R15', 'R16', 'R17', 'R18', 'R19', 'R20', 'R21', 'R22'],
+                                      values=['R13', 'R14', 'R15', 'R16', 'R17', 'R18', 'R19', 'R20', 'R21', 'R22', 'R23', 'R24'],
                                       font=styles.FONTS['normal'])
         diameter_combo.pack(fill='x', pady=(0, 15))
         
@@ -83,15 +90,23 @@ class OrdersTab:
         def create():
             license = license_entry.get().strip()
             diameter = diameter_var.get()
+            vehicle_type_display = vehicle_type_combo.get()
             client_number = client_number_entry.get().strip() or None
             client_name = client_name_entry.get().strip() or None
+            
+            vehicle_type_map = {
+                'Легковой': 'car',
+                'Джип/Кроссовер/Пикап': 'suv',
+                'Категория С (коммерческий)': 'truck'
+            }
+            vehicle_type = vehicle_type_map.get(vehicle_type_display, 'car')
             
             if not license or not diameter:
                 messagebox.showerror("Ошибка", "Заполните обязательные поля")
                 return
             
             try:
-                order = self.order_service.create_order(license, diameter, client_number, client_name)
+                order = self.order_service.create_order(license, diameter, vehicle_type, client_number, client_name)
                 self.open_order_tab(order)
                 dialog.destroy()
             except Exception as e:

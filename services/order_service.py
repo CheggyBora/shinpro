@@ -6,7 +6,7 @@ class OrderService:
         self.db = db
     
     def create_order(self, license_plate: str, wheel_diameter: str, 
-                     client_number: str = None, client_name: str = None) -> WorkOrder:
+                     vehicle_type: str = 'car', client_number: str = None, client_name: str = None) -> WorkOrder:
         car = self.db.query(Car).filter(Car.license_plate == license_plate).first()
         if not car:
             car = Car(license_plate=license_plate)
@@ -26,6 +26,7 @@ class OrderService:
             car_id=car.id,
             client_id=client_id,
             wheel_diameter=wheel_diameter,
+            vehicle_type=vehicle_type,
             auto_discount=auto_discount,
             status='draft'
         )
