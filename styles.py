@@ -76,13 +76,14 @@ def apply_modern_styles(root):
                    foreground='white')
     
     style.configure('Service.TButton',
-                   font=FONTS['normal'],
-                   padding=[10, 8],
-                   background=COLORS['bg_card'],
+                   font=FONTS['button'],
+                   padding=[12, 10],
+                   background=COLORS['primary'],
+                   foreground='white',
                    relief='flat',
-                   borderwidth=1)
+                   borderwidth=0)
     style.map('Service.TButton',
-             background=[('active', COLORS['hover'])])
+             background=[('active', COLORS['primary_hover'])])
     
     style.configure('TEntry', 
                    fieldbackground=COLORS['bg_card'],

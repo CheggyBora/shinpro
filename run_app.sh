@@ -9,15 +9,21 @@ sleep 3
 # Ждём создания X display и автоматически определяем его
 # Ищем последний (самый свежий) Xvfb созданный x11vnc
 for i in {1..10}; do
-  DISPLAY_NUM=$(ps aux | grep 'Xvfb.*-auth' | grep -v grep | grep -o 'Xvfb :[0-9]*' | grep -o ':[0-9]*' | tail -1)
-  if [ -n "$DISPLAY_NUM" ]; then
-    export DISPLAY=$DISPLAY_NUM
-    break
+  XVFB_INFO=$(ps aux | grep 'Xvfb.*-auth' | grep -v grep | tail -1)
+  if [ -n "$XVFB_INFO" ]; then
+    DISPLAY_NUM=$(echo "$XVFB_INFO" | grep -o 'Xvfb :[0-9]*' | grep -o ':[0-9]*')
+    AUTH_FILE=$(echo "$XVFB_INFO" | grep -o '\-auth [^ ]*' | cut -d' ' -f2)
+    if [ -n "$DISPLAY_NUM" ] && [ -n "$AUTH_FILE" ]; then
+      export DISPLAY=$DISPLAY_NUM
+      export XAUTHORITY=$AUTH_FILE
+      break
+    fi
   fi
   sleep 0.5
 done
 
 echo "Using DISPLAY: $DISPLAY"
+echo "Using XAUTHORITY: $XAUTHORITY"
 
 # Запускаем window manager
 fluxbox 2>&1 | grep -v "Failed to read" &

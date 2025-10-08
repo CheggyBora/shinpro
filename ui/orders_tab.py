@@ -164,6 +164,20 @@ class OrderWidget:
         label.pack(anchor='w', pady=2)
         label.configure(foreground=auto_discount_color)
         
+        from models import WorkShift, Employee
+        active_shifts = db.query(WorkShift).filter(WorkShift.end_time.is_(None)).all()
+        if active_shifts:
+            employee_names = []
+            for shift in active_shifts:
+                employee = db.query(Employee).filter(Employee.id == shift.employee_id).first()
+                if employee:
+                    employee_names.append(f"#{employee.employee_number} ({employee.salary_percent}%)")
+            
+            if employee_names:
+                emp_label = styles.create_label(info_inner, f"Сотрудники на смене: {', '.join(employee_names)}", 'Card.TLabel')
+                emp_label.pack(anchor='w', pady=(8, 2))
+                emp_label.configure(foreground=styles.COLORS['primary'], font=('Segoe UI', 10, 'bold'))
+        
         items_card = styles.create_card_frame(main_frame)
         items_card.pack(fill='both', expand=True, pady=(0, 15))
         
@@ -213,7 +227,9 @@ class OrderWidget:
         button_frame = ttk.Frame(main_frame, style='BG.TFrame')
         button_frame.pack(fill='x')
         
-        styles.create_button(button_frame, "Оплатить", self.process_payment, 'Success.TButton').pack(side='left', padx=(0, 10))
+        pay_btn = styles.create_button(button_frame, "💳 Пробить наряд (наличные/карта)", self.process_payment, 'Success.TButton')
+        pay_btn.pack(side='left', padx=(0, 10))
+        pay_btn.configure(padding=[20, 12])
         styles.create_button(button_frame, "Закрыть вкладку", lambda: self.close_callback(order.id), 'Secondary.TButton').pack(side='left')
         
         self.refresh_items()
