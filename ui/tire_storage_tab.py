@@ -49,6 +49,15 @@ class TireStorageTab:
                                      values=['Шины', 'Шины с дисками'], 
                                      state='readonly', width=18, font=styles.FONTS['normal'])
         storage_combo.pack(side='left')
+        storage_combo.bind('<<ComboboxSelected>>', self.on_storage_type_change)
+        
+        self.wheel_type_row = ttk.Frame(form_frame, style='White.TFrame')
+        styles.create_label(self.wheel_type_row, "Тип дисков:", 'Card.TLabel').pack(side='left', padx=(0, 10))
+        self.wheel_type_var = tk.StringVar(value='Литые')
+        wheel_type_combo = ttk.Combobox(self.wheel_type_row, textvariable=self.wheel_type_var, 
+                                        values=['Литые', 'Штампованные'], 
+                                        state='readonly', width=18, font=styles.FONTS['normal'])
+        wheel_type_combo.pack(side='left')
         
         row2 = ttk.Frame(form_frame, style='White.TFrame')
         row2.pack(fill='x', pady=5)
@@ -76,6 +85,12 @@ class TireStorageTab:
         styles.create_label(row4, "Износ шины:", 'Card.TLabel').pack(side='left', padx=(0, 10))
         self.wear_entry = styles.create_entry(row4, width=30)
         self.wear_entry.pack(side='left')
+        
+        row5 = ttk.Frame(form_frame, style='White.TFrame')
+        row5.pack(fill='x', pady=5)
+        styles.create_label(row5, "Комментарии:", 'Card.TLabel').pack(side='left', padx=(0, 10))
+        self.comments_entry = styles.create_entry(row5, width=70)
+        self.comments_entry.pack(side='left')
         
         price_frame = ttk.Frame(card_inner, style='White.TFrame')
         price_frame.pack(fill='x', pady=15)
@@ -143,6 +158,13 @@ class TireStorageTab:
         price = self.service.calculate_price(diameter)
         self.price_label.config(text=f"{int(price)} ₽")
     
+    def on_storage_type_change(self, event=None):
+        storage_type = self.storage_type_var.get()
+        if storage_type == 'Шины с дисками':
+            self.wheel_type_row.pack(fill='x', pady=5, after=self.wheel_type_row.master.winfo_children()[0])
+        else:
+            self.wheel_type_row.pack_forget()
+    
     def accept_storage(self):
         car_number = self.car_number_entry.get().strip()
         storage_type = self.storage_type_var.get()
@@ -150,6 +172,11 @@ class TireStorageTab:
         brand = self.brand_entry.get().strip()
         damage = self.damage_entry.get().strip()
         wear = self.wear_entry.get().strip()
+        comments = self.comments_entry.get().strip()
+        
+        wheel_type = None
+        if storage_type == 'Шины с дисками':
+            wheel_type = self.wheel_type_var.get()
         
         if not car_number:
             messagebox.showerror("Ошибка", "Введите номер автомобиля")
@@ -157,7 +184,7 @@ class TireStorageTab:
         
         try:
             storage = self.service.accept_storage(
-                car_number, storage_type, diameter, brand, damage, wear
+                car_number, storage_type, diameter, brand, damage, wear, comments, wheel_type
             )
             
             self.print_receipt(storage, copies=2)
@@ -168,6 +195,7 @@ class TireStorageTab:
             self.brand_entry.delete(0, tk.END)
             self.damage_entry.delete(0, tk.END)
             self.wear_entry.delete(0, tk.END)
+            self.comments_entry.delete(0, tk.END)
             
         except Exception as e:
             messagebox.showerror("Ошибка", str(e))
