@@ -7,75 +7,95 @@ class OrderService:
     
     def create_order(self, license_plate: str, wheel_diameter: str, 
                      vehicle_type: str = 'car', client_number: str = None, client_name: str = None) -> WorkOrder:
-        car = self.db.query(Car).filter(Car.license_plate == license_plate).first()
-        if not car:
-            car = Car(license_plate=license_plate)
-            self.db.add(car)
-            self.db.flush()
-        
-        client_id = None
-        if client_number or client_name:
-            client = Client(client_number=client_number, name=client_name)
-            self.db.add(client)
-            self.db.flush()
-            client_id = client.id
-        
-        auto_discount = bool(client_number and client_name)
-        
-        order = WorkOrder(
-            car_id=car.id,
-            client_id=client_id,
-            wheel_diameter=wheel_diameter,
-            vehicle_type=vehicle_type,
-            auto_discount=auto_discount,
-            status='draft'
-        )
-        self.db.add(order)
-        self.db.commit()
-        self.db.refresh(order)
-        return order
+        try:
+            car = self.db.query(Car).filter(Car.license_plate == license_plate).first()
+            if not car:
+                car = Car(license_plate=license_plate)
+                self.db.add(car)
+                self.db.flush()
+            
+            client_id = None
+            if client_number or client_name:
+                client = Client(client_number=client_number, name=client_name)
+                self.db.add(client)
+                self.db.flush()
+                client_id = client.id
+            
+            auto_discount = bool(client_number and client_name)
+            
+            order = WorkOrder(
+                car_id=car.id,
+                client_id=client_id,
+                wheel_diameter=wheel_diameter,
+                vehicle_type=vehicle_type,
+                auto_discount=auto_discount,
+                status='draft'
+            )
+            self.db.add(order)
+            self.db.commit()
+            self.db.refresh(order)
+            return order
+        except Exception as e:
+            self.db.rollback()
+            raise
     
     def add_service_to_order(self, order_id: int, service_id: int) -> WorkOrderItem:
-        order = self.db.query(WorkOrder).filter(WorkOrder.id == order_id).first()
-        service = self.db.query(Service).filter(Service.id == service_id).first()
-        
-        if not order or not service:
-            raise ValueError("Наряд или услуга не найдены")
-        
-        diameter = order.wheel_diameter.lower()
-        price_field = f'price_{diameter}'
-        price = getattr(service, price_field, 0.0)
-        
-        item = WorkOrderItem(
-            work_order_id=order_id,
-            service_id=service_id,
-            price=price,
-            discount_percent=0
-        )
-        self.db.add(item)
-        self.db.commit()
-        self.db.refresh(item)
-        return item
+        try:
+            order = self.db.query(WorkOrder).filter(WorkOrder.id == order_id).first()
+            service = self.db.query(Service).filter(Service.id == service_id).first()
+            
+            if not order or not service:
+                raise ValueError("Наряд или услуга не найдены")
+            
+            diameter = order.wheel_diameter.lower()
+            price_field = f'price_{diameter}'
+            price = getattr(service, price_field, 0.0)
+            
+            item = WorkOrderItem(
+                work_order_id=order_id,
+                service_id=service_id,
+                price=price,
+                discount_percent=0
+            )
+            self.db.add(item)
+            self.db.commit()
+            self.db.refresh(item)
+            return item
+        except Exception as e:
+            self.db.rollback()
+            raise
     
     def update_item_discount(self, item_id: int, discount: int, comment: str = None):
-        item = self.db.query(WorkOrderItem).filter(WorkOrderItem.id == item_id).first()
-        if item:
-            item.discount_percent = discount
-            if comment:
-                item.comment = comment
-            self.db.commit()
+        try:
+            item = self.db.query(WorkOrderItem).filter(WorkOrderItem.id == item_id).first()
+            if item:
+                item.discount_percent = discount
+                if comment:
+                    item.comment = comment
+                self.db.commit()
+        except Exception as e:
+            self.db.rollback()
+            raise
     
     def delete_item(self, item_id: int):
-        item = self.db.query(WorkOrderItem).filter(WorkOrderItem.id == item_id).first()
-        if item:
-            self.db.delete(item)
-            self.db.commit()
+        try:
+            item = self.db.query(WorkOrderItem).filter(WorkOrderItem.id == item_id).first()
+            if item:
+                self.db.delete(item)
+                self.db.commit()
+        except Exception as e:
+            self.db.rollback()
+            raise
     
     def update_general_discount(self, order_id: int, discount: int):
-        order = self.db.query(WorkOrder).filter(WorkOrder.id == order_id).first()
-        if order:
-            order.general_discount = discount
-            self.db.commit()
+        try:
+            order = self.db.query(WorkOrder).filter(WorkOrder.id == order_id).first()
+            if order:
+                order.general_discount = discount
+                self.db.commit()
+        except Exception as e:
+            self.db.rollback()
+            raise
     
     def calculate_total(self, order_id: int) -> float:
         order = self.db.query(WorkOrder).filter(WorkOrder.id == order_id).first()
