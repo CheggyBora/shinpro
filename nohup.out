@@ -410,3 +410,11 @@ The XKEYBOARD keymap compiler (xkbcomp) reports:
 > Warning:          Could not resolve keysym XF86Accessibility
 > Warning:          Could not resolve keysym XF86DoNotDisturb
 Errors from xkbcomp are not fatal to the X server
+(EE) Failed to open authorization file "/tmp/.xas839531784.4uPhnW": No such file or directory
+_XSERVTransmkdir: Owner of /tmp/.X11-unix should be set to root
+The XKEYBOARD keymap compiler (xkbcomp) reports:
+> Warning:          Could not resolve keysym XF86RefreshRateToggle
+> Warning:          Could not resolve keysym XF86Accessibility
+> Warning:          Could not resolve keysym XF86DoNotDisturb
+Errors from xkbcomp are not fatal to the X server
+sh: 1: .xinitrc: not found
