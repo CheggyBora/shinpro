@@ -1,254 +1,84 @@
 # Система учёта шиномонтажа
 
-## Описание проекта
-Десктопное приложение на Python с графическим интерфейсом Tkinter для управления шиномонтажом.
+## Overview
+This is a desktop application built with Python and Tkinter, designed to manage a tire service shop. Its primary purpose is to streamline operations such as order processing, employee management, tire storage, and generating financial documents. The application features a modern UI, robust database integration, and automated PDF receipt generation.
 
-## Текущий статус (13.10.2025)
-✅ **Приложение полностью работает с современным дизайном!**
-- Python приложение запущено через VNC
-- VNC сервер активен на порту 5900
-- Главное окно "Система учёта шиномонтажа" (1280x800) с современным интерфейсом
-- Применена библиотека ttkthemes для современного внешнего вида
-- Новая цветовая схема: синий (#2563eb), серый (#64748b), светлый (#f8fafc)
-- Card-based дизайн для всех вкладок
-- **Панель услуг**: двухколоночный интерфейс с 42 услугами (основные, правка, дополнительные, расходники, проверки, ремонт)
-- **Отображение сотрудников**: в наряде видны все сотрудники на смене с их процентами
-- **Кнопка оплаты**: явно показывает "💳 Пробить наряд (наличные/карта)"
-- **Типы транспорта**: поддержка легковых, джипов/кроссоверов, коммерческих (категория С)
-- **Диаметры колёс**: расширен диапазон R13-R24
-- База данных инициализирована с полным прайс-листом
-- **Хранение шин**: добавлена новая вкладка с функционалом приёма и выдачи колёс
-- **PDF документы**: автоматически открываются в Evince (PDF-просмотрщик) сразу после создания
-- Все четыре вкладки (Сотрудники, Наряды, История, Хранение шин) доступны
+**Key Capabilities:**
+- Management of employees, work shifts, and salary calculations.
+- Comprehensive order processing with support for various vehicle types and wheel diameters.
+- Advanced tire storage functionality, including automated documentation for intake and release.
+- Detailed historical data tracking for vehicles and services.
+- Automated PDF receipt generation and viewing.
 
-## Архитектура
-- **Backend**: Python 3.11 + SQLAlchemy + PostgreSQL
-- **GUI**: Tkinter + ttkthemes (отображается через VNC)
-- **База данных**: PostgreSQL (доступна через DATABASE_URL)
-- **Печать чеков**: ReportLab (генерация PDF)
-- **Дизайн**: Современный модуль styles.py с единой цветовой палитрой
+**Business Vision & Market Potential:**
+The application aims to provide small to medium-sized tire service businesses with an efficient, user-friendly, and modern tool to manage their daily operations. By automating key processes and providing clear oversight, it helps improve customer service, reduce manual errors, and enhance overall business efficiency.
 
-## Структура проекта
-```
-tire-shop-manager/
-├── main.py                 # Точка входа
-├── styles.py              # Модуль современных стилей и цветовой схемы
-├── config.py              # Конфигурация БД
-├── init_data.py           # Загрузка начальных данных
-├── models/                # Модели данных SQLAlchemy
-├── services/              # Бизнес-логика
-├── ui/                    # Графический интерфейс Tkinter
-│   ├── main_window.py    # Главное окно с современной темой
-│   ├── employees_tab.py  # Вкладка сотрудников (модернизирована)
-│   ├── orders_tab.py     # Вкладка нарядов (модернизирована)
-│   ├── history_tab.py    # Вкладка истории (модернизирована)
-│   └── tire_storage_tab.py  # Вкладка хранения шин
-├── receipts/              # Сохранённые чеки
-└── run_app.sh            # Скрипт запуска VNC+приложения
-```
+## User Preferences
+- I prefer simple language.
+- I want iterative development.
+- Ask before making major changes.
+- I prefer detailed explanations.
+- Do not make changes to the folder `receipts/`.
+- Do not make changes to the file `run_app.sh`.
 
-## UI/UX Дизайн
-### Цветовая схема:
-- **Основной тёмный**: #2c3e50 (заголовки, рамки)
-- **Акцент**: #3498db (кнопки, активные элементы)
-- **Светлый фон**: #ecf0f1 (карточки, панели)
-- **Белый**: #ffffff (основной фон)
-- **Серый текст**: #7f8c8d (вспомогательный текст)
+## System Architecture
 
-### Элементы дизайна:
-- **Card-based layouts** - все вкладки используют карточки с тенями
-- **Современная типографика** - крупные заголовки (16-18pt), читаемый текст
-- **Themed widgets** - использование ttkthemes для всех элементов управления
-- **Улучшенные отступы** - комфортное расстояние между элементами (10-20px)
-- **Цветные кнопки** - синие для основных действий, зелёные для подтверждения
-- **Чистая вёрстка** - отсутствие визуального мусора из 90х годов
+### UI/UX Design
+The application features a modern, clean design with a focus on usability.
+- **Color Scheme**: Blue (`#2563eb`), Gray (`#64748b`), Light (`#f8fafc`).
+- **Design Pattern**: Card-based layouts with shadows are used across all tabs for a consistent and modern look.
+- **Typography**: Uses modern typography with larger headings (16-18pt) for readability.
+- **Widgets**: Utilizes `ttkthemes` for all UI elements to ensure a contemporary appearance.
+- **Spacing**: Improved padding (10-20px) for better visual comfort.
+- **Buttons**: Blue for primary actions, green for confirmations.
 
-## Функциональность
+### Technical Implementation
+- **Backend**: Python 3.11 with SQLAlchemy for ORM.
+- **GUI**: Tkinter, enhanced with `ttkthemes` for modern styling.
+- **Database**: PostgreSQL, accessed via a `DATABASE_URL`.
+- **Reporting**: ReportLab is used for generating PDF documents (receipts, storage documents).
+- **VNC**: The application runs within a VNC server (x11vnc with Fluxbox window manager) on port 5900, enabling remote access and display.
 
-### 1. Вкладка "Сотрудники"
-- Регистрация сотрудников по номеру (автоматическая ставка 40%)
-- Изменение процентной ставки (защищено PIN-кодом: 0000)
-- Управление сменами (начало/конец)
-- Просмотр зарплаты за период
+### Feature Specifications
 
-### 2. Вкладка "Наряды"
-- Создание множественных нарядов (система вкладок)
-- Выбор типа транспорта при создании наряда:
-  - Легковой (car)
-  - Джип/Кроссовер/Пикап (suv)
-  - Категория С - коммерческий (truck)
-- Выбор диаметра колеса: R13-R24
-- Фиксированная панель кнопок услуг вверху (показывает уникальные названия)
-- Автоматический выбор цены по типу транспорта и диаметру колеса
-- Система скидок:
-  - Общие: 5%, 10%, 15%
-  - Индивидуальные для правки дисков: 10%, 20%
-  - Автоматическая 5% при заполнении всех полей клиента
-- Оплата (наличные/безнал) с начислением зарплаты
-- Печать чеков в PDF
+**Core Modules:**
+- **Employees Tab**: Manages employee registration, percentage-based commission rates (PIN-protected), shift tracking, and salary viewing.
+- **Orders Tab**: Facilitates creation of multi-tab work orders, selection of vehicle types (car, SUV, commercial), wheel diameters (R13-R24), and automatic pricing based on vehicle and diameter. Includes discount system (general and specific for wheel repair), payment processing (cash/card), and PDF receipt printing.
+- **History Tab**: Allows searching for vehicle history by plate number and viewing detailed past work orders.
+- **Tire Storage Tab**: Manages tire intake and release, generating two types of PDF documents automatically:
+    - **Intake**: Records vehicle number, driver's license, storage type (tires/tires with rims), rim type, diameter, tire brand, damage description, wear, comments, and calculates storage price. Generates `storage_{id}.pdf`.
+    - **Release**: Tracks stored sets, displays relevant information, and generates `release_{id}.pdf` upon release.
 
-### 3. Вкладка "История автомобиля"
-- Поиск по номеру автомобиля
-- Просмотр всех нарядов
-- Детальная информация о каждом наряде
+**Service Pricing:**
+- Over 42 services categorized into: Basic, Rim Repair, Additional, Consumables, Checks, and Repairs (patching, sidewall repair).
+- Prices vary by vehicle type and wheel diameter for basic services.
+- "From" prices for certain services (e.g., rim repair, special work) are editable within the order.
+- Automated discounts (5%, 10%, 15%) and a 5% discount for full client data entry.
 
-### 4. Вкладка "Хранение шин"
-Состоит из двух подвкладок с автоматическим созданием документов:
+**Database Schema:**
+- `employees`: Employee details and individual rates.
+- `work_shifts`: Records of employee shifts.
+- `clients`: Client information.
+- `cars`: Vehicle details.
+- `services`: Price list for all services.
+- `work_orders`: Main work order records.
+- `work_order_items`: Line items within work orders.
+- `salary_transactions`: Records of salary accruals.
+- `settings`: Application settings, including admin PIN.
+- `tire_storage`: Records for tire storage (auto number, driver's license, type, rim type, diameter, brand, damage, wear, comments, price, status).
 
-#### Приём на хранение:
-- Ввод номера автомобиля
-- **Водительское удостоверение** (обязательное поле)
-- Выбор типа хранения: "Шины" или "Шины с дисками"
-- Выбор типа дисков (литые/штампованные) - отображается только для "Шин с дисками"
-- Выбор диаметра: R13-R24
-- Марка шины
-- Описание повреждений
-- Износ шины
-- Комментарии
-- Автоматический расчёт цены хранения
-- **Процесс приёма**:
-  1. Нажатие кнопки "Принять на хранение" создаёт документ в БД
-  2. Автоматически генерируется PDF чек в двух экземплярах (`receipts/storage_{id}.pdf`)
-  3. PDF автоматически открывается в Evince для просмотра и печати
+### System Design Choices
+- **Modularity**: Project structured into `models/`, `services/`, and `ui/` directories for clear separation of concerns.
+- **Configuration**: `config.py` for database connection, `styles.py` for centralized UI styling.
+- **Data Initialization**: `init_data.py` for populating the database with initial service prices and other essential data.
+- **Security**: Admin PIN (default `0000`) for sensitive operations like changing employee rates.
 
-#### Выдача с хранения:
-- Поиск комплектов по номеру автомобиля
-- Отображение списка всех комплектов на хранении
-- Просмотр информации: тип, диаметр, марка, цена, дата приёма
-- **Процесс выдачи**:
-  1. Нажатие кнопки "Выдать комплект" обновляет статус в БД
-  2. Автоматически генерируется PDF чек-подтверждение (`receipts/release_{id}.pdf`)
-  3. PDF автоматически открывается в Evince для просмотра и печати
-
-#### Цены на хранение:
-- R13-R15: 4000 ₽
-- R16-R18: 5000 ₽
-- R19-R20: 6000 ₽
-- R21-R24: 8000 ₽
-
-## Запуск приложения
-Приложение запускается автоматически через VNC:
-- Workflow: "Tire Shop App" - запускает `run_app.sh`
-- Отображается в VNC окне справа
-- VNC сервер слушает на порту 5900
-
-### Технические детали VNC
-- X сервер создается автоматически через `x11vnc -create`
-- Скрипт автоматически находит правильный DISPLAY (ищет последний Xvfb с -auth)
-- Window manager: fluxbox (для управления окнами)
-- Python запускается с флагом `-u` (unbuffered output) для логирования
-
-## База данных
-### Таблицы:
-- `employees` - сотрудники (с индивидуальными ставками)
-- `work_shifts` - смены
-- `clients` - клиенты
-- `cars` - автомобили
-- `services` - прайс-лист услуг
-- `work_orders` - наряды
-- `work_order_items` - услуги в нарядах
-- `salary_transactions` - начисления зарплаты
-- `settings` - настройки (админский PIN)
-- `tire_storage` - хранение шин (номер авто, водительское удостоверение, тип, тип дисков, диаметр, марка, повреждения, износ, комментарии, цена, статус)
-
-### Инициализация:
-```bash
-python init_data.py
-```
-
-## Настройки
-- **Админский PIN**: 0000 (для изменения ставок сотрудников)
-- Хранится в таблице `settings` (ключ: admin_pin)
-
-## Расчёт зарплаты
-```
-Для каждого сотрудника на смене:
-  зарплата = (выручка × процент_сотрудника / 100) / количество_сотрудников_на_смене
-```
-
-## Прайс-лист услуг
-**42 услуги, загружаются автоматически при инициализации:**
-
-### 1. Основные услуги (за 1 колесо, цены зависят от типа транспорта и диаметра)
-**Легковые:**
-- Съем+Установка: R13-15: 250₽, R16: 300₽ ... R24: 700₽
-- Шиномонтаж: R13-15: 350₽, R16: 400₽ ... R24: 750₽
-- Балансировка: R13-15: 300₽, R16: 350₽ ... R24: 700₽
-- Мойка: 120₽ (все диаметры)
-
-**Джип/Кроссовер/Пикап:**
-- Съем+Установка: R13-15: 300₽ ... R24: 900₽
-- Шиномонтаж: R13-15: 350₽ ... R24: 950₽
-- Балансировка: R13-15: 350₽ ... R24: 900₽
-- Мойка: 120₽
-
-**Категория С (коммерческий, от R15):**
-- Съем+Установка: 800₽
-- Съем+Установка внутреннего колеса: 1000₽
-- Шиномонтаж: 700₽
-- Балансировка: 700₽
-- Мойка: 120₽
-
-### 2. Правка дисков (редактируемые цены "от", двойной клик для редактирования)
-- Правка литого диска: от 1800₽ (R13-15) до 5000₽ (R23+)
-
-### 3. Дополнительные услуги (фиксированные)
-- Runflat: 300₽
-- Оптимизация балансировки: 300₽
-- Замена вентиля: 50₽
-- Подкачка/проверка давления: 50₽
-- Установка датчика давления: 400₽
-- Ремонт жгутом: 800₽
-- Герметик обода: 300₽
-- Шлифовка бортов диска: 300₽
-- Шлифовка ступицы: 300₽
-- Обработка смазкой: 150₽
-- Косметический ремонт: 1500₽
-- Дошиповка (за 1 шип): 40₽
-- Грязевая покрышка АТ/МТ: 500₽
-
-### 4. Дополнительные услуги (редактируемые "от", двойной клик для редактирования)
-- Зачистка диска от скотча: от 300₽
-- Слесарные работы: от 500₽
-- Открутка секретного болта: от 2000₽
-- Срыв болта/гайки: от 1500₽
-- Прочие услуги: от 500₽
-
-### 5. Расходные материалы
-- Вентиль под датчик: 700₽
-- Вентиль черный: 100₽
-- Пакет: 100₽
-- Золотник: бесплатно
-- Колпочки: бесплатно
-
-### 6. Проверки (бесплатно)
-- Проверка на герметичность
-- Проверка на балансировку
-- Проверка затяжки болтов
-
-### 7. Ремонт грибком
-- R13-17: 1200₽
-- R18-24: 1500₽
-
-### 8. Ремонт бокового пореза
-- R13-15: 2900₽
-- R16-18: 3800₽
-- R19-21: 4800₽
-- R22-24: 6000₽
-
-### Интерфейс панели услуг
-**Двухколоночная компоновка:**
-- **Левая колонка**: Основные услуги, Правка дисков, Дополнительные фиксированные, Ремонт грибком, Ремонт бокового пореза
-- **Правая колонка**: Дополнительные редактируемые, Расходные материалы, Проверки
-
-**Редактирование цен:** 
-- Услуги с пометкой "от" (editable_price=True) - двойной клик на услуге в наряде открывает диалог редактирования цены
-
-## Важные файлы
-- `main.py` - запуск приложения
-- `run_app.sh` - VNC + приложение
-- `config.py` - подключение к БД
-- `init_data.py` - загрузка данных
-
-## Чеки
-Сохраняются в папке `receipts/` с именем `receipt_{order_id}.pdf`
+## External Dependencies
+- **PostgreSQL**: Relational database management system for persistent data storage.
+- **SQLAlchemy**: Python SQL toolkit and Object Relational Mapper (ORM) for interacting with the database.
+- **Tkinter**: Python's standard GUI toolkit for creating the desktop application interface.
+- **ttkthemes**: A Tkinter extension providing modern themes for `ttk` widgets.
+- **ReportLab**: Python library for generating PDF documents (receipts, storage forms).
+- **Evince**: (Assumed external PDF viewer) Automatically opens generated PDF documents.
+- **x11vnc**: VNC server for remote access to the graphical interface.
+- **Fluxbox**: Lightweight window manager used within the VNC environment.
