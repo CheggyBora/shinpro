@@ -77,6 +77,20 @@ class OrderService:
             self.db.rollback()
             raise
     
+    def update_item_price(self, item_id: int, new_price: float, discount: int = None, comment: str = None):
+        try:
+            item = self.db.query(WorkOrderItem).filter(WorkOrderItem.id == item_id).first()
+            if item:
+                item.price = new_price
+                if discount is not None:
+                    item.discount_percent = discount
+                if comment is not None:
+                    item.comment = comment
+                self.db.commit()
+        except Exception as e:
+            self.db.rollback()
+            raise
+    
     def delete_item(self, item_id: int):
         try:
             item = self.db.query(WorkOrderItem).filter(WorkOrderItem.id == item_id).first()

@@ -20,3 +20,4 @@ class Service(Base):
     price_r23 = Column(Float, default=0.0)
     price_r24 = Column(Float, default=0.0)
     is_active = Column(Boolean, default=True)
+    editable_price = Column(Boolean, default=False)

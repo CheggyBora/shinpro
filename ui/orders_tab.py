@@ -43,14 +43,52 @@ class OrdersTab:
         services = self.order_service.get_all_services()
         unique_names = list(dict.fromkeys([s.name for s in services]))
         
-        for i, service_name in enumerate(unique_names):
-            btn = ttk.Button(self.services_frame, text=service_name, 
-                           command=lambda name=service_name: self.add_service_to_current_order_by_name(name),
-                           style='Service.TButton')
-            btn.grid(row=i//5, column=i%5, padx=3, pady=3, sticky='ew')
+        left_column = ttk.Frame(self.services_frame, style='White.TFrame')
+        left_column.pack(side='left', fill='both', expand=True, padx=(0, 10))
         
-        for col in range(5):
-            self.services_frame.columnconfigure(col, weight=1)
+        right_column = ttk.Frame(self.services_frame, style='White.TFrame')
+        right_column.pack(side='left', fill='both', expand=True)
+        
+        left_services = [
+            'Съем+Установка', 'Съем+Установка внутреннего колеса', 'Шиномонтаж', 'Балансировка', 'Мойка',
+            'Правка литого диска',
+            'Runflat', 'Оптимизация балансировки', 'Замена вентиля', 
+            'Подкачка/проверка давления', 'Установка датчика давления', 'Ремонт жгутом',
+            'Герметик обода', 'Шлифовка бортов диска', 'Шлифовка ступицы', 
+            'Обработка смазкой', 'Косметический ремонт шины', 'Дошиповка (за 1 шип)',
+            'Грязевая покрышка АТ/МТ',
+            'Ремонт грибком',
+            'Ремонт бокового пореза'
+        ]
+        
+        right_services = [
+            'Зачистка диска от скотча', 'Слесарные работы', 
+            'Открутка секретного болта', 'Срыв болта/гайки', 'Прочие услуги',
+            'Вентиль под датчик', 'Вентиль черный', 'Пакет', 'Золотник', 'Колпочки',
+            'Проверка на герметичность', 'Проверка на балансировку', 'Проверка затяжки болтов'
+        ]
+        
+        left_row = 0
+        for service_name in unique_names:
+            if service_name in left_services:
+                btn = ttk.Button(left_column, text=service_name, 
+                               command=lambda name=service_name: self.add_service_to_current_order_by_name(name),
+                               style='Service.TButton')
+                btn.grid(row=left_row, column=0, padx=3, pady=3, sticky='ew')
+                left_row += 1
+        
+        left_column.columnconfigure(0, weight=1)
+        
+        right_row = 0
+        for service_name in unique_names:
+            if service_name in right_services:
+                btn = ttk.Button(right_column, text=service_name, 
+                               command=lambda name=service_name: self.add_service_to_current_order_by_name(name),
+                               style='Service.TButton')
+                btn.grid(row=right_row, column=0, padx=3, pady=3, sticky='ew')
+                right_row += 1
+        
+        right_column.columnconfigure(0, weight=1)
     
     def create_new_order(self):
         dialog = tk.Toplevel(self.frame)
@@ -302,13 +340,23 @@ class OrderWidget:
         
         dialog = tk.Toplevel(self.frame)
         dialog.title("Редактировать услугу")
-        dialog.geometry("450x320")
+        
+        is_editable = item.service.editable_price
+        dialog_height = "400" if is_editable else "320"
+        dialog.geometry(f"450x{dialog_height}")
         dialog.configure(bg=styles.COLORS['bg'])
         
         content = ttk.Frame(dialog, style='White.TFrame')
         content.pack(fill='both', expand=True, padx=20, pady=20)
         
         styles.create_label(content, f"Услуга: {item.service.name}", 'CardHeading.TLabel').pack(anchor='w', pady=(0, 20))
+        
+        price_entry = None
+        if is_editable:
+            styles.create_label(content, "Цена (редактируемая):", 'Card.TLabel').pack(anchor='w', pady=(0, 5))
+            price_entry = styles.create_entry(content, width=50)
+            price_entry.insert(0, str(item.price))
+            price_entry.pack(fill='x', pady=(0, 15))
         
         styles.create_label(content, "Комментарий:", 'Card.TLabel').pack(anchor='w', pady=(0, 5))
         comment_entry = styles.create_entry(content, width=50)
@@ -322,9 +370,16 @@ class OrderWidget:
         discount_combo.pack(fill='x', pady=(0, 20))
         
         def save():
-            self.order_service.update_item_discount(item_id, int(discount_var.get()), comment_entry.get())
-            self.refresh_items()
-            dialog.destroy()
+            try:
+                if is_editable and price_entry:
+                    new_price = float(price_entry.get())
+                    self.order_service.update_item_price(item_id, new_price, int(discount_var.get()), comment_entry.get())
+                else:
+                    self.order_service.update_item_discount(item_id, int(discount_var.get()), comment_entry.get())
+                self.refresh_items()
+                dialog.destroy()
+            except ValueError:
+                messagebox.showerror("Ошибка", "Введите корректную цену")
         
         styles.create_button(content, "Сохранить", save, 'Primary.TButton').pack(fill='x')
     
