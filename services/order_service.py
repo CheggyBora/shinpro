@@ -6,7 +6,7 @@ class OrderService:
         self.db = db
     
     def create_order(self, license_plate: str, wheel_diameter: str, 
-                     vehicle_type: str = 'car', client_number: str = None, client_name: str = None) -> WorkOrder:
+                     vehicle_type: str = 'car', client_number: str = None, client_name: str = None, client_phone: str = None) -> WorkOrder:
         try:
             car = self.db.query(Car).filter(Car.license_plate == license_plate).first()
             if not car:
@@ -15,13 +15,13 @@ class OrderService:
                 self.db.flush()
             
             client_id = None
-            if client_number or client_name:
-                client = Client(client_number=client_number, name=client_name)
+            if client_number or client_name or client_phone:
+                client = Client(client_number=client_number, name=client_name, phone=client_phone)
                 self.db.add(client)
                 self.db.flush()
                 client_id = client.id
             
-            auto_discount = bool(client_number and client_name)
+            auto_discount = bool(client_name and client_phone)
             
             order = WorkOrder(
                 car_id=car.id,

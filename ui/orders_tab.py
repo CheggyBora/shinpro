@@ -43,52 +43,83 @@ class OrdersTab:
         services = self.order_service.get_all_services()
         unique_names = list(dict.fromkeys([s.name for s in services]))
         
-        left_column = ttk.Frame(self.services_frame, style='White.TFrame')
-        left_column.pack(side='left', fill='both', expand=True, padx=(0, 10))
+        column1 = ttk.Frame(self.services_frame, style='White.TFrame')
+        column1.pack(side='left', fill='both', expand=True, padx=(0, 5))
         
-        right_column = ttk.Frame(self.services_frame, style='White.TFrame')
-        right_column.pack(side='left', fill='both', expand=True)
+        column2 = ttk.Frame(self.services_frame, style='White.TFrame')
+        column2.pack(side='left', fill='both', expand=True, padx=(0, 5))
         
-        left_services = [
-            'Съем+Установка', 'Съем+Установка внутреннего колеса', 'Шиномонтаж', 'Балансировка', 'Мойка',
-            'Правка литого диска',
-            'Runflat', 'Оптимизация балансировки', 'Замена вентиля', 
-            'Подкачка/проверка давления', 'Установка датчика давления', 'Ремонт жгутом',
-            'Герметик обода', 'Шлифовка бортов диска', 'Шлифовка ступицы', 
-            'Обработка смазкой', 'Косметический ремонт шины', 'Дошиповка (за 1 шип)',
-            'Грязевая покрышка АТ/МТ',
-            'Ремонт грибком',
-            'Ремонт бокового пореза'
+        column3 = ttk.Frame(self.services_frame, style='White.TFrame')
+        column3.pack(side='left', fill='both', expand=True, padx=(0, 5))
+        
+        column4 = ttk.Frame(self.services_frame, style='White.TFrame')
+        column4.pack(side='left', fill='both', expand=True)
+        
+        column1_services = [
+            'Съем+Установка', 'Съем+Установка внутреннего колеса', 
+            'Шиномонтаж', 'Балансировка', 'Мойка', 'Правка литого диска'
         ]
         
-        right_services = [
+        column2_services = [
+            'Runflat', 'Оптимизация балансировки', 'Замена вентиля', 
+            'Подкачка/проверка давления', 'Установка датчика давления', 
+            'Ремонт жгутом', 'Герметик обода', 'Шлифовка бортов диска', 
+            'Шлифовка ступицы', 'Обработка смазкой', 'Косметический ремонт шины', 
+            'Дошиповка (за 1 шип)', 'Грязевая покрышка АТ/МТ'
+        ]
+        
+        column3_services = [
             'Зачистка диска от скотча', 'Слесарные работы', 
             'Открутка секретного болта', 'Срыв болта/гайки', 'Прочие услуги',
-            'Вентиль под датчик', 'Вентиль черный', 'Пакет', 'Золотник', 'Колпочки',
-            'Проверка на герметичность', 'Проверка на балансировку', 'Проверка затяжки болтов'
+            'Ремонт грибком', 'Ремонт бокового пореза'
         ]
         
-        left_row = 0
+        column4_services = [
+            'Вентиль под датчик', 'Вентиль черный', 'Пакет', 
+            'Золотник', 'Колпочки',
+            'Проверка на герметичность', 'Проверка на балансировку', 
+            'Проверка затяжки болтов'
+        ]
+        
+        row1 = 0
         for service_name in unique_names:
-            if service_name in left_services:
-                btn = ttk.Button(left_column, text=service_name, 
+            if service_name in column1_services:
+                btn = ttk.Button(column1, text=service_name, 
                                command=lambda name=service_name: self.add_service_to_current_order_by_name(name),
                                style='Service.TButton')
-                btn.grid(row=left_row, column=0, padx=3, pady=3, sticky='ew')
-                left_row += 1
+                btn.grid(row=row1, column=0, padx=2, pady=2, sticky='ew')
+                row1 += 1
+        column1.columnconfigure(0, weight=1)
         
-        left_column.columnconfigure(0, weight=1)
-        
-        right_row = 0
+        row2 = 0
         for service_name in unique_names:
-            if service_name in right_services:
-                btn = ttk.Button(right_column, text=service_name, 
+            if service_name in column2_services:
+                btn = ttk.Button(column2, text=service_name, 
                                command=lambda name=service_name: self.add_service_to_current_order_by_name(name),
                                style='Service.TButton')
-                btn.grid(row=right_row, column=0, padx=3, pady=3, sticky='ew')
-                right_row += 1
+                btn.grid(row=row2, column=0, padx=2, pady=2, sticky='ew')
+                row2 += 1
+        column2.columnconfigure(0, weight=1)
         
-        right_column.columnconfigure(0, weight=1)
+        row3 = 0
+        for service_name in unique_names:
+            if service_name in column3_services:
+                btn = ttk.Button(column3, text=service_name, 
+                               command=lambda name=service_name: self.add_service_to_current_order_by_name(name),
+                               style='Service.TButton')
+                btn.grid(row=row3, column=0, padx=2, pady=2, sticky='ew')
+                row3 += 1
+        column3.columnconfigure(0, weight=1)
+        
+        row4 = 0
+        for service_name in unique_names:
+            if service_name in column4_services:
+                btn = ttk.Button(column4, text=service_name, 
+                               command=lambda name=service_name: self.add_service_to_current_order_by_name(name),
+                               style='Service.TButton')
+                btn.grid(row=row4, column=0, padx=2, pady=2, sticky='ew')
+                row4 += 1
+        column4.columnconfigure(0, weight=1)
     
     def create_new_order(self):
         dialog = tk.Toplevel(self.frame)
@@ -119,20 +150,20 @@ class OrdersTab:
                                       font=styles.FONTS['normal'])
         diameter_combo.pack(fill='x', pady=(0, 15))
         
-        styles.create_label(content, "Номер клиента:", 'Card.TLabel').pack(anchor='w', pady=(0, 5))
-        client_number_entry = styles.create_entry(content, width=40)
-        client_number_entry.pack(fill='x', pady=(0, 15))
-        
         styles.create_label(content, "Имя клиента:", 'Card.TLabel').pack(anchor='w', pady=(0, 5))
         client_name_entry = styles.create_entry(content, width=40)
-        client_name_entry.pack(fill='x', pady=(0, 20))
+        client_name_entry.pack(fill='x', pady=(0, 15))
+        
+        styles.create_label(content, "Номер телефона клиента:", 'Card.TLabel').pack(anchor='w', pady=(0, 5))
+        client_phone_entry = styles.create_entry(content, width=40)
+        client_phone_entry.pack(fill='x', pady=(0, 20))
         
         def create():
             license = license_entry.get().strip()
             diameter = diameter_var.get()
             vehicle_type_display = vehicle_type_combo.get()
-            client_number = client_number_entry.get().strip() or None
             client_name = client_name_entry.get().strip() or None
+            client_phone = client_phone_entry.get().strip() or None
             
             vehicle_type_map = {
                 'Легковой': 'car',
@@ -146,7 +177,7 @@ class OrdersTab:
                 return
             
             try:
-                order = self.order_service.create_order(license, diameter, vehicle_type, client_number, client_name)
+                order = self.order_service.create_order(license, diameter, vehicle_type, None, client_name, client_phone)
                 self.open_order_tab(order)
                 dialog.destroy()
             except Exception as e:
@@ -220,8 +251,8 @@ class OrderWidget:
         
         if order.client:
             client_info = order.client.name or ""
-            if order.client.client_number:
-                client_info += f" (#{order.client.client_number})"
+            if order.client.phone:
+                client_info += f" ({order.client.phone})"
             styles.create_label(info_inner, f"Клиент: {client_info}", 'Card.TLabel').pack(anchor='w', pady=2)
         
         auto_discount_text = "Автоскидка 5%: ✓" if order.auto_discount else "Автоскидка 5%: ✗"

@@ -7,3 +7,4 @@ class Client(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     client_number = Column(String(50), nullable=True)
     name = Column(String(200), nullable=True)
+    phone = Column(String(50), nullable=True)
