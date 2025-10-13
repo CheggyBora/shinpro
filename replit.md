@@ -45,9 +45,9 @@ The application features a modern, clean design with a focus on usability.
 - **Employees Tab**: Manages employee registration, percentage-based commission rates (PIN-protected), shift tracking, and salary viewing.
 - **Orders Tab**: 
   - **Workflow (Two-Step Process)**: 
-    1. Click "+ Новый наряд" → First dialog: enter car license plate number
-    2. Click "Далее" → Second dialog: select диаметр колеса, тип транспорта, имя клиента, номер телефона
-    3. Click "Создать наряд" → Opens order tab with service panel above and order details below
+    1. On "Наряды" tab: Enter car license plate in "Номер автомобиля:" field
+    2. Click "Создать наряд" button → Opens modal dialog with: диаметр колеса, тип транспорта, имя клиента, номер телефона
+    3. Click "Создать наряд" in dialog → Opens order tab with service panel above and order details below
   - **4-Column Service Panel**: 
     - Column 1: Подкачка, Съем+Установка, Мойка, Шиномонтаж, Балансировка, Герметик обода, Обработка смазкой, Правка литого диска, Съем+Установка внутреннего колеса (9 services)
     - Column 2: Runflat, Оптимизация балансировки, Замена вентиля, Установка датчика давления, Ремонт жгутом, Шлифовка бортов диска, Шлифовка ступицы, Косметический ремонт шины, Дошиповка, Грязевая покрышка АТ/МТ (10 services)  
