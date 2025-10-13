@@ -46,8 +46,8 @@ The application features a modern, clean design with a focus on usability.
 - **Orders Tab**: 
   - **Workflow**: Click "+ Новый наряд" → Dialog opens with fields: номер машины, тип транспорта, диаметр колеса, имя клиента, номер телефона → After "Создать наряд", opens order tab with service panel above.
   - **4-Column Service Panel**: 
-    - Column 1: Basic services + Rim repair (6 services)
-    - Column 2: Additional fixed services (13 services)  
+    - Column 1: Подкачка, Съем+Установка, Мойка, Шиномонтаж, Балансировка, Герметик обода, Обработка смазкой, Правка литого диска, Съем+Установка внутреннего колеса (9 services)
+    - Column 2: Runflat, Оптимизация балансировки, Замена вентиля, Установка датчика давления, Ремонт жгутом, Шлифовка бортов диска, Шлифовка ступицы, Косметический ремонт шины, Дошиповка, Грязевая покрышка АТ/МТ (10 services)  
     - Column 3: Editable services + Repairs (7 services)
     - Column 4: Consumables + Checks (8 services)
   - Multi-tab work orders, automatic pricing based on vehicle type and diameter.
