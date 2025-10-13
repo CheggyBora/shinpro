@@ -1,7 +1,8 @@
 #!/bin/bash
 
-# Запускаем x11vnc с автоматическим созданием X дисплея
-x11vnc -forever -nopw -rfbport 5900 -shared -create &
+# Создаём X дисплей без авторизации
+export X11VNC_CREATE_XAUTH_FILE=/tmp/xauth_file
+x11vnc -forever -nopw -rfbport 5900 -shared -create -env X11VNC_CREATE_GEOM=1280x1024x24 &
 
 # Ждём пока создастся X дисплей
 sleep 3
@@ -25,8 +26,10 @@ done
 echo "Using DISPLAY: $DISPLAY"
 echo "Using XAUTHORITY: $XAUTHORITY"
 
-# Разрешаем доступ к X серверу
-xhost + 2>/dev/null || true
+# Разрешаем доступ к X серверу через XAUTHORITY файл
+if [ -n "$XAUTHORITY" ] && [ -f "$XAUTHORITY" ]; then
+  chmod 644 "$XAUTHORITY" 2>/dev/null || true
+fi
 
 # Запускаем window manager
 fluxbox 2>&1 | grep -v "Failed to read" &
