@@ -418,3 +418,10 @@ The XKEYBOARD keymap compiler (xkbcomp) reports:
 > Warning:          Could not resolve keysym XF86DoNotDisturb
 Errors from xkbcomp are not fatal to the X server
 sh: 1: .xinitrc: not found
+_XSERVTransmkdir: Owner of /tmp/.X11-unix should be set to root
+The XKEYBOARD keymap compiler (xkbcomp) reports:
+> Warning:          Could not resolve keysym XF86RefreshRateToggle
+> Warning:          Could not resolve keysym XF86Accessibility
+> Warning:          Could not resolve keysym XF86DoNotDisturb
+Errors from xkbcomp are not fatal to the X server
+sh: 1: .xinitrc: not found
