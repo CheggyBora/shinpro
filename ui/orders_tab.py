@@ -142,6 +142,13 @@ class OrdersTab:
         dialog.geometry("450x450")
         dialog.configure(bg=styles.COLORS['bg'])
         
+        dialog.update_idletasks()
+        width = 450
+        height = 450
+        x = (dialog.winfo_screenwidth() // 2) - (width // 2)
+        y = (dialog.winfo_screenheight() // 2) - (height // 2)
+        dialog.geometry(f'{width}x{height}+{x}+{y}')
+        
         content = ttk.Frame(dialog, style='White.TFrame')
         content.pack(fill='both', expand=True, padx=20, pady=20)
         
