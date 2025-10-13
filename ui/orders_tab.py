@@ -13,8 +13,18 @@ class OrdersTab:
         self.frame = ttk.Frame(parent, style='BG.TFrame')
         self.active_orders = {}
         
+        input_frame = ttk.Frame(self.frame, style='BG.TFrame')
+        input_frame.pack(fill='x', padx=15, pady=(15, 10))
+        
+        styles.create_label(input_frame, "Номер автомобиля:", 'Card.TLabel').pack(side='left', padx=(0, 10))
+        
+        self.license_entry = styles.create_entry(input_frame, width=20)
+        self.license_entry.pack(side='left', padx=(0, 10))
+        
+        styles.create_button(input_frame, "Создать наряд", self.create_new_order, 'Primary.TButton').pack(side='left')
+        
         top_card = styles.create_card_frame(self.frame)
-        top_card.pack(fill='x', padx=15, pady=(15, 10))
+        top_card.pack(fill='x', padx=15, pady=(0, 10))
         
         top_inner = ttk.Frame(top_card, style='White.TFrame')
         top_inner.pack(fill='both', expand=True, padx=20, pady=15)
@@ -25,16 +35,6 @@ class OrdersTab:
         self.services_frame.pack(fill='x')
         
         self.load_service_buttons()
-        
-        input_frame = ttk.Frame(self.frame, style='BG.TFrame')
-        input_frame.pack(fill='x', padx=15, pady=(0, 10))
-        
-        styles.create_label(input_frame, "Номер автомобиля:", 'Card.TLabel').pack(side='left', padx=(0, 10))
-        
-        self.license_entry = styles.create_entry(input_frame, width=20)
-        self.license_entry.pack(side='left', padx=(0, 10))
-        
-        styles.create_button(input_frame, "Создать наряд", self.create_new_order, 'Primary.TButton').pack(side='left')
         
         tabs_frame = ttk.Frame(self.frame, style='BG.TFrame')
         tabs_frame.pack(fill='x', padx=15, pady=(0, 10))
