@@ -1,12 +1,14 @@
 from models import Car, Client, WorkOrder, WorkOrderItem, Service
 from sqlalchemy.orm import Session
+from typing import Optional
 
 class OrderService:
     def __init__(self, db: Session):
         self.db = db
     
     def create_order(self, license_plate: str, wheel_diameter: str, 
-                     vehicle_type: str = 'car', client_number: str = None, client_name: str = None, client_phone: str = None) -> WorkOrder:
+                     vehicle_type: str = 'car', client_number: Optional[str] = None, 
+                     client_name: Optional[str] = None, client_phone: Optional[str] = None) -> WorkOrder:
         try:
             car = self.db.query(Car).filter(Car.license_plate == license_plate).first()
             if not car:

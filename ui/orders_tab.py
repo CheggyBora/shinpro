@@ -124,68 +124,88 @@ class OrdersTab:
         column4.columnconfigure(0, weight=1)
     
     def create_new_order(self):
-        dialog = tk.Toplevel(self.frame)
-        dialog.title("Новый наряд")
-        dialog.geometry("450x550")
-        dialog.configure(bg=styles.COLORS['bg'])
+        dialog1 = tk.Toplevel(self.frame)
+        dialog1.title("Введите номер автомобиля")
+        dialog1.geometry("400x200")
+        dialog1.configure(bg=styles.COLORS['bg'])
         
-        content = ttk.Frame(dialog, style='White.TFrame')
-        content.pack(fill='both', expand=True, padx=20, pady=20)
+        content1 = ttk.Frame(dialog1, style='White.TFrame')
+        content1.pack(fill='both', expand=True, padx=20, pady=20)
         
-        styles.create_label(content, "Создание нового наряда", 'CardHeading.TLabel').pack(anchor='w', pady=(0, 20))
+        styles.create_label(content1, "Номер автомобиля", 'CardHeading.TLabel').pack(anchor='w', pady=(0, 20))
         
-        styles.create_label(content, "Номер машины*:", 'Card.TLabel').pack(anchor='w', pady=(0, 5))
-        license_entry = styles.create_entry(content, width=40)
-        license_entry.pack(fill='x', pady=(0, 15))
+        styles.create_label(content1, "Номер машины*:", 'Card.TLabel').pack(anchor='w', pady=(0, 5))
+        license_entry = styles.create_entry(content1, width=40)
+        license_entry.pack(fill='x', pady=(0, 20))
+        license_entry.focus()
         
-        styles.create_label(content, "Тип транспорта*:", 'Card.TLabel').pack(anchor='w', pady=(0, 5))
-        vehicle_type_var = tk.StringVar(value='Легковой')
-        vehicle_type_combo = ttk.Combobox(content, textvariable=vehicle_type_var, 
-                                          values=['Легковой', 'Джип/Кроссовер/Пикап', 'Категория С (коммерческий)'],
-                                          font=styles.FONTS['normal'], state='readonly')
-        vehicle_type_combo.pack(fill='x', pady=(0, 15))
-        
-        styles.create_label(content, "Диаметр колеса*:", 'Card.TLabel').pack(anchor='w', pady=(0, 5))
-        diameter_var = tk.StringVar()
-        diameter_combo = ttk.Combobox(content, textvariable=diameter_var, 
-                                      values=['R13', 'R14', 'R15', 'R16', 'R17', 'R18', 'R19', 'R20', 'R21', 'R22', 'R23', 'R24'],
-                                      font=styles.FONTS['normal'])
-        diameter_combo.pack(fill='x', pady=(0, 15))
-        
-        styles.create_label(content, "Имя клиента:", 'Card.TLabel').pack(anchor='w', pady=(0, 5))
-        client_name_entry = styles.create_entry(content, width=40)
-        client_name_entry.pack(fill='x', pady=(0, 15))
-        
-        styles.create_label(content, "Номер телефона клиента:", 'Card.TLabel').pack(anchor='w', pady=(0, 5))
-        client_phone_entry = styles.create_entry(content, width=40)
-        client_phone_entry.pack(fill='x', pady=(0, 20))
-        
-        def create():
+        def open_details_dialog():
             license = license_entry.get().strip()
-            diameter = diameter_var.get()
-            vehicle_type_display = vehicle_type_combo.get()
-            client_name = client_name_entry.get().strip() or None
-            client_phone = client_phone_entry.get().strip() or None
-            
-            vehicle_type_map = {
-                'Легковой': 'car',
-                'Джип/Кроссовер/Пикап': 'suv',
-                'Категория С (коммерческий)': 'truck'
-            }
-            vehicle_type = vehicle_type_map.get(vehicle_type_display, 'car')
-            
-            if not license or not diameter:
-                messagebox.showerror("Ошибка", "Заполните обязательные поля")
+            if not license:
+                messagebox.showerror("Ошибка", "Введите номер машины")
                 return
             
-            try:
-                order = self.order_service.create_order(license, diameter, vehicle_type, None, client_name, client_phone)
-                self.open_order_tab(order)
-                dialog.destroy()
-            except Exception as e:
-                messagebox.showerror("Ошибка", str(e))
+            dialog1.destroy()
+            
+            dialog2 = tk.Toplevel(self.frame)
+            dialog2.title("Детали наряда")
+            dialog2.geometry("450x450")
+            dialog2.configure(bg=styles.COLORS['bg'])
+            
+            content2 = ttk.Frame(dialog2, style='White.TFrame')
+            content2.pack(fill='both', expand=True, padx=20, pady=20)
+            
+            styles.create_label(content2, f"Создание наряда для {license}", 'CardHeading.TLabel').pack(anchor='w', pady=(0, 20))
+            
+            styles.create_label(content2, "Диаметр колеса*:", 'Card.TLabel').pack(anchor='w', pady=(0, 5))
+            diameter_var = tk.StringVar()
+            diameter_combo = ttk.Combobox(content2, textvariable=diameter_var, 
+                                          values=['R13', 'R14', 'R15', 'R16', 'R17', 'R18', 'R19', 'R20', 'R21', 'R22', 'R23', 'R24'],
+                                          font=styles.FONTS['normal'])
+            diameter_combo.pack(fill='x', pady=(0, 15))
+            
+            styles.create_label(content2, "Тип транспорта*:", 'Card.TLabel').pack(anchor='w', pady=(0, 5))
+            vehicle_type_var = tk.StringVar(value='Легковой')
+            vehicle_type_combo = ttk.Combobox(content2, textvariable=vehicle_type_var, 
+                                              values=['Легковой', 'Джип/Кроссовер/Пикап', 'Категория С (коммерческий)'],
+                                              font=styles.FONTS['normal'], state='readonly')
+            vehicle_type_combo.pack(fill='x', pady=(0, 15))
+            
+            styles.create_label(content2, "Имя клиента:", 'Card.TLabel').pack(anchor='w', pady=(0, 5))
+            client_name_entry = styles.create_entry(content2, width=40)
+            client_name_entry.pack(fill='x', pady=(0, 15))
+            
+            styles.create_label(content2, "Номер телефона клиента:", 'Card.TLabel').pack(anchor='w', pady=(0, 5))
+            client_phone_entry = styles.create_entry(content2, width=40)
+            client_phone_entry.pack(fill='x', pady=(0, 20))
+            
+            def create():
+                diameter = diameter_var.get()
+                vehicle_type_display = vehicle_type_combo.get()
+                client_name = client_name_entry.get().strip() or None
+                client_phone = client_phone_entry.get().strip() or None
+                
+                vehicle_type_map = {
+                    'Легковой': 'car',
+                    'Джип/Кроссовер/Пикап': 'suv',
+                    'Категория С (коммерческий)': 'truck'
+                }
+                vehicle_type = vehicle_type_map.get(vehicle_type_display, 'car')
+                
+                if not diameter:
+                    messagebox.showerror("Ошибка", "Заполните диаметр колеса")
+                    return
+                
+                try:
+                    order = self.order_service.create_order(license, diameter, vehicle_type, None, client_name, client_phone)
+                    self.open_order_tab(order)
+                    dialog2.destroy()
+                except Exception as e:
+                    messagebox.showerror("Ошибка", str(e))
+            
+            styles.create_button(content2, "Создать наряд", create, 'Primary.TButton').pack(fill='x')
         
-        styles.create_button(content, "Создать наряд", create, 'Primary.TButton').pack(fill='x')
+        styles.create_button(content1, "Далее", open_details_dialog, 'Primary.TButton').pack(fill='x')
     
     def open_order_tab(self, order):
         tab_frame = ttk.Frame(self.order_notebook)
