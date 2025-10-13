@@ -43,7 +43,16 @@ The application features a modern, clean design with a focus on usability.
 
 **Core Modules:**
 - **Employees Tab**: Manages employee registration, percentage-based commission rates (PIN-protected), shift tracking, and salary viewing.
-- **Orders Tab**: Facilitates creation of multi-tab work orders, selection of vehicle types (car, SUV, commercial), wheel diameters (R13-R24), and automatic pricing based on vehicle and diameter. Includes discount system (general and specific for wheel repair), payment processing (cash/card), and PDF receipt printing.
+- **Orders Tab**: 
+  - **Workflow**: Click "+ Новый наряд" → Dialog opens with fields: номер машины, тип транспорта, диаметр колеса, имя клиента, номер телефона → After "Создать наряд", opens order tab with service panel above.
+  - **4-Column Service Panel**: 
+    - Column 1: Basic services + Rim repair (6 services)
+    - Column 2: Additional fixed services (13 services)  
+    - Column 3: Editable services + Repairs (7 services)
+    - Column 4: Consumables + Checks (8 services)
+  - Multi-tab work orders, automatic pricing based on vehicle type and diameter.
+  - Discount system (5%, 10%, 15%) and 5% auto-discount when client name AND phone are filled.
+  - Payment processing (cash/card), PDF receipt printing.
 - **History Tab**: Allows searching for vehicle history by plate number and viewing detailed past work orders.
 - **Tire Storage Tab**: Manages tire intake and release, generating two types of PDF documents automatically:
     - **Intake**: Records vehicle number, driver's license, storage type (tires/tires with rims), rim type, diameter, tire brand, damage description, wear, comments, and calculates storage price. Generates `storage_{id}.pdf`.
@@ -58,7 +67,7 @@ The application features a modern, clean design with a focus on usability.
 **Database Schema:**
 - `employees`: Employee details and individual rates.
 - `work_shifts`: Records of employee shifts.
-- `clients`: Client information.
+- `clients`: Client information (name, phone).
 - `cars`: Vehicle details.
 - `services`: Price list for all services.
 - `work_orders`: Main work order records.
