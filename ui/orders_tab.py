@@ -309,71 +309,65 @@ class OrderWidget:
         
         # КОМПАКТНЫЙ ИНТЕРФЕЙС
         main_container = ttk.Frame(frame)
-        main_container.pack(fill='both', expand=True, padx=10, pady=10)
+        main_container.pack(fill='both', expand=True, padx=5, pady=3)
         
-        # Заголовок: информация слева, цены справа
-        header_frame = ttk.Frame(main_container)
-        header_frame.pack(fill='x', pady=(0, 5))
+        # Верхняя строка: машина, скидки, цены
+        top_frame = ttk.Frame(main_container)
+        top_frame.pack(fill='x', pady=(0, 2))
         
-        # Информация о наряде (слева)
-        info_frame = ttk.Frame(header_frame)
-        info_frame.pack(side='left', fill='both', expand=True)
+        # Машина и клиент (слева)
+        info_frame = ttk.Frame(top_frame)
+        info_frame.pack(side='left')
         
-        ttk.Label(info_frame, text=f"Машина: {order.car.license_plate} | Диаметр: {order.wheel_diameter}", font=('Arial', 11, 'bold')).pack(anchor='w', pady=2)
+        ttk.Label(info_frame, text=f"Машина: {order.car.license_plate} | Диаметр: {order.wheel_diameter}", font=('Arial', 10, 'bold')).pack(anchor='w')
         
         if order.client:
             client_info = order.client.name or ""
             if order.client.phone:
                 client_info += f" ({order.client.phone})"
-            ttk.Label(info_frame, text=f"Клиент: {client_info}", font=('Arial', 10)).pack(anchor='w', pady=2)
-            
-            # Автоскидка 5% за полные данные
+            client_text = f"Клиент: {client_info}"
             if order.auto_discount:
-                ttk.Label(info_frame, text="Автоскидка: 5%", font=('Arial', 9), foreground='#059669').pack(anchor='w', pady=1)
+                client_text += " (Автоскидка: 5%)"
+            ttk.Label(info_frame, text=client_text, font=('Arial', 9), foreground='#059669' if order.auto_discount else 'black').pack(anchor='w')
         
-        # Скидки (центр)
-        discount_frame = ttk.Frame(header_frame)
-        discount_frame.pack(side='left', fill='both', expand=True)
+        # Скидки (левее)
+        discount_frame = ttk.Frame(top_frame)
+        discount_frame.pack(side='left', padx=(15, 0))
         
-        # Внутренний контейнер для центрирования
-        discount_inner = ttk.Frame(discount_frame)
-        discount_inner.pack(expand=True)
+        ttk.Label(discount_frame, text="Скидки:", font=('Arial', 11, 'bold')).pack(anchor='w')
         
-        ttk.Label(discount_inner, text="Скидки:", font=('Arial', 13, 'bold')).pack(anchor='center', pady=(0, 8))
+        disc_row = ttk.Frame(discount_frame)
+        disc_row.pack()
         
-        rim_frame = ttk.Frame(discount_inner)
-        rim_frame.pack(anchor='center', pady=4)
-        ttk.Label(rim_frame, text="Правка дисков:", font=('Arial', 12), width=15, anchor='e').pack(side='left', padx=(0, 10))
+        ttk.Label(disc_row, text="Диски:", font=('Arial', 10)).pack(side='left', padx=(0, 3))
         self.rim_discount_var = tk.StringVar(value='0')
-        rim_combo = ttk.Combobox(rim_frame, textvariable=self.rim_discount_var, values=['0', '10', '20'], 
-                                 width=10, font=('Arial', 12), state='readonly')
-        rim_combo.pack(side='left', padx=(0, 10))
-        ttk.Button(rim_frame, text="OK", command=self.apply_rim_discount, width=5).pack(side='left')
+        rim_combo = ttk.Combobox(disc_row, textvariable=self.rim_discount_var, values=['0', '10', '20'], 
+                                 width=5, font=('Arial', 10), state='readonly')
+        rim_combo.pack(side='left', padx=(0, 3))
+        ttk.Button(disc_row, text="OK", command=self.apply_rim_discount, width=3).pack(side='left', padx=(0, 10))
         
-        general_frame = ttk.Frame(discount_inner)
-        general_frame.pack(anchor='center', pady=4)
-        ttk.Label(general_frame, text="Общая:", font=('Arial', 12), width=15, anchor='e').pack(side='left', padx=(0, 10))
+        ttk.Label(disc_row, text="Общ:", font=('Arial', 10)).pack(side='left', padx=(0, 3))
         self.general_discount_var = tk.StringVar(value='0')
-        general_combo = ttk.Combobox(general_frame, textvariable=self.general_discount_var, values=['0', '10', '15'], 
-                                      width=10, font=('Arial', 12), state='readonly')
-        general_combo.pack(side='left', padx=(0, 10))
-        ttk.Button(general_frame, text="OK", command=self.apply_general_discount, width=5).pack(side='left')
+        general_combo = ttk.Combobox(disc_row, textvariable=self.general_discount_var, values=['0', '10', '15'], 
+                                      width=5, font=('Arial', 10), state='readonly')
+        general_combo.pack(side='left', padx=(0, 3))
+        ttk.Button(disc_row, text="OK", command=self.apply_general_discount, width=3).pack(side='left')
         
         # Цены (справа)
-        price_frame = ttk.Frame(header_frame)
-        price_frame.pack(side='right', padx=(10, 0))
+        price_frame = ttk.Frame(top_frame)
+        price_frame.pack(side='right')
         
-        self.price_label = ttk.Label(price_frame, text="0.00 руб.", font=('Arial', 16, 'bold'), foreground='#2563eb')
-        self.price_label.pack(anchor='e', pady=1)
+        self.price_label = ttk.Label(price_frame, text="0.00 руб.", font=('Arial', 14, 'bold'), foreground='#2563eb')
+        self.price_label.pack(anchor='e')
         
-        self.discount_price_label = ttk.Label(price_frame, text="", font=('Arial', 14, 'bold'), foreground='#059669')
-        self.discount_price_label.pack(anchor='e', pady=1)
+        self.discount_price_label = ttk.Label(price_frame, text="", font=('Arial', 12, 'bold'), foreground='#059669')
+        self.discount_price_label.pack(anchor='e')
         
         # Список услуг
-        ttk.Label(main_container, text="Услуги:", font=('Arial', 10, 'bold')).pack(anchor='w', pady=(5, 3))
+        ttk.Label(main_container, text="Услуги:", font=('Arial', 9, 'bold')).pack(anchor='w', pady=(2, 1))
         
         tree_frame = ttk.Frame(main_container)
-        tree_frame.pack(fill='both', expand=True, pady=3)
+        tree_frame.pack(fill='both', expand=True)
         
         self.items_tree = ttk.Treeview(tree_frame, columns=('Услуга', 'Кол-во', 'Цена', 'Скидка', 'Итого'), show='headings', height=5)
         self.items_tree.heading('Услуга', text='Услуга')
@@ -400,10 +394,10 @@ class OrderWidget:
         
         # КНОПКИ (компактно)
         button_frame = ttk.Frame(main_container)
-        button_frame.pack(fill='x', pady=3)
+        button_frame.pack(fill='x', pady=2)
         
-        ttk.Button(button_frame, text="💳 Пробить", command=self.process_payment).pack(side='left', padx=3)
-        ttk.Button(button_frame, text="Закрыть", command=lambda: self.close_callback(order.id)).pack(side='left', padx=3)
+        ttk.Button(button_frame, text="💳 Пробить", command=self.process_payment).pack(side='left', padx=2)
+        ttk.Button(button_frame, text="Закрыть", command=lambda: self.close_callback(order.id)).pack(side='left', padx=2)
         
         # Загрузка данных
         self.refresh_items()
