@@ -1,0 +1,38 @@
+# Database files
+*.db
+tire_shop.db
+tire_shop_test.db
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv
+
+# Environment variables
+.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Application generated files
+receipts/*.pdf
+nohup.out
+
+# Logs
+*.log
