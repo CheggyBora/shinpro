@@ -311,14 +311,31 @@ class OrderWidget:
         main_container = ttk.Frame(frame)
         main_container.pack(fill='both', expand=True, padx=10, pady=10)
         
-        # Информация о наряде (компактно)
-        ttk.Label(main_container, text=f"Машина: {order.car.license_plate} | Диаметр: {order.wheel_diameter}", font=('Arial', 11, 'bold')).pack(anchor='w', pady=3)
+        # Заголовок: информация слева, цены справа
+        header_frame = ttk.Frame(main_container)
+        header_frame.pack(fill='x', pady=(0, 5))
+        
+        # Информация о наряде (слева)
+        info_frame = ttk.Frame(header_frame)
+        info_frame.pack(side='left', fill='both', expand=True)
+        
+        ttk.Label(info_frame, text=f"Машина: {order.car.license_plate} | Диаметр: {order.wheel_diameter}", font=('Arial', 11, 'bold')).pack(anchor='w', pady=2)
         
         if order.client:
             client_info = order.client.name or ""
             if order.client.phone:
                 client_info += f" ({order.client.phone})"
-            ttk.Label(main_container, text=f"Клиент: {client_info}", font=('Arial', 10)).pack(anchor='w', pady=2)
+            ttk.Label(info_frame, text=f"Клиент: {client_info}", font=('Arial', 10)).pack(anchor='w', pady=2)
+        
+        # Цены (справа)
+        price_frame = ttk.Frame(header_frame)
+        price_frame.pack(side='right', padx=(10, 0))
+        
+        self.price_label = ttk.Label(price_frame, text="0.00 руб.", font=('Arial', 16, 'bold'), foreground='#2563eb')
+        self.price_label.pack(anchor='e', pady=1)
+        
+        self.discount_price_label = ttk.Label(price_frame, text="", font=('Arial', 14, 'bold'), foreground='#059669')
+        self.discount_price_label.pack(anchor='e', pady=1)
         
         # Список услуг
         ttk.Label(main_container, text="Услуги:", font=('Arial', 10, 'bold')).pack(anchor='w', pady=(5, 3))
@@ -348,10 +365,6 @@ class OrderWidget:
         discount_combo = ttk.Combobox(discount_frame, textvariable=self.general_discount_var, values=['0', '5', '10', '15'], width=8)
         discount_combo.pack(side='left', padx=3)
         ttk.Button(discount_frame, text="OK", command=self.apply_general_discount).pack(side='left', padx=3)
-        
-        # ИТОГО (меньше)
-        self.total_label = ttk.Label(main_container, text="ИТОГО: 0.00 руб.", font=('Arial', 12, 'bold'))
-        self.total_label.pack(anchor='w', pady=5)
         
         # КНОПКИ (компактно)
         button_frame = ttk.Frame(main_container)
@@ -508,7 +521,10 @@ class OrderWidget:
             
             items = self.order_service.get_order_items(self.order.id)
             
+            # Рассчитываем общую цену и цену со скидкой
+            total_without_discount = 0
             for item in items:
+                total_without_discount += item.price
                 item_total = item.price * (1 - item.discount_percent / 100)
                 self.items_tree.insert('', 'end', values=(
                     item.service.name,
@@ -517,7 +533,16 @@ class OrderWidget:
                     f"{item_total:.2f}"
                 ), tags=(str(item.id),))
             
-            total = self.order_service.calculate_total(self.order.id)
-            self.total_label.config(text=f"ИТОГО: {total:.2f} руб.")
+            total_with_discount = self.order_service.calculate_total(self.order.id)
+            
+            # Обновляем лейблы с ценами
+            self.price_label.config(text=f"{total_without_discount:.2f} руб.")
+            
+            if total_with_discount < total_without_discount:
+                self.discount_price_label.config(text=f"{total_with_discount:.2f} руб. со скидкой")
+            else:
+                self.discount_price_label.config(text="")
+                
         except Exception as e:
-            self.total_label.config(text=f"ИТОГО: 0.00 руб.")
+            self.price_label.config(text="0.00 руб.")
+            self.discount_price_label.config(text="")
