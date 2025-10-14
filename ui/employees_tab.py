@@ -117,10 +117,13 @@ class EmployeesTab:
         salary_tree_frame = ttk.Frame(salary_inner, style='White.TFrame')
         salary_tree_frame.pack(fill='both', expand=True, pady=(0, 10))
         
-        self.salary_tree = ttk.Treeview(salary_tree_frame, columns=('Дата', 'Наряд', 'Сумма'), show='headings')
+        self.salary_tree = ttk.Treeview(salary_tree_frame, columns=('Дата', 'Наряды', 'Сумма'), show='headings')
         self.salary_tree.heading('Дата', text='Дата')
-        self.salary_tree.heading('Наряд', text='Наряд №')
+        self.salary_tree.heading('Наряды', text='Кол-во нарядов')
         self.salary_tree.heading('Сумма', text='Заработано')
+        self.salary_tree.column('Дата', width=150)
+        self.salary_tree.column('Наряды', width=120)
+        self.salary_tree.column('Сумма', width=150)
         self.salary_tree.pack(side='left', fill='both', expand=True)
         
         salary_scroll = ttk.Scrollbar(salary_tree_frame, orient='vertical', command=self.salary_tree.yview)
@@ -197,14 +200,25 @@ class EmployeesTab:
             for item in self.salary_tree.get_children():
                 self.salary_tree.delete(item)
             
-            total = 0
+            # Группируем транзакции по дням
+            daily_data = {}
             for trans in transactions:
+                date_key = trans.transaction_date.date()
+                if date_key not in daily_data:
+                    daily_data[date_key] = {'count': 0, 'total': 0}
+                daily_data[date_key]['count'] += 1
+                daily_data[date_key]['total'] += trans.amount
+            
+            # Сортируем по дате и добавляем в таблицу
+            total = 0
+            for date_key in sorted(daily_data.keys()):
+                data = daily_data[date_key]
                 self.salary_tree.insert('', 'end', values=(
-                    trans.transaction_date.strftime('%d.%m.%Y %H:%M'),
-                    trans.work_order_id,
-                    f"{trans.amount:.2f}"
+                    date_key.strftime('%d.%m.%Y'),
+                    data['count'],
+                    f"{data['total']:.2f}"
                 ))
-                total += trans.amount
+                total += data['total']
             
             self.total_label.config(text=f"Итого: {total:.2f} руб.")
         except ValueError as e:
