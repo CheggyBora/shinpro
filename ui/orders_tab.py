@@ -21,7 +21,9 @@ class OrdersTab:
         self.license_entry = styles.create_entry(input_frame, width=20)
         self.license_entry.pack(side='left', padx=(0, 10))
         
-        styles.create_button(input_frame, "Создать наряд", self.create_new_order, 'Primary.TButton').pack(side='left')
+        styles.create_button(input_frame, "Создать наряд", self.create_new_order, 'Primary.TButton').pack(side='left', padx=(0, 10))
+        
+        styles.create_button(input_frame, "💳 Пробить", self.process_payment_for_current_order, 'Success.TButton').pack(side='left')
         
         top_card = styles.create_card_frame(self.frame)
         top_card.pack(fill='x', padx=15, pady=(0, 10))
@@ -267,6 +269,30 @@ class OrdersTab:
             if str(widget.frame) == current_tab:
                 widget.add_service(service)
                 break
+    
+    def process_payment_for_current_order(self):
+        """Обработать оплату для текущего активного наряда"""
+        try:
+            current_index = self.order_notebook.index(self.order_notebook.select())
+            tabs = self.order_notebook.tabs()
+            
+            if current_index < 0 or current_index >= len(tabs):
+                messagebox.showwarning("Предупреждение", "Создайте наряд")
+                return
+            
+            current_tab_widget = self.order_notebook.nametowidget(tabs[current_index])
+            
+            for order_id, widget in self.active_orders.items():
+                if widget.frame == current_tab_widget:
+                    widget.process_payment()
+                    return
+            
+            messagebox.showwarning("Ошибка", "Не удалось найти активный наряд")
+        except Exception as e:
+            print(f"ERROR in process_payment_for_current_order: {e}")
+            import traceback
+            traceback.print_exc()
+            messagebox.showerror("Ошибка", str(e))
     
     def on_tab_change(self, event):
         pass
