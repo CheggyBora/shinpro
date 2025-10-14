@@ -651,7 +651,7 @@ class OrderWidget:
     def update_employees_display(self):
         """Обновляет отображение сотрудников, работающих над нарядом"""
         try:
-            from models import SalaryTransaction, Employee, WorkShift
+            from models import SalaryTransaction
             
             # Если наряд оплачен, показываем сотрудников из транзакций
             if self.order.status == 'paid':
@@ -666,21 +666,19 @@ class OrderWidget:
                 else:
                     self.employees_label.config(text="")
             else:
-                # Если наряд не оплачен, показываем текущих сотрудников на смене
-                active_shifts = self.db.query(WorkShift).filter(WorkShift.end_time.is_(None)).all()
-                
-                if active_shifts:
-                    employee_ids = [str(shift.employee_id) for shift in active_shifts]
+                # Если наряд не оплачен, показываем сохранённых сотрудников из наряда
+                if self.order.employee_ids:
+                    employee_ids = self.order.employee_ids.split(',')
                     employees_text = "№" + ", №".join(employee_ids)
                     self.employees_label.config(text=employees_text, foreground='#059669')
                 else:
-                    self.employees_label.config(text="Нет сотрудников на смене", foreground='#dc2626')
+                    self.employees_label.config(text="Нет сотрудников", foreground='#dc2626')
         except Exception as e:
             # При ошибке соединения откатываем и пробуем снова
             try:
                 self.db.rollback()
                 
-                from models import SalaryTransaction, Employee, WorkShift
+                from models import SalaryTransaction
                 
                 if self.order.status == 'paid':
                     transactions = self.db.query(SalaryTransaction).filter(
@@ -694,14 +692,12 @@ class OrderWidget:
                     else:
                         self.employees_label.config(text="")
                 else:
-                    active_shifts = self.db.query(WorkShift).filter(WorkShift.end_time.is_(None)).all()
-                    
-                    if active_shifts:
-                        employee_ids = [str(shift.employee_id) for shift in active_shifts]
+                    if self.order.employee_ids:
+                        employee_ids = self.order.employee_ids.split(',')
                         employees_text = "№" + ", №".join(employee_ids)
                         self.employees_label.config(text=employees_text, foreground='#059669')
                     else:
-                        self.employees_label.config(text="Нет сотрудников на смене", foreground='#dc2626')
+                        self.employees_label.config(text="Нет сотрудников", foreground='#dc2626')
             except Exception as e2:
                 print(f"Error updating employees display: {e2}")
                 # Если не удалось получить данные, просто не показываем
