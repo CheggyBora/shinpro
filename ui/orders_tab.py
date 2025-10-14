@@ -361,6 +361,13 @@ class OrderWidget:
         general_combo.pack(side='left', padx=(0, 3))
         ttk.Button(disc_row, text="OK", command=self.apply_general_discount, width=3).pack(side='left')
         
+        # Сотрудники (справа, сверху цен)
+        employees_frame = ttk.Frame(top_frame)
+        employees_frame.pack(side='right', padx=(0, 10))
+        
+        self.employees_label = ttk.Label(employees_frame, text="", font=('Arial', 9), foreground='#64748b')
+        self.employees_label.pack(anchor='e')
+        
         # Цены (справа)
         price_frame = ttk.Frame(top_frame)
         price_frame.pack(side='right')
@@ -640,3 +647,39 @@ class OrderWidget:
             self.discount_price_label.config(text=f"{total_with_discount:.2f} руб. со скидкой")
         else:
             self.discount_price_label.config(text="")
+        
+        # Обновляем список сотрудников
+        self.update_employees_display()
+    
+    def update_employees_display(self):
+        """Обновляет отображение сотрудников, работающих над нарядом"""
+        from models import SalaryTransaction, Employee, WorkShift
+        
+        # Если наряд оплачен, показываем сотрудников из транзакций
+        if self.order.status == 'paid':
+            transactions = self.db.query(SalaryTransaction).filter(
+                SalaryTransaction.work_order_id == self.order.id
+            ).all()
+            
+            if transactions:
+                employee_ids = [t.employee_id for t in transactions]
+                employees = self.db.query(Employee).filter(Employee.id.in_(employee_ids)).all()
+                employee_names = [emp.name for emp in employees]
+                
+                employees_text = "Сотрудники: " + ", ".join(employee_names)
+                self.employees_label.config(text=employees_text)
+            else:
+                self.employees_label.config(text="")
+        else:
+            # Если наряд не оплачен, показываем текущих сотрудников на смене
+            active_shifts = self.db.query(WorkShift).filter(WorkShift.end_time.is_(None)).all()
+            
+            if active_shifts:
+                employee_ids = [shift.employee_id for shift in active_shifts]
+                employees = self.db.query(Employee).filter(Employee.id.in_(employee_ids)).all()
+                employee_names = [emp.name for emp in employees]
+                
+                employees_text = "На смене: " + ", ".join(employee_names)
+                self.employees_label.config(text=employees_text, foreground='#059669')
+            else:
+                self.employees_label.config(text="Нет сотрудников на смене", foreground='#dc2626')
