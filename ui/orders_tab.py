@@ -663,11 +663,8 @@ class OrderWidget:
                 ).all()
                 
                 if transactions:
-                    employee_ids = [t.employee_id for t in transactions]
-                    employees = self.db.query(Employee).filter(Employee.id.in_(employee_ids)).all()
-                    employee_names = [emp.name for emp in employees]
-                    
-                    employees_text = "Сотрудники: " + ", ".join(employee_names)
+                    employee_ids = [str(t.employee_id) for t in transactions]
+                    employees_text = "Сотрудники: №" + ", №".join(employee_ids)
                     self.employees_label.config(text=employees_text)
                 else:
                     self.employees_label.config(text="")
@@ -676,11 +673,8 @@ class OrderWidget:
                 active_shifts = self.db.query(WorkShift).filter(WorkShift.end_time.is_(None)).all()
                 
                 if active_shifts:
-                    employee_ids = [shift.employee_id for shift in active_shifts]
-                    employees = self.db.query(Employee).filter(Employee.id.in_(employee_ids)).all()
-                    employee_names = [emp.name for emp in employees]
-                    
-                    employees_text = "На смене: " + ", ".join(employee_names)
+                    employee_ids = [str(shift.employee_id) for shift in active_shifts]
+                    employees_text = "На смене: №" + ", №".join(employee_ids)
                     self.employees_label.config(text=employees_text, foreground='#059669')
                 else:
                     self.employees_label.config(text="Нет сотрудников на смене", foreground='#dc2626')
@@ -697,11 +691,8 @@ class OrderWidget:
                     ).all()
                     
                     if transactions:
-                        employee_ids = [t.employee_id for t in transactions]
-                        employees = self.db.query(Employee).filter(Employee.id.in_(employee_ids)).all()
-                        employee_names = [emp.name for emp in employees]
-                        
-                        employees_text = "Сотрудники: " + ", ".join(employee_names)
+                        employee_ids = [str(t.employee_id) for t in transactions]
+                        employees_text = "Сотрудники: №" + ", №".join(employee_ids)
                         self.employees_label.config(text=employees_text)
                     else:
                         self.employees_label.config(text="")
@@ -709,11 +700,8 @@ class OrderWidget:
                     active_shifts = self.db.query(WorkShift).filter(WorkShift.end_time.is_(None)).all()
                     
                     if active_shifts:
-                        employee_ids = [shift.employee_id for shift in active_shifts]
-                        employees = self.db.query(Employee).filter(Employee.id.in_(employee_ids)).all()
-                        employee_names = [emp.name for emp in employees]
-                        
-                        employees_text = "На смене: " + ", ".join(employee_names)
+                        employee_ids = [str(shift.employee_id) for shift in active_shifts]
+                        employees_text = "На смене: №" + ", №".join(employee_ids)
                         self.employees_label.config(text=employees_text, foreground='#059669')
                     else:
                         self.employees_label.config(text="Нет сотрудников на смене", foreground='#dc2626')
