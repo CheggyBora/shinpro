@@ -1,4 +1,4 @@
-from models import Car, Client, WorkOrder, WorkOrderItem, Service
+from models import Car, Client, WorkOrder, WorkOrderItem, Service, WorkShift
 from sqlalchemy.orm import Session
 from typing import Optional
 
@@ -25,13 +25,19 @@ class OrderService:
             
             auto_discount = bool(client_name and client_phone)
             
+            # Получаем список сотрудников на смене
+            active_shifts = self.db.query(WorkShift).filter(WorkShift.end_time.is_(None)).all()
+            employee_ids_list = [str(shift.employee_id) for shift in active_shifts]
+            employee_ids_str = ','.join(employee_ids_list) if employee_ids_list else None
+            
             order = WorkOrder(
                 car_id=car.id,
                 client_id=client_id,
                 wheel_diameter=wheel_diameter,
                 vehicle_type=vehicle_type,
                 auto_discount=auto_discount,
-                status='draft'
+                status='draft',
+                employee_ids=employee_ids_str
             )
             self.db.add(order)
             self.db.commit()
