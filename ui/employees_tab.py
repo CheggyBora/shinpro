@@ -191,7 +191,7 @@ class EmployeesTab:
         try:
             emp_id = int(self.salary_employee_entry.get())
             date_from = datetime.strptime(self.date_from_entry.get(), '%d.%m.%Y')
-            date_to = datetime.strptime(self.date_to_entry.get(), '%d.%m.%Y')
+            date_to = datetime.strptime(self.date_to_entry.get(), '%d.%m.%Y') + timedelta(days=1) - timedelta(seconds=1)
             
             transactions = self.service.get_salary_report(emp_id, date_from, date_to)
             
