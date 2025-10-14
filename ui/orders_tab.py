@@ -319,7 +319,14 @@ class OrderWidget:
         info_frame = ttk.Frame(top_frame)
         info_frame.pack(side='left')
         
-        ttk.Label(info_frame, text=f"Машина: {order.car.license_plate} | Диаметр: {order.wheel_diameter}", font=('Arial', 10, 'bold')).pack(anchor='w')
+        vehicle_type_map = {
+            'car': 'Легковой',
+            'suv': 'Джип/Кроссовер/Пикап',
+            'truck': 'Категория С (коммерческий)'
+        }
+        vehicle_type_display = vehicle_type_map.get(order.vehicle_type, order.vehicle_type)
+        
+        ttk.Label(info_frame, text=f"Машина: {order.car.license_plate} | Класс: {vehicle_type_display} | Диаметр: {order.wheel_diameter}", font=('Arial', 10, 'bold')).pack(anchor='w')
         
         if order.client:
             client_info = order.client.name or ""
