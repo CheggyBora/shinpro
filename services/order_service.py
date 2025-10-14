@@ -125,14 +125,16 @@ class OrderService:
             item_price = item.price * (1 - item.discount_percent / 100)
             subtotal += item_price
         
-        general_discount_amount = subtotal * (order.general_discount / 100)
-        subtotal_after_general = subtotal - general_discount_amount
+        # Скидки заменяют друг друга, а не суммируются
+        # Приоритет: general_discount > auto_discount
+        final_discount = 0
+        if order.general_discount > 0:
+            final_discount = order.general_discount
+        elif order.auto_discount:
+            final_discount = 5
         
-        auto_discount_amount = 0
-        if order.auto_discount:
-            auto_discount_amount = subtotal_after_general * 0.05
-        
-        total = subtotal_after_general - auto_discount_amount
+        discount_amount = subtotal * (final_discount / 100)
+        total = subtotal - discount_amount
         return round(total, 2)
     
     def get_order_items(self, order_id: int):

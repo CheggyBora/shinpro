@@ -326,6 +326,10 @@ class OrderWidget:
             if order.client.phone:
                 client_info += f" ({order.client.phone})"
             ttk.Label(info_frame, text=f"Клиент: {client_info}", font=('Arial', 10)).pack(anchor='w', pady=2)
+            
+            # Автоскидка 5% за полные данные
+            if order.auto_discount:
+                ttk.Label(info_frame, text="Автоскидка: 5%", font=('Arial', 9), foreground='#059669').pack(anchor='w', pady=1)
         
         # Цены (справа)
         price_frame = ttk.Frame(header_frame)
@@ -348,6 +352,13 @@ class OrderWidget:
         self.items_tree.heading('Цена', text='Цена')
         self.items_tree.heading('Скидка', text='Скидка %')
         self.items_tree.heading('Итого', text='Итого')
+        
+        # Ширина колонок
+        self.items_tree.column('Услуга', width=300, anchor='w')
+        self.items_tree.column('Цена', width=100, anchor='e')
+        self.items_tree.column('Скидка', width=100, anchor='center')
+        self.items_tree.column('Итого', width=100, anchor='e')
+        
         self.items_tree.pack(side='left', fill='both', expand=True)
         
         tree_scroll = ttk.Scrollbar(tree_frame, orient='vertical', command=self.items_tree.yview)
@@ -520,16 +531,32 @@ class OrderWidget:
                 self.items_tree.delete(item)
             
             items = self.order_service.get_order_items(self.order.id)
+            self.db.refresh(self.order)
             
-            # Рассчитываем общую цену и цену со скидкой
+            # Определяем какая скидка применяется (они заменяют друг друга)
+            final_discount = 0
+            if self.order.general_discount > 0:
+                final_discount = self.order.general_discount
+            elif self.order.auto_discount:
+                final_discount = 5
+            
+            # Рассчитываем общую цену
             total_without_discount = 0
             for item in items:
-                total_without_discount += item.price
-                item_total = item.price * (1 - item.discount_percent / 100)
+                # Цена с учетом скидки на позицию
+                item_after_own_discount = item.price * (1 - item.discount_percent / 100)
+                total_without_discount += item_after_own_discount
+                
+                # Итоговая цена позиции с общей скидкой
+                item_total = item_after_own_discount * (1 - final_discount / 100)
+                
+                # Показываем общую скидку в колонке если она есть
+                discount_display = f"{item.discount_percent}%" if item.discount_percent > 0 else f"{final_discount}%" if final_discount > 0 else "0%"
+                
                 self.items_tree.insert('', 'end', values=(
                     item.service.name,
                     f"{item.price:.2f}",
-                    item.discount_percent,
+                    discount_display,
                     f"{item_total:.2f}"
                 ), tags=(str(item.id),))
             
@@ -544,5 +571,6 @@ class OrderWidget:
                 self.discount_price_label.config(text="")
                 
         except Exception as e:
+            print(f"Error in refresh_items: {e}")
             self.price_label.config(text="0.00 руб.")
             self.discount_price_label.config(text="")
