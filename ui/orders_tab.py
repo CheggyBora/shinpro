@@ -275,6 +275,7 @@ class OrdersTab:
 
 class OrderWidget:
     def __init__(self, frame, order, db, order_service, salary_service, print_service, close_callback):
+        print(">>> OrderWidget.__init__ START")
         self.frame = frame
         self.order = order
         self.db = db
@@ -283,30 +284,40 @@ class OrderWidget:
         self.print_service = print_service
         self.close_callback = close_callback
         
+        print(">>> Creating main_frame")
         main_frame = ttk.Frame(frame, style='BG.TFrame')
         main_frame.pack(fill='both', expand=True, padx=15, pady=15)
         
+        print(">>> Creating info_card")
         info_card = styles.create_card_frame(main_frame)
         info_card.pack(fill='x', pady=(0, 15))
         
+        print(">>> Creating info_inner")
         info_inner = ttk.Frame(info_card, style='White.TFrame')
         info_inner.pack(fill='both', expand=True, padx=20, pady=15)
         
+        print(f">>> Creating license_plate label: {order.car.license_plate}")
         styles.create_label(info_inner, f"Номер машины: {order.car.license_plate}", 'CardHeading.TLabel').pack(anchor='w', pady=(0, 5))
+        
+        print(f">>> Creating wheel_diameter label: {order.wheel_diameter}")
         styles.create_label(info_inner, f"Диаметр: {order.wheel_diameter}", 'Card.TLabel').pack(anchor='w', pady=2)
         
+        print(">>> Checking client info")
         if order.client:
             client_info = order.client.name or ""
             if order.client.phone:
                 client_info += f" ({order.client.phone})"
+            print(f">>> Creating client label: {client_info}")
             styles.create_label(info_inner, f"Клиент: {client_info}", 'Card.TLabel').pack(anchor='w', pady=2)
         
+        print(">>> Creating auto_discount label")
         auto_discount_text = "Автоскидка 5%: ✓" if order.auto_discount else "Автоскидка 5%: ✗"
         auto_discount_color = styles.COLORS['success'] if order.auto_discount else styles.COLORS['text_secondary']
         label = styles.create_label(info_inner, auto_discount_text, 'Card.TLabel')
         label.pack(anchor='w', pady=2)
         label.configure(foreground=auto_discount_color)
         
+        print(">>> Loading employee info")
         try:
             from models import WorkShift, Employee
             active_shifts = db.query(WorkShift).filter(WorkShift.end_time.is_(None)).all()
@@ -324,6 +335,7 @@ class OrderWidget:
         except Exception as e:
             print(f"Error loading employee info: {e}")
         
+        print(">>> Creating items_card")
         items_card = styles.create_card_frame(main_frame)
         items_card.pack(fill='both', expand=True, pady=(0, 15))
         
@@ -370,15 +382,28 @@ class OrderWidget:
         self.total_label.pack(anchor='center')
         self.total_label.configure(font=('Segoe UI', 18, 'bold'), foreground=styles.COLORS['primary'])
         
+        print(">>> Creating button_frame")
         button_frame = ttk.Frame(main_frame, style='BG.TFrame')
         button_frame.pack(fill='x')
         
+        print(">>> Creating payment button")
         pay_btn = styles.create_button(button_frame, "💳 Пробить наряд (наличные/карта)", self.process_payment, 'Success.TButton')
         pay_btn.pack(side='left', padx=(0, 10))
         pay_btn.configure(padding=[20, 12])
+        
+        print(">>> Creating close button")
         styles.create_button(button_frame, "Закрыть вкладку", lambda: self.close_callback(order.id), 'Secondary.TButton').pack(side='left')
         
-        self.refresh_items()
+        print(">>> Calling refresh_items()")
+        try:
+            self.refresh_items()
+            print(">>> refresh_items() completed successfully")
+        except Exception as e:
+            print(f">>> ERROR in refresh_items(): {e}")
+            import traceback
+            traceback.print_exc()
+        
+        print(">>> OrderWidget.__init__ COMPLETED")
     
     def add_service_by_name(self, service_name):
         print(f"OrderWidget.add_service_by_name called: {service_name}")
@@ -544,12 +569,18 @@ class OrderWidget:
         styles.create_button(content, "Оплатить", pay, 'Success.TButton').pack(fill='x')
     
     def refresh_items(self):
+        print(f">>> refresh_items START for order_id={self.order.id}")
         try:
+            print(">>> Clearing tree items")
             for item in self.items_tree.get_children():
                 self.items_tree.delete(item)
             
+            print(">>> Getting order items from DB")
             items = self.order_service.get_order_items(self.order.id)
+            print(f">>> Found {len(items)} items")
+            
             for item in items:
+                print(f">>> Inserting item: {item.service.name}")
                 item_total = item.price * (1 - item.discount_percent / 100)
                 self.items_tree.insert('', 'end', values=(
                     item.service.name,
@@ -558,10 +589,15 @@ class OrderWidget:
                     f"{item_total:.2f}"
                 ), tags=(str(item.id),))
             
+            print(">>> Calculating total")
             total = self.order_service.calculate_total(self.order.id)
+            print(f">>> Total calculated: {total}")
+            
+            print(">>> Updating total_label")
             self.total_label.config(text=f"ИТОГО: {total:.2f} руб.")
+            print(">>> refresh_items COMPLETED")
         except Exception as e:
-            print(f"Error refreshing items: {e}")
+            print(f">>> ERROR in refresh_items: {e}")
             import traceback
             traceback.print_exc()
             self.total_label.config(text=f"ИТОГО: 0.00 руб.")
