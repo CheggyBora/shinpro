@@ -402,16 +402,34 @@ class OrderWidget:
         
         if service:
             print(f"Calling add_service with service_id={service.id}")
-            self.add_service(service)
+            print(f"Type of self: {type(self)}")
+            print(f"Has add_service method: {hasattr(self, 'add_service')}")
+            try:
+                print(f"BEFORE self.add_service call")
+                self.add_service(service)
+                print(f"AFTER self.add_service call")
+            except Exception as e:
+                print(f"EXCEPTION calling add_service: {e}")
+                import traceback
+                traceback.print_exc()
+                messagebox.showerror("Ошибка при добавлении услуги", str(e))
         else:
             print(f"Service NOT FOUND: {service_name}")
             messagebox.showerror("Ошибка", f"Услуга '{service_name}' не найдена")
     
     def add_service(self, service):
+        print(f"add_service called: order_id={self.order.id}, service_id={service.id}")
         try:
-            self.order_service.add_service_to_order(self.order.id, service.id)
+            print(f"Calling order_service.add_service_to_order...")
+            result = self.order_service.add_service_to_order(self.order.id, service.id)
+            print(f"Service added to order, result: {result}")
+            print(f"Calling refresh_items...")
             self.refresh_items()
+            print(f"refresh_items completed")
         except Exception as e:
+            print(f"ERROR in add_service: {e}")
+            import traceback
+            traceback.print_exc()
             messagebox.showerror("Ошибка", str(e))
     
     def edit_item(self, event):
