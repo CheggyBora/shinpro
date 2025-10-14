@@ -19,6 +19,7 @@ class WorkOrder(Base):
     payment_method = Column(String(20), nullable=True)
     total_amount = Column(Float, default=0.0)
     status = Column(String(20), default='draft')
+    employee_ids = Column(String(200), nullable=True)
     
     car = relationship("Car", backref="work_orders")
     client = relationship("Client", backref="work_orders")
