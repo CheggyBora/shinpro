@@ -381,23 +381,30 @@ class OrderWidget:
         self.refresh_items()
     
     def add_service_by_name(self, service_name):
+        print(f"OrderWidget.add_service_by_name called: {service_name}")
         from models import Service
         vehicle_type = self.order.vehicle_type
+        print(f"Vehicle type: {vehicle_type}")
         
         service = self.db.query(Service).filter(
             Service.name == service_name,
             Service.vehicle_type == vehicle_type
         ).first()
         
+        print(f"Service found (specific): {service}")
+        
         if not service:
             service = self.db.query(Service).filter(
                 Service.name == service_name,
                 Service.vehicle_type == 'all'
             ).first()
+            print(f"Service found (all): {service}")
         
         if service:
+            print(f"Calling add_service with service_id={service.id}")
             self.add_service(service)
         else:
+            print(f"Service NOT FOUND: {service_name}")
             messagebox.showerror("Ошибка", f"Услуга '{service_name}' не найдена")
     
     def add_service(self, service):
