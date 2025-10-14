@@ -78,12 +78,12 @@ def apply_modern_styles(root):
     style.configure('Service.TButton',
                    font=('Segoe UI', 9),
                    padding=[6, 4],
-                   background=COLORS['primary'],
-                   foreground='white',
+                   background='#f5e6d3',
+                   foreground='#1e293b',
                    relief='flat',
                    borderwidth=0)
     style.map('Service.TButton',
-             background=[('active', COLORS['primary_hover'])])
+             background=[('active', '#e8d4ba')])
     
     style.configure('TEntry', 
                    fieldbackground=COLORS['bg_card'],
