@@ -404,12 +404,6 @@ class OrderWidget:
         self.items_tree.bind('<Double-1>', self.edit_item)
         self.items_tree.bind('<Delete>', self.delete_item)
         
-        # КНОПКИ (компактно)
-        button_frame = ttk.Frame(main_container)
-        button_frame.pack(fill='x', pady=2)
-        
-        ttk.Button(button_frame, text="💳 Пробить", command=self.process_payment).pack(side='left', padx=2)
-        ttk.Button(button_frame, text="Закрыть", command=lambda: self.close_callback(order.id)).pack(side='left', padx=2)
         
         # Загрузка данных
         self.refresh_items()
@@ -547,11 +541,14 @@ class OrderWidget:
         self.refresh_items()
     
     def process_payment(self):
+        import os
+        import platform
+        
         total = self.order_service.calculate_total(self.order.id)
         
         dialog = tk.Toplevel(self.frame)
         dialog.title("Оплата")
-        dialog.geometry("400x250")
+        dialog.geometry("400x300")
         dialog.configure(bg=styles.COLORS['bg'])
         
         content = ttk.Frame(dialog, style='White.TFrame')
@@ -569,7 +566,7 @@ class OrderWidget:
         ttk.Radiobutton(radio_frame, text="Наличные", variable=payment_var, value='cash').pack(anchor='w', pady=5)
         ttk.Radiobutton(radio_frame, text="Безналичный расчёт", variable=payment_var, value='card').pack(anchor='w', pady=5)
         
-        def pay():
+        def pay_and_print():
             try:
                 self.salary_service.process_payment(self.order.id, payment_var.get(), total)
                 self.db.refresh(self.order)
@@ -577,13 +574,51 @@ class OrderWidget:
                 items = self.order_service.get_order_items(self.order.id)
                 receipt_file = self.print_service.generate_receipt(self.order, items, total)
                 
-                messagebox.showinfo("Успех", f"Оплата проведена!\nЧек сохранён: {receipt_file}")
+                # Автоматическая печать для Windows
+                if platform.system() == 'Windows':
+                    os.startfile(receipt_file, "print")
+                    messagebox.showinfo("Успех", f"Оплата проведена!\nЧек отправлен на печать")
+                else:
+                    # Для Linux/Mac используем lp
+                    try:
+                        import subprocess
+                        subprocess.run(['lp', receipt_file], check=True)
+                        messagebox.showinfo("Успех", f"Оплата проведена!\nЧек отправлен на печать")
+                    except:
+                        messagebox.showinfo("Успех", f"Оплата проведена!\nЧек сохранён: {receipt_file}")
+                
                 dialog.destroy()
                 self.close_callback(self.order.id)
             except Exception as e:
                 messagebox.showerror("Ошибка", str(e))
         
-        styles.create_button(content, "Оплатить", pay, 'Success.TButton').pack(fill='x')
+        def preview_only():
+            try:
+                items = self.order_service.get_order_items(self.order.id)
+                receipt_file = self.print_service.generate_receipt(self.order, items, total)
+                
+                # Просто открыть PDF для просмотра
+                if platform.system() == 'Windows':
+                    os.startfile(receipt_file)
+                elif platform.system() == 'Darwin':
+                    # macOS
+                    import subprocess
+                    subprocess.Popen(['open', receipt_file])
+                else:
+                    # Linux
+                    import subprocess
+                    subprocess.Popen(['xdg-open', receipt_file])
+                
+                messagebox.showinfo("Просмотр", f"Чек открыт для просмотра:\n{receipt_file}")
+            except Exception as e:
+                messagebox.showerror("Ошибка", str(e))
+        
+        # Две кнопки: Оплатить (печать) и Просмотр
+        button_frame = ttk.Frame(content, style='White.TFrame')
+        button_frame.pack(fill='x', pady=(10, 0))
+        
+        styles.create_button(button_frame, "🖨 Оплатить", pay_and_print, 'Success.TButton').pack(side='left', fill='x', expand=True, padx=(0, 5))
+        styles.create_button(button_frame, "👁 Просмотр", preview_only, 'Primary.TButton').pack(side='left', fill='x', expand=True, padx=(5, 0))
     
     def refresh_items(self):
         try:

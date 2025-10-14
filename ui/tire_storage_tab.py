@@ -172,6 +172,8 @@ class TireStorageTab:
             self.wheel_type_row.pack_forget()
     
     def accept_storage(self):
+        import platform
+        
         car_number = self.car_number_entry.get().strip()
         driver_license = self.driver_license_entry.get().strip()
         storage_type = self.storage_type_var.get()
@@ -195,20 +197,47 @@ class TireStorageTab:
             )
             
             self.print_receipt(storage, copies=2)
-            
-            import subprocess
-            import os
             filepath = f"receipts/storage_{storage.id}.pdf"
             
-            # Открываем PDF через source переменных окружения
-            try:
-                abs_path = os.path.abspath(filepath)
-                cmd = f"source /tmp/x_display.env && /nix/store/wf5zp2d4jqpdl184dv6lzdj5gwk00adw-evince-48.0/bin/evince {abs_path} &"
-                subprocess.Popen(cmd, shell=True, executable='/bin/bash')
-            except Exception as e:
-                print(f"Ошибка открытия PDF: {e}")
+            # Диалог выбора действия
+            dialog = tk.Toplevel(self.frame)
+            dialog.title("Документ готов")
+            dialog.geometry("400x200")
+            dialog.configure(bg=styles.COLORS['bg'])
             
-            messagebox.showinfo("Успех", f"Комплект #{storage.id} принят на хранение.\nДокумент открыт для печати.")
+            content = ttk.Frame(dialog, style='White.TFrame')
+            content.pack(fill='both', expand=True, padx=20, pady=20)
+            
+            title_label = styles.create_label(content, f"Акт приёма #{storage.id} создан", 'CardHeading.TLabel')
+            title_label.pack(pady=(0, 20))
+            
+            def print_doc():
+                if platform.system() == 'Windows':
+                    os.startfile(os.path.abspath(filepath), "print")
+                    messagebox.showinfo("Успех", f"Комплект #{storage.id} принят.\nДокумент отправлен на печать")
+                else:
+                    try:
+                        import subprocess
+                        subprocess.run(['lp', filepath], check=True)
+                        messagebox.showinfo("Успех", f"Комплект #{storage.id} принят.\nДокумент отправлен на печать")
+                    except:
+                        messagebox.showinfo("Успех", f"Комплект #{storage.id} принят.\nДокумент: {filepath}")
+                dialog.destroy()
+            
+            def preview_doc():
+                if platform.system() == 'Windows':
+                    os.startfile(os.path.abspath(filepath))
+                else:
+                    import subprocess
+                    subprocess.Popen(['xdg-open', filepath])
+                messagebox.showinfo("Просмотр", f"Акт открыт для просмотра:\n{filepath}")
+                dialog.destroy()
+            
+            button_frame = ttk.Frame(content, style='White.TFrame')
+            button_frame.pack(fill='x')
+            
+            styles.create_button(button_frame, "🖨 Печать", print_doc, 'Success.TButton').pack(side='left', fill='x', expand=True, padx=(0, 5))
+            styles.create_button(button_frame, "👁 Просмотр", preview_doc, 'Primary.TButton').pack(side='left', fill='x', expand=True, padx=(5, 0))
             
             self.car_number_entry.delete(0, tk.END)
             self.driver_license_entry.delete(0, tk.END)
@@ -243,6 +272,8 @@ class TireStorageTab:
             ))
     
     def release_storage(self):
+        import platform
+        
         selected = self.storage_tree.selection()
         if not selected:
             messagebox.showerror("Ошибка", "Выберите комплект для выдачи")
@@ -255,21 +286,49 @@ class TireStorageTab:
             
             if storage:
                 self.print_release_receipt(storage)
-                
-                import subprocess
-                import os
                 filepath = f"receipts/release_{storage.id}.pdf"
                 
-                # Открываем PDF через source переменных окружения
-                try:
-                    abs_path = os.path.abspath(filepath)
-                    cmd = f"source /tmp/x_display.env && /nix/store/wf5zp2d4jqpdl184dv6lzdj5gwk00adw-evince-48.0/bin/evince {abs_path} &"
-                    subprocess.Popen(cmd, shell=True, executable='/bin/bash')
-                except Exception as e:
-                    print(f"Ошибка открытия PDF: {e}")
+                # Диалог выбора действия
+                dialog = tk.Toplevel(self.frame)
+                dialog.title("Документ готов")
+                dialog.geometry("400x200")
+                dialog.configure(bg=styles.COLORS['bg'])
                 
-                messagebox.showinfo("Успех", f"Комплект #{storage.id} выдан.\nДокумент открыт для печати.")
-                self.search_storage()
+                content = ttk.Frame(dialog, style='White.TFrame')
+                content.pack(fill='both', expand=True, padx=20, pady=20)
+                
+                title_label = styles.create_label(content, f"Акт выдачи #{storage.id} создан", 'CardHeading.TLabel')
+                title_label.pack(pady=(0, 20))
+                
+                def print_doc():
+                    if platform.system() == 'Windows':
+                        os.startfile(os.path.abspath(filepath), "print")
+                        messagebox.showinfo("Успех", f"Комплект #{storage.id} выдан.\nДокумент отправлен на печать")
+                    else:
+                        try:
+                            import subprocess
+                            subprocess.run(['lp', filepath], check=True)
+                            messagebox.showinfo("Успех", f"Комплект #{storage.id} выдан.\nДокумент отправлен на печать")
+                        except:
+                            messagebox.showinfo("Успех", f"Комплект #{storage.id} выдан.\nДокумент: {filepath}")
+                    dialog.destroy()
+                    self.search_storage()
+                
+                def preview_doc():
+                    if platform.system() == 'Windows':
+                        os.startfile(os.path.abspath(filepath))
+                    else:
+                        import subprocess
+                        subprocess.Popen(['xdg-open', filepath])
+                    messagebox.showinfo("Просмотр", f"Акт открыт для просмотра:\n{filepath}")
+                    dialog.destroy()
+                    self.search_storage()
+                
+                button_frame = ttk.Frame(content, style='White.TFrame')
+                button_frame.pack(fill='x')
+                
+                styles.create_button(button_frame, "🖨 Печать", print_doc, 'Success.TButton').pack(side='left', fill='x', expand=True, padx=(0, 5))
+                styles.create_button(button_frame, "👁 Просмотр", preview_doc, 'Primary.TButton').pack(side='left', fill='x', expand=True, padx=(5, 0))
             else:
                 messagebox.showerror("Ошибка", "Комплект не найден")
         except Exception as e:
