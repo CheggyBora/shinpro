@@ -403,6 +403,10 @@ class OrderWidget:
             import traceback
             traceback.print_exc()
         
+        print(">>> Forcing UI update")
+        self.frame.update_idletasks()
+        self.frame.update()
+        
         print(">>> OrderWidget.__init__ COMPLETED")
     
     def add_service_by_name(self, service_name):
@@ -595,6 +599,12 @@ class OrderWidget:
             
             print(">>> Updating total_label")
             self.total_label.config(text=f"ИТОГО: {total:.2f} руб.")
+            
+            print(">>> Forcing UI refresh")
+            self.items_tree.update_idletasks()
+            self.total_label.update_idletasks()
+            self.frame.update_idletasks()
+            
             print(">>> refresh_items COMPLETED")
         except Exception as e:
             print(f">>> ERROR in refresh_items: {e}")
