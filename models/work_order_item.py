@@ -8,6 +8,7 @@ class WorkOrderItem(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     work_order_id = Column(Integer, ForeignKey('work_orders.id'), nullable=False)
     service_id = Column(Integer, ForeignKey('services.id'), nullable=False)
+    quantity = Column(Integer, default=1)
     price = Column(Float, nullable=False)
     discount_percent = Column(Integer, default=0)
     comment = Column(Text, nullable=True)

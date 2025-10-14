@@ -49,6 +49,20 @@ class OrderService:
             if not order or not service:
                 raise ValueError("Наряд или услуга не найдены")
             
+            # Проверяем существует ли уже такая услуга
+            existing_item = self.db.query(WorkOrderItem).filter(
+                WorkOrderItem.work_order_id == order_id,
+                WorkOrderItem.service_id == service_id
+            ).first()
+            
+            if existing_item:
+                # Увеличиваем количество
+                existing_item.quantity += 1
+                self.db.commit()
+                self.db.refresh(existing_item)
+                return existing_item
+            
+            # Создаем новую позицию
             diameter = order.wheel_diameter.lower()
             price_field = f'price_{diameter}'
             price = getattr(service, price_field, 0.0)
@@ -56,6 +70,7 @@ class OrderService:
             item = WorkOrderItem(
                 work_order_id=order_id,
                 service_id=service_id,
+                quantity=1,
                 price=price,
                 discount_percent=0
             )
@@ -122,14 +137,17 @@ class OrderService:
         
         subtotal = 0
         for item in items:
-            item_price = item.price * (1 - item.discount_percent / 100)
+            # Учитываем количество и скидку на позицию
+            item_price = item.price * item.quantity * (1 - item.discount_percent / 100)
             subtotal += item_price
         
         # Скидки заменяют друг друга, а не суммируются
-        # Приоритет: general_discount > auto_discount
+        # Приоритет: general_discount > rim_discount > auto_discount
         final_discount = 0
         if order.general_discount > 0:
             final_discount = order.general_discount
+        elif order.rim_discount > 0:
+            final_discount = order.rim_discount
         elif order.auto_discount:
             final_discount = 5
         

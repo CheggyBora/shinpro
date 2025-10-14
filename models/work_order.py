@@ -13,6 +13,7 @@ class WorkOrder(Base):
     vehicle_type = Column(String(50), default='car')
     auto_discount = Column(Boolean, default=False)
     general_discount = Column(Integer, default=0)
+    rim_discount = Column(Integer, default=0)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     paid_at = Column(DateTime(timezone=True), nullable=True)
     payment_method = Column(String(20), nullable=True)
