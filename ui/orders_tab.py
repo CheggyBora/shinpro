@@ -283,29 +283,26 @@ class OrderWidget:
         self.print_service = print_service
         self.close_callback = close_callback
         
-        # ПРОСТОЙ ИНТЕРФЕЙС БЕЗ КАРТОЧЕК
+        # КОМПАКТНЫЙ ИНТЕРФЕЙС
         main_container = ttk.Frame(frame)
-        main_container.pack(fill='both', expand=True, padx=20, pady=20)
+        main_container.pack(fill='both', expand=True, padx=10, pady=10)
         
-        # Информация о наряде
-        ttk.Label(main_container, text=f"Номер машины: {order.car.license_plate}", font=('Arial', 14, 'bold')).pack(anchor='w', pady=5)
-        ttk.Label(main_container, text=f"Диаметр: {order.wheel_diameter}", font=('Arial', 12)).pack(anchor='w', pady=2)
+        # Информация о наряде (компактно)
+        ttk.Label(main_container, text=f"Машина: {order.car.license_plate} | Диаметр: {order.wheel_diameter}", font=('Arial', 11, 'bold')).pack(anchor='w', pady=3)
         
         if order.client:
             client_info = order.client.name or ""
             if order.client.phone:
                 client_info += f" ({order.client.phone})"
-            ttk.Label(main_container, text=f"Клиент: {client_info}", font=('Arial', 12)).pack(anchor='w', pady=2)
-        
-        ttk.Label(main_container, text="-" * 50).pack(anchor='w', pady=10)
+            ttk.Label(main_container, text=f"Клиент: {client_info}", font=('Arial', 10)).pack(anchor='w', pady=2)
         
         # Список услуг
-        ttk.Label(main_container, text="Список услуг:", font=('Arial', 12, 'bold')).pack(anchor='w', pady=5)
+        ttk.Label(main_container, text="Услуги:", font=('Arial', 10, 'bold')).pack(anchor='w', pady=(5, 3))
         
         tree_frame = ttk.Frame(main_container)
-        tree_frame.pack(fill='both', expand=True, pady=10)
+        tree_frame.pack(fill='both', expand=True, pady=3)
         
-        self.items_tree = ttk.Treeview(tree_frame, columns=('Услуга', 'Цена', 'Скидка', 'Итого'), show='headings', height=8)
+        self.items_tree = ttk.Treeview(tree_frame, columns=('Услуга', 'Цена', 'Скидка', 'Итого'), show='headings', height=5)
         self.items_tree.heading('Услуга', text='Услуга')
         self.items_tree.heading('Цена', text='Цена')
         self.items_tree.heading('Скидка', text='Скидка %')
@@ -319,28 +316,25 @@ class OrderWidget:
         self.items_tree.bind('<Double-1>', self.edit_item)
         self.items_tree.bind('<Delete>', self.delete_item)
         
-        # Скидка
+        # Скидка (компактно)
         discount_frame = ttk.Frame(main_container)
-        discount_frame.pack(fill='x', pady=5)
-        ttk.Label(discount_frame, text="Общая скидка:", font=('Arial', 11)).pack(side='left', padx=5)
+        discount_frame.pack(fill='x', pady=3)
+        ttk.Label(discount_frame, text="Скидка:", font=('Arial', 9)).pack(side='left', padx=3)
         self.general_discount_var = tk.StringVar(value='0')
-        discount_combo = ttk.Combobox(discount_frame, textvariable=self.general_discount_var, values=['0', '5', '10', '15'], width=10)
-        discount_combo.pack(side='left', padx=5)
-        ttk.Button(discount_frame, text="Применить", command=self.apply_general_discount).pack(side='left', padx=5)
+        discount_combo = ttk.Combobox(discount_frame, textvariable=self.general_discount_var, values=['0', '5', '10', '15'], width=8)
+        discount_combo.pack(side='left', padx=3)
+        ttk.Button(discount_frame, text="OK", command=self.apply_general_discount).pack(side='left', padx=3)
         
-        # ИТОГО
-        self.total_label = ttk.Label(main_container, text="ИТОГО: 0.00 руб.", font=('Arial', 16, 'bold'))
-        self.total_label.pack(anchor='w', pady=10)
+        # ИТОГО (меньше)
+        self.total_label = ttk.Label(main_container, text="ИТОГО: 0.00 руб.", font=('Arial', 12, 'bold'))
+        self.total_label.pack(anchor='w', pady=5)
         
-        # КНОПКИ
+        # КНОПКИ (компактно)
         button_frame = ttk.Frame(main_container)
-        button_frame.pack(fill='x', pady=10)
+        button_frame.pack(fill='x', pady=3)
         
-        pay_btn = ttk.Button(button_frame, text="💳 Пробить наряд (наличные/карта)", command=self.process_payment)
-        pay_btn.pack(side='left', padx=5)
-        
-        close_btn = ttk.Button(button_frame, text="Закрыть вкладку", command=lambda: self.close_callback(order.id))
-        close_btn.pack(side='left', padx=5)
+        ttk.Button(button_frame, text="💳 Пробить", command=self.process_payment).pack(side='left', padx=3)
+        ttk.Button(button_frame, text="Закрыть", command=lambda: self.close_callback(order.id)).pack(side='left', padx=3)
         
         # Загрузка данных
         self.refresh_items()
