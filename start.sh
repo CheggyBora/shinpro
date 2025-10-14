@@ -1,22 +1,22 @@
 #!/bin/bash
 
 echo "========================================"
-echo "  Шиномонтаж - Система учёта"
+echo "  Tire Shop Management System"
 echo "========================================"
 echo ""
-echo "Запуск приложения..."
+echo "Starting application..."
 echo ""
 
 python3 main.py
 
 if [ $? -ne 0 ]; then
     echo ""
-    echo "ОШИБКА: Не удалось запустить приложение!"
+    echo "ERROR: Failed to start application!"
     echo ""
-    echo "Возможные причины:"
-    echo "1. Python 3 не установлен"
-    echo "2. Не установлены библиотеки (выполните: pip3 install -r requirements.txt)"
+    echo "Possible reasons:"
+    echo "1. Python 3 is not installed"
+    echo "2. Libraries not installed (run: pip3 install -r requirements.txt)"
     echo ""
-    read -p "Нажмите Enter для выхода..."
+    read -p "Press Enter to exit..."
     exit 1
 fi

@@ -1,21 +1,20 @@
 @echo off
-chcp 65001 >nul
 echo ========================================
-echo   Шиномонтаж - Система учёта
+echo   Tire Shop Management System
 echo ========================================
 echo.
-echo Запуск приложения...
+echo Starting application...
 echo.
 
 python main.py
 
 if %errorlevel% neq 0 (
     echo.
-    echo ОШИБКА: Не удалось запустить приложение!
+    echo ERROR: Failed to start application!
     echo.
-    echo Возможные причины:
-    echo 1. Python не установлен
-    echo 2. Не установлены библиотеки (выполните: pip install -r requirements.txt)
+    echo Possible reasons:
+    echo 1. Python is not installed
+    echo 2. Libraries not installed (run: pip install -r requirements.txt)
     echo.
     pause
     exit /b %errorlevel%
