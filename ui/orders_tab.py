@@ -364,7 +364,7 @@ class OrderWidget:
         self.discount_price_label.pack(anchor='e')
         
         # Список услуг
-        ttk.Label(main_container, text="Услуги:", font=('Arial', 9, 'bold')).pack(anchor='w', pady=(2, 1))
+        ttk.Label(main_container, text="Услуги:", font=('Arial', 9, 'bold'), style='ServiceHeading.TLabel').pack(fill='x', pady=(2, 1))
         
         tree_frame = ttk.Frame(main_container)
         tree_frame.pack(fill='both', expand=True)

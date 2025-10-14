@@ -33,10 +33,11 @@ def apply_modern_styles(root):
     style.configure('TNotebook.Tab', 
                    padding=[20, 10], 
                    font=FONTS['normal'],
-                   background=COLORS['bg_card'])
+                   background='#f5e6d3',
+                   foreground='black')
     style.map('TNotebook.Tab',
-             background=[('selected', COLORS['primary'])],
-             foreground=[('selected', 'white'), ('!selected', COLORS['text'])])
+             background=[('selected', '#f5e6d3')],
+             foreground=[('selected', 'black'), ('!selected', 'black')])
     
     style.configure('Card.TFrame', background=COLORS['bg_card'], relief='flat', borderwidth=1)
     style.configure('TFrame', background=COLORS['bg'])
@@ -48,6 +49,7 @@ def apply_modern_styles(root):
     style.configure('Subheading.TLabel', font=FONTS['subheading'], foreground=COLORS['text'])
     style.configure('Card.TLabel', background=COLORS['bg_card'], foreground=COLORS['text'], font=FONTS['normal'])
     style.configure('CardHeading.TLabel', background=COLORS['bg_card'], font=FONTS['subheading'], foreground=COLORS['text'])
+    style.configure('ServiceHeading.TLabel', background='#f5e6d3', foreground='black', font=FONTS['normal'], padding=[5, 3])
     
     style.configure('Primary.TButton', 
                    font=FONTS['button'],
