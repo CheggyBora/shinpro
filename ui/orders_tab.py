@@ -338,6 +338,10 @@ class OrderWidget:
                 client_text += " (Автоскидка: 5%)"
             ttk.Label(info_frame, text=client_text, font=('Arial', 9), foreground='#059669' if order.auto_discount else 'black').pack(anchor='w')
         
+        # Сотрудники (под машиной)
+        self.employees_label = ttk.Label(info_frame, text="", font=('Arial', 9), foreground='#64748b')
+        self.employees_label.pack(anchor='w')
+        
         # Скидки (левее)
         discount_frame = ttk.Frame(top_frame)
         discount_frame.pack(side='left', padx=(15, 0))
@@ -360,13 +364,6 @@ class OrderWidget:
                                       width=5, font=('Arial', 10), state='readonly')
         general_combo.pack(side='left', padx=(0, 3))
         ttk.Button(disc_row, text="OK", command=self.apply_general_discount, width=3).pack(side='left')
-        
-        # Сотрудники (справа, сверху цен)
-        employees_frame = ttk.Frame(top_frame)
-        employees_frame.pack(side='right', padx=(0, 10))
-        
-        self.employees_label = ttk.Label(employees_frame, text="", font=('Arial', 9), foreground='#64748b')
-        self.employees_label.pack(anchor='e')
         
         # Цены (справа)
         price_frame = ttk.Frame(top_frame)
@@ -664,8 +661,8 @@ class OrderWidget:
                 
                 if transactions:
                     employee_ids = [str(t.employee_id) for t in transactions]
-                    employees_text = "Сотрудники: №" + ", №".join(employee_ids)
-                    self.employees_label.config(text=employees_text)
+                    employees_text = "№" + ", №".join(employee_ids)
+                    self.employees_label.config(text=employees_text, foreground='#64748b')
                 else:
                     self.employees_label.config(text="")
             else:
@@ -674,7 +671,7 @@ class OrderWidget:
                 
                 if active_shifts:
                     employee_ids = [str(shift.employee_id) for shift in active_shifts]
-                    employees_text = "На смене: №" + ", №".join(employee_ids)
+                    employees_text = "№" + ", №".join(employee_ids)
                     self.employees_label.config(text=employees_text, foreground='#059669')
                 else:
                     self.employees_label.config(text="Нет сотрудников на смене", foreground='#dc2626')
@@ -692,8 +689,8 @@ class OrderWidget:
                     
                     if transactions:
                         employee_ids = [str(t.employee_id) for t in transactions]
-                        employees_text = "Сотрудники: №" + ", №".join(employee_ids)
-                        self.employees_label.config(text=employees_text)
+                        employees_text = "№" + ", №".join(employee_ids)
+                        self.employees_label.config(text=employees_text, foreground='#64748b')
                     else:
                         self.employees_label.config(text="")
                 else:
@@ -701,7 +698,7 @@ class OrderWidget:
                     
                     if active_shifts:
                         employee_ids = [str(shift.employee_id) for shift in active_shifts]
-                        employees_text = "На смене: №" + ", №".join(employee_ids)
+                        employees_text = "№" + ", №".join(employee_ids)
                         self.employees_label.config(text=employees_text, foreground='#059669')
                     else:
                         self.employees_label.config(text="Нет сотрудников на смене", foreground='#dc2626')
