@@ -27,9 +27,7 @@ class OrdersTab:
         top_card.pack(fill='x', padx=15, pady=(0, 10))
         
         top_inner = ttk.Frame(top_card, style='White.TFrame')
-        top_inner.pack(fill='both', expand=True, padx=20, pady=15)
-        
-        styles.create_label(top_inner, "Панель услуг", 'CardHeading.TLabel').pack(anchor='w', pady=(0, 10))
+        top_inner.pack(fill='both', expand=True, padx=15, pady=10)
         
         self.services_frame = ttk.Frame(top_inner, style='White.TFrame')
         self.services_frame.pack(fill='x')

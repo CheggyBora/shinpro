@@ -76,8 +76,8 @@ def apply_modern_styles(root):
                    foreground='white')
     
     style.configure('Service.TButton',
-                   font=FONTS['button'],
-                   padding=[12, 10],
+                   font=('Segoe UI', 9),
+                   padding=[6, 4],
                    background=COLORS['primary'],
                    foreground='white',
                    relief='flat',
