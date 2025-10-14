@@ -275,7 +275,6 @@ class OrdersTab:
 
 class OrderWidget:
     def __init__(self, frame, order, db, order_service, salary_service, print_service, close_callback):
-        print(">>> OrderWidget.__init__ START")
         self.frame = frame
         self.order = order
         self.db = db
@@ -284,70 +283,29 @@ class OrderWidget:
         self.print_service = print_service
         self.close_callback = close_callback
         
-        print(">>> Creating main_frame")
-        main_frame = ttk.Frame(frame, style='BG.TFrame')
-        main_frame.pack(fill='both', expand=True, padx=15, pady=15)
+        # ПРОСТОЙ ИНТЕРФЕЙС БЕЗ КАРТОЧЕК
+        main_container = ttk.Frame(frame)
+        main_container.pack(fill='both', expand=True, padx=20, pady=20)
         
-        print(">>> Creating info_card")
-        info_card = styles.create_card_frame(main_frame)
-        info_card.pack(fill='x', pady=(0, 15))
+        # Информация о наряде
+        ttk.Label(main_container, text=f"Номер машины: {order.car.license_plate}", font=('Arial', 14, 'bold')).pack(anchor='w', pady=5)
+        ttk.Label(main_container, text=f"Диаметр: {order.wheel_diameter}", font=('Arial', 12)).pack(anchor='w', pady=2)
         
-        print(">>> Creating info_inner")
-        info_inner = ttk.Frame(info_card, style='White.TFrame')
-        info_inner.pack(fill='both', expand=True, padx=20, pady=15)
-        
-        print(f">>> Creating license_plate label: {order.car.license_plate}")
-        styles.create_label(info_inner, f"Номер машины: {order.car.license_plate}", 'CardHeading.TLabel').pack(anchor='w', pady=(0, 5))
-        
-        print(f">>> Creating wheel_diameter label: {order.wheel_diameter}")
-        styles.create_label(info_inner, f"Диаметр: {order.wheel_diameter}", 'Card.TLabel').pack(anchor='w', pady=2)
-        
-        print(">>> Checking client info")
         if order.client:
             client_info = order.client.name or ""
             if order.client.phone:
                 client_info += f" ({order.client.phone})"
-            print(f">>> Creating client label: {client_info}")
-            styles.create_label(info_inner, f"Клиент: {client_info}", 'Card.TLabel').pack(anchor='w', pady=2)
+            ttk.Label(main_container, text=f"Клиент: {client_info}", font=('Arial', 12)).pack(anchor='w', pady=2)
         
-        print(">>> Creating auto_discount label")
-        auto_discount_text = "Автоскидка 5%: ✓" if order.auto_discount else "Автоскидка 5%: ✗"
-        auto_discount_color = styles.COLORS['success'] if order.auto_discount else styles.COLORS['text_secondary']
-        label = styles.create_label(info_inner, auto_discount_text, 'Card.TLabel')
-        label.pack(anchor='w', pady=2)
-        label.configure(foreground=auto_discount_color)
+        ttk.Label(main_container, text="-" * 50).pack(anchor='w', pady=10)
         
-        print(">>> Loading employee info")
-        try:
-            from models import WorkShift, Employee
-            active_shifts = db.query(WorkShift).filter(WorkShift.end_time.is_(None)).all()
-            if active_shifts:
-                employee_names = []
-                for shift in active_shifts:
-                    employee = db.query(Employee).filter(Employee.id == shift.employee_id).first()
-                    if employee:
-                        employee_names.append(f"#{employee.id} ({employee.salary_percent}%)")
-                
-                if employee_names:
-                    emp_label = styles.create_label(info_inner, f"Сотрудники на смене: {', '.join(employee_names)}", 'Card.TLabel')
-                    emp_label.pack(anchor='w', pady=(8, 2))
-                    emp_label.configure(foreground=styles.COLORS['primary'], font=('Segoe UI', 10, 'bold'))
-        except Exception as e:
-            print(f"Error loading employee info: {e}")
+        # Список услуг
+        ttk.Label(main_container, text="Список услуг:", font=('Arial', 12, 'bold')).pack(anchor='w', pady=5)
         
-        print(">>> Creating items_card")
-        items_card = styles.create_card_frame(main_frame)
-        items_card.pack(fill='x', expand=False, pady=(0, 15))
+        tree_frame = ttk.Frame(main_container)
+        tree_frame.pack(fill='both', expand=True, pady=10)
         
-        items_inner = ttk.Frame(items_card, style='White.TFrame')
-        items_inner.pack(fill='both', expand=True, padx=20, pady=15)
-        
-        styles.create_label(items_inner, "Список услуг", 'CardHeading.TLabel').pack(anchor='w', pady=(0, 10))
-        
-        tree_frame = ttk.Frame(items_inner, style='White.TFrame')
-        tree_frame.pack(fill='both', expand=True, pady=(0, 10))
-        
-        self.items_tree = ttk.Treeview(tree_frame, columns=('Услуга', 'Цена', 'Скидка', 'Итого'), show='headings', height=10)
+        self.items_tree = ttk.Treeview(tree_frame, columns=('Услуга', 'Цена', 'Скидка', 'Итого'), show='headings', height=8)
         self.items_tree.heading('Услуга', text='Услуга')
         self.items_tree.heading('Цена', text='Цена')
         self.items_tree.heading('Скидка', text='Скидка %')
@@ -361,104 +319,57 @@ class OrderWidget:
         self.items_tree.bind('<Double-1>', self.edit_item)
         self.items_tree.bind('<Delete>', self.delete_item)
         
-        discount_frame = ttk.Frame(items_inner, style='White.TFrame')
-        discount_frame.pack(fill='x')
-        
-        styles.create_label(discount_frame, "Общая скидка:", 'Card.TLabel').pack(side='left', padx=(0, 10))
+        # Скидка
+        discount_frame = ttk.Frame(main_container)
+        discount_frame.pack(fill='x', pady=5)
+        ttk.Label(discount_frame, text="Общая скидка:", font=('Arial', 11)).pack(side='left', padx=5)
         self.general_discount_var = tk.StringVar(value='0')
-        discount_combo = ttk.Combobox(discount_frame, textvariable=self.general_discount_var, 
-                                      values=['0', '5', '10', '15'], width=10,
-                                      font=styles.FONTS['normal'])
-        discount_combo.pack(side='left', padx=(0, 10))
-        styles.create_button(discount_frame, "Применить", self.apply_general_discount, 'Secondary.TButton').pack(side='left')
+        discount_combo = ttk.Combobox(discount_frame, textvariable=self.general_discount_var, values=['0', '5', '10', '15'], width=10)
+        discount_combo.pack(side='left', padx=5)
+        ttk.Button(discount_frame, text="Применить", command=self.apply_general_discount).pack(side='left', padx=5)
         
-        total_card = styles.create_card_frame(main_frame)
-        total_card.pack(fill='x', pady=(0, 15))
+        # ИТОГО
+        self.total_label = ttk.Label(main_container, text="ИТОГО: 0.00 руб.", font=('Arial', 16, 'bold'))
+        self.total_label.pack(anchor='w', pady=10)
         
-        total_inner = ttk.Frame(total_card, style='White.TFrame')
-        total_inner.pack(fill='both', expand=True, padx=20, pady=20)
+        # КНОПКИ
+        button_frame = ttk.Frame(main_container)
+        button_frame.pack(fill='x', pady=10)
         
-        self.total_label = styles.create_label(total_inner, "ИТОГО: 0.00 руб.", 'CardHeading.TLabel')
-        self.total_label.pack(anchor='center')
-        self.total_label.configure(font=('Segoe UI', 18, 'bold'), foreground=styles.COLORS['primary'])
+        pay_btn = ttk.Button(button_frame, text="💳 Пробить наряд (наличные/карта)", command=self.process_payment)
+        pay_btn.pack(side='left', padx=5)
         
-        print(">>> Creating button_frame")
-        button_frame = ttk.Frame(main_frame, style='BG.TFrame')
-        button_frame.pack(fill='x')
+        close_btn = ttk.Button(button_frame, text="Закрыть вкладку", command=lambda: self.close_callback(order.id))
+        close_btn.pack(side='left', padx=5)
         
-        print(">>> Creating payment button")
-        pay_btn = styles.create_button(button_frame, "💳 Пробить наряд (наличные/карта)", self.process_payment, 'Success.TButton')
-        pay_btn.pack(side='left', padx=(0, 10))
-        pay_btn.configure(padding=[20, 12])
-        
-        print(">>> Creating close button")
-        styles.create_button(button_frame, "Закрыть вкладку", lambda: self.close_callback(order.id), 'Secondary.TButton').pack(side='left')
-        
-        print(">>> Calling refresh_items()")
-        try:
-            self.refresh_items()
-            print(">>> refresh_items() completed successfully")
-        except Exception as e:
-            print(f">>> ERROR in refresh_items(): {e}")
-            import traceback
-            traceback.print_exc()
-        
-        print(">>> Forcing UI update")
-        self.frame.update_idletasks()
-        self.frame.update()
-        
-        print(">>> OrderWidget.__init__ COMPLETED")
+        # Загрузка данных
+        self.refresh_items()
     
     def add_service_by_name(self, service_name):
-        print(f"OrderWidget.add_service_by_name called: {service_name}")
         from models import Service
         vehicle_type = self.order.vehicle_type
-        print(f"Vehicle type: {vehicle_type}")
         
         service = self.db.query(Service).filter(
             Service.name == service_name,
             Service.vehicle_type == vehicle_type
         ).first()
         
-        print(f"Service found (specific): {service}")
-        
         if not service:
             service = self.db.query(Service).filter(
                 Service.name == service_name,
                 Service.vehicle_type == 'all'
             ).first()
-            print(f"Service found (all): {service}")
         
         if service:
-            print(f"Calling add_service with service_id={service.id}")
-            print(f"Type of self: {type(self)}")
-            print(f"Has add_service method: {hasattr(self, 'add_service')}")
-            try:
-                print(f"BEFORE self.add_service call")
-                self.add_service(service)
-                print(f"AFTER self.add_service call")
-            except Exception as e:
-                print(f"EXCEPTION calling add_service: {e}")
-                import traceback
-                traceback.print_exc()
-                messagebox.showerror("Ошибка при добавлении услуги", str(e))
+            self.add_service(service)
         else:
-            print(f"Service NOT FOUND: {service_name}")
             messagebox.showerror("Ошибка", f"Услуга '{service_name}' не найдена")
     
     def add_service(self, service):
-        print(f"add_service called: order_id={self.order.id}, service_id={service.id}")
         try:
-            print(f"Calling order_service.add_service_to_order...")
-            result = self.order_service.add_service_to_order(self.order.id, service.id)
-            print(f"Service added to order, result: {result}")
-            print(f"Calling refresh_items...")
+            self.order_service.add_service_to_order(self.order.id, service.id)
             self.refresh_items()
-            print(f"refresh_items completed")
         except Exception as e:
-            print(f"ERROR in add_service: {e}")
-            import traceback
-            traceback.print_exc()
             messagebox.showerror("Ошибка", str(e))
     
     def edit_item(self, event):
@@ -573,18 +484,13 @@ class OrderWidget:
         styles.create_button(content, "Оплатить", pay, 'Success.TButton').pack(fill='x')
     
     def refresh_items(self):
-        print(f">>> refresh_items START for order_id={self.order.id}")
         try:
-            print(">>> Clearing tree items")
             for item in self.items_tree.get_children():
                 self.items_tree.delete(item)
             
-            print(">>> Getting order items from DB")
             items = self.order_service.get_order_items(self.order.id)
-            print(f">>> Found {len(items)} items")
             
             for item in items:
-                print(f">>> Inserting item: {item.service.name}")
                 item_total = item.price * (1 - item.discount_percent / 100)
                 self.items_tree.insert('', 'end', values=(
                     item.service.name,
@@ -593,21 +499,7 @@ class OrderWidget:
                     f"{item_total:.2f}"
                 ), tags=(str(item.id),))
             
-            print(">>> Calculating total")
             total = self.order_service.calculate_total(self.order.id)
-            print(f">>> Total calculated: {total}")
-            
-            print(">>> Updating total_label")
             self.total_label.config(text=f"ИТОГО: {total:.2f} руб.")
-            
-            print(">>> Forcing UI refresh")
-            self.items_tree.update_idletasks()
-            self.total_label.update_idletasks()
-            self.frame.update_idletasks()
-            
-            print(">>> refresh_items COMPLETED")
         except Exception as e:
-            print(f">>> ERROR in refresh_items: {e}")
-            import traceback
-            traceback.print_exc()
             self.total_label.config(text=f"ИТОГО: 0.00 руб.")
