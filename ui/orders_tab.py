@@ -158,7 +158,7 @@ class OrdersTab:
         diameter_var = tk.StringVar()
         diameter_combo = ttk.Combobox(content, textvariable=diameter_var, 
                                       values=['R13', 'R14', 'R15', 'R16', 'R17', 'R18', 'R19', 'R20', 'R21', 'R22', 'R23', 'R24'],
-                                      font=styles.FONTS['normal'])
+                                      font=styles.FONTS['normal'], state='readonly')
         diameter_combo.pack(fill='x', pady=(0, 15))
         
         styles.create_label(content, "Тип транспорта*:", 'Card.TLabel').pack(anchor='w', pady=(0, 5))
