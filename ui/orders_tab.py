@@ -331,6 +331,28 @@ class OrderWidget:
             if order.auto_discount:
                 ttk.Label(info_frame, text="Автоскидка: 5%", font=('Arial', 9), foreground='#059669').pack(anchor='w', pady=1)
         
+        # Скидки (центр)
+        discount_frame = ttk.Frame(header_frame)
+        discount_frame.pack(side='left', padx=(20, 10))
+        
+        ttk.Label(discount_frame, text="Скидки:", font=('Arial', 9, 'bold')).pack(anchor='w')
+        
+        rim_frame = ttk.Frame(discount_frame)
+        rim_frame.pack(fill='x', pady=2)
+        ttk.Label(rim_frame, text="Правка дисков:", font=('Arial', 9)).pack(side='left', padx=(0, 5))
+        self.rim_discount_var = tk.StringVar(value='0')
+        rim_combo = ttk.Combobox(rim_frame, textvariable=self.rim_discount_var, values=['0', '10', '20'], width=5)
+        rim_combo.pack(side='left', padx=(0, 5))
+        ttk.Button(rim_frame, text="OK", command=self.apply_rim_discount).pack(side='left')
+        
+        general_frame = ttk.Frame(discount_frame)
+        general_frame.pack(fill='x', pady=2)
+        ttk.Label(general_frame, text="Общая:", font=('Arial', 9)).pack(side='left', padx=(0, 5))
+        self.general_discount_var = tk.StringVar(value='0')
+        general_combo = ttk.Combobox(general_frame, textvariable=self.general_discount_var, values=['0', '10', '15'], width=5)
+        general_combo.pack(side='left', padx=(0, 5))
+        ttk.Button(general_frame, text="OK", command=self.apply_general_discount).pack(side='left')
+        
         # Цены (справа)
         price_frame = ttk.Frame(header_frame)
         price_frame.pack(side='right', padx=(10, 0))
@@ -347,17 +369,19 @@ class OrderWidget:
         tree_frame = ttk.Frame(main_container)
         tree_frame.pack(fill='both', expand=True, pady=3)
         
-        self.items_tree = ttk.Treeview(tree_frame, columns=('Услуга', 'Цена', 'Скидка', 'Итого'), show='headings', height=5)
+        self.items_tree = ttk.Treeview(tree_frame, columns=('Услуга', 'Кол-во', 'Цена', 'Скидка', 'Итого'), show='headings', height=5)
         self.items_tree.heading('Услуга', text='Услуга')
+        self.items_tree.heading('Кол-во', text='Кол-во')
         self.items_tree.heading('Цена', text='Цена')
         self.items_tree.heading('Скидка', text='Скидка %')
         self.items_tree.heading('Итого', text='Итого')
         
         # Ширина колонок
-        self.items_tree.column('Услуга', width=300, anchor='w')
-        self.items_tree.column('Цена', width=100, anchor='e')
-        self.items_tree.column('Скидка', width=100, anchor='center')
-        self.items_tree.column('Итого', width=100, anchor='e')
+        self.items_tree.column('Услуга', width=250, anchor='w')
+        self.items_tree.column('Кол-во', width=60, anchor='center')
+        self.items_tree.column('Цена', width=90, anchor='center')
+        self.items_tree.column('Скидка', width=90, anchor='center')
+        self.items_tree.column('Итого', width=90, anchor='center')
         
         self.items_tree.pack(side='left', fill='both', expand=True)
         
@@ -367,15 +391,6 @@ class OrderWidget:
         
         self.items_tree.bind('<Double-1>', self.edit_item)
         self.items_tree.bind('<Delete>', self.delete_item)
-        
-        # Скидка (компактно)
-        discount_frame = ttk.Frame(main_container)
-        discount_frame.pack(fill='x', pady=3)
-        ttk.Label(discount_frame, text="Скидка:", font=('Arial', 9)).pack(side='left', padx=3)
-        self.general_discount_var = tk.StringVar(value='0')
-        discount_combo = ttk.Combobox(discount_frame, textvariable=self.general_discount_var, values=['0', '5', '10', '15'], width=8)
-        discount_combo.pack(side='left', padx=3)
-        ttk.Button(discount_frame, text="OK", command=self.apply_general_discount).pack(side='left', padx=3)
         
         # КНОПКИ (компактно)
         button_frame = ttk.Frame(main_container)
@@ -475,10 +490,15 @@ class OrderWidget:
         if not selected:
             return
         
-        if messagebox.askyesno("Подтверждение", "Удалить услугу?"):
-            item_id = int(self.items_tree.item(selected[0])['tags'][0])
-            self.order_service.delete_item(item_id)
-            self.refresh_items()
+        item_id = int(self.items_tree.item(selected[0])['tags'][0])
+        self.order_service.delete_item(item_id)
+        self.refresh_items()
+    
+    def apply_rim_discount(self):
+        discount = int(self.rim_discount_var.get())
+        self.order_service.update_rim_discount(self.order.id, discount)
+        self.db.refresh(self.order)
+        self.refresh_items()
     
     def apply_general_discount(self):
         discount = int(self.general_discount_var.get())
@@ -537,14 +557,20 @@ class OrderWidget:
             final_discount = 0
             if self.order.general_discount > 0:
                 final_discount = self.order.general_discount
+            elif self.order.rim_discount > 0:
+                final_discount = self.order.rim_discount
             elif self.order.auto_discount:
                 final_discount = 5
+            
+            # Обновляем значения в комбобоксах
+            self.rim_discount_var.set(str(self.order.rim_discount))
+            self.general_discount_var.set(str(self.order.general_discount))
             
             # Рассчитываем общую цену
             total_without_discount = 0
             for item in items:
-                # Цена с учетом скидки на позицию
-                item_after_own_discount = item.price * (1 - item.discount_percent / 100)
+                # Цена с учетом скидки на позицию и количества
+                item_after_own_discount = item.price * item.quantity * (1 - item.discount_percent / 100)
                 total_without_discount += item_after_own_discount
                 
                 # Итоговая цена позиции с общей скидкой
@@ -555,6 +581,7 @@ class OrderWidget:
                 
                 self.items_tree.insert('', 'end', values=(
                     item.service.name,
+                    item.quantity,
                     f"{item.price:.2f}",
                     discount_display,
                     f"{item_total:.2f}"
@@ -572,5 +599,7 @@ class OrderWidget:
                 
         except Exception as e:
             print(f"Error in refresh_items: {e}")
+            import traceback
+            traceback.print_exc()
             self.price_label.config(text="0.00 руб.")
             self.discount_price_label.config(text="")

@@ -118,6 +118,16 @@ class OrderService:
             self.db.rollback()
             raise
     
+    def update_rim_discount(self, order_id: int, discount: int):
+        try:
+            order = self.db.query(WorkOrder).filter(WorkOrder.id == order_id).first()
+            if order:
+                order.rim_discount = discount
+                self.db.commit()
+        except Exception as e:
+            self.db.rollback()
+            raise
+    
     def update_general_discount(self, order_id: int, discount: int):
         try:
             order = self.db.query(WorkOrder).filter(WorkOrder.id == order_id).first()
