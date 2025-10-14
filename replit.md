@@ -35,7 +35,7 @@ The application features a modern, clean design with a focus on usability.
 ### Technical Implementation
 - **Backend**: Python 3.11 with SQLAlchemy for ORM.
 - **GUI**: Tkinter, enhanced with `ttkthemes` for modern styling.
-- **Database**: PostgreSQL, accessed via a `DATABASE_URL`.
+- **Database**: SQLite (по умолчанию) или PostgreSQL. Локальная база данных SQLite хранится в файле `tire_shop.db`. Для PostgreSQL используется переменная окружения `DATABASE_URL`.
 - **Reporting**: ReportLab is used for generating PDF documents (receipts, storage documents).
 - **VNC**: The application runs within a VNC server (x11vnc with Fluxbox window manager) on port 5900, enabling remote access and display.
 
@@ -85,12 +85,60 @@ The application features a modern, clean design with a focus on usability.
 - **Data Initialization**: `init_data.py` for populating the database with initial service prices and other essential data.
 - **Security**: Admin PIN (default `0000`) for sensitive operations like changing employee rates.
 
+## Локальный запуск приложения
+
+Приложение можно легко запустить на любом компьютере с Windows, Linux или macOS.
+
+### Требования
+- Python 3.11 или новее
+- Библиотеки Python (устанавливаются автоматически)
+
+### Инструкция по установке и запуску
+
+1. **Скачайте проект** на свой компьютер
+   - Через Git: `git clone <url-репозитория>`
+   - Или скачайте ZIP-архив и распакуйте
+
+2. **Установите зависимости**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+3. **Запустите приложение**
+
+   **Для Windows:**
+   - Дважды кликните на файл `Запуск.bat`
+   - Или создайте ярлык на рабочем столе для файла `Запуск.bat`
+
+   **Для Linux/Mac:**
+   - Выполните: `./start.sh`
+   - Или создайте ярлык на файл `start.sh`
+
+### База данных
+
+По умолчанию приложение использует **SQLite** - локальную файловую базу данных (`tire_shop.db`), которая создается автоматически при первом запуске. Не требуется установка PostgreSQL или других серверов баз данных.
+
+Все данные хранятся в файле `tire_shop.db` в папке приложения.
+
+### Структура файлов
+- `Запуск.bat` - файл запуска для Windows
+- `start.sh` - файл запуска для Linux/Mac
+- `requirements.txt` - список необходимых библиотек
+- `tire_shop.db` - файл базы данных (создается автоматически)
+- `receipts/` - папка с созданными чеками (создается автоматически)
+
 ## External Dependencies
-- **PostgreSQL**: Relational database management system for persistent data storage.
+
+### Обязательные зависимости (для локального запуска)
+- **Python 3.11+**: Язык программирования
 - **SQLAlchemy**: Python SQL toolkit and Object Relational Mapper (ORM) for interacting with the database.
-- **Tkinter**: Python's standard GUI toolkit for creating the desktop application interface.
+- **Tkinter**: Python's standard GUI toolkit for creating the desktop application interface (обычно уже включен в Python).
 - **ttkthemes**: A Tkinter extension providing modern themes for `ttk` widgets.
 - **ReportLab**: Python library for generating PDF documents (receipts, storage forms).
+- **python-dotenv**: Для работы с переменными окружения
+
+### Опциональные зависимости
+- **PostgreSQL**: Можно использовать вместо SQLite для продакшн-окружения
 - **Evince**: (Assumed external PDF viewer) Automatically opens generated PDF documents.
-- **x11vnc**: VNC server for remote access to the graphical interface.
-- **Fluxbox**: Lightweight window manager used within the VNC environment.
+- **x11vnc**: VNC server for remote access to the graphical interface (только для Replit).
+- **Fluxbox**: Lightweight window manager used within the VNC environment (только для Replit).
