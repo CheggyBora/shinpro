@@ -221,26 +221,43 @@ class OrdersTab:
             del self.active_orders[order_id]
     
     def add_service_to_current_order_by_name(self, service_name):
+        print(f"!!! BUTTON CLICKED: {service_name}")
         try:
+            print(f"Active orders: {list(self.active_orders.keys())}")
+            print(f"Notebook tabs: {len(self.order_notebook.tabs())}")
+            
+            if len(self.order_notebook.tabs()) == 0:
+                print("No tabs open!")
+                messagebox.showwarning("Предупреждение", "Создайте наряд")
+                return
+            
             current_index = self.order_notebook.index(self.order_notebook.select())
             tabs = self.order_notebook.tabs()
+            
+            print(f"Current tab index: {current_index}")
+            print(f"Total tabs: {len(tabs)}")
             
             if current_index < 0 or current_index >= len(tabs):
                 messagebox.showwarning("Предупреждение", "Создайте наряд")
                 return
             
             current_tab_widget = self.order_notebook.nametowidget(tabs[current_index])
+            print(f"Current tab widget: {current_tab_widget}")
             
             for order_id, widget in self.active_orders.items():
+                print(f"Checking order_id={order_id}, widget.frame={widget.frame}")
                 if widget.frame == current_tab_widget:
+                    print(f"MATCH! Calling add_service_by_name for order {order_id}")
                     widget.add_service_by_name(service_name)
                     return
             
+            print("No matching widget found!")
             messagebox.showwarning("Ошибка", "Не удалось найти активный наряд")
         except Exception as e:
-            print(f"Error in add_service_to_current_order_by_name: {e}")
+            print(f"!!! ERROR in add_service_to_current_order_by_name: {e}")
             import traceback
             traceback.print_exc()
+            messagebox.showerror("Ошибка", str(e))
     
     def add_service_to_current_order(self, service):
         current_tab = self.order_notebook.select()
