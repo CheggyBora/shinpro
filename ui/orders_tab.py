@@ -93,8 +93,8 @@ class OrdersTab:
         ]
         
         row1 = 0
-        for service_name in unique_names:
-            if service_name in column1_services:
+        for service_name in column1_services:
+            if service_name in unique_names:
                 btn = ttk.Button(column1, text=service_name, 
                                command=lambda name=service_name: self.add_service_to_current_order_by_name(name),
                                style='Service.TButton')
@@ -103,8 +103,8 @@ class OrdersTab:
         column1.columnconfigure(0, weight=1)
         
         row2 = 0
-        for service_name in unique_names:
-            if service_name in column2_services:
+        for service_name in column2_services:
+            if service_name in unique_names:
                 btn = ttk.Button(column2, text=service_name, 
                                command=lambda name=service_name: self.add_service_to_current_order_by_name(name),
                                style='Service.TButton')
@@ -113,8 +113,8 @@ class OrdersTab:
         column2.columnconfigure(0, weight=1)
         
         row3 = 0
-        for service_name in unique_names:
-            if service_name in column3_services:
+        for service_name in column3_services:
+            if service_name in unique_names:
                 btn = ttk.Button(column3, text=service_name, 
                                command=lambda name=service_name: self.add_service_to_current_order_by_name(name),
                                style='Service.TButton')
@@ -123,8 +123,8 @@ class OrdersTab:
         column3.columnconfigure(0, weight=1)
         
         row4 = 0
-        for service_name in unique_names:
-            if service_name in column4_services:
+        for service_name in column4_services:
+            if service_name in unique_names:
                 btn = ttk.Button(column4, text=service_name, 
                                command=lambda name=service_name: self.add_service_to_current_order_by_name(name),
                                style='Service.TButton')
