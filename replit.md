@@ -1,14 +1,21 @@
 # Система учёта шиномонтажа
 
 ## Overview
-This is a desktop application built with Python and Tkinter, designed to manage a tire service shop. Its primary purpose is to streamline operations such as order processing, employee management, tire storage, and generating financial documents. The application features a modern UI, robust database integration, and automated PDF receipt generation.
+This is a **Windows desktop application** built with Python and Tkinter, designed to manage a tire service shop. Its primary purpose is to streamline operations such as order processing, employee management, tire storage, and generating financial documents. The application features a modern UI, robust database integration, and **automated PDF printing directly to Windows printers**.
+
+**Target Platform: Windows**
+- Primary deployment: Windows 10/11
+- PDF printing: Uses Windows native `os.startfile(file, "print")` for automatic printing
+- Local database: SQLite (no server required)
+- Easy installation: Double-click `.bat` file to run
 
 **Key Capabilities:**
 - Management of employees, work shifts, and salary calculations.
 - Comprehensive order processing with support for various vehicle types and wheel diameters.
 - Advanced tire storage functionality, including automated documentation for intake and release.
 - Detailed historical data tracking for vehicles and services.
-- Automated PDF receipt generation and viewing.
+- **Automated PDF printing**: Print receipts and storage documents directly to printer with one click.
+- **Preview mode**: View PDFs before printing when needed.
 
 **Business Vision & Market Potential:**
 The application aims to provide small to medium-sized tire service businesses with an efficient, user-friendly, and modern tool to manage their daily operations. By automating key processes and providing clear oversight, it helps improve customer service, reduce manual errors, and enhance overall business efficiency.
@@ -85,12 +92,16 @@ The application features a modern, clean design with a focus on usability.
 - **Data Initialization**: `init_data.py` for populating the database with initial service prices and other essential data.
 - **Security**: Admin PIN (default `0000`) for sensitive operations like changing employee rates.
 
-## Локальный запуск приложения
+## Локальный запуск приложения (Windows)
 
-Приложение можно легко запустить на любом компьютере с Windows, Linux или macOS.
+**Целевая платформа: Windows 10/11**
+
+Приложение разработано специально для Windows и использует нативные возможности системы для печати документов.
 
 ### Требования
+- **Windows 10 или Windows 11**
 - Python 3.11 или новее
+- Принтер, подключенный к Windows (для автоматической печати чеков)
 - Библиотеки Python (устанавливаются автоматически)
 
 ### Инструкция по установке и запуску
@@ -104,15 +115,14 @@ The application features a modern, clean design with a focus on usability.
    pip install -r requirements.txt
    ```
 
-3. **Запустите приложение**
-
-   **Для Windows:**
+3. **Запустите приложение (Windows)**
    - Дважды кликните на файл `Запуск.bat`
    - Или создайте ярлык на рабочем столе для файла `Запуск.bat`
 
-   **Для Linux/Mac:**
-   - Выполните: `./start.sh`
-   - Или создайте ярлык на файл `start.sh`
+### Функционал печати (Windows)
+- **Автоматическая печать**: Чеки отправляются на принтер по умолчанию одним кликом
+- **Предпросмотр**: Можно просмотреть PDF перед печатью
+- Используется Windows API: `os.startfile(file, "print")`
 
 ### База данных
 

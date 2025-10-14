@@ -227,6 +227,9 @@ class TireStorageTab:
             def preview_doc():
                 if platform.system() == 'Windows':
                     os.startfile(os.path.abspath(filepath))
+                elif platform.system() == 'Darwin':
+                    import subprocess
+                    subprocess.Popen(['open', filepath])
                 else:
                     import subprocess
                     subprocess.Popen(['xdg-open', filepath])
@@ -317,6 +320,9 @@ class TireStorageTab:
                 def preview_doc():
                     if platform.system() == 'Windows':
                         os.startfile(os.path.abspath(filepath))
+                    elif platform.system() == 'Darwin':
+                        import subprocess
+                        subprocess.Popen(['open', filepath])
                     else:
                         import subprocess
                         subprocess.Popen(['xdg-open', filepath])
