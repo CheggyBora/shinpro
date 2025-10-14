@@ -117,13 +117,11 @@ class EmployeesTab:
         salary_tree_frame = ttk.Frame(salary_inner, style='White.TFrame')
         salary_tree_frame.pack(fill='both', expand=True, pady=(0, 10))
         
-        self.salary_tree = ttk.Treeview(salary_tree_frame, columns=('Дата', 'Наряды', 'Сумма'), show='headings')
+        self.salary_tree = ttk.Treeview(salary_tree_frame, columns=('Дата', 'Сумма'), show='headings')
         self.salary_tree.heading('Дата', text='Дата')
-        self.salary_tree.heading('Наряды', text='Кол-во нарядов')
         self.salary_tree.heading('Сумма', text='Заработано')
-        self.salary_tree.column('Дата', width=150)
-        self.salary_tree.column('Наряды', width=120)
-        self.salary_tree.column('Сумма', width=150)
+        self.salary_tree.column('Дата', width=200)
+        self.salary_tree.column('Сумма', width=200)
         self.salary_tree.pack(side='left', fill='both', expand=True)
         
         salary_scroll = ttk.Scrollbar(salary_tree_frame, orient='vertical', command=self.salary_tree.yview)
@@ -215,7 +213,6 @@ class EmployeesTab:
                 data = daily_data[date_key]
                 self.salary_tree.insert('', 'end', values=(
                     date_key.strftime('%d.%m.%Y'),
-                    data['count'],
                     f"{data['total']:.2f}"
                 ))
                 total += data['total']
