@@ -11,21 +11,21 @@ class SalaryService:
         if not order:
             raise ValueError("Наряд не найден")
         
-        active_shifts = self.db.query(WorkShift).filter(WorkShift.end_time.is_(None)).all()
+        # Используем сохранённых сотрудников из наряда
+        if not order.employee_ids:
+            raise ValueError("Нет сотрудников в наряде")
         
-        if not active_shifts:
-            raise ValueError("Нет сотрудников на смене")
+        employee_ids = [int(id.strip()) for id in order.employee_ids.split(',')]
+        num_employees = len(employee_ids)
         
-        num_employees = len(active_shifts)
-        
-        for shift in active_shifts:
-            employee = self.db.query(Employee).filter(Employee.id == shift.employee_id).first()
+        for employee_id in employee_ids:
+            employee = self.db.query(Employee).filter(Employee.id == employee_id).first()
             employee_percent = employee.salary_percent if employee else 40.0
             
             salary_amount = (total_amount * (employee_percent / 100)) / num_employees
             
             transaction = SalaryTransaction(
-                employee_id=shift.employee_id,
+                employee_id=employee_id,
                 work_order_id=order_id,
                 amount=round(salary_amount, 2)
             )
