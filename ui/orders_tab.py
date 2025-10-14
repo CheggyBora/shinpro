@@ -333,25 +333,27 @@ class OrderWidget:
         
         # Скидки (центр)
         discount_frame = ttk.Frame(header_frame)
-        discount_frame.pack(side='left', padx=(20, 10))
+        discount_frame.pack(side='left', padx=(30, 30))
         
-        ttk.Label(discount_frame, text="Скидки:", font=('Arial', 9, 'bold')).pack(anchor='w')
+        ttk.Label(discount_frame, text="Скидки:", font=('Arial', 10, 'bold')).pack(anchor='center', pady=(0, 5))
         
         rim_frame = ttk.Frame(discount_frame)
-        rim_frame.pack(fill='x', pady=2)
-        ttk.Label(rim_frame, text="Правка дисков:", font=('Arial', 9)).pack(side='left', padx=(0, 5))
+        rim_frame.pack(anchor='center', pady=3)
+        ttk.Label(rim_frame, text="Правка дисков:", font=('Arial', 10), width=14, anchor='e').pack(side='left', padx=(0, 8))
         self.rim_discount_var = tk.StringVar(value='0')
-        rim_combo = ttk.Combobox(rim_frame, textvariable=self.rim_discount_var, values=['0', '10', '20'], width=5)
-        rim_combo.pack(side='left', padx=(0, 5))
-        ttk.Button(rim_frame, text="OK", command=self.apply_rim_discount).pack(side='left')
+        rim_combo = ttk.Combobox(rim_frame, textvariable=self.rim_discount_var, values=['0', '10', '20'], 
+                                 width=8, font=('Arial', 10), state='readonly')
+        rim_combo.pack(side='left', padx=(0, 8))
+        ttk.Button(rim_frame, text="OK", command=self.apply_rim_discount, width=4).pack(side='left')
         
         general_frame = ttk.Frame(discount_frame)
-        general_frame.pack(fill='x', pady=2)
-        ttk.Label(general_frame, text="Общая:", font=('Arial', 9)).pack(side='left', padx=(0, 5))
+        general_frame.pack(anchor='center', pady=3)
+        ttk.Label(general_frame, text="Общая:", font=('Arial', 10), width=14, anchor='e').pack(side='left', padx=(0, 8))
         self.general_discount_var = tk.StringVar(value='0')
-        general_combo = ttk.Combobox(general_frame, textvariable=self.general_discount_var, values=['0', '10', '15'], width=5)
-        general_combo.pack(side='left', padx=(0, 5))
-        ttk.Button(general_frame, text="OK", command=self.apply_general_discount).pack(side='left')
+        general_combo = ttk.Combobox(general_frame, textvariable=self.general_discount_var, values=['0', '10', '15'], 
+                                      width=8, font=('Arial', 10), state='readonly')
+        general_combo.pack(side='left', padx=(0, 8))
+        ttk.Button(general_frame, text="OK", command=self.apply_general_discount, width=4).pack(side='left')
         
         # Цены (справа)
         price_frame = ttk.Frame(header_frame)
