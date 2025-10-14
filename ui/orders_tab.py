@@ -221,15 +221,26 @@ class OrdersTab:
             del self.active_orders[order_id]
     
     def add_service_to_current_order_by_name(self, service_name):
-        current_tab = self.order_notebook.select()
-        if not current_tab:
-            messagebox.showwarning("Предупреждение", "Создайте наряд")
-            return
-        
-        for order_id, widget in self.active_orders.items():
-            if str(widget.frame) == current_tab:
-                widget.add_service_by_name(service_name)
-                break
+        try:
+            current_index = self.order_notebook.index(self.order_notebook.select())
+            tabs = self.order_notebook.tabs()
+            
+            if current_index < 0 or current_index >= len(tabs):
+                messagebox.showwarning("Предупреждение", "Создайте наряд")
+                return
+            
+            current_tab_widget = self.order_notebook.nametowidget(tabs[current_index])
+            
+            for order_id, widget in self.active_orders.items():
+                if widget.frame == current_tab_widget:
+                    widget.add_service_by_name(service_name)
+                    return
+            
+            messagebox.showwarning("Ошибка", "Не удалось найти активный наряд")
+        except Exception as e:
+            print(f"Error in add_service_to_current_order_by_name: {e}")
+            import traceback
+            traceback.print_exc()
     
     def add_service_to_current_order(self, service):
         current_tab = self.order_notebook.select()
