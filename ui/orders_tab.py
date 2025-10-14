@@ -414,28 +414,56 @@ class OrderWidget:
         from models import Service
         vehicle_type = self.order.vehicle_type
         
-        service = self.db.query(Service).filter(
-            Service.name == service_name,
-            Service.vehicle_type == vehicle_type
-        ).first()
-        
-        if not service:
+        try:
             service = self.db.query(Service).filter(
                 Service.name == service_name,
-                Service.vehicle_type == 'all'
+                Service.vehicle_type == vehicle_type
             ).first()
-        
-        if service:
-            self.add_service(service)
-        else:
-            messagebox.showerror("Ошибка", f"Услуга '{service_name}' не найдена")
+            
+            if not service:
+                service = self.db.query(Service).filter(
+                    Service.name == service_name,
+                    Service.vehicle_type == 'all'
+                ).first()
+            
+            if service:
+                self.add_service(service)
+            else:
+                messagebox.showerror("Ошибка", f"Услуга '{service_name}' не найдена")
+        except Exception as e:
+            # При ошибке соединения откатываем транзакцию и пробуем снова
+            self.db.rollback()
+            try:
+                service = self.db.query(Service).filter(
+                    Service.name == service_name,
+                    Service.vehicle_type == vehicle_type
+                ).first()
+                
+                if not service:
+                    service = self.db.query(Service).filter(
+                        Service.name == service_name,
+                        Service.vehicle_type == 'all'
+                    ).first()
+                
+                if service:
+                    self.add_service(service)
+                else:
+                    messagebox.showerror("Ошибка", f"Услуга '{service_name}' не найдена")
+            except Exception as e2:
+                messagebox.showerror("Ошибка", f"Ошибка добавления услуги: {str(e2)}")
     
     def add_service(self, service):
         try:
             self.order_service.add_service_to_order(self.order.id, service.id)
             self.refresh_items()
         except Exception as e:
-            messagebox.showerror("Ошибка", str(e))
+            # При ошибке соединения откатываем и пробуем снова
+            self.db.rollback()
+            try:
+                self.order_service.add_service_to_order(self.order.id, service.id)
+                self.refresh_items()
+            except Exception as e2:
+                messagebox.showerror("Ошибка", str(e2))
     
     def edit_item(self, event):
         selected = self.items_tree.selection()
@@ -560,54 +588,55 @@ class OrderWidget:
             
             items = self.order_service.get_order_items(self.order.id)
             self.db.refresh(self.order)
-            
-            # Определяем какая скидка применяется (они заменяют друг друга)
-            final_discount = 0
-            if self.order.general_discount > 0:
-                final_discount = self.order.general_discount
-            elif self.order.rim_discount > 0:
-                final_discount = self.order.rim_discount
-            elif self.order.auto_discount:
-                final_discount = 5
-            
-            # Обновляем значения в комбобоксах
-            self.rim_discount_var.set(str(self.order.rim_discount))
-            self.general_discount_var.set(str(self.order.general_discount))
-            
-            # Рассчитываем общую цену
-            total_without_discount = 0
-            for item in items:
-                # Цена с учетом скидки на позицию и количества
-                item_after_own_discount = item.price * item.quantity * (1 - item.discount_percent / 100)
-                total_without_discount += item_after_own_discount
-                
-                # Итоговая цена позиции с общей скидкой
-                item_total = item_after_own_discount * (1 - final_discount / 100)
-                
-                # Показываем общую скидку в колонке если она есть
-                discount_display = f"{item.discount_percent}%" if item.discount_percent > 0 else f"{final_discount}%" if final_discount > 0 else "0%"
-                
-                self.items_tree.insert('', 'end', values=(
-                    item.service.name,
-                    item.quantity,
-                    f"{item.price:.2f}",
-                    discount_display,
-                    f"{item_total:.2f}"
-                ), tags=(str(item.id),))
-            
-            total_with_discount = self.order_service.calculate_total(self.order.id)
-            
-            # Обновляем лейблы с ценами
-            self.price_label.config(text=f"{total_without_discount:.2f} руб.")
-            
-            if total_with_discount < total_without_discount:
-                self.discount_price_label.config(text=f"{total_with_discount:.2f} руб. со скидкой")
-            else:
-                self.discount_price_label.config(text="")
-                
         except Exception as e:
-            print(f"Error in refresh_items: {e}")
-            import traceback
-            traceback.print_exc()
-            self.price_label.config(text="0.00 руб.")
+            # При ошибке соединения откатываем и пробуем снова
+            self.db.rollback()
+            for item in self.items_tree.get_children():
+                self.items_tree.delete(item)
+            
+            items = self.order_service.get_order_items(self.order.id)
+            self.db.refresh(self.order)
+        
+        # Определяем какая скидка применяется (они заменяют друг друга)
+        final_discount = 0
+        if self.order.general_discount > 0:
+            final_discount = self.order.general_discount
+        elif self.order.rim_discount > 0:
+            final_discount = self.order.rim_discount
+        elif self.order.auto_discount:
+            final_discount = 5
+        
+        # Обновляем значения в комбобоксах
+        self.rim_discount_var.set(str(self.order.rim_discount))
+        self.general_discount_var.set(str(self.order.general_discount))
+        
+        # Рассчитываем общую цену
+        total_without_discount = 0
+        for item in items:
+            # Цена с учетом скидки на позицию и количества
+            item_after_own_discount = item.price * item.quantity * (1 - item.discount_percent / 100)
+            total_without_discount += item_after_own_discount
+            
+            # Итоговая цена позиции с общей скидкой
+            item_total = item_after_own_discount * (1 - final_discount / 100)
+            
+            # Показываем общую скидку в колонке если она есть
+            discount_display = f"{item.discount_percent}%" if item.discount_percent > 0 else f"{final_discount}%" if final_discount > 0 else "0%"
+            
+            self.items_tree.insert('', 'end', values=(
+                item.service.name,
+                item.quantity,
+                f"{item.price:.2f}",
+                discount_display,
+                f"{item_total:.2f}"
+            ), tags=(str(item.id),))
+        
+        total_with_discount = self.order_service.calculate_total(self.order.id)
+        
+        # Обновляем лейблы с ценами
+        self.price_label.config(text=f"{total_without_discount:.2f} руб.")
+        
+        if total_with_discount < total_without_discount:
+            self.discount_price_label.config(text=f"{total_with_discount:.2f} руб. со скидкой")
+        else:
             self.discount_price_label.config(text="")
