@@ -337,7 +337,7 @@ class OrderWidget:
         
         print(">>> Creating items_card")
         items_card = styles.create_card_frame(main_frame)
-        items_card.pack(fill='both', expand=True, pady=(0, 15))
+        items_card.pack(fill='x', expand=False, pady=(0, 15))
         
         items_inner = ttk.Frame(items_card, style='White.TFrame')
         items_inner.pack(fill='both', expand=True, padx=20, pady=15)
