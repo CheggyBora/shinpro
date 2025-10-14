@@ -279,19 +279,22 @@ class OrderWidget:
         label.pack(anchor='w', pady=2)
         label.configure(foreground=auto_discount_color)
         
-        from models import WorkShift, Employee
-        active_shifts = db.query(WorkShift).filter(WorkShift.end_time.is_(None)).all()
-        if active_shifts:
-            employee_names = []
-            for shift in active_shifts:
-                employee = db.query(Employee).filter(Employee.id == shift.employee_id).first()
-                if employee:
-                    employee_names.append(f"#{employee.id} ({employee.salary_percent}%)")
-            
-            if employee_names:
-                emp_label = styles.create_label(info_inner, f"Сотрудники на смене: {', '.join(employee_names)}", 'Card.TLabel')
-                emp_label.pack(anchor='w', pady=(8, 2))
-                emp_label.configure(foreground=styles.COLORS['primary'], font=('Segoe UI', 10, 'bold'))
+        try:
+            from models import WorkShift, Employee
+            active_shifts = db.query(WorkShift).filter(WorkShift.end_time.is_(None)).all()
+            if active_shifts:
+                employee_names = []
+                for shift in active_shifts:
+                    employee = db.query(Employee).filter(Employee.id == shift.employee_id).first()
+                    if employee:
+                        employee_names.append(f"#{employee.id} ({employee.salary_percent}%)")
+                
+                if employee_names:
+                    emp_label = styles.create_label(info_inner, f"Сотрудники на смене: {', '.join(employee_names)}", 'Card.TLabel')
+                    emp_label.pack(anchor='w', pady=(8, 2))
+                    emp_label.configure(foreground=styles.COLORS['primary'], font=('Segoe UI', 10, 'bold'))
+        except Exception as e:
+            print(f"Error loading employee info: {e}")
         
         items_card = styles.create_card_frame(main_frame)
         items_card.pack(fill='both', expand=True, pady=(0, 15))
@@ -488,18 +491,24 @@ class OrderWidget:
         styles.create_button(content, "Оплатить", pay, 'Success.TButton').pack(fill='x')
     
     def refresh_items(self):
-        for item in self.items_tree.get_children():
-            self.items_tree.delete(item)
-        
-        items = self.order_service.get_order_items(self.order.id)
-        for item in items:
-            item_total = item.price * (1 - item.discount_percent / 100)
-            self.items_tree.insert('', 'end', values=(
-                item.service.name,
-                f"{item.price:.2f}",
-                item.discount_percent,
-                f"{item_total:.2f}"
-            ), tags=(str(item.id),))
-        
-        total = self.order_service.calculate_total(self.order.id)
-        self.total_label.config(text=f"ИТОГО: {total:.2f} руб.")
+        try:
+            for item in self.items_tree.get_children():
+                self.items_tree.delete(item)
+            
+            items = self.order_service.get_order_items(self.order.id)
+            for item in items:
+                item_total = item.price * (1 - item.discount_percent / 100)
+                self.items_tree.insert('', 'end', values=(
+                    item.service.name,
+                    f"{item.price:.2f}",
+                    item.discount_percent,
+                    f"{item_total:.2f}"
+                ), tags=(str(item.id),))
+            
+            total = self.order_service.calculate_total(self.order.id)
+            self.total_label.config(text=f"ИТОГО: {total:.2f} руб.")
+        except Exception as e:
+            print(f"Error refreshing items: {e}")
+            import traceback
+            traceback.print_exc()
+            self.total_label.config(text=f"ИТОГО: 0.00 руб.")
