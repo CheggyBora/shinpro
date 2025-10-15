@@ -36,10 +36,11 @@ The application aims to provide small to medium-sized tire service businesses wi
 The application features a modern, clean design with a focus on usability.
 - **Color Scheme**: Blue (`#2563eb`), Gray (`#64748b`), Light (`#f8fafc`).
 - **Design Pattern**: Card-based layouts with shadows are used across all tabs for a consistent and modern look.
-- **Typography**: Uses modern typography with larger headings (16-18pt) for readability.
+- **Typography**: Uses Arial font with full Cyrillic support (Russian text) - larger headings (16-18pt) for readability.
 - **Widgets**: Utilizes `ttkthemes` for all UI elements to ensure a contemporary appearance.
 - **Spacing**: Improved padding (10-20px) for better visual comfort.
 - **Buttons**: Blue for primary actions, green for confirmations.
+- **Fonts**: Arial for GUI (full Cyrillic support), DejaVu Sans for PDFs (Cyrillic support in receipts).
 
 ### Technical Implementation
 - **Backend**: Python 3.11 with SQLAlchemy for ORM.
