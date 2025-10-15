@@ -18,10 +18,19 @@ class OrdersTab:
         
         styles.create_label(input_frame, "Номер автомобиля:", 'Card.TLabel').pack(side='left', padx=(0, 10))
         
-        # Autocomplete combobox для номера автомобиля
+        # Контейнер для Entry + Listbox (кастомный автокомплит)
+        self.autocomplete_container = ttk.Frame(input_frame, style='BG.TFrame')
+        self.autocomplete_container.pack(side='left', padx=(0, 10))
+        
+        # Entry для ввода номера
         self.license_var = tk.StringVar()
-        self.license_entry = ttk.Combobox(input_frame, textvariable=self.license_var, width=20, font=styles.FONTS['normal'])
-        self.license_entry.pack(side='left', padx=(0, 10))
+        self.license_entry = ttk.Entry(self.autocomplete_container, textvariable=self.license_var, width=22, font=styles.FONTS['normal'])
+        self.license_entry.pack()
+        
+        # Listbox для отображения подсказок (скрыт по умолчанию)
+        self.listbox_frame = tk.Frame(self.autocomplete_container, bg='white', relief='solid', borderwidth=1)
+        self.autocomplete_listbox = tk.Listbox(self.listbox_frame, height=6, font=styles.FONTS['normal'], exportselection=False)
+        self.autocomplete_listbox.pack(fill='both', expand=True)
         
         # Загружаем список номеров
         self.all_license_plates = []
@@ -29,7 +38,10 @@ class OrdersTab:
         
         # Привязываем обработчики событий
         self.license_entry.bind('<KeyRelease>', self.on_license_key_release)
-        self.license_entry.bind('<<ComboboxSelected>>', self.on_license_selected)
+        self.autocomplete_listbox.bind('<Button-1>', self.on_listbox_select)
+        self.autocomplete_listbox.bind('<Return>', self.on_listbox_select)
+        self.license_entry.bind('<Down>', self.on_down_arrow)
+        self.license_entry.bind('<Return>', self.on_entry_return)
         
         styles.create_button(input_frame, "Создать наряд", self.create_new_order, 'Primary.TButton').pack(side='left', padx=(0, 10))
         
@@ -145,26 +157,71 @@ class OrdersTab:
     def update_license_plates_list(self):
         """Загрузить список всех номеров машин"""
         self.all_license_plates = self.order_service.get_all_license_plates()
-        self.license_entry['values'] = self.all_license_plates
     
     def on_license_key_release(self, event):
-        """Фильтровать список номеров при вводе (прогрессивная фильтрация)"""
+        """Фильтровать и показывать список при вводе"""
         # Игнорируем специальные клавиши
-        if event.keysym in ('Up', 'Down', 'Left', 'Right', 'Return', 'Tab'):
+        if event.keysym in ('Down', 'Up', 'Return', 'Escape'):
             return
             
         typed = self.license_var.get().lower()
         
+        # Очищаем список
+        self.autocomplete_listbox.delete(0, tk.END)
+        
         if typed == '':
-            self.license_entry['values'] = self.all_license_plates
+            # Скрываем список если пусто
+            self.hide_autocomplete_list()
         else:
-            # Фильтруем список номеров по введенному тексту
+            # Фильтруем и показываем подсказки
             filtered = [plate for plate in self.all_license_plates if plate.lower().startswith(typed)]
-            self.license_entry['values'] = filtered
+            
+            if filtered:
+                for plate in filtered:
+                    self.autocomplete_listbox.insert(tk.END, plate)
+                self.show_autocomplete_list()
+            else:
+                self.hide_autocomplete_list()
     
-    def on_license_selected(self, event):
-        """Автозаполнение характеристик при выборе номера из списка"""
-        selected_plate = self.license_var.get()
+    def show_autocomplete_list(self):
+        """Показать список подсказок под полем ввода"""
+        self.listbox_frame.pack(fill='x')
+    
+    def hide_autocomplete_list(self):
+        """Скрыть список подсказок"""
+        self.listbox_frame.pack_forget()
+    
+    def on_down_arrow(self, event):
+        """Переход к списку при нажатии стрелки вниз"""
+        if self.autocomplete_listbox.size() > 0:
+            self.autocomplete_listbox.focus_set()
+            self.autocomplete_listbox.selection_set(0)
+            self.autocomplete_listbox.activate(0)
+        return 'break'
+    
+    def on_entry_return(self, event):
+        """Обработка Enter в поле ввода"""
+        # Если есть первый элемент в списке, выбираем его
+        if self.autocomplete_listbox.size() > 0:
+            selected_plate = self.autocomplete_listbox.get(0)
+            self.select_plate(selected_plate)
+        return 'break'
+    
+    def on_listbox_select(self, event):
+        """Выбор элемента из списка"""
+        if self.autocomplete_listbox.curselection():
+            index = self.autocomplete_listbox.curselection()[0]
+            selected_plate = self.autocomplete_listbox.get(index)
+            self.select_plate(selected_plate)
+    
+    def select_plate(self, plate):
+        """Установить выбранный номер и автозаполнить данные"""
+        self.license_var.set(plate)
+        self.hide_autocomplete_list()
+        self.license_entry.focus_set()
+        
+        # Автозаполнение характеристик
+        selected_plate = plate
         if not selected_plate:
             return
         
