@@ -21,12 +21,22 @@ class PrintService:
         if not os.path.exists(self.receipts_dir):
             os.makedirs(self.receipts_dir)
         
-        # Регистрируем русский шрифт
+        # Регистрируем русский шрифт для PDF
         font_path = os.path.join(base_path, "fonts", "DejaVuSans.ttf")
+        print(f"PDF шрифт - базовый путь: {base_path}")
+        print(f"PDF шрифт - полный путь: {font_path}")
+        print(f"PDF шрифт - файл существует: {os.path.exists(font_path)}")
+        
         if os.path.exists(font_path):
-            pdfmetrics.registerFont(TTFont('DejaVu', font_path))
-            self.font_name = 'DejaVu'
+            try:
+                pdfmetrics.registerFont(TTFont('DejaVu', font_path))
+                self.font_name = 'DejaVu'
+                print(f"✓ PDF шрифт DejaVu успешно зарегистрирован")
+            except Exception as e:
+                print(f"✗ Ошибка регистрации PDF шрифта: {e}")
+                self.font_name = 'Helvetica'
         else:
+            print(f"✗ Файл шрифта не найден, используется Helvetica")
             self.font_name = 'Helvetica'
     
     def generate_receipt(self, order, items, total_amount):
