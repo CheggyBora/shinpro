@@ -11,15 +11,123 @@ class PriceListTab:
         self.current_vehicle_type = 'car'
         self.editing_item = None
         self.editing_column = None
+        self.is_authenticated = False
+        
+        # Создаем контейнеры для двух экранов
+        self.login_frame = None
+        self.content_frame = None
+        
+        # Показываем экран входа
+        self.show_login_screen()
+    
+    def show_login_screen(self):
+        """Показать экран входа с PIN-кодом"""
+        # Удаляем предыдущий экран входа если есть
+        if self.login_frame:
+            self.login_frame.destroy()
+        
+        # Создаем экран входа
+        self.login_frame = ttk.Frame(self.frame, style='BG.TFrame')
+        self.login_frame.pack(fill='both', expand=True)
+        
+        # Центральный контейнер
+        center_frame = ttk.Frame(self.login_frame, style='BG.TFrame')
+        center_frame.place(relx=0.5, rely=0.5, anchor='center')
+        
+        # Иконка замка
+        lock_label = tk.Label(center_frame, text="🔒", font=('Arial', 80), bg=styles.COLORS['bg'])
+        lock_label.pack(pady=(0, 30))
         
         # Заголовок
-        header_frame = ttk.Frame(self.frame, style='BG.TFrame')
+        title_label = tk.Label(
+            center_frame, 
+            text="Доступ к прайс-листу",
+            font=('Arial', 24, 'bold'),
+            bg=styles.COLORS['bg'],
+            fg=styles.COLORS['text']
+        )
+        title_label.pack(pady=(0, 10))
+        
+        # Подзаголовок
+        subtitle_label = tk.Label(
+            center_frame,
+            text="Введите PIN-код администратора",
+            font=('Arial', 14),
+            bg=styles.COLORS['bg'],
+            fg=styles.COLORS['gray']
+        )
+        subtitle_label.pack(pady=(0, 40))
+        
+        # Поле ввода PIN (увеличено в 3 раза)
+        pin_frame = ttk.Frame(center_frame, style='BG.TFrame')
+        pin_frame.pack(pady=(0, 30))
+        
+        self.pin_entry = tk.Entry(
+            pin_frame,
+            font=('Arial', 48),  # Шрифт в 3 раза больше (16 * 3 = 48)
+            show='●',
+            width=10,
+            justify='center',
+            bg='white',
+            fg=styles.COLORS['text'],
+            relief='solid',
+            borderwidth=2
+        )
+        self.pin_entry.pack()
+        self.pin_entry.focus_set()
+        
+        # Привязка Enter для входа
+        self.pin_entry.bind('<Return>', lambda e: self.check_pin())
+        
+        # Кнопка входа (большая)
+        login_btn = tk.Button(
+            center_frame,
+            text="Войти",
+            font=('Arial', 18, 'bold'),
+            bg=styles.COLORS['primary'],
+            fg='white',
+            activebackground=styles.COLORS['primary_dark'],
+            activeforeground='white',
+            cursor='hand2',
+            relief='flat',
+            padx=60,
+            pady=15,
+            command=self.check_pin
+        )
+        login_btn.pack()
+    
+    def check_pin(self):
+        """Проверка введенного PIN-кода"""
+        settings = self.db.query(Settings).filter(Settings.key == 'admin_pin').first()
+        stored_pin = settings.value if settings else '0000'
+        
+        entered_pin = self.pin_entry.get()
+        
+        if entered_pin == stored_pin:
+            # PIN верный - показываем основной интерфейс
+            self.is_authenticated = True
+            self.login_frame.destroy()
+            self.show_content_screen()
+        else:
+            # PIN неверный - показываем ошибку
+            messagebox.showerror("Ошибка доступа", "Неверный PIN-код!\nДоступ запрещен.")
+            self.pin_entry.delete(0, tk.END)
+            self.pin_entry.focus_set()
+    
+    def show_content_screen(self):
+        """Показать основной интерфейс прайс-листа"""
+        # Создаем основной контейнер
+        self.content_frame = ttk.Frame(self.frame, style='BG.TFrame')
+        self.content_frame.pack(fill='both', expand=True)
+        
+        # Заголовок
+        header_frame = ttk.Frame(self.content_frame, style='BG.TFrame')
         header_frame.pack(fill='x', padx=15, pady=(15, 10))
         
         styles.create_label(header_frame, "Управление прайс-листом", 'Heading.TLabel').pack(side='left')
         
         # Кнопки
-        btn_frame = ttk.Frame(self.frame, style='BG.TFrame')
+        btn_frame = ttk.Frame(self.content_frame, style='BG.TFrame')
         btn_frame.pack(fill='x', padx=15, pady=(0, 10))
         
         styles.create_button(btn_frame, "Легковой", lambda: self.filter_by_vehicle_type('car'), 'Service.TButton').pack(side='left', padx=(0, 5))
@@ -29,7 +137,7 @@ class PriceListTab:
         styles.create_button(btn_frame, "💾 Сохранить изменения", self.save_changes, 'Success.TButton').pack(side='right')
         
         # Карточка с таблицей
-        card = styles.create_card_frame(self.frame)
+        card = styles.create_card_frame(self.content_frame)
         card.pack(fill='both', expand=True, padx=15, pady=(0, 15))
         
         card_inner = ttk.Frame(card, style='White.TFrame')

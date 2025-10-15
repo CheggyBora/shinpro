@@ -4,6 +4,7 @@ from tkinter import ttk
 COLORS = {
     'primary': '#2563eb',
     'primary_hover': '#1d4ed8',
+    'primary_dark': '#1e40af',
     'secondary': '#64748b',
     'success': '#10b981',
     'danger': '#ef4444',
@@ -12,6 +13,7 @@ COLORS = {
     'bg_card': '#ffffff',
     'text': '#1e293b',
     'text_secondary': '#64748b',
+    'gray': '#64748b',
     'border': '#e2e8f0',
     'hover': '#f1f5f9'
 }
