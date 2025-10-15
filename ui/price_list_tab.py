@@ -171,11 +171,11 @@ class PriceListTab:
         self.h_scrollbar.config(command=self.tree.xview)
         
         # Настройка колонок
-        self.tree.column('Услуга', width=300, anchor='w', minwidth=200)
+        self.tree.column('Услуга', width=280, anchor='w', minwidth=180)
         self.tree.heading('Услуга', text='Услуга')
         
         for col in columns[1:]:
-            self.tree.column(col, width=90, anchor='center', minwidth=70)
+            self.tree.column(col, width=70, anchor='center', minwidth=60)
             self.tree.heading(col, text=col)
         
         self.tree.pack(fill='both', expand=True)
@@ -218,11 +218,11 @@ class PriceListTab:
         self.h_scrollbar.config(command=self.tree.xview)
         
         # Настройка колонок
-        self.tree.column('Услуга', width=300, anchor='w', minwidth=200)
+        self.tree.column('Услуга', width=280, anchor='w', minwidth=180)
         self.tree.heading('Услуга', text='Услуга')
         
         for col in columns[1:]:
-            self.tree.column(col, width=90, anchor='center', minwidth=70)
+            self.tree.column(col, width=70, anchor='center', minwidth=60)
             self.tree.heading(col, text=col)
         
         self.tree.pack(fill='both', expand=True)
