@@ -54,9 +54,13 @@ The application features a modern, clean design with a focus on usability.
 **Core Modules:**
 - **Employees Tab**: Manages employee registration, percentage-based commission rates (PIN-protected), shift tracking, and salary viewing.
 - **Orders Tab**: 
+  - **Autocomplete for License Plates**: 
+    - Type in "Номер автомобиля:" field → Dropdown shows matching plates (progressive filtering)
+    - Example: Type "а" → shows all plates starting with "а"; type "а1" → narrows to plates starting with "а1"
+    - Select plate from dropdown → Auto-fills previous vehicle data (diameter, type, client name, phone)
   - **Workflow (Two-Step Process)**: 
-    1. On "Наряды" tab: Enter car license plate in "Номер автомобиля:" field
-    2. Click "Создать наряд" button → Opens modal dialog with: диаметр колеса, тип транспорта, имя клиента, номер телефона
+    1. On "Наряды" tab: Enter car license plate in "Номер автомобиля:" field (with autocomplete)
+    2. Click "Создать наряд" button → Opens modal dialog with: диаметр колеса, тип транспорта, имя клиента, номер телефона (auto-filled if vehicle exists)
     3. Click "Создать наряд" in dialog → Opens order tab with service panel above and order details below
   - **4-Column Service Panel**: 
     - Column 1: Подкачка, Съем+Установка, Мойка, Шиномонтаж, Балансировка, Герметик обода, Обработка смазкой, Правка литого диска, Съем+Установка внутреннего колеса (9 services)
