@@ -58,15 +58,15 @@ class PriceListTab:
         )
         subtitle_label.pack(pady=(0, 40))
         
-        # Поле ввода PIN (увеличено в 3 раза)
+        # Поле ввода PIN (увеличено в 1.5 раза)
         pin_frame = ttk.Frame(center_frame, style='BG.TFrame')
         pin_frame.pack(pady=(0, 30))
         
         self.pin_entry = tk.Entry(
             pin_frame,
-            font=('Arial', 48),  # Шрифт в 3 раза больше (16 * 3 = 48)
+            font=('Arial', 24),  # Шрифт 24pt (в 1.5 раза больше стандартного)
             show='●',
-            width=10,
+            width=12,
             justify='center',
             bg='white',
             fg=styles.COLORS['text'],
