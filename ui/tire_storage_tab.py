@@ -377,48 +377,102 @@ class TireStorageTab:
         filename = f'receipts/storage_{storage.id}.pdf'
         c = canvas.Canvas(filename, pagesize=letter)
         
+        width, height = letter
+        
         for copy in range(copies):
             if copy > 0:
                 c.showPage()
             
-            c.setFont(font_name, 16)
-            c.drawString(50, 750, "ЧЕК ПРИЁМА ШИН НА ХРАНЕНИЕ")
+            # Заголовок
+            y = height - 50
+            c.setFont(font_name, 24)
+            c.drawCentredString(width/2, y, "Шиномонтаж РИФ")
             
-            c.setFont(font_name, 12)
-            y = 720
-            c.drawString(50, y, f"Чек № {storage.id}")
-            y -= 20
-            c.drawString(50, y, f"Дата: {storage.accepted_date.strftime('%d.%m.%Y %H:%M')}")
             y -= 30
-            c.drawString(50, y, f"Номер автомобиля: {storage.car_number}")
-            y -= 20
-            if storage.driver_license:
-                c.drawString(50, y, f"Водительское удостоверение: {storage.driver_license}")
-                y -= 20
-            c.drawString(50, y, f"Тип хранения: {storage.storage_type}")
-            y -= 20
-            if storage.wheel_type:
-                c.drawString(50, y, f"Тип дисков: {storage.wheel_type}")
-                y -= 20
-            c.drawString(50, y, f"Диаметр: {storage.diameter}")
-            y -= 20
-            c.drawString(50, y, f"Марка шины: {storage.brand or '-'}")
-            y -= 20
-            c.drawString(50, y, f"Повреждения: {storage.damage or 'нет'}")
-            y -= 20
-            c.drawString(50, y, f"Износ: {storage.wear or '-'}")
-            y -= 20
-            if storage.comments:
-                c.drawString(50, y, f"Комментарии: {storage.comments}")
-                y -= 20
-            y -= 20
+            c.setFont(font_name, 16)
+            c.drawCentredString(width/2, y, "АКТ ПРИЁМА ШИН НА ХРАНЕНИЕ")
             
-            c.setFont(font_name, 14)
-            c.drawString(50, y, f"Цена хранения: {int(storage.price)} ₽")
+            y -= 25
+            c.setFont(font_name, 12)
+            c.drawCentredString(width/2, y, f"№ {storage.id} от {storage.accepted_date.strftime('%d.%m.%Y %H:%M')}")
+            
             y -= 40
+            c.line(50, y, width-50, y)
             
+            # Информация об автомобиле
+            y -= 30
+            c.setFont(font_name, 12)
+            c.drawString(50, y, f"Номер автомобиля:")
+            c.setFont(font_name, 14)
+            c.drawString(250, y, storage.car_number)
+            
+            if storage.driver_license:
+                y -= 25
+                c.setFont(font_name, 12)
+                c.drawString(50, y, f"Водительское удостоверение:")
+                c.setFont(font_name, 14)
+                c.drawString(250, y, storage.driver_license)
+            
+            y -= 30
+            c.line(50, y, width-50, y)
+            
+            # Информация о шинах
+            y -= 30
+            c.setFont(font_name, 12)
+            c.drawString(50, y, "Информация о шинах:")
+            
+            y -= 25
+            c.drawString(50, y, f"Тип хранения:")
+            c.drawString(250, y, storage.storage_type)
+            
+            y -= 20
+            c.drawString(50, y, f"Диаметр:")
+            c.drawString(250, y, storage.diameter)
+            
+            if storage.wheel_type:
+                y -= 20
+                c.drawString(50, y, f"Тип дисков:")
+                c.drawString(250, y, storage.wheel_type)
+            
+            y -= 20
+            c.drawString(50, y, f"Марка шины:")
+            c.drawString(250, y, storage.brand or '-')
+            
+            y -= 20
+            c.drawString(50, y, f"Износ:")
+            c.drawString(250, y, storage.wear or '-')
+            
+            y -= 20
+            c.drawString(50, y, f"Повреждения:")
+            c.drawString(250, y, storage.damage or 'нет')
+            
+            if storage.comments:
+                y -= 25
+                c.drawString(50, y, f"Комментарии:")
+                c.setFont(font_name, 11)
+                c.drawString(250, y, storage.comments[:50])
+            
+            y -= 30
+            c.line(50, y, width-50, y)
+            
+            # Стоимость
+            y -= 35
+            c.setFont(font_name, 16)
+            c.drawString(50, y, "СТОИМОСТЬ ХРАНЕНИЯ:")
+            c.drawRightString(width-50, y, f"{int(storage.price)} ₽")
+            
+            y -= 10
+            c.line(50, y, width-50, y)
+            
+            # Подпись и экземпляр
+            y -= 50
+            c.setFont(font_name, 11)
+            c.drawString(50, y, "Принял: _________________")
+            c.drawRightString(width-50, y, "Сдал: _________________")
+            
+            y = 80
             c.setFont(font_name, 10)
-            c.drawString(50, y, f"Экземпляр {copy + 1} из {copies}")
+            c.drawCentredString(width/2, y, f"Экземпляр {copy + 1} из {copies}")
         
         c.save()
     
@@ -442,41 +496,103 @@ class TireStorageTab:
         filename = f'receipts/release_{storage.id}.pdf'
         c = canvas.Canvas(filename, pagesize=letter)
         
-        c.setFont(font_name, 16)
-        c.drawString(50, 750, "ЧЕК ВЫДАЧИ ШИН С ХРАНЕНИЯ")
+        width, height = letter
         
-        c.setFont(font_name, 12)
-        y = 720
-        c.drawString(50, y, f"Чек № {storage.id}")
-        y -= 20
-        c.drawString(50, y, f"Дата приёма: {storage.accepted_date.strftime('%d.%m.%Y %H:%M')}")
-        y -= 20
-        c.drawString(50, y, f"Дата выдачи: {storage.released_date.strftime('%d.%m.%Y %H:%M')}")
+        # Заголовок
+        y = height - 50
+        c.setFont(font_name, 24)
+        c.drawCentredString(width/2, y, "Шиномонтаж РИФ")
+        
         y -= 30
-        c.drawString(50, y, f"Номер автомобиля: {storage.car_number}")
-        y -= 20
-        if storage.driver_license:
-            c.drawString(50, y, f"Водительское удостоверение: {storage.driver_license}")
-            y -= 20
-        c.drawString(50, y, f"Тип хранения: {storage.storage_type}")
-        y -= 20
-        if storage.wheel_type:
-            c.drawString(50, y, f"Тип дисков: {storage.wheel_type}")
-            y -= 20
-        c.drawString(50, y, f"Диаметр: {storage.diameter}")
-        y -= 20
-        c.drawString(50, y, f"Марка шины: {storage.brand or '-'}")
-        y -= 20
-        if storage.comments:
-            c.drawString(50, y, f"Комментарии: {storage.comments}")
-            y -= 20
-        y -= 20
+        c.setFont(font_name, 16)
+        c.drawCentredString(width/2, y, "АКТ ВЫДАЧИ ШИН С ХРАНЕНИЯ")
         
-        c.setFont(font_name, 14)
-        c.drawString(50, y, f"Стоимость хранения: {int(storage.price)} ₽")
+        y -= 25
+        c.setFont(font_name, 12)
+        c.drawCentredString(width/2, y, f"№ {storage.id}")
+        
         y -= 40
+        c.line(50, y, width-50, y)
         
-        c.setFont(font_name, 10)
-        c.drawString(50, y, "Шины выданы владельцу")
+        # Даты
+        y -= 30
+        c.setFont(font_name, 12)
+        c.drawString(50, y, f"Дата приёма:")
+        c.drawString(250, y, storage.accepted_date.strftime('%d.%m.%Y %H:%M'))
+        
+        y -= 20
+        c.drawString(50, y, f"Дата выдачи:")
+        c.setFont(font_name, 14)
+        c.drawString(250, y, storage.released_date.strftime('%d.%m.%Y %H:%M'))
+        
+        y -= 30
+        c.line(50, y, width-50, y)
+        
+        # Информация об автомобиле
+        y -= 30
+        c.setFont(font_name, 12)
+        c.drawString(50, y, f"Номер автомобиля:")
+        c.setFont(font_name, 14)
+        c.drawString(250, y, storage.car_number)
+        
+        if storage.driver_license:
+            y -= 25
+            c.setFont(font_name, 12)
+            c.drawString(50, y, f"Водительское удостоверение:")
+            c.setFont(font_name, 14)
+            c.drawString(250, y, storage.driver_license)
+        
+        y -= 30
+        c.line(50, y, width-50, y)
+        
+        # Информация о шинах
+        y -= 30
+        c.setFont(font_name, 12)
+        c.drawString(50, y, "Информация о шинах:")
+        
+        y -= 25
+        c.drawString(50, y, f"Тип хранения:")
+        c.drawString(250, y, storage.storage_type)
+        
+        y -= 20
+        c.drawString(50, y, f"Диаметр:")
+        c.drawString(250, y, storage.diameter)
+        
+        if storage.wheel_type:
+            y -= 20
+            c.drawString(50, y, f"Тип дисков:")
+            c.drawString(250, y, storage.wheel_type)
+        
+        y -= 20
+        c.drawString(50, y, f"Марка шины:")
+        c.drawString(250, y, storage.brand or '-')
+        
+        if storage.comments:
+            y -= 25
+            c.drawString(50, y, f"Комментарии:")
+            c.setFont(font_name, 11)
+            c.drawString(250, y, storage.comments[:50])
+        
+        y -= 30
+        c.line(50, y, width-50, y)
+        
+        # Стоимость
+        y -= 35
+        c.setFont(font_name, 16)
+        c.drawString(50, y, "СТОИМОСТЬ ХРАНЕНИЯ:")
+        c.drawRightString(width-50, y, f"{int(storage.price)} ₽")
+        
+        y -= 10
+        c.line(50, y, width-50, y)
+        
+        # Подпись
+        y -= 50
+        c.setFont(font_name, 11)
+        c.drawString(50, y, "Выдал: _________________")
+        c.drawRightString(width-50, y, "Получил: _________________")
+        
+        y = 80
+        c.setFont(font_name, 12)
+        c.drawCentredString(width/2, y, "Шины выданы владельцу")
         
         c.save()
