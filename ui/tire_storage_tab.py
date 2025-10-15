@@ -4,8 +4,11 @@ from services.tire_storage_service import TireStorageService
 from datetime import datetime
 import styles
 import os
+import sys
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 
 class TireStorageTab:
     def __init__(self, parent, db):
@@ -358,6 +361,19 @@ class TireStorageTab:
         if not os.path.exists('receipts'):
             os.makedirs('receipts')
         
+        # Регистрируем русский шрифт
+        if getattr(sys, 'frozen', False):
+            base_path = os.path.dirname(sys.executable)
+        else:
+            base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        
+        font_path = os.path.join(base_path, "fonts", "DejaVuSans.ttf")
+        if os.path.exists(font_path):
+            pdfmetrics.registerFont(TTFont('DejaVu', font_path))
+            font_name = 'DejaVu'
+        else:
+            font_name = 'Helvetica'
+        
         filename = f'receipts/storage_{storage.id}.pdf'
         c = canvas.Canvas(filename, pagesize=letter)
         
@@ -365,10 +381,10 @@ class TireStorageTab:
             if copy > 0:
                 c.showPage()
             
-            c.setFont("Helvetica-Bold", 16)
+            c.setFont(font_name, 16)
             c.drawString(50, 750, "ЧЕК ПРИЁМА ШИН НА ХРАНЕНИЕ")
             
-            c.setFont("Helvetica", 12)
+            c.setFont(font_name, 12)
             y = 720
             c.drawString(50, y, f"Чек № {storage.id}")
             y -= 20
@@ -397,11 +413,11 @@ class TireStorageTab:
                 y -= 20
             y -= 20
             
-            c.setFont("Helvetica-Bold", 14)
+            c.setFont(font_name, 14)
             c.drawString(50, y, f"Цена хранения: {int(storage.price)} ₽")
             y -= 40
             
-            c.setFont("Helvetica", 10)
+            c.setFont(font_name, 10)
             c.drawString(50, y, f"Экземпляр {copy + 1} из {copies}")
         
         c.save()
@@ -410,13 +426,26 @@ class TireStorageTab:
         if not os.path.exists('receipts'):
             os.makedirs('receipts')
         
+        # Регистрируем русский шрифт
+        if getattr(sys, 'frozen', False):
+            base_path = os.path.dirname(sys.executable)
+        else:
+            base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        
+        font_path = os.path.join(base_path, "fonts", "DejaVuSans.ttf")
+        if os.path.exists(font_path):
+            pdfmetrics.registerFont(TTFont('DejaVu', font_path))
+            font_name = 'DejaVu'
+        else:
+            font_name = 'Helvetica'
+        
         filename = f'receipts/release_{storage.id}.pdf'
         c = canvas.Canvas(filename, pagesize=letter)
         
-        c.setFont("Helvetica-Bold", 16)
+        c.setFont(font_name, 16)
         c.drawString(50, 750, "ЧЕК ВЫДАЧИ ШИН С ХРАНЕНИЯ")
         
-        c.setFont("Helvetica", 12)
+        c.setFont(font_name, 12)
         y = 720
         c.drawString(50, y, f"Чек № {storage.id}")
         y -= 20
@@ -443,11 +472,11 @@ class TireStorageTab:
             y -= 20
         y -= 20
         
-        c.setFont("Helvetica-Bold", 14)
+        c.setFont(font_name, 14)
         c.drawString(50, y, f"Стоимость хранения: {int(storage.price)} ₽")
         y -= 40
         
-        c.setFont("Helvetica", 10)
+        c.setFont(font_name, 10)
         c.drawString(50, y, "Шины выданы владельцу")
         
         c.save()
