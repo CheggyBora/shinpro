@@ -75,8 +75,14 @@ class PriceListTab:
         for item in self.tree.get_children():
             self.tree.delete(item)
         
-        # Загружаем услуги
-        services = self.db.query(Service).filter(Service.vehicle_type == self.current_vehicle_type).order_by(Service.name).all()
+        # Загружаем услуги: конкретного типа + универсальные ('all')
+        services = self.db.query(Service).filter(
+            (Service.vehicle_type == self.current_vehicle_type) | (Service.vehicle_type == 'all')
+        ).order_by(Service.name).all()
+        
+        if not services:
+            messagebox.showwarning("Предупреждение", f"Нет услуг для типа транспорта: {self.current_vehicle_type}")
+            return
         
         for service in services:
             values = [

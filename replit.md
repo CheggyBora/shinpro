@@ -75,6 +75,13 @@ The application features a modern, clean design with a focus on usability.
 - **Tire Storage Tab**: Manages tire intake and release, generating **A4 format PDF documents** automatically:
     - **Intake**: Records vehicle number, driver's license, storage type (tires/tires with rims), rim type, diameter, tire brand, damage description, wear, comments, and calculates storage price. Generates `storage_{id}.pdf` with **2 copies** (for customer and archive).
     - **Release**: Tracks stored sets, displays relevant information, and generates `release_{id}.pdf` upon release with professional A4 layout.
+- **Price List Tab (💰 Прайс-лист)**: Comprehensive price management interface for administrators:
+    - **View All Services**: Table display of all services with prices for each wheel diameter (R13-R24)
+    - **Filter by Vehicle Type**: Switch between Легковой (car), Джип/Кроссовер (SUV), and Категория С (truck) price lists
+    - **Edit Prices**: Double-click any price cell to modify the value
+    - **PIN Protection**: Requires admin PIN (default `0000`) before allowing any price changes
+    - **Batch Save**: Tracks all modifications and saves multiple changes at once with a single "Save Changes" button
+    - **Real-time Updates**: Changes are immediately reflected in the database and affect future orders
 
 **Service Pricing:**
 - Over 42 services categorized into: Basic, Rim Repair, Additional, Consumables, Checks, and Repairs (patching, sidewall repair).
