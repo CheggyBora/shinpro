@@ -161,6 +161,13 @@ class OrdersTab:
             # Фильтруем список номеров по введенному тексту
             filtered = [plate for plate in self.all_license_plates if plate.lower().startswith(typed)]
             self.license_entry['values'] = filtered
+            
+            # Открываем список и возвращаем фокус
+            if filtered:
+                self.license_entry.event_generate('<Down>')
+                # Возвращаем фокус в поле ввода и устанавливаем курсор в конец
+                self.license_entry.focus_set()
+                self.license_entry.icursor(tk.END)
     
     def on_license_selected(self, event):
         """Автозаполнение характеристик при выборе номера из списка"""
