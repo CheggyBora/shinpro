@@ -425,7 +425,40 @@ class OrderWidget:
                 ).first()
             
             if service:
-                self.add_service(service)
+                # Диалог выбора количества
+                dialog = tk.Toplevel(self.frame)
+                dialog.title("Количество")
+                dialog.geometry("300x200")
+                dialog.configure(bg=styles.COLORS['bg'])
+                
+                # Центрируем окно
+                dialog.update_idletasks()
+                width = 300
+                height = 200
+                x = (dialog.winfo_screenwidth() // 2) - (width // 2)
+                y = (dialog.winfo_screenheight() // 2) - (height // 2)
+                dialog.geometry(f'{width}x{height}+{x}+{y}')
+                
+                content = ttk.Frame(dialog, style='White.TFrame')
+                content.pack(fill='both', expand=True, padx=20, pady=20)
+                
+                styles.create_label(content, f"{service_name}", 'CardHeading.TLabel').pack(anchor='w', pady=(0, 15))
+                
+                styles.create_label(content, "Количество:", 'Card.TLabel').pack(anchor='w', pady=(0, 5))
+                quantity_var = tk.StringVar(value='1')
+                quantity_combo = ttk.Combobox(content, textvariable=quantity_var, 
+                                              values=['1', '2', '3', '4', '5', '6', '7', '8'],
+                                              font=styles.FONTS['normal'], state='readonly', width=10)
+                quantity_combo.pack(anchor='w', pady=(0, 20))
+                quantity_combo.current(0)
+                
+                def add_with_quantity():
+                    quantity = int(quantity_var.get())
+                    dialog.destroy()
+                    for _ in range(quantity):
+                        self.add_service(service)
+                
+                styles.create_button(content, "Добавить", add_with_quantity, 'Primary.TButton').pack(fill='x')
             else:
                 messagebox.showerror("Ошибка", f"Услуга '{service_name}' не найдена")
         except Exception as e:
@@ -444,7 +477,40 @@ class OrderWidget:
                     ).first()
                 
                 if service:
-                    self.add_service(service)
+                    # Диалог выбора количества
+                    dialog = tk.Toplevel(self.frame)
+                    dialog.title("Количество")
+                    dialog.geometry("300x200")
+                    dialog.configure(bg=styles.COLORS['bg'])
+                    
+                    # Центрируем окно
+                    dialog.update_idletasks()
+                    width = 300
+                    height = 200
+                    x = (dialog.winfo_screenwidth() // 2) - (width // 2)
+                    y = (dialog.winfo_screenheight() // 2) - (height // 2)
+                    dialog.geometry(f'{width}x{height}+{x}+{y}')
+                    
+                    content = ttk.Frame(dialog, style='White.TFrame')
+                    content.pack(fill='both', expand=True, padx=20, pady=20)
+                    
+                    styles.create_label(content, f"{service_name}", 'CardHeading.TLabel').pack(anchor='w', pady=(0, 15))
+                    
+                    styles.create_label(content, "Количество:", 'Card.TLabel').pack(anchor='w', pady=(0, 5))
+                    quantity_var = tk.StringVar(value='1')
+                    quantity_combo = ttk.Combobox(content, textvariable=quantity_var, 
+                                                  values=['1', '2', '3', '4', '5', '6', '7', '8'],
+                                                  font=styles.FONTS['normal'], state='readonly', width=10)
+                    quantity_combo.pack(anchor='w', pady=(0, 20))
+                    quantity_combo.current(0)
+                    
+                    def add_with_quantity():
+                        quantity = int(quantity_var.get())
+                        dialog.destroy()
+                        for _ in range(quantity):
+                            self.add_service(service)
+                    
+                    styles.create_button(content, "Добавить", add_with_quantity, 'Primary.TButton').pack(fill='x')
                 else:
                     messagebox.showerror("Ошибка", f"Услуга '{service_name}' не найдена")
             except Exception as e2:
