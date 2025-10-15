@@ -63,6 +63,7 @@ The application features a modern, clean design with a focus on usability.
     - Column 2: Runflat, Оптимизация балансировки, Замена вентиля, Установка датчика давления, Ремонт жгутом, Шлифовка бортов диска, Шлифовка ступицы, Косметический ремонт шины, Дошиповка, Грязевая покрышка АТ/МТ (10 services)  
     - Column 3: Editable services + Repairs (7 services)
     - Column 4: Consumables + Checks (8 services)
+  - **Quantity Selection**: Click any service button → Opens dialog to select quantity (1-8) → Adds service multiple times
   - Multi-tab work orders, automatic pricing based on vehicle type and diameter.
   - Discount system (5%, 10%, 15%) and 5% auto-discount when client name AND phone are filled.
   - Payment processing (cash/card), **A4 PDF receipt printing** with professional layout and Cyrillic support.
