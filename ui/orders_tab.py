@@ -451,7 +451,7 @@ class OrderWidget:
         }
         vehicle_type_display = vehicle_type_map.get(order.vehicle_type, order.vehicle_type)
         
-        ttk.Label(info_frame, text=f"Машина: {order.car.license_plate} | Класс: {vehicle_type_display} | Диаметр: {order.wheel_diameter}", font=('Arial', 10, 'bold')).pack(anchor='w')
+        ttk.Label(info_frame, text=f"Машина: {order.car.license_plate} | Класс: {vehicle_type_display} | Диаметр: {order.wheel_diameter}", font=(styles.DEFAULT_FONT, 10, 'bold')).pack(anchor='w')
         
         if order.client:
             client_info = order.client.name or ""
@@ -460,32 +460,32 @@ class OrderWidget:
             client_text = f"Клиент: {client_info}"
             if order.auto_discount:
                 client_text += " (Автоскидка: 5%)"
-            ttk.Label(info_frame, text=client_text, font=('Arial', 9), foreground='#059669' if order.auto_discount else 'black').pack(anchor='w')
+            ttk.Label(info_frame, text=client_text, font=(styles.DEFAULT_FONT, 9), foreground='#059669' if order.auto_discount else 'black').pack(anchor='w')
         
         # Сотрудники (под машиной)
-        self.employees_label = ttk.Label(info_frame, text="", font=('Arial', 9), foreground='#64748b')
+        self.employees_label = ttk.Label(info_frame, text="", font=(styles.DEFAULT_FONT, 9), foreground='#64748b')
         self.employees_label.pack(anchor='w')
         
         # Скидки (левее)
         discount_frame = ttk.Frame(top_frame)
         discount_frame.pack(side='left', padx=(15, 0))
         
-        ttk.Label(discount_frame, text="Скидки:", font=('Arial', 11, 'bold')).pack(anchor='w')
+        ttk.Label(discount_frame, text="Скидки:", font=(styles.DEFAULT_FONT, 11, 'bold')).pack(anchor='w')
         
         disc_row = ttk.Frame(discount_frame)
         disc_row.pack()
         
-        ttk.Label(disc_row, text="Диски:", font=('Arial', 10)).pack(side='left', padx=(0, 3))
+        ttk.Label(disc_row, text="Диски:", font=(styles.DEFAULT_FONT, 10)).pack(side='left', padx=(0, 3))
         self.rim_discount_var = tk.StringVar(value='0')
         rim_combo = ttk.Combobox(disc_row, textvariable=self.rim_discount_var, values=['0', '10', '20'], 
-                                 width=5, font=('Arial', 10), state='readonly')
+                                 width=5, font=(styles.DEFAULT_FONT, 10), state='readonly')
         rim_combo.pack(side='left', padx=(0, 3))
         ttk.Button(disc_row, text="OK", command=self.apply_rim_discount, width=3).pack(side='left', padx=(0, 10))
         
-        ttk.Label(disc_row, text="Общ:", font=('Arial', 10)).pack(side='left', padx=(0, 3))
+        ttk.Label(disc_row, text="Общ:", font=(styles.DEFAULT_FONT, 10)).pack(side='left', padx=(0, 3))
         self.general_discount_var = tk.StringVar(value='0')
         general_combo = ttk.Combobox(disc_row, textvariable=self.general_discount_var, values=['0', '10', '15'], 
-                                      width=5, font=('Arial', 10), state='readonly')
+                                      width=5, font=(styles.DEFAULT_FONT, 10), state='readonly')
         general_combo.pack(side='left', padx=(0, 3))
         ttk.Button(disc_row, text="OK", command=self.apply_general_discount, width=3).pack(side='left')
         
@@ -493,14 +493,14 @@ class OrderWidget:
         price_frame = ttk.Frame(top_frame)
         price_frame.pack(side='right')
         
-        self.price_label = ttk.Label(price_frame, text="0.00 руб.", font=('Arial', 14, 'bold'), foreground='#2563eb')
+        self.price_label = ttk.Label(price_frame, text="0.00 руб.", font=(styles.DEFAULT_FONT, 14, 'bold'), foreground='#2563eb')
         self.price_label.pack(anchor='e')
         
-        self.discount_price_label = ttk.Label(price_frame, text="", font=('Arial', 12, 'bold'), foreground='#059669')
+        self.discount_price_label = ttk.Label(price_frame, text="", font=(styles.DEFAULT_FONT, 12, 'bold'), foreground='#059669')
         self.discount_price_label.pack(anchor='e')
         
         # Список услуг
-        ttk.Label(main_container, text="Услуги:", font=('Arial', 9, 'bold'), style='ServiceHeading.TLabel').pack(fill='x', pady=(2, 1))
+        ttk.Label(main_container, text="Услуги:", font=(styles.DEFAULT_FONT, 9, 'bold'), style='ServiceHeading.TLabel').pack(fill='x', pady=(2, 1))
         
         tree_frame = ttk.Frame(main_container)
         tree_frame.pack(fill='both', expand=True)
@@ -691,7 +691,7 @@ class OrderWidget:
         
         total_label = styles.create_label(content, f"Сумма к оплате: {total:.2f} руб.", 'CardHeading.TLabel')
         total_label.pack(pady=(0, 20))
-        total_label.configure(font=('Arial', 16, 'bold'), foreground=styles.COLORS['primary'])
+        total_label.configure(font=(styles.DEFAULT_FONT, 16, 'bold'), foreground=styles.COLORS['primary'])
         
         payment_var = tk.StringVar(value='cash')
         

@@ -1,5 +1,55 @@
 import tkinter as tk
 from tkinter import ttk
+import platform
+import os
+import sys
+
+# Определение шрифта в зависимости от платформы
+def get_default_font_name():
+    """Возвращает имя подходящего шрифта для текущей платформы с поддержкой кириллицы"""
+    system = platform.system()
+    
+    if system == 'Windows':
+        # На Windows используем Arial
+        return 'Arial'
+    else:
+        # На Linux/Mac будет использоваться DejaVu Sans (регистрируется в main_window.py)
+        return 'DejaVu Sans'
+
+def register_dejavu_font():
+    """Регистрирует DejaVu Sans шрифт для Tkinter (вызывать ПОСЛЕ создания root window)"""
+    system = platform.system()
+    
+    if system == 'Windows':
+        return  # На Windows используем системный Arial
+    
+    try:
+        from tkinter import font as tkfont
+        
+        # Определяем путь к шрифту
+        if getattr(sys, 'frozen', False):
+            # Для PyInstaller EXE
+            base_path = sys._MEIPASS
+        else:
+            # Для обычного запуска - styles.py находится в корневой директории
+            base_path = os.path.dirname(os.path.abspath(__file__))
+        
+        font_path = os.path.join(base_path, "fonts", "DejaVuSans.ttf")
+        
+        if os.path.exists(font_path):
+            # Проверяем, что шрифт не зарегистрирован
+            if 'DejaVu Sans' not in tkfont.families():
+                print(f"✓ Регистрация DejaVu Sans шрифта для GUI: {font_path}")
+            return True
+        else:
+            print(f"✗ ВНИМАНИЕ: Файл шрифта не найден: {font_path}")
+            return False
+    except Exception as e:
+        print(f"✗ Ошибка при регистрации шрифта: {e}")
+        return False
+
+# Получаем имя шрифта (регистрация будет позже в main_window.py)
+DEFAULT_FONT = get_default_font_name()
 
 COLORS = {
     'primary': '#2563eb',
@@ -19,11 +69,11 @@ COLORS = {
 }
 
 FONTS = {
-    'heading': ('Arial', 14, 'bold'),
-    'subheading': ('Arial', 12, 'bold'),
-    'normal': ('Arial', 10),
-    'small': ('Arial', 9),
-    'button': ('Arial', 10, 'bold')
+    'heading': (DEFAULT_FONT, 14, 'bold'),
+    'subheading': (DEFAULT_FONT, 12, 'bold'),
+    'normal': (DEFAULT_FONT, 10),
+    'small': (DEFAULT_FONT, 9),
+    'button': (DEFAULT_FONT, 10, 'bold')
 }
 
 def apply_modern_styles(root):
@@ -80,7 +130,7 @@ def apply_modern_styles(root):
                    foreground='black')
     
     style.configure('Service.TButton',
-                   font=('Arial', 10, 'bold'),
+                   font=(DEFAULT_FONT, 10, 'bold'),
                    padding=[6, 4],
                    background='#f5e6d3',
                    foreground='#1e293b',

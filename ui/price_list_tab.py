@@ -35,14 +35,14 @@ class PriceListTab:
         center_frame.place(relx=0.5, rely=0.5, anchor='center')
         
         # Иконка замка
-        lock_label = tk.Label(center_frame, text="🔒", font=('Arial', 80), bg=styles.COLORS['bg'])
+        lock_label = tk.Label(center_frame, text="🔒", font=(styles.DEFAULT_FONT, 80), bg=styles.COLORS['bg'])
         lock_label.pack(pady=(0, 30))
         
         # Заголовок
         title_label = tk.Label(
             center_frame, 
             text="Доступ к прайс-листу",
-            font=('Arial', 24, 'bold'),
+            font=(styles.DEFAULT_FONT, 24, 'bold'),
             bg=styles.COLORS['bg'],
             fg=styles.COLORS['text']
         )
@@ -52,7 +52,7 @@ class PriceListTab:
         subtitle_label = tk.Label(
             center_frame,
             text="Введите PIN-код администратора",
-            font=('Arial', 14),
+            font=(styles.DEFAULT_FONT, 14),
             bg=styles.COLORS['bg'],
             fg=styles.COLORS['gray']
         )
@@ -64,7 +64,7 @@ class PriceListTab:
         
         self.pin_entry = tk.Entry(
             pin_frame,
-            font=('Arial', 24),  # Шрифт 24pt (в 1.5 раза больше стандартного)
+            font=(styles.DEFAULT_FONT, 24),  # Шрифт 24pt (в 1.5 раза больше стандартного)
             show='●',
             width=12,
             justify='center',
@@ -83,7 +83,7 @@ class PriceListTab:
         login_btn = tk.Button(
             center_frame,
             text="Войти",
-            font=('Arial', 18, 'bold'),
+            font=(styles.DEFAULT_FONT, 18, 'bold'),
             bg=styles.COLORS['primary'],
             fg='white',
             activebackground=styles.COLORS['primary_dark'],

@@ -239,6 +239,6 @@ class HistoryTab:
         
         total_label = styles.create_label(total_frame, f"ИТОГО: {order.total_amount:.2f} руб.", 'CardHeading.TLabel')
         total_label.pack(anchor='w', pady=(10, 0))
-        total_label.configure(font=('Arial', 16, 'bold'), foreground=styles.COLORS['primary'])
+        total_label.configure(font=(styles.DEFAULT_FONT, 16, 'bold'), foreground=styles.COLORS['primary'])
         
         styles.create_button(content, "Закрыть", dialog.destroy, 'Secondary.TButton').pack(fill='x', pady=(10, 0))

@@ -17,6 +17,9 @@ class MainWindow:
         
         styles.apply_modern_styles(self.root)
         
+        # Регистрируем DejaVu Sans шрифт для кириллицы на Linux
+        styles.register_dejavu_font()
+        
         self.db = get_db()
         
         self.notebook = ttk.Notebook(self.root)
