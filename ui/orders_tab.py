@@ -162,12 +162,16 @@ class OrdersTab:
             filtered = [plate for plate in self.all_license_plates if plate.lower().startswith(typed)]
             self.license_entry['values'] = filtered
             
-            # Открываем список и возвращаем фокус
+            # Открываем список и возвращаем фокус с задержкой
             if filtered:
                 self.license_entry.event_generate('<Down>')
-                # Возвращаем фокус в поле ввода и устанавливаем курсор в конец
-                self.license_entry.focus_set()
-                self.license_entry.icursor(tk.END)
+                # Возвращаем фокус обратно с минимальной задержкой
+                self.license_entry.after(1, self._return_focus_to_entry)
+    
+    def _return_focus_to_entry(self):
+        """Возвращает фокус в поле ввода и устанавливает курсор в конец"""
+        self.license_entry.focus_set()
+        self.license_entry.icursor(tk.END)
     
     def on_license_selected(self, event):
         """Автозаполнение характеристик при выборе номера из списка"""
