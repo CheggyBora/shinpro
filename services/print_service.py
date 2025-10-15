@@ -22,34 +22,22 @@ class PrintService:
         if not os.path.exists(self.receipts_dir):
             os.makedirs(self.receipts_dir)
         
-        # Регистрируем семейство шрифтов DejaVu Sans для PDF (с поддержкой Bold, Italic)
+        # Регистрируем шрифт DejaVu Sans для PDF с поддержкой кириллицы
         fonts_dir = os.path.join(base_path, "fonts")
+        font_path = os.path.join(fonts_dir, 'DejaVuSans.ttf')
         
         try:
-            # Регистрируем шрифты только если еще не зарегистрированы
+            # Регистрируем шрифт только если еще не зарегистрирован
             if 'DejaVuSans' not in pdfmetrics.getRegisteredFontNames():
-                # Regular
-                pdfmetrics.registerFont(TTFont('DejaVuSans', os.path.join(fonts_dir, 'DejaVuSans.ttf')))
-                # Bold
-                pdfmetrics.registerFont(TTFont('DejaVuSans-Bold', os.path.join(fonts_dir, 'DejaVuSans-Bold.ttf')))
-                # Italic (Oblique)
-                pdfmetrics.registerFont(TTFont('DejaVuSans-Oblique', os.path.join(fonts_dir, 'DejaVuSans-Oblique.ttf')))
-                # Bold Italic
-                pdfmetrics.registerFont(TTFont('DejaVuSans-BoldOblique', os.path.join(fonts_dir, 'DejaVuSans-BoldOblique.ttf')))
-                
-                # Создаём семейство шрифтов
-                addMapping('DejaVuSans', 0, 0, 'DejaVuSans')  # normal
-                addMapping('DejaVuSans', 1, 0, 'DejaVuSans-Bold')  # bold
-                addMapping('DejaVuSans', 0, 1, 'DejaVuSans-Oblique')  # italic
-                addMapping('DejaVuSans', 1, 1, 'DejaVuSans-BoldOblique')  # bold+italic
-                
-                print(f"✓ Семейство шрифтов DejaVuSans зарегистрировано (Regular, Bold, Italic, BoldItalic)")
-            else:
-                print(f"✓ Семейство шрифтов DejaVuSans уже зарегистрировано")
+                if os.path.exists(font_path):
+                    pdfmetrics.registerFont(TTFont('DejaVuSans', font_path))
+                    print(f"✓ Шрифт DejaVuSans зарегистрирован для PDF: {font_path}")
+                else:
+                    raise FileNotFoundError(f"Файл шрифта не найден: {font_path}")
             
             self.font_name = 'DejaVuSans'
         except Exception as e:
-            print(f"✗ Ошибка регистрации шрифтов DejaVu: {e}")
+            print(f"✗ Ошибка регистрации шрифта DejaVu: {e}")
             print(f"  Используется Helvetica в качестве резервного шрифта")
             self.font_name = 'Helvetica'
     

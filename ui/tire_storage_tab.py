@@ -12,34 +12,25 @@ from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.fonts import addMapping
 
 def register_dejavu_fonts():
-    """Регистрирует семейство шрифтов DejaVu Sans для PDF документов"""
+    """Регистрирует шрифт DejaVu Sans для PDF документов с поддержкой кириллицы"""
     if getattr(sys, 'frozen', False):
         base_path = os.path.dirname(sys.executable)
     else:
         base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     
     fonts_dir = os.path.join(base_path, "fonts")
+    font_path = os.path.join(fonts_dir, 'DejaVuSans.ttf')
     
     try:
         if 'DejaVuSans' not in pdfmetrics.getRegisteredFontNames():
-            # Regular
-            pdfmetrics.registerFont(TTFont('DejaVuSans', os.path.join(fonts_dir, 'DejaVuSans.ttf')))
-            # Bold
-            pdfmetrics.registerFont(TTFont('DejaVuSans-Bold', os.path.join(fonts_dir, 'DejaVuSans-Bold.ttf')))
-            # Italic (Oblique)
-            pdfmetrics.registerFont(TTFont('DejaVuSans-Oblique', os.path.join(fonts_dir, 'DejaVuSans-Oblique.ttf')))
-            # Bold Italic
-            pdfmetrics.registerFont(TTFont('DejaVuSans-BoldOblique', os.path.join(fonts_dir, 'DejaVuSans-BoldOblique.ttf')))
-            
-            # Создаём семейство шрифтов
-            addMapping('DejaVuSans', 0, 0, 'DejaVuSans')  # normal
-            addMapping('DejaVuSans', 1, 0, 'DejaVuSans-Bold')  # bold
-            addMapping('DejaVuSans', 0, 1, 'DejaVuSans-Oblique')  # italic
-            addMapping('DejaVuSans', 1, 1, 'DejaVuSans-BoldOblique')  # bold+italic
+            if os.path.exists(font_path):
+                pdfmetrics.registerFont(TTFont('DejaVuSans', font_path))
+            else:
+                raise FileNotFoundError(f"Файл шрифта не найден: {font_path}")
         
         return 'DejaVuSans'
     except Exception as e:
-        print(f"Ошибка регистрации шрифтов DejaVu: {e}")
+        print(f"Ошибка регистрации шрифта DejaVu: {e}")
         return 'Helvetica'
 
 class TireStorageTab:
