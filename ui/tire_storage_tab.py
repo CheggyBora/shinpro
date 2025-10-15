@@ -225,15 +225,22 @@ class TireStorageTab:
                 dialog.destroy()
             
             def preview_doc():
+                abs_path = os.path.abspath(filepath)
                 if platform.system() == 'Windows':
-                    os.startfile(os.path.abspath(filepath))
+                    os.startfile(abs_path)
+                    messagebox.showinfo("Просмотр", f"Акт открыт для просмотра:\n{filepath}")
                 elif platform.system() == 'Darwin':
                     import subprocess
                     subprocess.Popen(['open', filepath])
+                    messagebox.showinfo("Просмотр", f"Акт открыт для просмотра:\n{filepath}")
                 else:
+                    # Linux (Replit) - используем evince
                     import subprocess
-                    subprocess.Popen(['xdg-open', filepath])
-                messagebox.showinfo("Просмотр", f"Акт открыт для просмотра:\n{filepath}")
+                    try:
+                        subprocess.Popen(['evince', abs_path])
+                        messagebox.showinfo("Просмотр", f"Акт открыт для просмотра:\n{abs_path}")
+                    except Exception as e:
+                        messagebox.showwarning("Информация", f"Акт создан и сохранён:\n{abs_path}\n\nОткройте его вручную в файловом менеджере.")
                 dialog.destroy()
             
             button_frame = ttk.Frame(content, style='White.TFrame')
@@ -318,15 +325,22 @@ class TireStorageTab:
                     self.search_storage()
                 
                 def preview_doc():
+                    abs_path = os.path.abspath(filepath)
                     if platform.system() == 'Windows':
-                        os.startfile(os.path.abspath(filepath))
+                        os.startfile(abs_path)
+                        messagebox.showinfo("Просмотр", f"Акт открыт для просмотра:\n{filepath}")
                     elif platform.system() == 'Darwin':
                         import subprocess
                         subprocess.Popen(['open', filepath])
+                        messagebox.showinfo("Просмотр", f"Акт открыт для просмотра:\n{filepath}")
                     else:
+                        # Linux (Replit) - используем evince
                         import subprocess
-                        subprocess.Popen(['xdg-open', filepath])
-                    messagebox.showinfo("Просмотр", f"Акт открыт для просмотра:\n{filepath}")
+                        try:
+                            subprocess.Popen(['evince', abs_path])
+                            messagebox.showinfo("Просмотр", f"Акт открыт для просмотра:\n{abs_path}")
+                        except Exception as e:
+                            messagebox.showwarning("Информация", f"Акт создан и сохранён:\n{abs_path}\n\nОткройте его вручную в файловом менеджере.")
                     dialog.destroy()
                     self.search_storage()
                 

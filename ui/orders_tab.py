@@ -596,20 +596,25 @@ class OrderWidget:
             try:
                 items = self.order_service.get_order_items(self.order.id)
                 receipt_file = self.print_service.generate_receipt(self.order, items, total)
+                abs_path = os.path.abspath(receipt_file)
                 
                 # Просто открыть PDF для просмотра
                 if platform.system() == 'Windows':
                     os.startfile(receipt_file)
+                    messagebox.showinfo("Просмотр", f"Чек открыт для просмотра:\n{receipt_file}")
                 elif platform.system() == 'Darwin':
                     # macOS
                     import subprocess
                     subprocess.Popen(['open', receipt_file])
+                    messagebox.showinfo("Просмотр", f"Чек открыт для просмотра:\n{receipt_file}")
                 else:
-                    # Linux
+                    # Linux (Replit) - используем evince
                     import subprocess
-                    subprocess.Popen(['xdg-open', receipt_file])
-                
-                messagebox.showinfo("Просмотр", f"Чек открыт для просмотра:\n{receipt_file}")
+                    try:
+                        subprocess.Popen(['evince', abs_path])
+                        messagebox.showinfo("Просмотр", f"Чек открыт для просмотра:\n{abs_path}")
+                    except Exception as e:
+                        messagebox.showwarning("Информация", f"Чек создан и сохранён:\n{abs_path}\n\nОткройте его вручную в файловом менеджере.")
             except Exception as e:
                 messagebox.showerror("Ошибка", str(e))
         
