@@ -14,7 +14,8 @@ from reportlab.lib.fonts import addMapping
 def register_dejavu_fonts():
     """Регистрирует шрифт DejaVu Sans для PDF документов с поддержкой кириллицы"""
     if getattr(sys, 'frozen', False):
-        base_path = os.path.dirname(sys.executable)
+        # PyInstaller создаёт временную папку sys._MEIPASS для упакованных ресурсов
+        base_path = getattr(sys, '_MEIPASS', os.path.dirname(sys.executable))
     else:
         base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     

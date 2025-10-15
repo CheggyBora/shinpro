@@ -43,9 +43,12 @@ The application features a modern, clean design with a focus on usability.
 - **Fonts System** (Cross-Platform):
   - **Windows**: Arial (system font) for GUI with full Cyrillic support
   - **Linux/Mac**: DejaVu Sans from `fonts/DejaVuSans.ttf` (bundled, auto-registered)
-  - **PDF Documents**: DejaVu Sans for all platforms (Cyrillic support in receipts)
+  - **PDF Documents**: DejaVu Sans Regular (`fonts/DejaVuSans.ttf`) for all platforms with Cyrillic support
   - **Dynamic Selection**: `styles.DEFAULT_FONT` automatically selects the correct font based on OS
-  - **Font Registration**: DejaVu Sans font registered in `main_window.py` after root window creation (Linux only)
+  - **Font Registration**: 
+    - GUI: DejaVu Sans font registered in `main_window.py` after root window creation (Linux only)
+    - PDF: DejaVu Sans registered via ReportLab's TTFont in `services/print_service.py` and `ui/tire_storage_tab.py`
+  - **PyInstaller Support**: Font loading uses `sys._MEIPASS` to locate bundled fonts in one-file EXE builds
 
 ### Technical Implementation
 - **Backend**: Python 3.11 with SQLAlchemy for ORM.

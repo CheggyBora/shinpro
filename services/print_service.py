@@ -10,15 +10,21 @@ import sys
 
 class PrintService:
     def __init__(self):
-        # Определяем базовый путь для EXE или обычного запуска
+        # Определяем базовый путь для ресурсов (шрифтов)
         if getattr(sys, 'frozen', False):
-            # Если запущен как EXE (PyInstaller)
-            base_path = os.path.dirname(sys.executable)
+            # PyInstaller создаёт временную папку sys._MEIPASS для упакованных ресурсов
+            base_path = getattr(sys, '_MEIPASS', os.path.dirname(sys.executable))
         else:
             # Если запущен как скрипт
             base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         
-        self.receipts_dir = os.path.join(base_path, "receipts")
+        # Директория для чеков всегда рядом с exe (не внутри временной папки)
+        if getattr(sys, 'frozen', False):
+            receipts_base = os.path.dirname(sys.executable)
+        else:
+            receipts_base = base_path
+        
+        self.receipts_dir = os.path.join(receipts_base, "receipts")
         if not os.path.exists(self.receipts_dir):
             os.makedirs(self.receipts_dir)
         
