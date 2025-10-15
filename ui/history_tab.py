@@ -27,7 +27,8 @@ class HistoryTab:
         styles.create_label(search_frame, "Номер автомобиля:", 'Card.TLabel').pack(side='left', padx=(0, 10))
         self.license_entry = styles.create_entry(search_frame, width=20)
         self.license_entry.pack(side='left', padx=(0, 10))
-        styles.create_button(search_frame, "Найти", self.search_history, 'Primary.TButton').pack(side='left')
+        styles.create_button(search_frame, "Найти", self.search_history, 'Primary.TButton').pack(side='left', padx=(0, 5))
+        styles.create_button(search_frame, "Показать все", self.show_all_history, 'Secondary.TButton').pack(side='left')
         
         history_card = styles.create_card_frame(self.frame)
         history_card.pack(fill='both', expand=True, padx=15, pady=(0, 15))
@@ -40,17 +41,19 @@ class HistoryTab:
         tree_frame = ttk.Frame(history_inner, style='White.TFrame')
         tree_frame.pack(fill='both', expand=True)
         
-        self.history_tree = ttk.Treeview(tree_frame, columns=('Дата', 'Наряд №', 'Услуги', 'Сумма', 'Оплата'), show='headings')
+        self.history_tree = ttk.Treeview(tree_frame, columns=('Дата', 'Наряд №', 'Автомобиль', 'Услуги', 'Сумма', 'Оплата'), show='headings')
         self.history_tree.heading('Дата', text='Дата')
         self.history_tree.heading('Наряд №', text='Наряд №')
+        self.history_tree.heading('Автомобиль', text='Автомобиль')
         self.history_tree.heading('Услуги', text='Услуги')
         self.history_tree.heading('Сумма', text='Сумма')
         self.history_tree.heading('Оплата', text='Способ оплаты')
-        self.history_tree.column('Дата', width=150)
-        self.history_tree.column('Наряд №', width=100)
-        self.history_tree.column('Услуги', width=400)
-        self.history_tree.column('Сумма', width=100)
-        self.history_tree.column('Оплата', width=150)
+        self.history_tree.column('Дата', width=130)
+        self.history_tree.column('Наряд №', width=80)
+        self.history_tree.column('Автомобиль', width=120)
+        self.history_tree.column('Услуги', width=350)
+        self.history_tree.column('Сумма', width=90)
+        self.history_tree.column('Оплата', width=120)
         self.history_tree.pack(side='left', fill='both', expand=True)
         
         tree_scroll = ttk.Scrollbar(tree_frame, orient='vertical', command=self.history_tree.yview)
@@ -74,6 +77,9 @@ class HistoryTab:
         
         self.next_button = styles.create_button(pagination_frame, "Следующая ▶", self.next_page, 'Secondary.TButton')
         self.next_button.pack(side='left')
+        
+        # Загружаем все наряды при открытии вкладки
+        self.load_page()
     
     def search_history(self):
         license = self.license_entry.get().strip()
@@ -90,29 +96,32 @@ class HistoryTab:
         self.current_page = 1
         self.load_page()
     
+    def show_all_history(self):
+        self.current_license = None
+        self.license_entry.delete(0, 'end')
+        self.current_page = 1
+        self.load_page()
+    
     def load_page(self):
-        if not self.current_license:
-            return
+        # Формируем запрос в зависимости от наличия фильтра
+        query = self.db.query(WorkOrder).options(joinedload(WorkOrder.items))
         
-        car = self.db.query(Car).filter(Car.license_plate == self.current_license).first()
-        if not car:
-            return
+        if self.current_license:
+            # Фильтр по номеру автомобиля
+            car = self.db.query(Car).filter(Car.license_plate == self.current_license).first()
+            if not car:
+                return
+            query = query.filter(WorkOrder.car_id == car.id)
         
         # Получаем общее количество нарядов
-        self.total_orders = self.db.query(WorkOrder).filter(
-            WorkOrder.car_id == car.id,
-            WorkOrder.status == 'paid'
-        ).count()
+        self.total_orders = query.filter(WorkOrder.status == 'paid').count()
         
         # Вычисляем количество страниц
         total_pages = (self.total_orders + self.items_per_page - 1) // self.items_per_page
         
         # Получаем наряды для текущей страницы
         offset = (self.current_page - 1) * self.items_per_page
-        orders = self.db.query(WorkOrder).options(joinedload(WorkOrder.items)).filter(
-            WorkOrder.car_id == car.id,
-            WorkOrder.status == 'paid'
-        ).order_by(WorkOrder.paid_at.desc()).offset(offset).limit(self.items_per_page).all()
+        orders = query.filter(WorkOrder.status == 'paid').order_by(WorkOrder.paid_at.desc()).offset(offset).limit(self.items_per_page).all()
         
         # Очищаем таблицу
         for item in self.history_tree.get_children():
@@ -128,13 +137,15 @@ class HistoryTab:
             self.history_tree.insert('', 'end', values=(
                 order.paid_at.strftime('%d.%m.%Y %H:%M'),
                 order.id,
+                order.car.license_plate,
                 services_list[:50] + '...' if len(services_list) > 50 else services_list,
                 f"{order.total_amount:.2f}",
                 payment_method
             ), tags=(str(order.id),))
         
         # Обновляем информацию о пагинации
-        self.info_label.config(text=f"Найдено нарядов: {self.total_orders}")
+        info_text = f"Найдено нарядов: {self.total_orders}" if self.current_license else f"Всего нарядов: {self.total_orders}"
+        self.info_label.config(text=info_text)
         self.page_label.config(text=f"Страница {self.current_page} из {total_pages if total_pages > 0 else 1}")
         
         # Управляем кнопками
