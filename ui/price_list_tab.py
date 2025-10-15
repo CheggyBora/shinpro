@@ -180,10 +180,6 @@ class PriceListTab:
         if not item or column == '#1':  # Не редактируем название услуги
             return
         
-        # Проверяем PIN
-        if not self.check_admin_pin():
-            return
-        
         # Определяем индекс колонки (R13=1, R14=2, и т.д.)
         column_index = int(column.replace('#', '')) - 1
         
@@ -209,19 +205,6 @@ class PriceListTab:
             
             # Помечаем как измененное
             self.tree.item(item, tags=self.tree.item(item)['tags'] + ('modified',))
-    
-    def check_admin_pin(self):
-        """Проверка PIN-кода администратора"""
-        settings = self.db.query(Settings).filter(Settings.key == 'admin_pin').first()
-        stored_pin = settings.value if settings else '0000'
-        
-        pin = simpledialog.askstring("Требуется PIN-код", "Введите PIN администратора:", show='*')
-        
-        if pin != stored_pin:
-            messagebox.showerror("Ошибка", "Неверный PIN-код!")
-            return False
-        
-        return True
     
     def save_changes(self):
         """Сохранить изменения в БД"""
