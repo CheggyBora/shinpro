@@ -20,6 +20,14 @@ class PrintService:
         self.receipts_dir = os.path.join(base_path, "receipts")
         if not os.path.exists(self.receipts_dir):
             os.makedirs(self.receipts_dir)
+        
+        # Регистрируем русский шрифт
+        font_path = os.path.join(base_path, "fonts", "DejaVuSans.ttf")
+        if os.path.exists(font_path):
+            pdfmetrics.registerFont(TTFont('DejaVu', font_path))
+            self.font_name = 'DejaVu'
+        else:
+            self.font_name = 'Helvetica'
     
     def generate_receipt(self, order, items, total_amount):
         filename = f"{self.receipts_dir}/receipt_{order.id}.pdf"
@@ -27,86 +35,84 @@ class PrintService:
         c = canvas.Canvas(filename, pagesize=(80*mm, 200*mm))
         
         y = 190*mm
-        c.setFont("Helvetica-Bold", 12)
-        c.drawCentredString(40*mm, y, "SHINOMONT")
+        c.setFont(self.font_name, 12)
+        c.drawCentredString(40*mm, y, "Шиномонтаж РИФ")
         
         y -= 10*mm
-        c.setFont("Helvetica", 9)
-        c.drawCentredString(40*mm, y, f"Naryad #{order.id}")
+        c.setFont(self.font_name, 9)
+        c.drawCentredString(40*mm, y, f"Наряд #{order.id}")
         
         y -= 5*mm
         c.drawCentredString(40*mm, y, datetime.now().strftime("%d.%m.%Y %H:%M"))
         
         y -= 8*mm
-        c.drawString(5*mm, y, f"Auto: {order.car.license_plate}")
+        c.drawString(5*mm, y, f"Авто: {order.car.license_plate}")
         
         if order.client:
             y -= 5*mm
             client_info = f"{order.client.name or ''}"
             if order.client.client_number:
                 client_info += f" (#{order.client.client_number})"
-            c.drawString(5*mm, y, f"Client: {client_info}")
+            c.drawString(5*mm, y, f"Клиент: {client_info}")
         
         y -= 5*mm
-        c.drawString(5*mm, y, f"Diametr: {order.wheel_diameter}")
+        c.drawString(5*mm, y, f"Диаметр: {order.wheel_diameter}")
         
         y -= 8*mm
         c.line(5*mm, y, 75*mm, y)
         
         y -= 5*mm
-        c.setFont("Helvetica-Bold", 9)
-        c.drawString(5*mm, y, "SERVICES:")
+        c.setFont(self.font_name, 9)
+        c.drawString(5*mm, y, "Услуги:")
         
-        c.setFont("Helvetica", 8)
+        c.setFont(self.font_name, 8)
         subtotal = 0
         for item in items:
             y -= 5*mm
-            c.drawString(5*mm, y, item.service.name[:30])
-            
+            service_name = item.service.name[:25]
+            quantity = 1
             item_price = item.price * (1 - item.discount_percent / 100)
             subtotal += item_price
             
-            y -= 4*mm
-            price_str = f"{item.price:.2f} rub"
-            if item.discount_percent > 0:
-                price_str += f" (discount {item.discount_percent}%)"
-            c.drawString(8*mm, y, price_str)
+            line = f"{service_name} x{quantity} - {item_price:.0f}р"
+            c.drawString(5*mm, y, line)
             
             if item.comment:
                 y -= 4*mm
-                c.drawString(8*mm, y, f"Note: {item.comment[:25]}")
+                c.drawString(8*mm, y, f"  ({item.comment[:20]})")
         
         y -= 6*mm
         c.line(5*mm, y, 75*mm, y)
         
         y -= 5*mm
-        c.drawString(5*mm, y, f"Subtotal: {subtotal:.2f} rub")
+        c.setFont(self.font_name, 9)
+        c.drawString(5*mm, y, f"Сумма: {subtotal:.0f}р")
         
+        total_discount = 0
         if order.general_discount > 0:
-            y -= 4*mm
-            discount_amount = subtotal * (order.general_discount / 100)
-            c.drawString(5*mm, y, f"Discount {order.general_discount}%: -{discount_amount:.2f} rub")
-        
+            total_discount += order.general_discount
         if order.auto_discount:
+            total_discount += 5
+        
+        if total_discount > 0:
             y -= 4*mm
-            auto_discount_amount = (subtotal - (subtotal * order.general_discount / 100)) * 0.05
-            c.drawString(5*mm, y, f"Auto discount 5%: -{auto_discount_amount:.2f} rub")
+            c.drawString(5*mm, y, f"Скидка: {total_discount}%")
         
         y -= 6*mm
-        c.setFont("Helvetica-Bold", 10)
-        c.drawString(5*mm, y, f"TOTAL: {total_amount:.2f} rub")
+        c.setFont(self.font_name, 11)
+        c.drawString(5*mm, y, f"ИТОГО: {total_amount:.0f}р")
         
         y -= 6*mm
         c.line(5*mm, y, 75*mm, y)
         
         y -= 5*mm
-        c.setFont("Helvetica", 9)
-        payment_method = "Cash" if order.payment_method == "cash" else "Card"
-        c.drawString(5*mm, y, f"Payment: {payment_method}")
+        c.setFont(self.font_name, 9)
+        payment_method = "Наличные" if order.payment_method == "cash" else "Карта"
+        c.drawString(5*mm, y, f"Оплата: {payment_method}")
         
         y -= 10*mm
-        c.setFont("Helvetica", 8)
-        c.drawCentredString(40*mm, y, "Thank you!")
+        c.setFont(self.font_name, 8)
+        c.drawCentredString(40*mm, y, "Спасибо за визит!")
         
         c.save()
         return filename

@@ -17,6 +17,7 @@ a = Analysis(
         ('models', 'models'),
         ('services', 'services'),
         ('ui', 'ui'),
+        ('fonts', 'fonts'),
         ('config.py', '.'),
         ('styles.py', '.'),
         ('init_data.py', '.'),
