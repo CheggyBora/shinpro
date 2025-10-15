@@ -691,7 +691,7 @@ class OrderWidget:
         
         total_label = styles.create_label(content, f"Сумма к оплате: {total:.2f} руб.", 'CardHeading.TLabel')
         total_label.pack(pady=(0, 20))
-        total_label.configure(font=('Segoe UI', 16, 'bold'), foreground=styles.COLORS['primary'])
+        total_label.configure(font=('Arial', 16, 'bold'), foreground=styles.COLORS['primary'])
         
         payment_var = tk.StringVar(value='cash')
         

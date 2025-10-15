@@ -19,11 +19,11 @@ COLORS = {
 }
 
 FONTS = {
-    'heading': ('Segoe UI', 14, 'bold'),
-    'subheading': ('Segoe UI', 12, 'bold'),
-    'normal': ('Segoe UI', 10),
-    'small': ('Segoe UI', 9),
-    'button': ('Segoe UI', 10, 'bold')
+    'heading': ('Arial', 14, 'bold'),
+    'subheading': ('Arial', 12, 'bold'),
+    'normal': ('Arial', 10),
+    'small': ('Arial', 9),
+    'button': ('Arial', 10, 'bold')
 }
 
 def apply_modern_styles(root):
@@ -80,7 +80,7 @@ def apply_modern_styles(root):
                    foreground='black')
     
     style.configure('Service.TButton',
-                   font=('Segoe UI', 10, 'bold'),
+                   font=('Arial', 10, 'bold'),
                    padding=[6, 4],
                    background='#f5e6d3',
                    foreground='#1e293b',
