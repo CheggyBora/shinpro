@@ -369,7 +369,9 @@ class TireStorageTab:
         
         font_path = os.path.join(base_path, "fonts", "DejaVuSans.ttf")
         if os.path.exists(font_path):
-            pdfmetrics.registerFont(TTFont('DejaVu', font_path))
+            # Регистрируем шрифт только если еще не зарегистрирован
+            if 'DejaVu' not in pdfmetrics.getRegisteredFontNames():
+                pdfmetrics.registerFont(TTFont('DejaVu', font_path))
             font_name = 'DejaVu'
         else:
             font_name = 'Helvetica'
@@ -488,7 +490,9 @@ class TireStorageTab:
         
         font_path = os.path.join(base_path, "fonts", "DejaVuSans.ttf")
         if os.path.exists(font_path):
-            pdfmetrics.registerFont(TTFont('DejaVu', font_path))
+            # Регистрируем шрифт только если еще не зарегистрирован
+            if 'DejaVu' not in pdfmetrics.getRegisteredFontNames():
+                pdfmetrics.registerFont(TTFont('DejaVu', font_path))
             font_name = 'DejaVu'
         else:
             font_name = 'Helvetica'

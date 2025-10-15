@@ -21,7 +21,7 @@ class PrintService:
         if not os.path.exists(self.receipts_dir):
             os.makedirs(self.receipts_dir)
         
-        # Регистрируем русский шрифт для PDF
+        # Регистрируем русский шрифт для PDF (только если еще не зарегистрирован)
         font_path = os.path.join(base_path, "fonts", "DejaVuSans.ttf")
         print(f"PDF шрифт - базовый путь: {base_path}")
         print(f"PDF шрифт - полный путь: {font_path}")
@@ -29,9 +29,13 @@ class PrintService:
         
         if os.path.exists(font_path):
             try:
-                pdfmetrics.registerFont(TTFont('DejaVu', font_path))
+                # Проверяем, зарегистрирован ли уже шрифт
+                if 'DejaVu' not in pdfmetrics.getRegisteredFontNames():
+                    pdfmetrics.registerFont(TTFont('DejaVu', font_path))
+                    print(f"✓ PDF шрифт DejaVu зарегистрирован")
+                else:
+                    print(f"✓ PDF шрифт DejaVu уже зарегистрирован")
                 self.font_name = 'DejaVu'
-                print(f"✓ PDF шрифт DejaVu успешно зарегистрирован")
             except Exception as e:
                 print(f"✗ Ошибка регистрации PDF шрифта: {e}")
                 self.font_name = 'Helvetica'
