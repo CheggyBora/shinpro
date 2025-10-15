@@ -55,7 +55,7 @@ def apply_modern_styles(root):
                    font=FONTS['button'],
                    padding=[15, 8],
                    background=COLORS['primary'],
-                   foreground='white')
+                   foreground='black')
     style.map('Primary.TButton',
              background=[('active', COLORS['primary_hover'])])
     
@@ -63,19 +63,19 @@ def apply_modern_styles(root):
                    font=FONTS['button'],
                    padding=[15, 8],
                    background=COLORS['secondary'],
-                   foreground='white')
+                   foreground='black')
     
     style.configure('Success.TButton',
                    font=FONTS['button'],
                    padding=[15, 8],
                    background=COLORS['success'],
-                   foreground='white')
+                   foreground='black')
     
     style.configure('Danger.TButton',
                    font=FONTS['button'],
                    padding=[15, 8],
                    background=COLORS['danger'],
-                   foreground='white')
+                   foreground='black')
     
     style.configure('Service.TButton',
                    font=('Segoe UI', 10, 'bold'),
@@ -102,7 +102,7 @@ def apply_modern_styles(root):
                    borderwidth=0)
     style.configure('Treeview.Heading',
                    background=COLORS['primary'],
-                   foreground='white',
+                   foreground='black',
                    font=FONTS['subheading'],
                    relief='flat')
     style.map('Treeview',

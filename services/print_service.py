@@ -5,10 +5,19 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from datetime import datetime
 import os
+import sys
 
 class PrintService:
     def __init__(self):
-        self.receipts_dir = "receipts"
+        # Определяем базовый путь для EXE или обычного запуска
+        if getattr(sys, 'frozen', False):
+            # Если запущен как EXE (PyInstaller)
+            base_path = os.path.dirname(sys.executable)
+        else:
+            # Если запущен как скрипт
+            base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        
+        self.receipts_dir = os.path.join(base_path, "receipts")
         if not os.path.exists(self.receipts_dir):
             os.makedirs(self.receipts_dir)
     
