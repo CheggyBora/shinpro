@@ -425,40 +425,7 @@ class OrderWidget:
                 ).first()
             
             if service:
-                # Диалог выбора количества
-                dialog = tk.Toplevel(self.frame)
-                dialog.title("Количество")
-                dialog.geometry("300x200")
-                dialog.configure(bg=styles.COLORS['bg'])
-                
-                # Центрируем окно
-                dialog.update_idletasks()
-                width = 300
-                height = 200
-                x = (dialog.winfo_screenwidth() // 2) - (width // 2)
-                y = (dialog.winfo_screenheight() // 2) - (height // 2)
-                dialog.geometry(f'{width}x{height}+{x}+{y}')
-                
-                content = ttk.Frame(dialog, style='White.TFrame')
-                content.pack(fill='both', expand=True, padx=20, pady=20)
-                
-                styles.create_label(content, f"{service_name}", 'CardHeading.TLabel').pack(anchor='w', pady=(0, 15))
-                
-                styles.create_label(content, "Количество:", 'Card.TLabel').pack(anchor='w', pady=(0, 5))
-                quantity_var = tk.StringVar(value='1')
-                quantity_combo = ttk.Combobox(content, textvariable=quantity_var, 
-                                              values=['1', '2', '3', '4', '5', '6', '7', '8'],
-                                              font=styles.FONTS['normal'], state='readonly', width=10)
-                quantity_combo.pack(anchor='w', pady=(0, 20))
-                quantity_combo.current(0)
-                
-                def add_with_quantity():
-                    quantity = int(quantity_var.get())
-                    dialog.destroy()
-                    for _ in range(quantity):
-                        self.add_service(service)
-                
-                styles.create_button(content, "Добавить", add_with_quantity, 'Primary.TButton').pack(fill='x')
+                self.add_service(service)
             else:
                 messagebox.showerror("Ошибка", f"Услуга '{service_name}' не найдена")
         except Exception as e:
@@ -477,40 +444,7 @@ class OrderWidget:
                     ).first()
                 
                 if service:
-                    # Диалог выбора количества
-                    dialog = tk.Toplevel(self.frame)
-                    dialog.title("Количество")
-                    dialog.geometry("300x200")
-                    dialog.configure(bg=styles.COLORS['bg'])
-                    
-                    # Центрируем окно
-                    dialog.update_idletasks()
-                    width = 300
-                    height = 200
-                    x = (dialog.winfo_screenwidth() // 2) - (width // 2)
-                    y = (dialog.winfo_screenheight() // 2) - (height // 2)
-                    dialog.geometry(f'{width}x{height}+{x}+{y}')
-                    
-                    content = ttk.Frame(dialog, style='White.TFrame')
-                    content.pack(fill='both', expand=True, padx=20, pady=20)
-                    
-                    styles.create_label(content, f"{service_name}", 'CardHeading.TLabel').pack(anchor='w', pady=(0, 15))
-                    
-                    styles.create_label(content, "Количество:", 'Card.TLabel').pack(anchor='w', pady=(0, 5))
-                    quantity_var = tk.StringVar(value='1')
-                    quantity_combo = ttk.Combobox(content, textvariable=quantity_var, 
-                                                  values=['1', '2', '3', '4', '5', '6', '7', '8'],
-                                                  font=styles.FONTS['normal'], state='readonly', width=10)
-                    quantity_combo.pack(anchor='w', pady=(0, 20))
-                    quantity_combo.current(0)
-                    
-                    def add_with_quantity():
-                        quantity = int(quantity_var.get())
-                        dialog.destroy()
-                        for _ in range(quantity):
-                            self.add_service(service)
-                    
-                    styles.create_button(content, "Добавить", add_with_quantity, 'Primary.TButton').pack(fill='x')
+                    self.add_service(service)
                 else:
                     messagebox.showerror("Ошибка", f"Услуга '{service_name}' не найдена")
             except Exception as e2:
@@ -544,7 +478,7 @@ class OrderWidget:
         dialog.title("Редактировать услугу")
         
         is_editable = item.service.editable_price
-        dialog_height = "400" if is_editable else "320"
+        dialog_height = "480" if is_editable else "400"
         dialog.geometry(f"450x{dialog_height}")
         dialog.configure(bg=styles.COLORS['bg'])
         
@@ -552,6 +486,12 @@ class OrderWidget:
         content.pack(fill='both', expand=True, padx=20, pady=20)
         
         styles.create_label(content, f"Услуга: {item.service.name}", 'CardHeading.TLabel').pack(anchor='w', pady=(0, 20))
+        
+        # Количество
+        styles.create_label(content, "Количество:", 'Card.TLabel').pack(anchor='w', pady=(0, 5))
+        quantity_entry = styles.create_entry(content, width=50)
+        quantity_entry.insert(0, str(item.quantity))
+        quantity_entry.pack(fill='x', pady=(0, 15))
         
         price_entry = None
         if is_editable:
@@ -573,15 +513,20 @@ class OrderWidget:
         
         def save():
             try:
+                quantity = int(quantity_entry.get())
+                if quantity < 1:
+                    messagebox.showerror("Ошибка", "Количество должно быть больше 0")
+                    return
+                    
                 if is_editable and price_entry:
                     new_price = float(price_entry.get())
-                    self.order_service.update_item_price(item_id, new_price, int(discount_var.get()), comment_entry.get())
+                    self.order_service.update_item_full(item_id, quantity, new_price, int(discount_var.get()), comment_entry.get())
                 else:
-                    self.order_service.update_item_discount(item_id, int(discount_var.get()), comment_entry.get())
+                    self.order_service.update_item_full(item_id, quantity, item.price, int(discount_var.get()), comment_entry.get())
                 self.refresh_items()
                 dialog.destroy()
             except ValueError:
-                messagebox.showerror("Ошибка", "Введите корректную цену")
+                messagebox.showerror("Ошибка", "Введите корректные значения")
         
         styles.create_button(content, "Сохранить", save, 'Primary.TButton').pack(fill='x')
     
