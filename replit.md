@@ -8,6 +8,7 @@ This is a **Windows desktop application** built with Python and Tkinter, designe
 - PDF printing: Uses Windows native `os.startfile(file, "print")` for automatic printing
 - Local database: SQLite (no server required)
 - Easy installation: Double-click `.bat` file to run
+- **All documents in A4 format** for standard office printers
 
 **Key Capabilities:**
 - Management of employees, work shifts, and salary calculations.
@@ -16,6 +17,7 @@ This is a **Windows desktop application** built with Python and Tkinter, designe
 - Detailed historical data tracking for vehicles and services.
 - **Automated PDF printing**: Print receipts and storage documents directly to printer with one click.
 - **Preview mode**: View PDFs before printing when needed.
+- **Professional A4 receipts**: All documents branded as "Шиномонтаж РИФ" with Cyrillic support (DejaVu Sans font)
 
 **Business Vision & Market Potential:**
 The application aims to provide small to medium-sized tire service businesses with an efficient, user-friendly, and modern tool to manage their daily operations. By automating key processes and providing clear oversight, it helps improve customer service, reduce manual errors, and enhance overall business efficiency.
@@ -43,7 +45,8 @@ The application features a modern, clean design with a focus on usability.
 - **Backend**: Python 3.11 with SQLAlchemy for ORM.
 - **GUI**: Tkinter, enhanced with `ttkthemes` for modern styling.
 - **Database**: SQLite (по умолчанию) или PostgreSQL. Локальная база данных SQLite хранится в файле `tire_shop.db`. Для PostgreSQL используется переменная окружения `DATABASE_URL`.
-- **Reporting**: ReportLab is used for generating PDF documents (receipts, storage documents).
+- **Reporting**: ReportLab is used for generating PDF documents (receipts, storage documents). All PDFs are A4 format with DejaVu Sans font for Cyrillic support.
+- **Company Branding**: "Шиномонтаж РИФ" - displayed on all receipts and documents.
 - **VNC**: The application runs within a VNC server (x11vnc with Fluxbox window manager) on port 5900, enabling remote access and display.
 
 ### Feature Specifications
@@ -62,11 +65,11 @@ The application features a modern, clean design with a focus on usability.
     - Column 4: Consumables + Checks (8 services)
   - Multi-tab work orders, automatic pricing based on vehicle type and diameter.
   - Discount system (5%, 10%, 15%) and 5% auto-discount when client name AND phone are filled.
-  - Payment processing (cash/card), PDF receipt printing.
+  - Payment processing (cash/card), **A4 PDF receipt printing** with professional layout and Cyrillic support.
 - **History Tab**: Allows searching for vehicle history by plate number and viewing detailed past work orders.
-- **Tire Storage Tab**: Manages tire intake and release, generating two types of PDF documents automatically:
-    - **Intake**: Records vehicle number, driver's license, storage type (tires/tires with rims), rim type, diameter, tire brand, damage description, wear, comments, and calculates storage price. Generates `storage_{id}.pdf`.
-    - **Release**: Tracks stored sets, displays relevant information, and generates `release_{id}.pdf` upon release.
+- **Tire Storage Tab**: Manages tire intake and release, generating **A4 format PDF documents** automatically:
+    - **Intake**: Records vehicle number, driver's license, storage type (tires/tires with rims), rim type, diameter, tire brand, damage description, wear, comments, and calculates storage price. Generates `storage_{id}.pdf` with **2 copies** (for customer and archive).
+    - **Release**: Tracks stored sets, displays relevant information, and generates `release_{id}.pdf` upon release with professional A4 layout.
 
 **Service Pricing:**
 - Over 42 services categorized into: Basic, Rim Repair, Additional, Consumables, Checks, and Repairs (patching, sidewall repair).
