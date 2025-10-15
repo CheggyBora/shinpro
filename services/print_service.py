@@ -3,6 +3,7 @@ from reportlab.lib.units import mm
 from reportlab.pdfgen import canvas
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.lib.fonts import addMapping
 from datetime import datetime
 import os
 import sys
@@ -21,26 +22,35 @@ class PrintService:
         if not os.path.exists(self.receipts_dir):
             os.makedirs(self.receipts_dir)
         
-        # Регистрируем русский шрифт для PDF (только если еще не зарегистрирован)
-        font_path = os.path.join(base_path, "fonts", "DejaVuSans.ttf")
-        print(f"PDF шрифт - базовый путь: {base_path}")
-        print(f"PDF шрифт - полный путь: {font_path}")
-        print(f"PDF шрифт - файл существует: {os.path.exists(font_path)}")
+        # Регистрируем семейство шрифтов DejaVu Sans для PDF (с поддержкой Bold, Italic)
+        fonts_dir = os.path.join(base_path, "fonts")
         
-        if os.path.exists(font_path):
-            try:
-                # Проверяем, зарегистрирован ли уже шрифт
-                if 'DejaVu' not in pdfmetrics.getRegisteredFontNames():
-                    pdfmetrics.registerFont(TTFont('DejaVu', font_path))
-                    print(f"✓ PDF шрифт DejaVu зарегистрирован")
-                else:
-                    print(f"✓ PDF шрифт DejaVu уже зарегистрирован")
-                self.font_name = 'DejaVu'
-            except Exception as e:
-                print(f"✗ Ошибка регистрации PDF шрифта: {e}")
-                self.font_name = 'Helvetica'
-        else:
-            print(f"✗ Файл шрифта не найден, используется Helvetica")
+        try:
+            # Регистрируем шрифты только если еще не зарегистрированы
+            if 'DejaVuSans' not in pdfmetrics.getRegisteredFontNames():
+                # Regular
+                pdfmetrics.registerFont(TTFont('DejaVuSans', os.path.join(fonts_dir, 'DejaVuSans.ttf')))
+                # Bold
+                pdfmetrics.registerFont(TTFont('DejaVuSans-Bold', os.path.join(fonts_dir, 'DejaVuSans-Bold.ttf')))
+                # Italic (Oblique)
+                pdfmetrics.registerFont(TTFont('DejaVuSans-Oblique', os.path.join(fonts_dir, 'DejaVuSans-Oblique.ttf')))
+                # Bold Italic
+                pdfmetrics.registerFont(TTFont('DejaVuSans-BoldOblique', os.path.join(fonts_dir, 'DejaVuSans-BoldOblique.ttf')))
+                
+                # Создаём семейство шрифтов
+                addMapping('DejaVuSans', 0, 0, 'DejaVuSans')  # normal
+                addMapping('DejaVuSans', 1, 0, 'DejaVuSans-Bold')  # bold
+                addMapping('DejaVuSans', 0, 1, 'DejaVuSans-Oblique')  # italic
+                addMapping('DejaVuSans', 1, 1, 'DejaVuSans-BoldOblique')  # bold+italic
+                
+                print(f"✓ Семейство шрифтов DejaVuSans зарегистрировано (Regular, Bold, Italic, BoldItalic)")
+            else:
+                print(f"✓ Семейство шрифтов DejaVuSans уже зарегистрировано")
+            
+            self.font_name = 'DejaVuSans'
+        except Exception as e:
+            print(f"✗ Ошибка регистрации шрифтов DejaVu: {e}")
+            print(f"  Используется Helvetica в качестве резервного шрифта")
             self.font_name = 'Helvetica'
     
     def generate_receipt(self, order, items, total_amount):
