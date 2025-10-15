@@ -40,26 +40,27 @@ class PriceListTab:
         tree_frame.pack(fill='both', expand=True)
         
         # Вертикальная прокрутка
-        v_scrollbar = ttk.Scrollbar(tree_frame, orient='vertical')
-        v_scrollbar.pack(side='right', fill='y')
+        self.v_scrollbar = ttk.Scrollbar(tree_frame, orient='vertical')
+        self.v_scrollbar.pack(side='right', fill='y')
         
         # Горизонтальная прокрутка
-        h_scrollbar = ttk.Scrollbar(tree_frame, orient='horizontal')
-        h_scrollbar.pack(side='bottom', fill='x')
+        self.h_scrollbar = ttk.Scrollbar(tree_frame, orient='horizontal')
+        self.h_scrollbar.pack(side='bottom', fill='x')
         
-        # Колонки: Услуга, R13-R24
+        # Колонки: Услуга, R13-R24 (по умолчанию для легковых)
         columns = ['Услуга', 'R13', 'R14', 'R15', 'R16', 'R17', 'R18', 'R19', 'R20', 'R21', 'R22', 'R23', 'R24']
+        self.current_columns = columns
         
         self.tree = ttk.Treeview(
             tree_frame, 
             columns=columns, 
             show='headings', 
-            yscrollcommand=v_scrollbar.set,
-            xscrollcommand=h_scrollbar.set,
+            yscrollcommand=self.v_scrollbar.set,
+            xscrollcommand=self.h_scrollbar.set,
             height=20
         )
-        v_scrollbar.config(command=self.tree.yview)
-        h_scrollbar.config(command=self.tree.xview)
+        self.v_scrollbar.config(command=self.tree.yview)
+        self.h_scrollbar.config(command=self.tree.xview)
         
         # Настройка колонок
         self.tree.column('Услуга', width=300, anchor='w', minwidth=200)
@@ -80,7 +81,49 @@ class PriceListTab:
     def filter_by_vehicle_type(self, vehicle_type):
         """Фильтр по типу транспорта"""
         self.current_vehicle_type = vehicle_type
+        self.rebuild_table()
         self.load_services()
+    
+    def rebuild_table(self):
+        """Перестроить таблицу с нужными колонками в зависимости от типа транспорта"""
+        # Удаляем старую таблицу
+        self.tree.destroy()
+        
+        # Определяем колонки в зависимости от типа
+        if self.current_vehicle_type == 'truck':
+            # Для грузовых только R15-R19
+            columns = ['Услуга', 'R15', 'R16', 'R17', 'R18', 'R19']
+        else:
+            # Для легковых и джипов все радиусы
+            columns = ['Услуга', 'R13', 'R14', 'R15', 'R16', 'R17', 'R18', 'R19', 'R20', 'R21', 'R22', 'R23', 'R24']
+        
+        # Создаем новую таблицу
+        self.tree = ttk.Treeview(
+            self.tree.master, 
+            columns=columns, 
+            show='headings', 
+            yscrollcommand=self.v_scrollbar.set,
+            xscrollcommand=self.h_scrollbar.set,
+            height=20
+        )
+        self.v_scrollbar.config(command=self.tree.yview)
+        self.h_scrollbar.config(command=self.tree.xview)
+        
+        # Настройка колонок
+        self.tree.column('Услуга', width=300, anchor='w', minwidth=200)
+        self.tree.heading('Услуга', text='Услуга')
+        
+        for col in columns[1:]:
+            self.tree.column(col, width=90, anchor='center', minwidth=70)
+            self.tree.heading(col, text=col)
+        
+        self.tree.pack(fill='both', expand=True)
+        
+        # Двойной клик для редактирования
+        self.tree.bind('<Double-1>', self.on_double_click)
+        
+        # Сохраняем текущие колонки
+        self.current_columns = columns
     
     def load_services(self):
         """Загрузить услуги из БД"""
@@ -97,22 +140,35 @@ class PriceListTab:
             messagebox.showwarning("Предупреждение", f"Нет услуг для типа транспорта: {self.current_vehicle_type}")
             return
         
+        # Формируем значения в зависимости от текущих колонок
         for service in services:
-            values = [
-                service.name,
-                service.price_r13 or 0,
-                service.price_r14 or 0,
-                service.price_r15 or 0,
-                service.price_r16 or 0,
-                service.price_r17 or 0,
-                service.price_r18 or 0,
-                service.price_r19 or 0,
-                service.price_r20 or 0,
-                service.price_r21 or 0,
-                service.price_r22 or 0,
-                service.price_r23 or 0,
-                service.price_r24 or 0
-            ]
+            if self.current_vehicle_type == 'truck':
+                # Для грузовых только R15-R19
+                values = [
+                    service.name,
+                    service.price_r15 or 0,
+                    service.price_r16 or 0,
+                    service.price_r17 or 0,
+                    service.price_r18 or 0,
+                    service.price_r19 or 0
+                ]
+            else:
+                # Для легковых и джипов все радиусы
+                values = [
+                    service.name,
+                    service.price_r13 or 0,
+                    service.price_r14 or 0,
+                    service.price_r15 or 0,
+                    service.price_r16 or 0,
+                    service.price_r17 or 0,
+                    service.price_r18 or 0,
+                    service.price_r19 or 0,
+                    service.price_r20 or 0,
+                    service.price_r21 or 0,
+                    service.price_r22 or 0,
+                    service.price_r23 or 0,
+                    service.price_r24 or 0
+                ]
             self.tree.insert('', 'end', values=values, tags=(str(service.id),))
     
     def on_double_click(self, event):
@@ -183,18 +239,27 @@ class PriceListTab:
                 service = self.db.query(Service).filter(Service.id == service_id).first()
                 
                 if service:
-                    service.price_r13 = int(values[1])
-                    service.price_r14 = int(values[2])
-                    service.price_r15 = int(values[3])
-                    service.price_r16 = int(values[4])
-                    service.price_r17 = int(values[5])
-                    service.price_r18 = int(values[6])
-                    service.price_r19 = int(values[7])
-                    service.price_r20 = int(values[8])
-                    service.price_r21 = int(values[9])
-                    service.price_r22 = int(values[10])
-                    service.price_r23 = int(values[11])
-                    service.price_r24 = int(values[12])
+                    if self.current_vehicle_type == 'truck':
+                        # Для грузовых сохраняем только R15-R19
+                        service.price_r15 = int(values[1])
+                        service.price_r16 = int(values[2])
+                        service.price_r17 = int(values[3])
+                        service.price_r18 = int(values[4])
+                        service.price_r19 = int(values[5])
+                    else:
+                        # Для легковых и джипов все радиусы
+                        service.price_r13 = int(values[1])
+                        service.price_r14 = int(values[2])
+                        service.price_r15 = int(values[3])
+                        service.price_r16 = int(values[4])
+                        service.price_r17 = int(values[5])
+                        service.price_r18 = int(values[6])
+                        service.price_r19 = int(values[7])
+                        service.price_r20 = int(values[8])
+                        service.price_r21 = int(values[9])
+                        service.price_r22 = int(values[10])
+                        service.price_r23 = int(values[11])
+                        service.price_r24 = int(values[12])
             
             self.db.commit()
             messagebox.showinfo("Успех", f"Сохранено изменений: {len(modified_items)}")
