@@ -35,25 +35,38 @@ class PriceListTab:
         card_inner = ttk.Frame(card, style='White.TFrame')
         card_inner.pack(fill='both', expand=True, padx=15, pady=15)
         
-        # Таблица с прокруткой
+        # Таблица с прокруткой (вертикальная и горизонтальная)
         tree_frame = ttk.Frame(card_inner, style='White.TFrame')
         tree_frame.pack(fill='both', expand=True)
         
-        scrollbar = ttk.Scrollbar(tree_frame)
-        scrollbar.pack(side='right', fill='y')
+        # Вертикальная прокрутка
+        v_scrollbar = ttk.Scrollbar(tree_frame, orient='vertical')
+        v_scrollbar.pack(side='right', fill='y')
+        
+        # Горизонтальная прокрутка
+        h_scrollbar = ttk.Scrollbar(tree_frame, orient='horizontal')
+        h_scrollbar.pack(side='bottom', fill='x')
         
         # Колонки: Услуга, R13-R24
         columns = ['Услуга', 'R13', 'R14', 'R15', 'R16', 'R17', 'R18', 'R19', 'R20', 'R21', 'R22', 'R23', 'R24']
         
-        self.tree = ttk.Treeview(tree_frame, columns=columns, show='headings', yscrollcommand=scrollbar.set, height=20)
-        scrollbar.config(command=self.tree.yview)
+        self.tree = ttk.Treeview(
+            tree_frame, 
+            columns=columns, 
+            show='headings', 
+            yscrollcommand=v_scrollbar.set,
+            xscrollcommand=h_scrollbar.set,
+            height=20
+        )
+        v_scrollbar.config(command=self.tree.yview)
+        h_scrollbar.config(command=self.tree.xview)
         
         # Настройка колонок
-        self.tree.column('Услуга', width=250, anchor='w')
+        self.tree.column('Услуга', width=300, anchor='w', minwidth=200)
         self.tree.heading('Услуга', text='Услуга')
         
         for col in columns[1:]:
-            self.tree.column(col, width=80, anchor='center')
+            self.tree.column(col, width=90, anchor='center', minwidth=70)
             self.tree.heading(col, text=col)
         
         self.tree.pack(fill='both', expand=True)
