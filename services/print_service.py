@@ -32,61 +32,79 @@ class PrintService:
     def generate_receipt(self, order, items, total_amount):
         filename = f"{self.receipts_dir}/receipt_{order.id}.pdf"
         
-        c = canvas.Canvas(filename, pagesize=(80*mm, 200*mm))
+        c = canvas.Canvas(filename, pagesize=A4)
+        width, height = A4
         
-        y = 190*mm
+        # Заголовок
+        y = height - 50
+        c.setFont(self.font_name, 24)
+        c.drawCentredString(width/2, y, "Шиномонтаж РИФ")
+        
+        y -= 30
+        c.setFont(self.font_name, 14)
+        c.drawCentredString(width/2, y, f"Наряд-заказ № {order.id}")
+        
+        y -= 20
+        c.setFont(self.font_name, 11)
+        c.drawCentredString(width/2, y, datetime.now().strftime("%d.%m.%Y %H:%M"))
+        
+        y -= 40
+        c.line(50, y, width-50, y)
+        
+        # Информация о клиенте
+        y -= 30
         c.setFont(self.font_name, 12)
-        c.drawCentredString(40*mm, y, "Шиномонтаж РИФ")
-        
-        y -= 10*mm
-        c.setFont(self.font_name, 9)
-        c.drawCentredString(40*mm, y, f"Наряд #{order.id}")
-        
-        y -= 5*mm
-        c.drawCentredString(40*mm, y, datetime.now().strftime("%d.%m.%Y %H:%M"))
-        
-        y -= 8*mm
-        c.drawString(5*mm, y, f"Авто: {order.car.license_plate}")
+        c.drawString(50, y, f"Автомобиль: {order.car.license_plate}")
+        c.drawRightString(width-50, y, f"Диаметр: {order.wheel_diameter}")
         
         if order.client:
-            y -= 5*mm
+            y -= 20
             client_info = f"{order.client.name or ''}"
             if order.client.client_number:
                 client_info += f" (#{order.client.client_number})"
-            c.drawString(5*mm, y, f"Клиент: {client_info}")
+            c.drawString(50, y, f"Клиент: {client_info}")
         
-        y -= 5*mm
-        c.drawString(5*mm, y, f"Диаметр: {order.wheel_diameter}")
+        y -= 30
+        c.line(50, y, width-50, y)
         
-        y -= 8*mm
-        c.line(5*mm, y, 75*mm, y)
+        # Заголовок таблицы услуг
+        y -= 30
+        c.setFont(self.font_name, 12)
+        c.drawString(50, y, "Наименование услуги")
+        c.drawRightString(width-200, y, "Кол-во")
+        c.drawRightString(width-50, y, "Цена")
         
-        y -= 5*mm
-        c.setFont(self.font_name, 9)
-        c.drawString(5*mm, y, "Услуги:")
+        y -= 5
+        c.line(50, y, width-50, y)
         
-        c.setFont(self.font_name, 8)
+        # Услуги
+        c.setFont(self.font_name, 11)
         subtotal = 0
         for item in items:
-            y -= 5*mm
-            service_name = item.service.name[:25]
+            y -= 25
+            service_name = item.service.name[:45]
             quantity = 1
             item_price = item.price * (1 - item.discount_percent / 100)
             subtotal += item_price
             
-            line = f"{service_name} x{quantity} - {item_price:.0f}р"
-            c.drawString(5*mm, y, line)
+            c.drawString(50, y, service_name)
+            c.drawRightString(width-200, y, f"{quantity}")
+            c.drawRightString(width-50, y, f"{item_price:.0f} ₽")
             
             if item.comment:
-                y -= 4*mm
-                c.drawString(8*mm, y, f"  ({item.comment[:20]})")
+                y -= 15
+                c.setFont(self.font_name, 9)
+                c.drawString(70, y, f"({item.comment[:50]})")
+                c.setFont(self.font_name, 11)
         
-        y -= 6*mm
-        c.line(5*mm, y, 75*mm, y)
+        y -= 10
+        c.line(50, y, width-50, y)
         
-        y -= 5*mm
-        c.setFont(self.font_name, 9)
-        c.drawString(5*mm, y, f"Сумма: {subtotal:.0f}р")
+        # Итоги
+        y -= 30
+        c.setFont(self.font_name, 12)
+        c.drawString(50, y, "Сумма:")
+        c.drawRightString(width-50, y, f"{subtotal:.0f} ₽")
         
         total_discount = 0
         if order.general_discount > 0:
@@ -95,24 +113,30 @@ class PrintService:
             total_discount += 5
         
         if total_discount > 0:
-            y -= 4*mm
-            c.drawString(5*mm, y, f"Скидка: {total_discount}%")
+            y -= 20
+            c.drawString(50, y, f"Скидка ({total_discount}%):")
+            discount_amount = subtotal - total_amount
+            c.drawRightString(width-50, y, f"-{discount_amount:.0f} ₽")
         
-        y -= 6*mm
-        c.setFont(self.font_name, 11)
-        c.drawString(5*mm, y, f"ИТОГО: {total_amount:.0f}р")
+        y -= 30
+        c.setFont(self.font_name, 16)
+        c.drawString(50, y, "ИТОГО К ОПЛАТЕ:")
+        c.drawRightString(width-50, y, f"{total_amount:.0f} ₽")
         
-        y -= 6*mm
-        c.line(5*mm, y, 75*mm, y)
+        y -= 10
+        c.line(50, y, width-50, y)
         
-        y -= 5*mm
-        c.setFont(self.font_name, 9)
+        # Способ оплаты
+        y -= 30
+        c.setFont(self.font_name, 12)
         payment_method = "Наличные" if order.payment_method == "cash" else "Карта"
-        c.drawString(5*mm, y, f"Оплата: {payment_method}")
+        c.drawString(50, y, f"Способ оплаты: {payment_method}")
         
-        y -= 10*mm
-        c.setFont(self.font_name, 8)
-        c.drawCentredString(40*mm, y, "Спасибо за визит!")
+        # Подвал
+        y = 100
+        c.setFont(self.font_name, 10)
+        c.drawCentredString(width/2, y, "Спасибо за визит!")
+        c.drawCentredString(width/2, y-15, "Будем рады видеть Вас снова!")
         
         c.save()
         return filename
