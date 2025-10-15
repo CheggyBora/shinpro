@@ -66,7 +66,7 @@ The application features a modern, clean design with a focus on usability.
   - Multi-tab work orders, automatic pricing based on vehicle type and diameter.
   - Discount system (5%, 10%, 15%) and 5% auto-discount when client name AND phone are filled.
   - Payment processing (cash/card), **A4 PDF receipt printing** with professional layout and Cyrillic support.
-- **History Tab**: Allows searching for vehicle history by plate number and viewing detailed past work orders.
+- **History Tab**: Allows searching for vehicle history by plate number and viewing detailed past work orders. Includes pagination (30 orders per page) with navigation buttons for easy browsing through large order histories.
 - **Tire Storage Tab**: Manages tire intake and release, generating **A4 format PDF documents** automatically:
     - **Intake**: Records vehicle number, driver's license, storage type (tires/tires with rims), rim type, diameter, tire brand, damage description, wear, comments, and calculates storage price. Generates `storage_{id}.pdf` with **2 copies** (for customer and archive).
     - **Release**: Tracks stored sets, displays relevant information, and generates `release_{id}.pdf` upon release with professional A4 layout.
