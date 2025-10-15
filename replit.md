@@ -36,11 +36,16 @@ The application aims to provide small to medium-sized tire service businesses wi
 The application features a modern, clean design with a focus on usability.
 - **Color Scheme**: Blue (`#2563eb`), Gray (`#64748b`), Light (`#f8fafc`).
 - **Design Pattern**: Card-based layouts with shadows are used across all tabs for a consistent and modern look.
-- **Typography**: Uses Arial font with full Cyrillic support (Russian text) - larger headings (16-18pt) for readability.
+- **Typography**: Uses platform-specific fonts with full Cyrillic support (Russian text) - larger headings (16-18pt) for readability.
 - **Widgets**: Utilizes `ttkthemes` for all UI elements to ensure a contemporary appearance.
 - **Spacing**: Improved padding (10-20px) for better visual comfort.
 - **Buttons**: Blue for primary actions, green for confirmations.
-- **Fonts**: Arial for GUI (full Cyrillic support), DejaVu Sans for PDFs (Cyrillic support in receipts).
+- **Fonts System** (Cross-Platform):
+  - **Windows**: Arial (system font) for GUI with full Cyrillic support
+  - **Linux/Mac**: DejaVu Sans from `fonts/DejaVuSans.ttf` (bundled, auto-registered)
+  - **PDF Documents**: DejaVu Sans for all platforms (Cyrillic support in receipts)
+  - **Dynamic Selection**: `styles.DEFAULT_FONT` automatically selects the correct font based on OS
+  - **Font Registration**: DejaVu Sans font registered in `main_window.py` after root window creation (Linux only)
 
 ### Technical Implementation
 - **Backend**: Python 3.11 with SQLAlchemy for ORM.
