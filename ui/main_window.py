@@ -61,7 +61,13 @@ class MainWindow:
         settings = self.db.query(Settings).filter(Settings.key == 'admin_pin').first()
         stored_pin = settings.value if settings else '0000'
         
-        pin = simpledialog.askstring("Требуется PIN-код администратора", "Введите PIN для доступа к прайс-листу:", show='*')
+        # Привязываем диалог к главному окну для модальности
+        pin = simpledialog.askstring(
+            "Требуется PIN-код администратора", 
+            "Введите PIN для доступа к прайс-листу:", 
+            show='*',
+            parent=self.root
+        )
         
         # Если пользователь отменил ввод (нажал Cancel или закрыл диалог)
         if pin is None:
