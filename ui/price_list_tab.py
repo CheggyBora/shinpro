@@ -239,45 +239,69 @@ class PriceListTab:
         for item in self.tree.get_children():
             self.tree.delete(item)
         
-        # Загружаем услуги: конкретного типа + универсальные ('all')
-        services = self.db.query(Service).filter(
+        # Загружаем все услуги: конкретного типа + универсальные ('all')
+        all_services = self.db.query(Service).filter(
             (Service.vehicle_type == self.current_vehicle_type) | (Service.vehicle_type == 'all')
-        ).order_by(Service.name).all()
+        ).all()
         
-        if not services:
+        if not all_services:
             messagebox.showwarning("Предупреждение", f"Нет услуг для типа транспорта: {self.current_vehicle_type}")
             return
         
-        # Формируем значения в зависимости от текущих колонок
-        for service in services:
-            if self.current_vehicle_type == 'truck':
-                # Для грузовых только R15-R19
-                values = [
-                    service.name,
-                    service.price_r15 or 0,
-                    service.price_r16 or 0,
-                    service.price_r17 or 0,
-                    service.price_r18 or 0,
-                    service.price_r19 or 0
-                ]
-            else:
-                # Для легковых и джипов все радиусы
-                values = [
-                    service.name,
-                    service.price_r13 or 0,
-                    service.price_r14 or 0,
-                    service.price_r15 or 0,
-                    service.price_r16 or 0,
-                    service.price_r17 or 0,
-                    service.price_r18 or 0,
-                    service.price_r19 or 0,
-                    service.price_r20 or 0,
-                    service.price_r21 or 0,
-                    service.price_r22 or 0,
-                    service.price_r23 or 0,
-                    service.price_r24 or 0
-                ]
-            self.tree.insert('', 'end', values=values, tags=(str(service.id),))
+        # Создаем словарь для быстрого поиска услуг по имени
+        services_dict = {s.name: s for s in all_services}
+        
+        # Порядок услуг как в панели наряда (по столбцам слева направо)
+        service_order = [
+            # Столбец 1
+            'Съем+Установка', 'Мойка', 'Шиномонтаж', 'Балансировка', 'Герметик обода',
+            'Обработка смазкой', 'Правка литого диска', 'Ремонт грибком', 'Ремонт жгутом',
+            # Столбец 2
+            'Runflat', 'Оптимизация балансировки', 'Замена вентиля', 'Установка датчика давления',
+            'Шлифовка бортов диска', 'Шлифовка ступицы', 'Косметический ремонт шины',
+            'Дошиповка (за 1 шип)', 'Грязевая покрышка АТ/МТ',
+            # Столбец 3
+            'Зачистка диска от скотча', 'Слесарные работы', 'Открутка секретного болта',
+            'Срыв болта/гайки', 'Прочие услуги', 'Ремонт бокового пореза',
+            'Подкачка/проверка давления', 'Съем+Установка внутреннего колеса',
+            # Столбец 4
+            'Вентиль под датчик', 'Вентиль черный', 'Пакет', 'Золотник', 'Колпочки',
+            'Проверка на герметичность', 'Проверка на балансировку', 'Проверка затяжки болтов'
+        ]
+        
+        # Добавляем услуги в таблицу в нужном порядке
+        for service_name in service_order:
+            if service_name in services_dict:
+                service = services_dict[service_name]
+                
+                if self.current_vehicle_type == 'truck':
+                    # Для грузовых только R15-R19
+                    values = [
+                        service.name,
+                        service.price_r15 or 0,
+                        service.price_r16 or 0,
+                        service.price_r17 or 0,
+                        service.price_r18 or 0,
+                        service.price_r19 or 0
+                    ]
+                else:
+                    # Для легковых и джипов все радиусы
+                    values = [
+                        service.name,
+                        service.price_r13 or 0,
+                        service.price_r14 or 0,
+                        service.price_r15 or 0,
+                        service.price_r16 or 0,
+                        service.price_r17 or 0,
+                        service.price_r18 or 0,
+                        service.price_r19 or 0,
+                        service.price_r20 or 0,
+                        service.price_r21 or 0,
+                        service.price_r22 or 0,
+                        service.price_r23 or 0,
+                        service.price_r24 or 0
+                    ]
+                self.tree.insert('', 'end', values=values, tags=(str(service.id),))
     
     def on_double_click(self, event):
         """Обработка двойного клика для редактирования"""
