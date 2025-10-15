@@ -8,6 +8,10 @@ class HistoryTab:
     def __init__(self, parent, db):
         self.db = db
         self.frame = ttk.Frame(parent, style='BG.TFrame')
+        self.current_page = 1
+        self.items_per_page = 30
+        self.total_orders = 0
+        self.current_license = None
         
         search_card = styles.create_card_frame(self.frame)
         search_card.pack(fill='x', padx=15, pady=(15, 10))
@@ -54,6 +58,22 @@ class HistoryTab:
         self.history_tree.config(yscrollcommand=tree_scroll.set)
         
         self.history_tree.bind('<Double-1>', self.show_order_details)
+        
+        # Пагинация
+        pagination_frame = ttk.Frame(history_inner, style='White.TFrame')
+        pagination_frame.pack(fill='x', pady=(10, 0))
+        
+        self.info_label = styles.create_label(pagination_frame, "", 'Card.TLabel')
+        self.info_label.pack(side='left', padx=(0, 20))
+        
+        self.prev_button = styles.create_button(pagination_frame, "◀ Предыдущая", self.prev_page, 'Secondary.TButton')
+        self.prev_button.pack(side='left', padx=(0, 10))
+        
+        self.page_label = styles.create_label(pagination_frame, "Страница 1", 'Card.TLabel')
+        self.page_label.pack(side='left', padx=(0, 10))
+        
+        self.next_button = styles.create_button(pagination_frame, "Следующая ▶", self.next_page, 'Secondary.TButton')
+        self.next_button.pack(side='left')
     
     def search_history(self):
         license = self.license_entry.get().strip()
@@ -66,14 +86,39 @@ class HistoryTab:
             messagebox.showinfo("Информация", "Автомобиль не найден")
             return
         
+        self.current_license = license
+        self.current_page = 1
+        self.load_page()
+    
+    def load_page(self):
+        if not self.current_license:
+            return
+        
+        car = self.db.query(Car).filter(Car.license_plate == self.current_license).first()
+        if not car:
+            return
+        
+        # Получаем общее количество нарядов
+        self.total_orders = self.db.query(WorkOrder).filter(
+            WorkOrder.car_id == car.id,
+            WorkOrder.status == 'paid'
+        ).count()
+        
+        # Вычисляем количество страниц
+        total_pages = (self.total_orders + self.items_per_page - 1) // self.items_per_page
+        
+        # Получаем наряды для текущей страницы
+        offset = (self.current_page - 1) * self.items_per_page
         orders = self.db.query(WorkOrder).options(joinedload(WorkOrder.items)).filter(
             WorkOrder.car_id == car.id,
             WorkOrder.status == 'paid'
-        ).order_by(WorkOrder.paid_at.desc()).all()
+        ).order_by(WorkOrder.paid_at.desc()).offset(offset).limit(self.items_per_page).all()
         
+        # Очищаем таблицу
         for item in self.history_tree.get_children():
             self.history_tree.delete(item)
         
+        # Заполняем таблицу
         for order in orders:
             items = self.db.query(WorkOrderItem).filter(WorkOrderItem.work_order_id == order.id).all()
             services_list = ', '.join([item.service.name for item in items])
@@ -87,6 +132,25 @@ class HistoryTab:
                 f"{order.total_amount:.2f}",
                 payment_method
             ), tags=(str(order.id),))
+        
+        # Обновляем информацию о пагинации
+        self.info_label.config(text=f"Найдено нарядов: {self.total_orders}")
+        self.page_label.config(text=f"Страница {self.current_page} из {total_pages if total_pages > 0 else 1}")
+        
+        # Управляем кнопками
+        self.prev_button.config(state='normal' if self.current_page > 1 else 'disabled')
+        self.next_button.config(state='normal' if self.current_page < total_pages else 'disabled')
+    
+    def prev_page(self):
+        if self.current_page > 1:
+            self.current_page -= 1
+            self.load_page()
+    
+    def next_page(self):
+        total_pages = (self.total_orders + self.items_per_page - 1) // self.items_per_page
+        if self.current_page < total_pages:
+            self.current_page += 1
+            self.load_page()
     
     def show_order_details(self, event):
         selected = self.history_tree.selection()
