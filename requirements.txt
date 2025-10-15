@@ -2,3 +2,4 @@ python-dotenv
 reportlab
 sqlalchemy
 ttkthemes
+pyinstaller
