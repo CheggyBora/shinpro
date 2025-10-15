@@ -63,6 +63,11 @@ class MainWindow:
         
         pin = simpledialog.askstring("Требуется PIN-код администратора", "Введите PIN для доступа к прайс-листу:", show='*')
         
+        # Если пользователь отменил ввод (нажал Cancel или закрыл диалог)
+        if pin is None:
+            return False
+        
+        # Проверяем PIN
         if pin != stored_pin:
             messagebox.showerror("Ошибка", "Неверный PIN-код!\nДоступ к прайс-листу запрещен.")
             return False
