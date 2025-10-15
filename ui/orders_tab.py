@@ -149,6 +149,10 @@ class OrdersTab:
     
     def on_license_key_release(self, event):
         """Фильтровать список номеров при вводе (прогрессивная фильтрация)"""
+        # Игнорируем специальные клавиши
+        if event.keysym in ('Up', 'Down', 'Left', 'Right', 'Return', 'Tab'):
+            return
+            
         typed = self.license_var.get().lower()
         
         if typed == '':
@@ -157,10 +161,12 @@ class OrdersTab:
             # Фильтруем список номеров по введенному тексту
             filtered = [plate for plate in self.all_license_plates if plate.lower().startswith(typed)]
             self.license_entry['values'] = filtered
-        
-        # Автоматически открываем выпадающий список при вводе
-        if typed:
-            self.license_entry.event_generate('<Down>')
+            
+            # Автоматически открываем выпадающий список при вводе
+            if filtered:
+                self.license_entry.event_generate('<Down>')
+                # Возвращаем фокус обратно на поле ввода и устанавливаем курсор в конец
+                self.license_entry.after(1, lambda: self.license_entry.icursor(tk.END))
     
     def on_license_selected(self, event):
         """Автозаполнение характеристик при выборе номера из списка"""
