@@ -18,8 +18,18 @@ class OrdersTab:
         
         styles.create_label(input_frame, "Номер автомобиля:", 'Card.TLabel').pack(side='left', padx=(0, 10))
         
-        self.license_entry = styles.create_entry(input_frame, width=20)
+        # Autocomplete combobox для номера автомобиля
+        self.license_var = tk.StringVar()
+        self.license_entry = ttk.Combobox(input_frame, textvariable=self.license_var, width=20, font=styles.FONTS['normal'])
         self.license_entry.pack(side='left', padx=(0, 10))
+        
+        # Загружаем список номеров
+        self.all_license_plates = []
+        self.update_license_plates_list()
+        
+        # Привязываем обработчики событий
+        self.license_entry.bind('<KeyRelease>', self.on_license_key_release)
+        self.license_entry.bind('<<ComboboxSelected>>', self.on_license_selected)
         
         styles.create_button(input_frame, "Создать наряд", self.create_new_order, 'Primary.TButton').pack(side='left', padx=(0, 10))
         
@@ -132,6 +142,42 @@ class OrdersTab:
                 row4 += 1
         column4.columnconfigure(0, weight=1)
     
+    def update_license_plates_list(self):
+        """Загрузить список всех номеров машин"""
+        self.all_license_plates = self.order_service.get_all_license_plates()
+        self.license_entry['values'] = self.all_license_plates
+    
+    def on_license_key_release(self, event):
+        """Фильтровать список номеров при вводе (прогрессивная фильтрация)"""
+        typed = self.license_var.get().lower()
+        
+        if typed == '':
+            self.license_entry['values'] = self.all_license_plates
+        else:
+            # Фильтруем список номеров по введенному тексту
+            filtered = [plate for plate in self.all_license_plates if plate.lower().startswith(typed)]
+            self.license_entry['values'] = filtered
+    
+    def on_license_selected(self, event):
+        """Автозаполнение характеристик при выборе номера из списка"""
+        selected_plate = self.license_var.get()
+        if not selected_plate:
+            return
+        
+        # Получаем последний наряд для этой машины
+        last_order = self.order_service.get_last_order_for_car(selected_plate)
+        
+        if last_order:
+            # Сохраняем данные для автозаполнения при создании нового наряда
+            self.prefilled_data = {
+                'diameter': last_order.wheel_diameter,
+                'vehicle_type': last_order.vehicle_type,
+                'client_name': last_order.client.name if last_order.client else None,
+                'client_phone': last_order.client.phone if last_order.client else None
+            }
+        else:
+            self.prefilled_data = None
+    
     def create_new_order(self):
         license = self.license_entry.get().strip()
         if not license:
@@ -155,15 +201,28 @@ class OrdersTab:
         
         styles.create_label(content, f"Создание наряда для {license}", 'CardHeading.TLabel').pack(anchor='w', pady=(0, 20))
         
+        # Получаем предзаполненные данные если есть
+        prefilled = getattr(self, 'prefilled_data', None)
+        
         styles.create_label(content, "Диаметр колеса*:", 'Card.TLabel').pack(anchor='w', pady=(0, 5))
-        diameter_var = tk.StringVar()
+        diameter_var = tk.StringVar(value=prefilled['diameter'] if prefilled else '')
         diameter_combo = ttk.Combobox(content, textvariable=diameter_var, 
                                       values=['R13', 'R14', 'R15', 'R16', 'R17', 'R18', 'R19', 'R20', 'R21', 'R22', 'R23', 'R24'],
                                       font=styles.FONTS['normal'], state='readonly')
         diameter_combo.pack(fill='x', pady=(0, 15))
         
+        # Автозаполнение типа транспорта
+        vehicle_type_map_reverse = {
+            'car': 'Легковой',
+            'suv': 'Джип/Кроссовер/Пикап',
+            'truck': 'Категория С (коммерческий)'
+        }
+        default_vehicle_type = 'Легковой'
+        if prefilled and prefilled.get('vehicle_type'):
+            default_vehicle_type = vehicle_type_map_reverse.get(prefilled['vehicle_type'], 'Легковой')
+        
         styles.create_label(content, "Тип транспорта*:", 'Card.TLabel').pack(anchor='w', pady=(0, 5))
-        vehicle_type_var = tk.StringVar(value='Легковой')
+        vehicle_type_var = tk.StringVar(value=default_vehicle_type)
         vehicle_type_combo = ttk.Combobox(content, textvariable=vehicle_type_var, 
                                           values=['Легковой', 'Джип/Кроссовер/Пикап', 'Категория С (коммерческий)'],
                                           font=styles.FONTS['normal'], state='readonly')
@@ -171,10 +230,14 @@ class OrdersTab:
         
         styles.create_label(content, "Имя клиента:", 'Card.TLabel').pack(anchor='w', pady=(0, 5))
         client_name_entry = styles.create_entry(content, width=40)
+        if prefilled and prefilled.get('client_name'):
+            client_name_entry.insert(0, prefilled['client_name'])
         client_name_entry.pack(fill='x', pady=(0, 15))
         
         styles.create_label(content, "Номер телефона клиента:", 'Card.TLabel').pack(anchor='w', pady=(0, 5))
         client_phone_entry = styles.create_entry(content, width=40)
+        if prefilled and prefilled.get('client_phone'):
+            client_phone_entry.insert(0, prefilled['client_phone'])
         client_phone_entry.pack(fill='x', pady=(0, 20))
         
         def create():

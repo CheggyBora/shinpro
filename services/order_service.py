@@ -190,3 +190,21 @@ class OrderService:
     
     def get_all_services(self):
         return self.db.query(Service).filter(Service.is_active == True).all()
+    
+    def get_all_license_plates(self):
+        """Получить список всех уникальных номеров машин"""
+        cars = self.db.query(Car.license_plate).distinct().order_by(Car.license_plate).all()
+        return [car.license_plate for car in cars]
+    
+    def get_last_order_for_car(self, license_plate: str):
+        """Получить последний наряд для машины по номеру"""
+        car = self.db.query(Car).filter(Car.license_plate == license_plate).first()
+        if not car:
+            return None
+        
+        # Получаем последний наряд для этой машины
+        last_order = self.db.query(WorkOrder).filter(
+            WorkOrder.car_id == car.id
+        ).order_by(WorkOrder.created_at.desc()).first()
+        
+        return last_order
