@@ -41,17 +41,17 @@ class HistoryTab:
         tree_frame = ttk.Frame(history_inner, style='White.TFrame')
         tree_frame.pack(fill='both', expand=True)
         
-        self.history_tree = ttk.Treeview(tree_frame, columns=('Дата', 'Наряд №', 'Автомобиль', 'Услуги', 'Сумма', 'Оплата'), show='headings')
+        self.history_tree = ttk.Treeview(tree_frame, columns=('Дата', 'Наряд №', 'Автомобиль', 'Услуг', 'Сумма', 'Оплата'), show='headings')
         self.history_tree.heading('Дата', text='Дата')
         self.history_tree.heading('Наряд №', text='Наряд №')
         self.history_tree.heading('Автомобиль', text='Автомобиль')
-        self.history_tree.heading('Услуги', text='Услуги')
+        self.history_tree.heading('Услуг', text='Кол-во услуг')
         self.history_tree.heading('Сумма', text='Сумма')
         self.history_tree.heading('Оплата', text='Способ оплаты')
         self.history_tree.column('Дата', width=130)
         self.history_tree.column('Наряд №', width=80)
         self.history_tree.column('Автомобиль', width=120)
-        self.history_tree.column('Услуги', width=350)
+        self.history_tree.column('Услуг', width=120)
         self.history_tree.column('Сумма', width=90)
         self.history_tree.column('Оплата', width=120)
         self.history_tree.pack(side='left', fill='both', expand=True)
@@ -77,6 +77,11 @@ class HistoryTab:
         
         self.next_button = styles.create_button(pagination_frame, "Следующая ▶", self.next_page, 'Secondary.TButton')
         self.next_button.pack(side='left')
+        
+        # Кнопка удаления наряда
+        self.delete_button = styles.create_button(pagination_frame, "🗑️ Удалить выбранный наряд", 
+                                                  self.delete_selected_order, 'Danger.TButton')
+        self.delete_button.pack(side='right', padx=(10, 0))
         
         # Загружаем все наряды при открытии вкладки
         self.load_page()
@@ -130,7 +135,8 @@ class HistoryTab:
         # Заполняем таблицу
         for order in orders:
             items = self.db.query(WorkOrderItem).filter(WorkOrderItem.work_order_id == order.id).all()
-            services_list = ', '.join([item.service.name for item in items])
+            total_services = sum(item.quantity for item in items)
+            services_text = f"{total_services} {'услуга' if total_services == 1 else 'услуг' if total_services > 4 or total_services == 0 else 'услуги'}"
             
             payment_method = 'Наличные' if order.payment_method == 'cash' else 'Безнал'
             
@@ -138,8 +144,8 @@ class HistoryTab:
                 order.paid_at.strftime('%d.%m.%Y %H:%M'),
                 order.id,
                 order.car.license_plate,
-                services_list[:50] + '...' if len(services_list) > 50 else services_list,
-                f"{order.total_amount:.2f}",
+                services_text,
+                f"{order.total_amount:.2f} ₽",
                 payment_method
             ), tags=(str(order.id),))
         
@@ -251,8 +257,70 @@ class HistoryTab:
         
         styles.create_button(buttons_frame, "Закрыть", dialog.destroy, 'Secondary.TButton').pack(side='left', fill='x', expand=True)
     
+    def delete_selected_order(self):
+        """Удалить выбранный в таблице наряд"""
+        selected = self.history_tree.selection()
+        if not selected:
+            messagebox.showwarning("Предупреждение", "Выберите наряд для удаления")
+            return
+        
+        order_id = int(self.history_tree.item(selected[0])['tags'][0])
+        
+        # Вызываем диалог подтверждения удаления
+        from services.order_service import OrderService
+        
+        # Диалог подтверждения
+        confirm_dialog = tk.Toplevel(self.frame)
+        confirm_dialog.title("Подтверждение удаления")
+        confirm_dialog.geometry("450x250")
+        confirm_dialog.configure(bg=styles.COLORS['bg'])
+        confirm_dialog.grab_set()
+        
+        content = ttk.Frame(confirm_dialog, style='White.TFrame')
+        content.pack(fill='both', expand=True, padx=20, pady=20)
+        
+        warning = styles.create_label(content, f"⚠️ Удалить наряд №{order_id}?", 'CardHeading.TLabel')
+        warning.pack(anchor='w', pady=(0, 10))
+        warning.configure(foreground='#d32f2f')
+        
+        info = styles.create_label(content, 
+                                   "Это действие:\n" +
+                                   "• Пометит наряд как удалённый\n" +
+                                   "• Отменит начисления ЗП\n" +
+                                   "• Исключит наряд из статистики",
+                                   'Card.TLabel')
+        info.pack(anchor='w', pady=(0, 15))
+        
+        reason_label = styles.create_label(content, "Причина удаления (необязательно):", 'Card.TLabel')
+        reason_label.pack(anchor='w', pady=(0, 5))
+        
+        reason_entry = ttk.Entry(content, font=(styles.DEFAULT_FONT, 11))
+        reason_entry.pack(fill='x', pady=(0, 15))
+        
+        def confirm_delete():
+            reason = reason_entry.get().strip()
+            order_service = OrderService(self.db)
+            success, message = order_service.delete_work_order(order_id, reason)
+            
+            confirm_dialog.destroy()
+            
+            if success:
+                messagebox.showinfo("Успех", message)
+                self.load_page()  # Перезагружаем список
+            else:
+                messagebox.showerror("Ошибка", message)
+        
+        buttons = ttk.Frame(content, style='White.TFrame')
+        buttons.pack(fill='x')
+        
+        styles.create_button(buttons, "Отмена", confirm_dialog.destroy, 
+                           'Secondary.TButton').pack(side='left', fill='x', expand=True, padx=(0, 10))
+        
+        styles.create_button(buttons, "Удалить", confirm_delete, 
+                           'Danger.TButton').pack(side='left', fill='x', expand=True)
+    
     def delete_order(self, order_id, dialog):
-        """Удалить наряд (мягкое удаление)"""
+        """Удалить наряд (мягкое удаление) - вызывается из деталей наряда"""
         from services.order_service import OrderService
         
         # Диалог подтверждения

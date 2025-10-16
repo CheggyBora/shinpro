@@ -50,11 +50,21 @@ class StatisticsService:
                 work_order_id=order.id
             ).all()
             
+            # Рассчитываем промежуточную сумму без общих скидок
+            subtotal = sum(float(item.price) * item.quantity * (1 - item.discount_percent / 100) for item in items)
+            
+            # Коэффициент для пропорционального распределения итоговой суммы наряда
+            # (с учётом общих скидок) между услугами
+            ratio = float(order.total_amount) / subtotal if subtotal > 0 else 0
+            
             for item in items:
                 service_name = item.service.name
                 
-                # Рассчитываем итоговую стоимость с учётом количества и скидки
-                item_total = item.price * item.quantity * (1 - item.discount_percent / 100)
+                # Рассчитываем стоимость услуги без общей скидки
+                item_subtotal = float(item.price) * item.quantity * (1 - item.discount_percent / 100)
+                
+                # Применяем коэффициент для учёта общей скидки на наряд
+                item_total = item_subtotal * ratio
                 
                 # Добавляем в статистику
                 if service_name not in services_stats:
@@ -63,10 +73,10 @@ class StatisticsService:
                 services_stats[service_name]['count'] += item.quantity
                 services_stats[service_name]['revenue'] += item_total
         
-        # Считаем общую статистику
+        # Считаем общую статистику - используем ГОТОВЫЙ total_amount из нарядов
         total_cars = len(orders)
         total_services = sum(s['count'] for s in services_stats.values())
-        total_revenue = sum(s['revenue'] for s in services_stats.values())
+        total_revenue = sum(float(order.total_amount) for order in orders)  # Используем готовую сумму!
         average_check = total_revenue / total_cars if total_cars > 0 else 0
         
         # Формируем список услуг, отсортированный по выручке (самые прибыльные сверху)
