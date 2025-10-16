@@ -13,7 +13,6 @@ class StatisticsTab:
         # Главный фрейм
         self.frame = ttk.Frame(parent, style='BG.TFrame')
         main_frame = self.frame
-        main_frame.pack(fill='both', expand=True, padx=20, pady=20)
         
         # Заголовок
         header = styles.create_label(main_frame, "📊 Отчёты и статистика", 'Heading.TLabel')
