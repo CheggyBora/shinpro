@@ -332,17 +332,24 @@ class HistoryTab:
         reason_entry.pack(fill='x', pady=(0, 15))
         
         def confirm_delete():
-            reason = reason_entry.get().strip()
-            order_service = OrderService(self.db)
-            success, message = order_service.delete_work_order(order_id, reason)
-            
-            confirm_dialog.destroy()
-            
-            if success:
-                messagebox.showinfo("Успех", message)
-                self.load_page()  # Перезагружаем список
-            else:
-                messagebox.showerror("Ошибка", message)
+            try:
+                reason = reason_entry.get().strip()
+                order_service = OrderService(self.db)
+                success, message = order_service.delete_work_order(order_id, reason)
+                
+                confirm_dialog.destroy()
+                
+                if success:
+                    messagebox.showinfo("Успех", message)
+                    self.load_page()  # Перезагружаем список
+                else:
+                    messagebox.showerror("Ошибка", message)
+            except Exception as e:
+                import traceback
+                error_details = traceback.format_exc()
+                print(f"ERROR in confirm_delete (delete_selected_order): {error_details}")
+                confirm_dialog.destroy()
+                messagebox.showerror("Ошибка", f"Не удалось удалить наряд:\n{str(e)}")
         
         buttons = ttk.Frame(content, style='White.TFrame')
         buttons.pack(fill='x')
@@ -387,18 +394,26 @@ class HistoryTab:
         reason_entry.pack(fill='x', pady=(0, 15))
         
         def confirm_delete():
-            reason = reason_entry.get().strip()
-            order_service = OrderService(self.db)
-            success, message = order_service.delete_work_order(order_id, reason)
-            
-            confirm_dialog.destroy()
-            dialog.destroy()
-            
-            if success:
-                messagebox.showinfo("Успех", message)
-                self.load_page()  # Перезагружаем список
-            else:
-                messagebox.showerror("Ошибка", message)
+            try:
+                reason = reason_entry.get().strip()
+                order_service = OrderService(self.db)
+                success, message = order_service.delete_work_order(order_id, reason)
+                
+                confirm_dialog.destroy()
+                dialog.destroy()
+                
+                if success:
+                    messagebox.showinfo("Успех", message)
+                    self.load_page()  # Перезагружаем список
+                else:
+                    messagebox.showerror("Ошибка", message)
+            except Exception as e:
+                import traceback
+                error_details = traceback.format_exc()
+                print(f"ERROR in confirm_delete (delete_order): {error_details}")
+                confirm_dialog.destroy()
+                dialog.destroy()
+                messagebox.showerror("Ошибка", f"Не удалось удалить наряд:\n{str(e)}")
         
         buttons = ttk.Frame(content, style='White.TFrame')
         buttons.pack(fill='x')
