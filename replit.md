@@ -24,8 +24,9 @@ The application is built with Python 3.11, using Tkinter for the GUI and SQLAlch
 **Core Modules:**
 - **Employees Tab**: Manages employee registration, PIN-protected commission rates, shift tracking, and salary viewing.
 - **Orders Tab**: Facilitates comprehensive order processing with license plate autocomplete, a two-step order creation workflow, and a detailed 4-column service panel allowing quantity editing. It supports multi-tab work orders, automatic pricing based on vehicle type and wheel diameter, discount systems (including an auto-discount for full client data), and **A4 PDF receipt printing**.
-- **History Tab**: Provides a paginated view of past work orders, searchable by vehicle license plate.
+- **History Tab**: Provides a paginated view of past work orders, searchable by vehicle license plate. Includes a **Delete Order** button with confirmation dialog for soft-deleting work orders (marks as deleted without removing from database).
 - **Tire Storage Tab**: Manages tire intake and release, generating **A4 PDF documents** (`storage_{id}.pdf` and `release_{id}.pdf`) with detailed records for stored items.
+- **Statistics/Reports Tab**: Displays sales statistics with date filtering (default: last 30 days). Shows summary cards (cars serviced, total services, average check) and a detailed services breakdown table. All deleted orders are automatically excluded from statistics.
 - **Price List Tab**: Allows administrators to view and edit service prices across different vehicle types and wheel diameters (R13-R24). Price modifications are PIN-protected and saved in batches, with real-time updates.
 
 **Service Pricing:**
@@ -33,6 +34,13 @@ The system manages over 42 services, categorized by type, with prices varying by
 
 **Database Schema:**
 The SQLite database includes tables for `employees`, `work_shifts`, `clients`, `cars`, `services`, `work_orders`, `work_order_items`, `salary_transactions`, `settings`, and `tire_storage`.
+
+**Soft-Delete System:**
+Work orders use soft-delete (is_deleted flag) instead of hard deletion. When an order is deleted:
+- The `is_deleted` flag is set to True, `deleted_at` timestamp is recorded, and `deleted_reason` can be optionally provided
+- Reversal salary transactions are automatically created to rollback employee commissions
+- Deleted orders are excluded from all statistics, reports, and salary calculations
+- Data is preserved for audit trail and potential recovery
 
 ### System Design Choices
 The project is structured into `models/`, `services/`, and `ui/` for modularity. `config.py` centralizes settings, and `styles.py` manages UI styling. `init_data.py` populates initial database data. An admin PIN (`0000` default) protects sensitive operations.
@@ -43,6 +51,7 @@ The project is structured into `models/`, `services/`, and `ui/` for modularity.
 - **SQLAlchemy**: ORM for database interaction.
 - **Tkinter**: GUI toolkit.
 - **ttkthemes**: Modern themes for Tkinter.
+- **tkcalendar**: Date picker widget for statistics filtering.
 - **ReportLab**: PDF document generation.
 - **python-dotenv**: Environment variable management.
 - **PostgreSQL (Optional)**: Alternative database backend.
