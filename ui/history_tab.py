@@ -113,15 +113,15 @@ class HistoryTab:
                 return
             query = query.filter(WorkOrder.car_id == car.id)
         
-        # Получаем общее количество нарядов
-        self.total_orders = query.filter(WorkOrder.status == 'paid').count()
+        # Получаем общее количество нарядов (исключая удалённые)
+        self.total_orders = query.filter(WorkOrder.status == 'paid', WorkOrder.is_deleted == False).count()
         
         # Вычисляем количество страниц
         total_pages = (self.total_orders + self.items_per_page - 1) // self.items_per_page
         
-        # Получаем наряды для текущей страницы
+        # Получаем наряды для текущей страницы (исключая удалённые)
         offset = (self.current_page - 1) * self.items_per_page
-        orders = query.filter(WorkOrder.status == 'paid').order_by(WorkOrder.paid_at.desc()).offset(offset).limit(self.items_per_page).all()
+        orders = query.filter(WorkOrder.status == 'paid', WorkOrder.is_deleted == False).order_by(WorkOrder.paid_at.desc()).offset(offset).limit(self.items_per_page).all()
         
         # Очищаем таблицу
         for item in self.history_tree.get_children():
@@ -241,4 +241,68 @@ class HistoryTab:
         total_label.pack(anchor='w', pady=(10, 0))
         total_label.configure(font=(styles.DEFAULT_FONT, 16, 'bold'), foreground=styles.COLORS['primary'])
         
-        styles.create_button(content, "Закрыть", dialog.destroy, 'Secondary.TButton').pack(fill='x', pady=(10, 0))
+        # Кнопки действий
+        buttons_frame = ttk.Frame(content, style='White.TFrame')
+        buttons_frame.pack(fill='x', pady=(10, 0))
+        
+        styles.create_button(buttons_frame, "🗑️ Удалить наряд", 
+                           lambda: self.delete_order(order_id, dialog), 
+                           'Danger.TButton').pack(side='left', fill='x', expand=True, padx=(0, 10))
+        
+        styles.create_button(buttons_frame, "Закрыть", dialog.destroy, 'Secondary.TButton').pack(side='left', fill='x', expand=True)
+    
+    def delete_order(self, order_id, dialog):
+        """Удалить наряд (мягкое удаление)"""
+        from services.order_service import OrderService
+        
+        # Диалог подтверждения
+        confirm_dialog = tk.Toplevel(dialog)
+        confirm_dialog.title("Подтверждение удаления")
+        confirm_dialog.geometry("450x250")
+        confirm_dialog.configure(bg=styles.COLORS['bg'])
+        confirm_dialog.transient(dialog)
+        confirm_dialog.grab_set()
+        
+        content = ttk.Frame(confirm_dialog, style='White.TFrame')
+        content.pack(fill='both', expand=True, padx=20, pady=20)
+        
+        warning = styles.create_label(content, f"⚠️ Удалить наряд №{order_id}?", 'CardHeading.TLabel')
+        warning.pack(anchor='w', pady=(0, 10))
+        warning.configure(foreground='#d32f2f')
+        
+        info = styles.create_label(content, 
+                                   "Это действие:\n" +
+                                   "• Пометит наряд как удалённый\n" +
+                                   "• Отменит начисления ЗП\n" +
+                                   "• Исключит наряд из статистики",
+                                   'Card.TLabel')
+        info.pack(anchor='w', pady=(0, 15))
+        
+        reason_label = styles.create_label(content, "Причина удаления (необязательно):", 'Card.TLabel')
+        reason_label.pack(anchor='w', pady=(0, 5))
+        
+        reason_entry = ttk.Entry(content, font=(styles.DEFAULT_FONT, 11))
+        reason_entry.pack(fill='x', pady=(0, 15))
+        
+        def confirm_delete():
+            reason = reason_entry.get().strip()
+            order_service = OrderService(self.db)
+            success, message = order_service.delete_work_order(order_id, reason)
+            
+            confirm_dialog.destroy()
+            dialog.destroy()
+            
+            if success:
+                messagebox.showinfo("Успех", message)
+                self.load_page()  # Перезагружаем список
+            else:
+                messagebox.showerror("Ошибка", message)
+        
+        buttons = ttk.Frame(content, style='White.TFrame')
+        buttons.pack(fill='x')
+        
+        styles.create_button(buttons, "Отмена", confirm_dialog.destroy, 
+                           'Secondary.TButton').pack(side='left', fill='x', expand=True, padx=(0, 10))
+        
+        styles.create_button(buttons, "Удалить", confirm_delete, 
+                           'Danger.TButton').pack(side='left', fill='x', expand=True)

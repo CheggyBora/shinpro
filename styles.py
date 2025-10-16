@@ -101,6 +101,8 @@ def apply_modern_styles(root):
     style.configure('Subheading.TLabel', font=FONTS['subheading'], foreground=COLORS['text'])
     style.configure('Card.TLabel', background=COLORS['bg_card'], foreground=COLORS['text'], font=FONTS['normal'])
     style.configure('CardHeading.TLabel', background=COLORS['bg_card'], font=FONTS['subheading'], foreground=COLORS['text'])
+    style.configure('CardTitle.TLabel', background=COLORS['bg_card'], font=(DEFAULT_FONT, 13, 'bold'), foreground=COLORS['text'])
+    style.configure('CardValue.TLabel', background=COLORS['bg_card'], font=(DEFAULT_FONT, 24, 'bold'), foreground=COLORS['primary'])
     style.configure('ServiceHeading.TLabel', background='#f5e6d3', foreground='black', font=FONTS['normal'], padding=[5, 3])
     
     style.configure('Primary.TButton', 

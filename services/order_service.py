@@ -208,3 +208,81 @@ class OrderService:
         ).order_by(WorkOrder.created_at.desc()).first()
         
         return last_order
+    
+    def delete_work_order(self, order_id: int, reason: str = ""):
+        """
+        Мягкое удаление наряда с откатом начислений ЗП
+        
+        Args:
+            order_id: ID наряда для удаления
+            reason: Причина удаления (опционально)
+        
+        Returns:
+            tuple: (success: bool, message: str)
+        """
+        from models import SalaryTransaction
+        from datetime import datetime
+        
+        try:
+            # Находим наряд
+            order = self.db.query(WorkOrder).filter_by(id=order_id).first()
+            if not order:
+                return False, f"Наряд №{order_id} не найден"
+            
+            # Проверяем, не удалён ли уже
+            if order.is_deleted:
+                return False, f"Наряд №{order_id} уже удалён"
+            
+            # Помечаем наряд как удалённый
+            order.is_deleted = True
+            order.deleted_at = datetime.now()
+            order.deleted_reason = reason if reason else "Не указана"
+            
+            # Находим все начисления ЗП по этому наряду
+            salary_transactions = self.db.query(SalaryTransaction).filter_by(
+                work_order_id=order_id
+            ).all()
+            
+            # Создаём обратные транзакции (откат начислений)
+            reversed_count = 0
+            for transaction in salary_transactions:
+                # Создаём транзакцию с отрицательной суммой
+                reversal = SalaryTransaction(
+                    employee_id=transaction.employee_id,
+                    amount=-transaction.amount,  # Отрицательная сумма
+                    transaction_type='reversal',
+                    work_order_id=order_id,
+                    description=f"Откат за удалённый наряд №{order_id}"
+                )
+                self.db.add(reversal)
+                reversed_count += 1
+            
+            # Сохраняем изменения
+            self.db.commit()
+            
+            message = f"Наряд №{order_id} успешно удалён"
+            if reversed_count > 0:
+                message += f"\nОтменено начислений ЗП: {reversed_count}"
+            
+            return True, message
+            
+        except Exception as e:
+            self.db.rollback()
+            return False, f"Ошибка при удалении наряда: {str(e)}"
+    
+    def get_active_orders(self):
+        """Получить все активные (неудалённые) наряды"""
+        return self.db.query(WorkOrder).filter_by(is_deleted=False).all()
+    
+    def get_order_by_id(self, order_id: int, include_deleted: bool = False):
+        """
+        Получить наряд по ID
+        
+        Args:
+            order_id: ID наряда
+            include_deleted: Включать ли удалённые наряды
+        """
+        query = self.db.query(WorkOrder).filter_by(id=order_id)
+        if not include_deleted:
+            query = query.filter_by(is_deleted=False)
+        return query.first()
