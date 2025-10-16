@@ -11,15 +11,16 @@ class StatisticsTab:
         self.stats_service = StatisticsService(db)
         
         # Главный фрейм
-        main_frame = ttk.Frame(parent, style='Main.TFrame')
+        self.frame = ttk.Frame(parent, style='BG.TFrame')
+        main_frame = self.frame
         main_frame.pack(fill='both', expand=True, padx=20, pady=20)
         
         # Заголовок
-        header = styles.create_label(main_frame, "📊 Отчёты и статистика", 'Header.TLabel')
+        header = styles.create_label(main_frame, "📊 Отчёты и статистика", 'Heading.TLabel')
         header.pack(anchor='w', pady=(0, 20))
         
         # Карточка с фильтрами
-        filter_card = styles.create_card(main_frame)
+        filter_card = styles.create_card_frame(main_frame)
         filter_card.pack(fill='x', pady=(0, 20))
         
         filter_inner = ttk.Frame(filter_card, style='White.TFrame')
@@ -55,12 +56,12 @@ class StatisticsTab:
         show_button.pack(side='left')
         
         # Карточки со статистикой
-        stats_cards_frame = ttk.Frame(main_frame, style='Main.TFrame')
+        stats_cards_frame = ttk.Frame(main_frame, style='BG.TFrame')
         stats_cards_frame.pack(fill='x', pady=(0, 20))
         
         # Карточка 1: Обслужено машин
-        cars_card = styles.create_card(stats_cards_frame, width=250)
-        cars_card.pack(side='left', padx=(0, 15))
+        cars_card = styles.create_card_frame(stats_cards_frame)
+        cars_card.pack(side='left', padx=(0, 15), ipadx=50)
         cars_inner = ttk.Frame(cars_card, style='White.TFrame')
         cars_inner.pack(fill='both', padx=20, pady=15)
         label1 = styles.create_label(cars_inner, "🚗 Обслужено машин", 'Card.TLabel')
@@ -69,8 +70,8 @@ class StatisticsTab:
         self.cars_value.pack(anchor='w', pady=(5, 0))
         
         # Карточка 2: Всего услуг
-        services_card = styles.create_card(stats_cards_frame, width=250)
-        services_card.pack(side='left', padx=(0, 15))
+        services_card = styles.create_card_frame(stats_cards_frame)
+        services_card.pack(side='left', padx=(0, 15), ipadx=50)
         services_inner = ttk.Frame(services_card, style='White.TFrame')
         services_inner.pack(fill='both', padx=20, pady=15)
         label2 = styles.create_label(services_inner, "📊 Всего услуг", 'Card.TLabel')
@@ -79,8 +80,8 @@ class StatisticsTab:
         self.services_value.pack(anchor='w', pady=(5, 0))
         
         # Карточка 3: Средний чек
-        avg_card = styles.create_card(stats_cards_frame, width=250)
-        avg_card.pack(side='left')
+        avg_card = styles.create_card_frame(stats_cards_frame)
+        avg_card.pack(side='left', ipadx=50)
         avg_inner = ttk.Frame(avg_card, style='White.TFrame')
         avg_inner.pack(fill='both', padx=20, pady=15)
         label3 = styles.create_label(avg_inner, "💰 Средний чек", 'Card.TLabel')
@@ -89,7 +90,7 @@ class StatisticsTab:
         self.avg_value.pack(anchor='w', pady=(5, 0))
         
         # Таблица с услугами
-        table_card = styles.create_card(main_frame)
+        table_card = styles.create_card_frame(main_frame)
         table_card.pack(fill='both', expand=True)
         
         table_inner = ttk.Frame(table_card, style='White.TFrame')

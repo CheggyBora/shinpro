@@ -37,5 +37,5 @@ class MainWindow:
         self.notebook.add(self.orders_tab.frame, text='  Наряды  ')
         self.notebook.add(self.history_tab.frame, text='  История автомобиля  ')
         self.notebook.add(self.tire_storage_tab.frame, text='  Хранение шин  ')
-        self.notebook.add(self.statistics_tab, text='  📊 Отчёты  ')
+        self.notebook.add(self.statistics_tab.frame, text='  📊 Отчёты  ')
         self.notebook.add(self.price_list_tab.frame, text='  💰 Прайс-лист  ')

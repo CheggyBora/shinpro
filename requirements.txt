@@ -3,3 +3,4 @@ reportlab
 sqlalchemy
 ttkthemes
 pyinstaller
+tkcalendar
