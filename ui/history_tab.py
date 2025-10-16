@@ -225,12 +225,19 @@ class HistoryTab:
         tree_frame = ttk.Frame(content, style='White.TFrame')
         tree_frame.pack(fill='both', expand=True, pady=(0, 15))
         
-        items_tree = ttk.Treeview(tree_frame, columns=('Услуга', 'Цена', 'Скидка', 'Итого', 'Комментарий'), show='headings')
+        items_tree = ttk.Treeview(tree_frame, columns=('Услуга', 'Количество', 'Скидка', 'Цена', 'Итого'), show='headings')
         items_tree.heading('Услуга', text='Услуга')
-        items_tree.heading('Цена', text='Цена')
+        items_tree.heading('Количество', text='Кол-во')
         items_tree.heading('Скидка', text='Скидка %')
+        items_tree.heading('Цена', text='Цена')
         items_tree.heading('Итого', text='Итого')
-        items_tree.heading('Комментарий', text='Комментарий')
+        
+        items_tree.column('Услуга', width=250)
+        items_tree.column('Количество', width=80)
+        items_tree.column('Скидка', width=80)
+        items_tree.column('Цена', width=100)
+        items_tree.column('Итого', width=100)
+        
         items_tree.pack(side='left', fill='both', expand=True)
         
         items_scroll = ttk.Scrollbar(tree_frame, orient='vertical', command=items_tree.yview)
@@ -239,13 +246,13 @@ class HistoryTab:
         
         items = self.db.query(WorkOrderItem).filter(WorkOrderItem.work_order_id == order_id).all()
         for item in items:
-            item_total = item.price * (1 - item.discount_percent / 100)
+            item_total = item.price * item.quantity * (1 - item.discount_percent / 100)
             items_tree.insert('', 'end', values=(
                 item.service.name,
-                f"{item.price:.2f}",
+                item.quantity,
                 item.discount_percent,
-                f"{item_total:.2f}",
-                item.comment or ""
+                f"{item.price:.2f}",
+                f"{item_total:.2f}"
             ))
         
         total_frame = ttk.Frame(content, style='White.TFrame')

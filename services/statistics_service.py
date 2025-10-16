@@ -33,10 +33,11 @@ class StatisticsService:
                 ]
             }
         """
-        # Получаем все неудалённые наряды за период
+        # Получаем все неудалённые оплаченные наряды за период
         orders = self.db.query(WorkOrder).filter(
-            WorkOrder.created_at >= date_from,
-            WorkOrder.created_at <= date_to,
+            WorkOrder.paid_at >= date_from,
+            WorkOrder.paid_at <= date_to,
+            WorkOrder.status == 'paid',
             WorkOrder.is_deleted == False  # Исключаем удалённые
         ).all()
         
