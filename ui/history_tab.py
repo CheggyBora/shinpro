@@ -201,8 +201,16 @@ class HistoryTab:
         
         dialog = tk.Toplevel(self.frame)
         dialog.title(f"Детали наряда #{order_id}")
-        dialog.geometry("600x550")
+        dialog.geometry("750x650")
         dialog.configure(bg=styles.COLORS['bg'])
+        
+        # Центрируем окно
+        dialog.update_idletasks()
+        width = dialog.winfo_width()
+        height = dialog.winfo_height()
+        x = (dialog.winfo_screenwidth() // 2) - (width // 2)
+        y = (dialog.winfo_screenheight() // 2) - (height // 2)
+        dialog.geometry(f'{width}x{height}+{x}+{y}')
         
         content = ttk.Frame(dialog, style='White.TFrame')
         content.pack(fill='both', expand=True, padx=20, pady=20)
