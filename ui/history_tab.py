@@ -41,13 +41,15 @@ class HistoryTab:
         tree_frame = ttk.Frame(history_inner, style='White.TFrame')
         tree_frame.pack(fill='both', expand=True)
         
-        self.history_tree = ttk.Treeview(tree_frame, columns=('Дата', 'Наряд №', 'Автомобиль', 'Услуг', 'Сумма', 'Оплата'), show='headings')
+        self.history_tree = ttk.Treeview(tree_frame, columns=('Статус', 'Дата', 'Наряд №', 'Автомобиль', 'Услуг', 'Сумма', 'Оплата'), show='headings')
+        self.history_tree.heading('Статус', text='')
         self.history_tree.heading('Дата', text='Дата')
         self.history_tree.heading('Наряд №', text='Наряд №')
         self.history_tree.heading('Автомобиль', text='Автомобиль')
         self.history_tree.heading('Услуг', text='Кол-во услуг')
         self.history_tree.heading('Сумма', text='Сумма')
         self.history_tree.heading('Оплата', text='Способ оплаты')
+        self.history_tree.column('Статус', width=40, anchor='center')
         self.history_tree.column('Дата', width=130)
         self.history_tree.column('Наряд №', width=80)
         self.history_tree.column('Автомобиль', width=120)
@@ -123,19 +125,22 @@ class HistoryTab:
                     return
                 query = query.filter(WorkOrder.car_id == car.id)
             
-            # Получаем общее количество нарядов (исключая удалённые)
-            self.total_orders = query.filter(WorkOrder.status == 'paid', WorkOrder.is_deleted == False).count()
+            # Получаем общее количество нарядов (включая удалённые)
+            self.total_orders = query.filter(WorkOrder.status == 'paid').count()
             
             # Вычисляем количество страниц
             total_pages = (self.total_orders + self.items_per_page - 1) // self.items_per_page
             
-            # Получаем наряды для текущей страницы (исключая удалённые)
+            # Получаем наряды для текущей страницы (включая удалённые)
             offset = (self.current_page - 1) * self.items_per_page
-            orders = query.filter(WorkOrder.status == 'paid', WorkOrder.is_deleted == False).order_by(WorkOrder.paid_at.desc()).offset(offset).limit(self.items_per_page).all()
+            orders = query.filter(WorkOrder.status == 'paid').order_by(WorkOrder.paid_at.desc()).offset(offset).limit(self.items_per_page).all()
             
             # Очищаем таблицу
             for item in self.history_tree.get_children():
                 self.history_tree.delete(item)
+            
+            # Настраиваем тег для удалённых нарядов
+            self.history_tree.tag_configure('deleted', foreground='#dc3545')
             
             # Заполняем таблицу
             for order in orders:
@@ -145,14 +150,21 @@ class HistoryTab:
                 
                 payment_method = 'Наличные' if order.payment_method == 'cash' else 'Безнал'
                 
+                # Определяем статус (красный крестик для удалённых)
+                status_icon = '❌' if order.is_deleted else ''
+                
+                # Определяем теги
+                tags = (str(order.id), 'deleted') if order.is_deleted else (str(order.id),)
+                
                 self.history_tree.insert('', 'end', values=(
+                    status_icon,
                     order.paid_at.strftime('%d.%m.%Y %H:%M'),
                     order.id,
                     order.car.license_plate,
                     services_text,
                     f"{order.total_amount:.2f} ₽",
                     payment_method
-                ), tags=(str(order.id),))
+                ), tags=tags)
             
             # Обновляем информацию о пагинации
             info_text = f"Найдено нарядов: {self.total_orders}" if self.current_license else f"Всего нарядов: {self.total_orders}"
