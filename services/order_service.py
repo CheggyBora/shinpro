@@ -250,9 +250,7 @@ class OrderService:
                 reversal = SalaryTransaction(
                     employee_id=transaction.employee_id,
                     amount=-transaction.amount,  # Отрицательная сумма
-                    transaction_type='reversal',
-                    work_order_id=order_id,
-                    description=f"Откат за удалённый наряд №{order_id}"
+                    work_order_id=order_id
                 )
                 self.db.add(reversal)
                 reversed_count += 1
