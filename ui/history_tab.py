@@ -192,6 +192,9 @@ class HistoryTab:
             if not order:
                 return
         except Exception as e:
+            import traceback
+            error_details = traceback.format_exc()
+            print(f"ERROR in show_order_details: {error_details}")
             self.db.rollback()
             messagebox.showerror("Ошибка", f"Не удалось загрузить детали наряда:\n{str(e)}")
             return
