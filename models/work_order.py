@@ -21,5 +21,9 @@ class WorkOrder(Base):
     status = Column(String(20), default='draft')
     employee_ids = Column(String(200), nullable=True)
     
+    is_deleted = Column(Boolean, default=False)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_reason = Column(String(500), nullable=True)
+    
     car = relationship("Car", backref="work_orders")
     client = relationship("Client", backref="work_orders")
