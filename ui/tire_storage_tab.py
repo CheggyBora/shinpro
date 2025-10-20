@@ -288,21 +288,23 @@ class TireStorageTab:
             self.db.commit()
             self.db.refresh(storage)
             
-            # 3. Добавляем услугу "Хранение" в наряд
-            # Создаём фиктивную услугу хранения для наряда
+            # 3. Добавляем услугу "Хранение шин" в наряд
             from models import Service, WorkOrderItem
-            storage_service = self.db.query(Service).filter(Service.name.like('%Хранение%')).first()
-            if not storage_service:
-                # Если услуги хранения нет, создаём позицию вручную
+            storage_service = self.db.query(Service).filter(Service.name == 'Хранение шин').first()
+            
+            if storage_service:
+                # Используем существующую услугу хранения
                 storage_item = WorkOrderItem(
                     work_order_id=work_order.id,
-                    service_id=1,  # Временно используем ID 1
+                    service_id=storage_service.id,
                     quantity=1,
                     price=price,
                     discount_percent=0
                 )
                 self.db.add(storage_item)
                 self.db.flush()
+            else:
+                raise ValueError("Услуга 'Хранение шин' не найдена в базе данных. Обратитесь к администратору.")
             
             # 4. Оплачиваем наряд БЕЗ начисления зарплаты
             work_order.paid_at = datetime.now()
