@@ -23,7 +23,7 @@ The application is built with Python 3.11, using Tkinter for the GUI and SQLAlch
 
 **Core Modules:**
 - **Employees Tab**: Manages employee registration, PIN-protected commission rates, shift tracking, and salary viewing.
-- **Orders Tab**: Facilitates comprehensive order processing with license plate autocomplete, a two-step order creation workflow, and a detailed 4-column service panel allowing quantity editing. Column 3 (editable services) is ordered with "Ремонт жгутом" and "Подкачка/проверка давления" at the top for quick access. It supports multi-tab work orders, automatic pricing based on vehicle type and wheel diameter, discount systems (including an auto-discount for full client data and rim-specific discount), and **A4 PDF receipt printing**. Receipt format shows: service name, quantity, discounted unit price, and line total without strikethrough or explicit discount percentages.
+- **Orders Tab**: Facilitates comprehensive order processing with license plate autocomplete (auto-clears after order creation), a two-step order creation workflow, and a detailed 4-column service panel allowing quantity editing. Column 3 (editable services) is ordered with "Ремонт жгутом" and "Подкачка/проверка давления" at the top for quick access. It supports multi-tab work orders, automatic pricing based on vehicle type and wheel diameter, discount systems (including an auto-discount for full client data and rim-specific discount), and **A4 PDF receipt printing**. Receipt format shows: service name, quantity, discounted unit price, and line total without strikethrough or explicit discount percentages. Each active order tab includes a **Delete Draft Order** button (🗑) that allows hard deletion of draft orders only with confirmation dialog.
 - **History Tab**: Provides a paginated view of past work orders, searchable by vehicle license plate. Includes a **Delete Order** button with confirmation dialog for soft-deleting work orders (marks as deleted without removing from database).
 - **Tire Storage Tab**: Manages tire intake and release with full payment integration. Features payment method selection (cash/card), creates WorkOrder for statistics tracking, generates **payment receipt PDF** and **2 copies of storage acceptance act**. Upon release, generates **release act PDF**. All storage orders appear in statistics and history without salary accrual.
 - **Statistics/Reports Tab**: Displays sales statistics with date filtering (default: last 30 days). Shows summary cards (cars serviced, total services, average check) and a detailed services breakdown table. All deleted orders are automatically excluded from statistics.
@@ -39,12 +39,23 @@ The system manages over 42 services, categorized by type, with prices varying by
 **Database Schema:**
 The SQLite database includes tables for `employees`, `work_shifts`, `clients`, `cars`, `services`, `work_orders`, `work_order_items`, `salary_transactions`, `settings`, and `tire_storage`.
 
-**Soft-Delete System:**
-Work orders use soft-delete (is_deleted flag) instead of hard deletion. When an order is deleted:
-- The `is_deleted` flag is set to True, `deleted_at` timestamp is recorded, and `deleted_reason` can be optionally provided
-- Reversal salary transactions are automatically created to rollback employee commissions
-- Deleted orders are excluded from all statistics, reports, and salary calculations
-- Data is preserved for audit trail and potential recovery
+**Order Deletion System:**
+The system implements two types of deletion based on order status:
+
+1. **Hard Delete (Draft Orders Only):**
+   - Available directly in active order tabs via the 🗑 button
+   - Only draft orders (status='draft') can be hard-deleted
+   - Requires confirmation dialog: "Вы действительно хотите удалить наряд?"
+   - Permanently removes order and all items from database
+   - Automatically closes the order tab after deletion
+   - Protected by dual checks in UI and service layer
+
+2. **Soft Delete (Paid/Completed Orders):**
+   - Available in History tab for paid/completed orders
+   - Sets `is_deleted` flag to True, records `deleted_at` timestamp
+   - Reversal salary transactions automatically created to rollback employee commissions
+   - Deleted orders excluded from all statistics, reports, and salary calculations
+   - Data preserved for audit trail and potential recovery
 
 ### System Design Choices
 The project is structured into `models/`, `services/`, and `ui/` for modularity. `config.py` centralizes settings, and `styles.py` manages UI styling. `init_data.py` populates initial database data. An admin PIN (`0000` default) protects sensitive operations.
