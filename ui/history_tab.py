@@ -115,8 +115,15 @@ class HistoryTab:
     
     def load_page(self):
         try:
+            # Импортируем TireStorage для фильтрации
+            from models import TireStorage
+            
             # Формируем запрос в зависимости от наличия фильтра
             query = self.db.query(WorkOrder).options(joinedload(WorkOrder.items))
+            
+            # Исключаем наряды хранения шин (которые имеют связь с tire_storage)
+            query = query.outerjoin(TireStorage, WorkOrder.id == TireStorage.work_order_id)
+            query = query.filter(TireStorage.id == None)
             
             if self.current_license:
                 # Фильтр по номеру автомобиля
@@ -125,13 +132,13 @@ class HistoryTab:
                     return
                 query = query.filter(WorkOrder.car_id == car.id)
             
-            # Получаем общее количество нарядов (включая удалённые)
+            # Получаем общее количество нарядов (исключая хранение и включая удалённые)
             self.total_orders = query.filter(WorkOrder.status == 'paid').count()
             
             # Вычисляем количество страниц
             total_pages = (self.total_orders + self.items_per_page - 1) // self.items_per_page
             
-            # Получаем наряды для текущей страницы (включая удалённые)
+            # Получаем наряды для текущей страницы (исключая хранение и включая удалённые)
             offset = (self.current_page - 1) * self.items_per_page
             orders = query.filter(WorkOrder.status == 'paid').order_by(WorkOrder.paid_at.desc()).offset(offset).limit(self.items_per_page).all()
             
