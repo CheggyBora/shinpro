@@ -217,6 +217,7 @@ class TireStorageTab:
         dialog.title("Оплата хранения")
         dialog.geometry("400x300")
         dialog.configure(bg=styles.COLORS['bg'])
+        styles.center_window(dialog, self.frame.winfo_toplevel())
         
         content = ttk.Frame(dialog, style='White.TFrame')
         content.pack(fill='both', expand=True, padx=20, pady=20)
@@ -342,6 +343,7 @@ class TireStorageTab:
         dialog.title("Документы готовы")
         dialog.geometry("450x250")
         dialog.configure(bg=styles.COLORS['bg'])
+        styles.center_window(dialog, self.frame.winfo_toplevel())
         
         content = ttk.Frame(dialog, style='White.TFrame')
         content.pack(fill='both', expand=True, padx=20, pady=20)
@@ -452,6 +454,7 @@ class TireStorageTab:
                 dialog.title("Документ готов")
                 dialog.geometry("400x200")
                 dialog.configure(bg=styles.COLORS['bg'])
+                styles.center_window(dialog, self.frame.winfo_toplevel())
                 
                 content = ttk.Frame(dialog, style='White.TFrame')
                 content.pack(fill='both', expand=True, padx=20, pady=20)

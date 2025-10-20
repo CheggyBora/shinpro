@@ -249,13 +249,7 @@ class OrdersTab:
         dialog.title("Детали наряда")
         dialog.geometry("450x450")
         dialog.configure(bg=styles.COLORS['bg'])
-        
-        dialog.update_idletasks()
-        width = 450
-        height = 450
-        x = (dialog.winfo_screenwidth() // 2) - (width // 2)
-        y = (dialog.winfo_screenheight() // 2) - (height // 2)
-        dialog.geometry(f'{width}x{height}+{x}+{y}')
+        styles.center_window(dialog, self.frame.winfo_toplevel())
         
         content = ttk.Frame(dialog, style='White.TFrame')
         content.pack(fill='both', expand=True, padx=20, pady=20)
@@ -605,6 +599,7 @@ class OrderWidget:
         dialog_height = "480" if is_editable else "400"
         dialog.geometry(f"450x{dialog_height}")
         dialog.configure(bg=styles.COLORS['bg'])
+        styles.center_window(dialog, self.frame.winfo_toplevel())
         
         content = ttk.Frame(dialog, style='White.TFrame')
         content.pack(fill='both', expand=True, padx=20, pady=20)
@@ -685,6 +680,7 @@ class OrderWidget:
         dialog.title("Оплата")
         dialog.geometry("400x300")
         dialog.configure(bg=styles.COLORS['bg'])
+        styles.center_window(dialog, self.frame.winfo_toplevel())
         
         content = ttk.Frame(dialog, style='White.TFrame')
         content.pack(fill='both', expand=True, padx=20, pady=20)

@@ -189,3 +189,31 @@ def create_entry(parent, width=20):
     entry = ttk.Entry(parent, width=width)
     entry.configure(font=FONTS['normal'])
     return entry
+
+def center_window(window, parent=None):
+    """Центрирует окно на экране или относительно родительского окна"""
+    window.update_idletasks()
+    
+    if parent:
+        # Центрируем относительно родительского окна
+        parent_x = parent.winfo_x()
+        parent_y = parent.winfo_y()
+        parent_width = parent.winfo_width()
+        parent_height = parent.winfo_height()
+        
+        window_width = window.winfo_width()
+        window_height = window.winfo_height()
+        
+        x = parent_x + (parent_width - window_width) // 2
+        y = parent_y + (parent_height - window_height) // 2
+    else:
+        # Центрируем на экране
+        window_width = window.winfo_width()
+        window_height = window.winfo_height()
+        screen_width = window.winfo_screenwidth()
+        screen_height = window.winfo_screenheight()
+        
+        x = (screen_width - window_width) // 2
+        y = (screen_height - window_height) // 2
+    
+    window.geometry(f'+{x}+{y}')
