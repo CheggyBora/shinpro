@@ -402,31 +402,53 @@ class TireStorageTab:
         
         def print_receipt():
             """Печать чека оплаты"""
-            if platform.system() == 'Windows':
-                os.startfile(os.path.abspath(receipt_file), "print")
-            else:
-                try:
-                    import subprocess
-                    subprocess.run(['lp', receipt_file], check=True)
-                except:
-                    pass
-            
-            # После печати чека печатаем 2 экземпляра акта приёма
-            self.print_receipt(storage, copies=2)
-            storage_act = f"receipts/storage_{storage.id}.pdf"
-            
-            if platform.system() == 'Windows':
-                os.startfile(os.path.abspath(storage_act), "print")
-                messagebox.showinfo("Успех", f"Комплект #{storage.id} принят на хранение!\n\nЧек оплаты и 2 экземпляра акта отправлены на печать")
-            else:
-                try:
-                    import subprocess
-                    subprocess.run(['lp', storage_act], check=True)
-                    messagebox.showinfo("Успех", f"Комплект #{storage.id} принят на хранение!\n\nДокументы отправлены на печать")
-                except:
-                    messagebox.showinfo("Успех", f"Комплект #{storage.id} принят на хранение!\n\nДокументы сохранены")
-            
-            dialog.destroy()
+            try:
+                print(f"DEBUG: Starting print process for receipt: {receipt_file}")
+                
+                # Генерируем акт приёма (2 копии)
+                self.print_receipt(storage, copies=2)
+                storage_act = f"receipts/storage_{storage.id}.pdf"
+                print(f"DEBUG: Storage act created: {storage_act}")
+                
+                if platform.system() == 'Windows':
+                    # Печатаем чек оплаты
+                    receipt_abs = os.path.abspath(receipt_file)
+                    print(f"DEBUG: Printing receipt: {receipt_abs}")
+                    try:
+                        os.startfile(receipt_abs, "print")
+                    except Exception as e:
+                        print(f"WARNING: Could not print receipt: {e}")
+                        # Открываем для ручной печати
+                        os.startfile(receipt_abs)
+                    
+                    # Печатаем акт приёма (2 экземпляра)
+                    storage_act_abs = os.path.abspath(storage_act)
+                    print(f"DEBUG: Printing storage act: {storage_act_abs}")
+                    try:
+                        os.startfile(storage_act_abs, "print")
+                    except Exception as e:
+                        print(f"WARNING: Could not print storage act: {e}")
+                        # Открываем для ручной печати
+                        os.startfile(storage_act_abs)
+                    
+                    messagebox.showinfo("Печать", f"Комплект #{storage.id} принят на хранение!\n\nДокументы открыты для печати.\nЕсли автоматическая печать не сработала,\nнапечатайте документы вручную из открытых окон.")
+                else:
+                    try:
+                        import subprocess
+                        subprocess.run(['lp', receipt_file], check=True)
+                        subprocess.run(['lp', storage_act], check=True)
+                        messagebox.showinfo("Успех", f"Комплект #{storage.id} принят на хранение!\n\nДокументы отправлены на печать")
+                    except:
+                        messagebox.showinfo("Успех", f"Комплект #{storage.id} принят на хранение!\n\nДокументы сохранены:\n{receipt_file}\n{storage_act}")
+                
+                dialog.destroy()
+                print(f"DEBUG: Print process completed successfully")
+                
+            except Exception as e:
+                import traceback
+                error_msg = traceback.format_exc()
+                print(f"ERROR in print_receipt: {error_msg}")
+                messagebox.showerror("Ошибка печати", f"Произошла ошибка при печати:\n{str(e)}\n\nДокументы сохранены в папке receipts/")
         
         def preview_receipt():
             """Просмотр чека"""
@@ -554,18 +576,37 @@ class TireStorageTab:
                 title_label.pack(pady=(0, 20))
                 
                 def print_doc():
-                    if platform.system() == 'Windows':
-                        os.startfile(os.path.abspath(filepath), "print")
-                        messagebox.showinfo("Успех", f"Комплект #{storage.id} выдан.\nДокумент отправлен на печать")
-                    else:
-                        try:
-                            import subprocess
-                            subprocess.run(['lp', filepath], check=True)
-                            messagebox.showinfo("Успех", f"Комплект #{storage.id} выдан.\nДокумент отправлен на печать")
-                        except:
-                            messagebox.showinfo("Успех", f"Комплект #{storage.id} выдан.\nДокумент: {filepath}")
-                    dialog.destroy()
-                    self.search_storage()
+                    try:
+                        print(f"DEBUG: Starting print process for release act: {filepath}")
+                        
+                        if platform.system() == 'Windows':
+                            filepath_abs = os.path.abspath(filepath)
+                            print(f"DEBUG: Printing release act: {filepath_abs}")
+                            try:
+                                os.startfile(filepath_abs, "print")
+                            except Exception as e:
+                                print(f"WARNING: Could not print release act: {e}")
+                                # Открываем для ручной печати
+                                os.startfile(filepath_abs)
+                            
+                            messagebox.showinfo("Печать", f"Комплект #{storage.id} выдан!\n\nАкт выдачи (2 экземпляра) открыт для печати.\nЕсли автоматическая печать не сработала,\nнапечатайте документ вручную из открытого окна.")
+                        else:
+                            try:
+                                import subprocess
+                                subprocess.run(['lp', filepath], check=True)
+                                messagebox.showinfo("Успех", f"Комплект #{storage.id} выдан.\nДокумент отправлен на печать")
+                            except:
+                                messagebox.showinfo("Успех", f"Комплект #{storage.id} выдан.\nДокумент: {filepath}")
+                        
+                        dialog.destroy()
+                        self.search_storage()
+                        print(f"DEBUG: Print process completed successfully")
+                        
+                    except Exception as e:
+                        import traceback
+                        error_msg = traceback.format_exc()
+                        print(f"ERROR in print_doc: {error_msg}")
+                        messagebox.showerror("Ошибка печати", f"Произошла ошибка при печати:\n{str(e)}\n\nДокумент сохранён: {filepath}")
                 
                 def preview_doc():
                     abs_path = os.path.abspath(filepath)
