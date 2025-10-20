@@ -133,8 +133,8 @@ class TireStorageTab:
         
         btn_frame = ttk.Frame(card_inner, style='White.TFrame')
         btn_frame.pack(fill='x', pady=10)
-        styles.create_button(btn_frame, "Принять на хранение", 
-                           self.accept_storage, 'Primary.TButton').pack(side='left')
+        styles.create_button(btn_frame, "Оплатить", 
+                           self.process_storage_payment, 'Success.TButton').pack(side='left')
     
     def setup_release_tab(self, parent):
         card = styles.create_card_frame(parent)
@@ -198,8 +198,62 @@ class TireStorageTab:
         else:
             self.wheel_type_row.pack_forget()
     
-    def accept_storage(self):
+    def process_storage_payment(self):
+        """Показывает диалог оплаты для приёма на хранение"""
         import platform
+        
+        # Проверяем обязательные поля
+        car_number = self.car_number_entry.get().strip()
+        if not car_number:
+            messagebox.showerror("Ошибка", "Введите номер автомобиля")
+            return
+        
+        # Получаем цену
+        diameter = self.diameter_var.get()
+        price = self.service.calculate_price(diameter)
+        
+        # Создаём диалог оплаты
+        dialog = tk.Toplevel(self.frame)
+        dialog.title("Оплата хранения")
+        dialog.geometry("400x300")
+        dialog.configure(bg=styles.COLORS['bg'])
+        
+        content = ttk.Frame(dialog, style='White.TFrame')
+        content.pack(fill='both', expand=True, padx=20, pady=20)
+        
+        total_label = styles.create_label(content, f"Сумма к оплате: {int(price)} ₽", 'CardHeading.TLabel')
+        total_label.pack(pady=(0, 20))
+        total_label.configure(font=(styles.DEFAULT_FONT, 16, 'bold'), foreground=styles.COLORS['primary'])
+        
+        payment_var = tk.StringVar(value='cash')
+        
+        radio_frame = ttk.Frame(content, style='White.TFrame')
+        radio_frame.pack(fill='x', pady=(0, 20))
+        
+        ttk.Radiobutton(radio_frame, text="Наличные", variable=payment_var, value='cash').pack(anchor='w', pady=5)
+        ttk.Radiobutton(radio_frame, text="Безналичный расчёт", variable=payment_var, value='card').pack(anchor='w', pady=5)
+        
+        def pay_and_process():
+            """Оплата и создание документов"""
+            try:
+                payment_method = payment_var.get()
+                self.accept_storage_with_payment(payment_method, price)
+                dialog.destroy()
+            except Exception as e:
+                messagebox.showerror("Ошибка", str(e))
+        
+        # Кнопка оплаты
+        button_frame = ttk.Frame(content, style='White.TFrame')
+        button_frame.pack(fill='x', pady=(10, 0))
+        
+        styles.create_button(button_frame, "💳 Оплатить", pay_and_process, 'Success.TButton').pack(fill='x')
+    
+    def accept_storage_with_payment(self, payment_method, price):
+        """Принимает на хранение с оплатой и создаёт все документы"""
+        import platform
+        from services.order_service import OrderService
+        from services.print_service import PrintService
+        from datetime import datetime
         
         car_number = self.car_number_entry.get().strip()
         driver_license = self.driver_license_entry.get().strip()
@@ -214,68 +268,54 @@ class TireStorageTab:
         if storage_type == 'Шины с дисками':
             wheel_type = self.wheel_type_var.get()
         
-        if not car_number:
-            messagebox.showerror("Ошибка", "Введите номер автомобиля")
-            return
-        
         try:
+            # 1. Создаём запись в хранилище
             storage = self.service.accept_storage(
                 car_number, driver_license, storage_type, diameter, brand, damage, wear, comments, wheel_type
             )
             
-            self.print_receipt(storage, copies=2)
-            filepath = f"receipts/storage_{storage.id}.pdf"
+            # 2. Создаём наряд (WorkOrder) для статистики
+            order_service = OrderService(self.db)
+            work_order = order_service.create_order(
+                license_plate=car_number,
+                wheel_diameter=diameter,
+                vehicle_type='car',
+                client_name=f"Хранение ({storage_type})"
+            )
             
-            # Диалог выбора действия
-            dialog = tk.Toplevel(self.frame)
-            dialog.title("Документ готов")
-            dialog.geometry("400x200")
-            dialog.configure(bg=styles.COLORS['bg'])
+            # 3. Добавляем услугу "Хранение" в наряд
+            # Создаём фиктивную услугу хранения для наряда
+            from models import Service, WorkOrderItem
+            storage_service = self.db.query(Service).filter(Service.name.like('%Хранение%')).first()
+            if not storage_service:
+                # Если услуги хранения нет, создаём позицию вручную
+                storage_item = WorkOrderItem(
+                    work_order_id=work_order.id,
+                    service_id=1,  # Временно используем ID 1
+                    quantity=1,
+                    price=price,
+                    discount_percent=0
+                )
+                self.db.add(storage_item)
+                self.db.flush()
             
-            content = ttk.Frame(dialog, style='White.TFrame')
-            content.pack(fill='both', expand=True, padx=20, pady=20)
+            # 4. Оплачиваем наряд БЕЗ начисления зарплаты
+            work_order.paid_at = datetime.now()
+            work_order.payment_method = payment_method
+            work_order.total_amount = price
+            work_order.status = 'paid'
+            self.db.commit()
+            self.db.refresh(work_order)
             
-            title_label = styles.create_label(content, f"Акт приёма #{storage.id} создан", 'CardHeading.TLabel')
-            title_label.pack(pady=(0, 20))
+            # 5. Генерируем чек оплаты
+            print_service = PrintService()
+            items = order_service.get_order_items(work_order.id)
+            receipt_file = print_service.generate_receipt(work_order, items, price)
             
-            def print_doc():
-                if platform.system() == 'Windows':
-                    os.startfile(os.path.abspath(filepath), "print")
-                    messagebox.showinfo("Успех", f"Комплект #{storage.id} принят.\nДокумент отправлен на печать")
-                else:
-                    try:
-                        import subprocess
-                        subprocess.run(['lp', filepath], check=True)
-                        messagebox.showinfo("Успех", f"Комплект #{storage.id} принят.\nДокумент отправлен на печать")
-                    except:
-                        messagebox.showinfo("Успех", f"Комплект #{storage.id} принят.\nДокумент: {filepath}")
-                dialog.destroy()
+            # 6. Показываем диалог с чеком
+            self.show_receipt_dialog(receipt_file, storage, payment_method)
             
-            def preview_doc():
-                abs_path = os.path.abspath(filepath)
-                if platform.system() == 'Windows':
-                    os.startfile(abs_path)
-                    messagebox.showinfo("Просмотр", f"Акт открыт для просмотра:\n{filepath}")
-                elif platform.system() == 'Darwin':
-                    import subprocess
-                    subprocess.Popen(['open', filepath])
-                    messagebox.showinfo("Просмотр", f"Акт открыт для просмотра:\n{filepath}")
-                else:
-                    # Linux (Replit) - используем evince
-                    import subprocess
-                    try:
-                        subprocess.Popen(['evince', abs_path])
-                        messagebox.showinfo("Просмотр", f"Акт открыт для просмотра:\n{abs_path}")
-                    except Exception as e:
-                        messagebox.showwarning("Информация", f"Акт создан и сохранён:\n{abs_path}\n\nОткройте его вручную в файловом менеджере.")
-                dialog.destroy()
-            
-            button_frame = ttk.Frame(content, style='White.TFrame')
-            button_frame.pack(fill='x')
-            
-            styles.create_button(button_frame, "🖨 Печать", print_doc, 'Success.TButton').pack(side='left', fill='x', expand=True, padx=(0, 5))
-            styles.create_button(button_frame, "👁 Просмотр", preview_doc, 'Primary.TButton').pack(side='left', fill='x', expand=True, padx=(5, 0))
-            
+            # Очищаем поля
             self.car_number_entry.delete(0, tk.END)
             self.driver_license_entry.delete(0, tk.END)
             self.brand_entry.delete(0, tk.END)
@@ -284,7 +324,79 @@ class TireStorageTab:
             self.comments_entry.delete(0, tk.END)
             
         except Exception as e:
+            self.db.rollback()
             messagebox.showerror("Ошибка", str(e))
+    
+    def show_receipt_dialog(self, receipt_file, storage, payment_method):
+        """Показывает диалог для печати/просмотра чека и актов"""
+        import platform
+        
+        dialog = tk.Toplevel(self.frame)
+        dialog.title("Документы готовы")
+        dialog.geometry("450x250")
+        dialog.configure(bg=styles.COLORS['bg'])
+        
+        content = ttk.Frame(dialog, style='White.TFrame')
+        content.pack(fill='both', expand=True, padx=20, pady=20)
+        
+        title_label = styles.create_label(content, f"Оплата хранения #{storage.id}", 'CardHeading.TLabel')
+        title_label.pack(pady=(0, 10))
+        
+        payment_text = "Наличные" if payment_method == 'cash' else "Безналичный расчёт"
+        info_label = styles.create_label(content, f"Способ оплаты: {payment_text}\nСумма: {int(storage.price)} ₽", 'Card.TLabel')
+        info_label.pack(pady=(0, 20))
+        
+        def print_receipt():
+            """Печать чека оплаты"""
+            if platform.system() == 'Windows':
+                os.startfile(os.path.abspath(receipt_file), "print")
+            else:
+                try:
+                    import subprocess
+                    subprocess.run(['lp', receipt_file], check=True)
+                except:
+                    pass
+            
+            # После печати чека печатаем 2 экземпляра акта приёма
+            self.print_receipt(storage, copies=2)
+            storage_act = f"receipts/storage_{storage.id}.pdf"
+            
+            if platform.system() == 'Windows':
+                os.startfile(os.path.abspath(storage_act), "print")
+                messagebox.showinfo("Успех", f"Комплект #{storage.id} принят на хранение!\n\nЧек оплаты и 2 экземпляра акта отправлены на печать")
+            else:
+                try:
+                    import subprocess
+                    subprocess.run(['lp', storage_act], check=True)
+                    messagebox.showinfo("Успех", f"Комплект #{storage.id} принят на хранение!\n\nДокументы отправлены на печать")
+                except:
+                    messagebox.showinfo("Успех", f"Комплект #{storage.id} принят на хранение!\n\nДокументы сохранены")
+            
+            dialog.destroy()
+        
+        def preview_receipt():
+            """Просмотр чека"""
+            abs_path = os.path.abspath(receipt_file)
+            if platform.system() == 'Windows':
+                os.startfile(abs_path)
+            elif platform.system() == 'Darwin':
+                import subprocess
+                subprocess.Popen(['open', abs_path])
+            else:
+                import subprocess
+                try:
+                    subprocess.Popen(['evince', abs_path])
+                except:
+                    pass
+            messagebox.showinfo("Документы", f"Чек оплаты: {receipt_file}\nАкт приёма будет создан после печати")
+            dialog.destroy()
+        
+        # Кнопки
+        button_frame = ttk.Frame(content, style='White.TFrame')
+        button_frame.pack(fill='x', pady=(10, 0))
+        
+        styles.create_button(button_frame, "🖨 Печать всех документов", print_receipt, 'Success.TButton').pack(side='left', fill='x', expand=True, padx=(0, 5))
+        styles.create_button(button_frame, "👁 Просмотр чека", preview_receipt, 'Primary.TButton').pack(side='left', fill='x', expand=True, padx=(5, 0))
     
     def search_storage(self):
         car_number = self.search_car_entry.get().strip()
