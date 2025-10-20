@@ -379,7 +379,16 @@ class TireStorageTab:
         dialog.title("Документы готовы")
         dialog.geometry("450x250")
         dialog.configure(bg=styles.COLORS['bg'])
+        
+        # Делаем диалог модальным и поверх основного окна
+        dialog.transient(self.frame.winfo_toplevel())
+        dialog.grab_set()
+        
         styles.center_window(dialog, self.frame.winfo_toplevel())
+        
+        # Поднимаем окно наверх и даем фокус
+        dialog.lift()
+        dialog.focus_force()
         
         content = ttk.Frame(dialog, style='White.TFrame')
         content.pack(fill='both', expand=True, padx=20, pady=20)
@@ -433,8 +442,25 @@ class TireStorageTab:
                     subprocess.Popen(['evince', abs_path])
                 except:
                     pass
-            messagebox.showinfo("Документы", f"Чек оплаты: {receipt_file}\nАкт приёма будет создан после печати")
-            dialog.destroy()
+            
+            # Генерируем акт приёма для просмотра
+            self.print_receipt(storage, copies=1)
+            storage_act = f"receipts/storage_{storage.id}.pdf"
+            
+            # Открываем акт приёма
+            if platform.system() == 'Windows':
+                os.startfile(os.path.abspath(storage_act))
+            elif platform.system() == 'Darwin':
+                import subprocess
+                subprocess.Popen(['open', os.path.abspath(storage_act)])
+            else:
+                import subprocess
+                try:
+                    subprocess.Popen(['evince', os.path.abspath(storage_act)])
+                except:
+                    pass
+            
+            messagebox.showinfo("Просмотр", f"Документы открыты для просмотра.\n\nВы можете закрыть это окно\nили нажать 'Печать' для печати документов.")
         
         # Кнопки
         button_frame = ttk.Frame(content, style='White.TFrame')
@@ -510,7 +536,16 @@ class TireStorageTab:
                 dialog.title("Документ готов")
                 dialog.geometry("400x200")
                 dialog.configure(bg=styles.COLORS['bg'])
+                
+                # Делаем диалог модальным и поверх основного окна
+                dialog.transient(self.frame.winfo_toplevel())
+                dialog.grab_set()
+                
                 styles.center_window(dialog, self.frame.winfo_toplevel())
+                
+                # Поднимаем окно наверх и даем фокус
+                dialog.lift()
+                dialog.focus_force()
                 
                 content = ttk.Frame(dialog, style='White.TFrame')
                 content.pack(fill='both', expand=True, padx=20, pady=20)
@@ -536,21 +571,18 @@ class TireStorageTab:
                     abs_path = os.path.abspath(filepath)
                     if platform.system() == 'Windows':
                         os.startfile(abs_path)
-                        messagebox.showinfo("Просмотр", f"Акт открыт для просмотра:\n{filepath}")
                     elif platform.system() == 'Darwin':
                         import subprocess
                         subprocess.Popen(['open', filepath])
-                        messagebox.showinfo("Просмотр", f"Акт открыт для просмотра:\n{filepath}")
                     else:
                         # Linux (Replit) - используем evince
                         import subprocess
                         try:
                             subprocess.Popen(['evince', abs_path])
-                            messagebox.showinfo("Просмотр", f"Акт открыт для просмотра:\n{abs_path}")
                         except Exception as e:
                             messagebox.showwarning("Информация", f"Акт создан и сохранён:\n{abs_path}\n\nОткройте его вручную в файловом менеджере.")
-                    dialog.destroy()
-                    self.search_storage()
+                    
+                    messagebox.showinfo("Просмотр", f"Документ открыт для просмотра.\n\nВы можете закрыть это окно\nили нажать 'Печать' для печати документа.")
                 
                 button_frame = ttk.Frame(content, style='White.TFrame')
                 button_frame.pack(fill='x')
