@@ -105,7 +105,7 @@ def initialize_data():
             {'name': 'Замена вентиля', 'price': 50},
             {'name': 'Подкачка/проверка давления', 'price': 50},
             {'name': 'Установка датчика давления', 'price': 400},
-            {'name': 'Ремонт жгутом', 'price': 800},
+            {'name': 'Ремонт кордовой заплаткой', 'price': 1000},
             {'name': 'Герметик обода', 'price': 300},
             {'name': 'Шлифовка бортов диска', 'price': 300},
             {'name': 'Шлифовка ступицы', 'price': 300},
@@ -128,6 +128,7 @@ def initialize_data():
         editable_services = [
             {'name': 'Зачистка диска от скотча', 'price': 300},
             {'name': 'Слесарные работы', 'price': 500},
+            {'name': 'Ремонт жгутом', 'price': 800},
             {'name': 'Открутка секретного болта', 'price': 2000},
             {'name': 'Срыв болта/гайки', 'price': 1500},
             {'name': 'Прочие услуги', 'price': 500}
@@ -242,6 +243,31 @@ def initialize_data():
         db.add(storage_service)
         db.commit()
         print("Услуга 'Хранение шин' добавлена успешно")
+    
+    # Проверка и добавление услуги "Ремонт кордовой заплаткой"
+    cord_repair_service = db.query(Service).filter(Service.name == 'Ремонт кордовой заплаткой').first()
+    if not cord_repair_service:
+        print("Добавление услуги 'Ремонт кордовой заплаткой'...")
+        cord_repair_service = Service(
+            name='Ремонт кордовой заплаткой',
+            vehicle_type='all',
+            price_r13=1000, price_r14=1000, price_r15=1000, price_r16=1000,
+            price_r17=1000, price_r18=1000, price_r19=1000, price_r20=1000,
+            price_r21=1000, price_r22=1000, price_r23=1000, price_r24=1000,
+            is_active=True,
+            editable_price=False
+        )
+        db.add(cord_repair_service)
+        db.commit()
+        print("Услуга 'Ремонт кордовой заплаткой' добавлена успешно")
+    
+    # Обновление услуги "Ремонт жгутом" - делаем её редактируемой (перенос в 3 колонку)
+    harness_repair_service = db.query(Service).filter(Service.name == 'Ремонт жгутом').first()
+    if harness_repair_service and not harness_repair_service.editable_price:
+        print("Обновление услуги 'Ремонт жгутом' - делаем редактируемой...")
+        harness_repair_service.editable_price = True
+        db.commit()
+        print("Услуга 'Ремонт жгутом' обновлена успешно")
     
     db.close()
 
