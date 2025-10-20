@@ -500,7 +500,7 @@ class OrderWidget:
         tree_frame = ttk.Frame(main_container)
         tree_frame.pack(fill='both', expand=True)
         
-        self.items_tree = ttk.Treeview(tree_frame, columns=('Услуга', 'Кол-во', 'Цена', 'Скидка', 'Итого'), show='headings', height=5)
+        self.items_tree = ttk.Treeview(tree_frame, columns=('Услуга', 'Кол-во', 'Цена', 'Скидка', 'Итого'), show='headings', height=10)
         self.items_tree.heading('Услуга', text='Услуга')
         self.items_tree.heading('Кол-во', text='Кол-во')
         self.items_tree.heading('Цена', text='Цена')
@@ -773,14 +773,13 @@ class OrderWidget:
             items = self.order_service.get_order_items(self.order.id)
             self.db.refresh(self.order)
         
-        # Определяем какая скидка применяется (они заменяют друг друга)
-        final_discount = 0
+        # Определяем общую скидку (НЕ включает rim_discount - он применяется к конкретным позициям)
+        # Приоритет: general_discount > auto_discount
+        general_discount_value = 0
         if self.order.general_discount > 0:
-            final_discount = self.order.general_discount
-        elif self.order.rim_discount > 0:
-            final_discount = self.order.rim_discount
+            general_discount_value = self.order.general_discount
         elif self.order.auto_discount:
-            final_discount = 5
+            general_discount_value = 5
         
         # Обновляем значения в комбобоксах
         self.rim_discount_var.set(str(self.order.rim_discount))
@@ -789,15 +788,15 @@ class OrderWidget:
         # Рассчитываем общую цену
         total_without_discount = 0
         for item in items:
-            # Цена с учетом скидки на позицию и количества
+            # Цена с учетом скидки на позицию (rim_discount) и количества
             item_after_own_discount = item.price * item.quantity * (1 - item.discount_percent / 100)
             total_without_discount += item_after_own_discount
             
-            # Итоговая цена позиции с общей скидкой
-            item_total = item_after_own_discount * (1 - final_discount / 100)
+            # Итоговая цена позиции С общей скидкой
+            item_total = item_after_own_discount * (1 - general_discount_value / 100)
             
-            # Показываем общую скидку в колонке если она есть
-            discount_display = f"{item.discount_percent}%" if item.discount_percent > 0 else f"{final_discount}%" if final_discount > 0 else "0%"
+            # Показываем ТОЛЬКО индивидуальную скидку позиции (rim_discount), общая скидка считается отдельно
+            discount_display = f"{item.discount_percent}%" if item.discount_percent > 0 else "0%"
             
             self.items_tree.insert('', 'end', values=(
                 item.service.name,
