@@ -190,6 +190,14 @@ def initialize_data():
             'r23': 6000, 'r24': 6000
         })
         
+        # 9. ХРАНЕНИЕ ШИН (услуга для работы с модулем хранения)
+        services_data.append({
+            'name': 'Хранение шин', 'vehicle_type': 'all', 'editable': False,
+            'r13': 5000, 'r14': 5000, 'r15': 5000, 'r16': 5000, 'r17': 5000,
+            'r18': 5000, 'r19': 5000, 'r20': 5000, 'r21': 5000, 'r22': 5000,
+            'r23': 5000, 'r24': 5000
+        })
+        
         for service_data in services_data:
             service = Service(
                 name=service_data['name'],
@@ -213,6 +221,24 @@ def initialize_data():
         
         db.commit()
         print("Прайс-лист загружен успешно")
+    
+    # ВАЖНО: Проверка наличия услуги "Хранение шин" (необходима для модуля хранения)
+    # Добавляется отдельно, чтобы создаваться даже в существующих базах данных
+    storage_service = db.query(Service).filter(Service.name == 'Хранение шин').first()
+    if not storage_service:
+        print("Добавление услуги 'Хранение шин'...")
+        storage_service = Service(
+            name='Хранение шин',
+            vehicle_type='all',
+            price_r13=5000, price_r14=5000, price_r15=5000, price_r16=5000,
+            price_r17=5000, price_r18=5000, price_r19=5000, price_r20=5000,
+            price_r21=5000, price_r22=5000, price_r23=5000, price_r24=5000,
+            is_active=True,
+            editable_price=False
+        )
+        db.add(storage_service)
+        db.commit()
+        print("Услуга 'Хранение шин' добавлена успешно")
     
     db.close()
 
