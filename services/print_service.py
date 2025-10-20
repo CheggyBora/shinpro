@@ -86,11 +86,11 @@ class PrintService:
         
         # Заголовок по центру под логотипом
         y = height - 110
-        c.setFont(self.font_name, 24)
+        c.setFont(self.font_name, 18)
         c.drawCentredString(width/2, y, "Шиномонтаж «РИФ»")
         
-        y -= 22
-        c.setFont(self.font_name, 11)
+        y -= 20
+        c.setFont(self.font_name, 10)
         c.drawCentredString(width/2, y, "Правка дисков, аргон, покраска")
         
         y -= 30
@@ -133,14 +133,17 @@ class PrintService:
         
         # Услуги
         c.setFont(self.font_name, 11)
-        subtotal = 0
+        subtotal_without_discount = 0  # Полная сумма БЕЗ скидок
         for item in items:
             y -= 25
             service_name = item.service.name[:35]
             quantity = item.quantity
             unit_price = item.price
             
-            # Если есть скидка на позицию - применяем её
+            # Считаем полную сумму БЕЗ скидок
+            subtotal_without_discount += unit_price * quantity
+            
+            # Если есть скидка на позицию - применяем её для отображения
             if item.discount_percent > 0:
                 discounted_unit_price = unit_price * (1 - item.discount_percent / 100)
                 item_total = discounted_unit_price * quantity
@@ -153,8 +156,6 @@ class PrintService:
             c.drawRightString(width-280, y, f"{quantity}")
             c.drawRightString(width-180, y, f"{display_price:.0f} ₽")
             c.drawRightString(width-50, y, f"{item_total:.0f} ₽")
-            
-            subtotal += item_total
             
             if item.comment:
                 y -= 20
@@ -170,20 +171,13 @@ class PrintService:
         y -= 30
         c.setFont(self.font_name, 12)
         c.drawString(50, y, "Сумма:")
-        c.drawRightString(width-50, y, f"{subtotal:.0f} ₽")
+        c.drawRightString(width-50, y, f"{subtotal_without_discount:.0f} ₽")
         
-        # Применяем ту же логику приоритетов, что и в calculate_total
-        # Приоритет: general_discount > auto_discount
-        final_discount = 0
-        if order.general_discount > 0:
-            final_discount = order.general_discount
-        elif order.auto_discount:
-            final_discount = 5
-        
-        if final_discount > 0:
+        # Показываем скидку, если она есть
+        discount_amount = subtotal_without_discount - total_amount
+        if discount_amount > 0:
             y -= 20
-            discount_amount = subtotal - total_amount
-            c.drawString(50, y, f"Скидка ({final_discount}%):")
+            c.drawString(50, y, "Скидка:")
             c.drawRightString(width-50, y, f"-{discount_amount:.0f} ₽")
         
         y -= 30
