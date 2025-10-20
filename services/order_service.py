@@ -164,7 +164,7 @@ class OrderService:
     def update_rim_discount(self, order_id: int, discount: int):
         """
         Применяет скидку на диски только к услуге 'Правка литого диска'.
-        Скидка на диски ЗАМЕНЯЕТ текущую скидку (с учётом автоскидки 5% если активна).
+        Скидка на диски применяется с учётом других скидок (автоскидка 5%, общая скидка).
         """
         try:
             order = self.db.query(WorkOrder).filter(WorkOrder.id == order_id).first()
@@ -175,12 +175,19 @@ class OrderService:
                 items = self.db.query(WorkOrderItem).filter(WorkOrderItem.work_order_id == order_id).all()
                 for item in items:
                     if item.service.name == 'Правка литого диска':
-                        # Заменяем скидку на новую
-                        # Но учитываем автоскидку 5% как минимум, если она активна
+                        # Собираем все доступные скидки для этой позиции
+                        discount_candidates = [discount]
+                        
+                        # Автоскидка 5%
                         if order.auto_discount:
-                            item.discount_percent = max(discount, 5)
-                        else:
-                            item.discount_percent = discount
+                            discount_candidates.append(5)
+                        
+                        # Общая скидка
+                        if order.general_discount > 0:
+                            discount_candidates.append(order.general_discount)
+                        
+                        # Выбираем максимальную скидку
+                        item.discount_percent = max(discount_candidates)
                 
                 self.db.commit()
         except Exception as e:
@@ -190,7 +197,7 @@ class OrderService:
     def update_general_discount(self, order_id: int, discount: int):
         """
         Применяет общую скидку ко всем позициям наряда.
-        Общая скидка ЗАМЕНЯЕТ текущую скидку (с учётом автоскидки 5% если активна).
+        Общая скидка применяется с учётом индивидуальных скидок (автоскидка 5%, скидка на диски).
         """
         try:
             order = self.db.query(WorkOrder).filter(WorkOrder.id == order_id).first()
@@ -200,12 +207,19 @@ class OrderService:
                 # Применяем скидку ко всем позициям
                 items = self.db.query(WorkOrderItem).filter(WorkOrderItem.work_order_id == order_id).all()
                 for item in items:
-                    # Заменяем скидку на новую общую
-                    # Но учитываем автоскидку 5% как минимум, если она активна
+                    # Собираем все доступные скидки для этой позиции
+                    discount_candidates = [discount]
+                    
+                    # Автоскидка 5%
                     if order.auto_discount:
-                        item.discount_percent = max(discount, 5)
-                    else:
-                        item.discount_percent = discount
+                        discount_candidates.append(5)
+                    
+                    # Скидка на диски (только для "Правка литого диска")
+                    if item.service.name == 'Правка литого диска' and order.rim_discount > 0:
+                        discount_candidates.append(order.rim_discount)
+                    
+                    # Выбираем максимальную скидку
+                    item.discount_percent = max(discount_candidates)
                 
                 self.db.commit()
         except Exception as e:
