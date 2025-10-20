@@ -191,11 +191,12 @@ def initialize_data():
         })
         
         # 9. ХРАНЕНИЕ ШИН (услуга для работы с модулем хранения)
+        # Цены соответствуют логике в TireStorageService.calculate_price()
         services_data.append({
             'name': 'Хранение шин', 'vehicle_type': 'all', 'editable': False,
-            'r13': 5000, 'r14': 5000, 'r15': 5000, 'r16': 5000, 'r17': 5000,
-            'r18': 5000, 'r19': 5000, 'r20': 5000, 'r21': 5000, 'r22': 5000,
-            'r23': 5000, 'r24': 5000
+            'r13': 4000, 'r14': 4000, 'r15': 4000, 'r16': 5000, 'r17': 5000,
+            'r18': 5000, 'r19': 6000, 'r20': 6000, 'r21': 8000, 'r22': 8000,
+            'r23': 8000, 'r24': 8000
         })
         
         for service_data in services_data:
@@ -224,15 +225,17 @@ def initialize_data():
     
     # ВАЖНО: Проверка наличия услуги "Хранение шин" (необходима для модуля хранения)
     # Добавляется отдельно, чтобы создаваться даже в существующих базах данных
+    # Цены соответствуют логике в TireStorageService.calculate_price():
+    # R13-R15: 4000₽, R16-R18: 5000₽, R19-R20: 6000₽, R21-R24: 8000₽
     storage_service = db.query(Service).filter(Service.name == 'Хранение шин').first()
     if not storage_service:
         print("Добавление услуги 'Хранение шин'...")
         storage_service = Service(
             name='Хранение шин',
             vehicle_type='all',
-            price_r13=5000, price_r14=5000, price_r15=5000, price_r16=5000,
-            price_r17=5000, price_r18=5000, price_r19=5000, price_r20=5000,
-            price_r21=5000, price_r22=5000, price_r23=5000, price_r24=5000,
+            price_r13=4000, price_r14=4000, price_r15=4000, price_r16=5000,
+            price_r17=5000, price_r18=5000, price_r19=6000, price_r20=6000,
+            price_r21=8000, price_r22=8000, price_r23=8000, price_r24=8000,
             is_active=True,
             editable_price=False
         )
