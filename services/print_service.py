@@ -89,8 +89,9 @@ class PrintService:
         y -= 30
         c.setFont(self.font_name, 12)
         c.drawString(50, y, "Наименование услуги")
-        c.drawRightString(width-200, y, "Кол-во")
-        c.drawRightString(width-50, y, "Цена")
+        c.drawRightString(width-280, y, "Кол-во")
+        c.drawRightString(width-180, y, "Цена")
+        c.drawRightString(width-50, y, "Сумма")
         
         y -= 5
         c.line(50, y, width-50, y)
@@ -100,14 +101,33 @@ class PrintService:
         subtotal = 0
         for item in items:
             y -= 25
-            service_name = item.service.name[:45]
-            quantity = 1
-            item_price = item.price * (1 - item.discount_percent / 100)
-            subtotal += item_price
+            service_name = item.service.name[:35]
+            quantity = item.quantity
+            unit_price = item.price
             
-            c.drawString(50, y, service_name)
-            c.drawRightString(width-200, y, f"{quantity}")
-            c.drawRightString(width-50, y, f"{item_price:.0f} ₽")
+            # Если есть скидка на позицию
+            if item.discount_percent > 0:
+                discounted_unit_price = unit_price * (1 - item.discount_percent / 100)
+                item_total = discounted_unit_price * quantity
+                
+                c.drawString(50, y, service_name)
+                c.drawRightString(width-280, y, f"{quantity}")
+                c.setFont(self.font_name, 9)
+                c.drawRightString(width-180, y, f"{unit_price:.0f} ₽")
+                y -= 12
+                c.setFont(self.font_name, 11)
+                c.drawRightString(width-180, y, f"{discounted_unit_price:.0f} ₽ (-{item.discount_percent}%)")
+                c.drawRightString(width-50, y, f"{item_total:.0f} ₽")
+                y -= 13
+            else:
+                item_total = unit_price * quantity
+                
+                c.drawString(50, y, service_name)
+                c.drawRightString(width-280, y, f"{quantity}")
+                c.drawRightString(width-180, y, f"{unit_price:.0f} ₽")
+                c.drawRightString(width-50, y, f"{item_total:.0f} ₽")
+            
+            subtotal += item_total
             
             if item.comment:
                 y -= 15
@@ -124,16 +144,18 @@ class PrintService:
         c.drawString(50, y, "Сумма:")
         c.drawRightString(width-50, y, f"{subtotal:.0f} ₽")
         
-        total_discount = 0
+        # Применяем ту же логику приоритетов, что и в calculate_total
+        # Приоритет: general_discount > auto_discount
+        final_discount = 0
         if order.general_discount > 0:
-            total_discount += order.general_discount
-        if order.auto_discount:
-            total_discount += 5
+            final_discount = order.general_discount
+        elif order.auto_discount:
+            final_discount = 5
         
-        if total_discount > 0:
+        if final_discount > 0:
             y -= 20
-            c.drawString(50, y, f"Скидка ({total_discount}%):")
             discount_amount = subtotal - total_amount
+            c.drawString(50, y, f"Скидка ({final_discount}%):")
             c.drawRightString(width-50, y, f"-{discount_amount:.0f} ₽")
         
         y -= 30

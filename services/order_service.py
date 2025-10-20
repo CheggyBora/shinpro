@@ -139,10 +139,20 @@ class OrderService:
             raise
     
     def update_rim_discount(self, order_id: int, discount: int):
+        """
+        Применяет скидку на диски только к услуге 'Правка литого диска'
+        """
         try:
             order = self.db.query(WorkOrder).filter(WorkOrder.id == order_id).first()
             if order:
                 order.rim_discount = discount
+                
+                # Применяем скидку к услугам "Правка литого диска"
+                items = self.db.query(WorkOrderItem).filter(WorkOrderItem.work_order_id == order_id).all()
+                for item in items:
+                    if item.service.name == 'Правка литого диска':
+                        item.discount_percent = discount
+                
                 self.db.commit()
         except Exception as e:
             self.db.rollback()
@@ -171,13 +181,11 @@ class OrderService:
             item_price = item.price * item.quantity * (1 - item.discount_percent / 100)
             subtotal += item_price
         
-        # Скидки заменяют друг друга, а не суммируются
-        # Приоритет: general_discount > rim_discount > auto_discount
+        # Общая скидка или автоскидка (но не скидка на диски, она уже учтена в позициях)
+        # Приоритет: general_discount > auto_discount
         final_discount = 0
         if order.general_discount > 0:
             final_discount = order.general_discount
-        elif order.rim_discount > 0:
-            final_discount = order.rim_discount
         elif order.auto_discount:
             final_discount = 5
         
