@@ -4,6 +4,7 @@ from reportlab.pdfgen import canvas
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.fonts import addMapping
+from reportlab.lib.utils import ImageReader
 from datetime import datetime
 import os
 import sys
@@ -27,6 +28,9 @@ class PrintService:
         self.receipts_dir = os.path.join(receipts_base, "receipts")
         if not os.path.exists(self.receipts_dir):
             os.makedirs(self.receipts_dir)
+        
+        # Путь к логотипу
+        self.logo_path = os.path.join(base_path, "assets", "logo.jpg")
         
         # Регистрируем шрифт DejaVu Sans для PDF с поддержкой кириллицы
         fonts_dir = os.path.join(base_path, "fonts")
@@ -53,10 +57,41 @@ class PrintService:
         c = canvas.Canvas(filename, pagesize=A4)
         width, height = A4
         
-        # Заголовок
-        y = height - 50
+        # === ШАПКА С ЛОГОТИПОМ И ИНФОРМАЦИЕЙ О КОМПАНИИ ===
+        y = height - 40
+        
+        # Логотип слева
+        if os.path.exists(self.logo_path):
+            try:
+                logo = ImageReader(self.logo_path)
+                # Размер логотипа: 60x60 мм
+                c.drawImage(logo, 50, y - 60, width=60, height=60, preserveAspectRatio=True, mask='auto')
+            except Exception as e:
+                print(f"Ошибка загрузки логотипа: {e}")
+        
+        # Информация о компании справа
+        company_x = width - 50
+        c.setFont(self.font_name, 10)
+        c.drawRightString(company_x, y, "ИП Дюпин Андрей")
+        y -= 15
+        c.drawRightString(company_x, y, "ИНН 770208926387")
+        y -= 15
+        c.drawRightString(company_x, y, "115280, г. Москва,")
+        y -= 15
+        c.drawRightString(company_x, y, "ул. Автозаводская, д. 24 стр. 1")
+        y -= 15
+        c.drawRightString(company_x, y, "Телефон: +79099018931")
+        y -= 15
+        c.drawRightString(company_x, y, "email: rifshina@gmail.com")
+        
+        # Заголовок по центру под логотипом
+        y = height - 110
         c.setFont(self.font_name, 24)
-        c.drawCentredString(width/2, y, "Шиномонтаж РИФ")
+        c.drawCentredString(width/2, y, "Шиномонтаж «РИФ»")
+        
+        y -= 22
+        c.setFont(self.font_name, 11)
+        c.drawCentredString(width/2, y, "Правка дисков, аргон, покраска")
         
         y -= 30
         c.setFont(self.font_name, 14)
@@ -66,7 +101,7 @@ class PrintService:
         c.setFont(self.font_name, 11)
         c.drawCentredString(width/2, y, datetime.now().strftime("%d.%m.%Y %H:%M"))
         
-        y -= 40
+        y -= 30
         c.line(50, y, width-50, y)
         
         # Информация о клиенте

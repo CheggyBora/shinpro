@@ -10,6 +10,7 @@ from reportlab.pdfgen import canvas
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.fonts import addMapping
+from reportlab.lib.utils import ImageReader
 
 def register_dejavu_fonts():
     """Регистрирует шрифт DejaVu Sans для PDF документов с поддержкой кириллицы"""
@@ -33,6 +34,54 @@ def register_dejavu_fonts():
     except Exception as e:
         print(f"Ошибка регистрации шрифта DejaVu: {e}")
         return 'Helvetica'
+
+def get_logo_path():
+    """Возвращает путь к логотипу компании"""
+    if getattr(sys, 'frozen', False):
+        base_path = getattr(sys, '_MEIPASS', os.path.dirname(sys.executable))
+    else:
+        base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    
+    return os.path.join(base_path, "assets", "logo.jpg")
+
+def draw_company_header(c, width, height, font_name):
+    """Рисует шапку компании с логотипом и информацией"""
+    y = height - 40
+    
+    # Логотип слева
+    logo_path = get_logo_path()
+    if os.path.exists(logo_path):
+        try:
+            logo = ImageReader(logo_path)
+            c.drawImage(logo, 50, y - 60, width=60, height=60, preserveAspectRatio=True, mask='auto')
+        except Exception as e:
+            print(f"Ошибка загрузки логотипа: {e}")
+    
+    # Информация о компании справа
+    company_x = width - 50
+    c.setFont(font_name, 10)
+    c.drawRightString(company_x, y, "ИП Дюпин Андрей")
+    y -= 15
+    c.drawRightString(company_x, y, "ИНН 770208926387")
+    y -= 15
+    c.drawRightString(company_x, y, "115280, г. Москва,")
+    y -= 15
+    c.drawRightString(company_x, y, "ул. Автозаводская, д. 24 стр. 1")
+    y -= 15
+    c.drawRightString(company_x, y, "Телефон: +79099018931")
+    y -= 15
+    c.drawRightString(company_x, y, "email: rifshina@gmail.com")
+    
+    # Заголовок по центру
+    y = height - 110
+    c.setFont(font_name, 24)
+    c.drawCentredString(width/2, y, "Шиномонтаж «РИФ»")
+    
+    y -= 22
+    c.setFont(font_name, 11)
+    c.drawCentredString(width/2, y, "Правка дисков, аргон, покраска")
+    
+    return y - 30  # Возвращаем y-позицию для продолжения контента
 
 class TireStorageTab:
     def __init__(self, parent, db):
@@ -593,12 +642,10 @@ class TireStorageTab:
             if copy > 0:
                 c.showPage()
             
-            # Заголовок
-            y = height - 50
-            c.setFont(font_name, 24)
-            c.drawCentredString(width/2, y, "Шиномонтаж РИФ")
+            # Шапка с логотипом и информацией о компании
+            y = draw_company_header(c, width, height, font_name)
             
-            y -= 30
+            # Название документа
             c.setFont(font_name, 16)
             c.drawCentredString(width/2, y, "АКТ ПРИЁМА ШИН НА ХРАНЕНИЕ")
             
@@ -702,12 +749,10 @@ class TireStorageTab:
             if copy > 0:
                 c.showPage()
             
-            # Заголовок
-            y = height - 50
-            c.setFont(font_name, 24)
-            c.drawCentredString(width/2, y, "Шиномонтаж РИФ")
+            # Шапка с логотипом и информацией о компании
+            y = draw_company_header(c, width, height, font_name)
             
-            y -= 30
+            # Название документа
             c.setFont(font_name, 16)
             c.drawCentredString(width/2, y, "АКТ ВЫДАЧИ ШИН С ХРАНЕНИЯ")
             
