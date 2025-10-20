@@ -461,7 +461,15 @@ class OrderWidget:
         }
         vehicle_type_display = vehicle_type_map.get(order.vehicle_type, order.vehicle_type)
         
-        ttk.Label(info_frame, text=f"Машина: {order.car.license_plate} | Класс: {vehicle_type_display} | Диаметр: {order.wheel_diameter}", font=(styles.DEFAULT_FONT, 10, 'bold')).pack(anchor='w')
+        # Верхняя строка: номер наряда, машина и кнопка удаления
+        header_row = ttk.Frame(info_frame)
+        header_row.pack(anchor='w', fill='x')
+        
+        ttk.Label(header_row, text=f"Наряд #{order.id} | Машина: {order.car.license_plate} | Класс: {vehicle_type_display} | Диаметр: {order.wheel_diameter}", font=(styles.DEFAULT_FONT, 10, 'bold')).pack(side='left')
+        
+        # Кнопка удаления наряда (только для черновиков)
+        if order.status == 'draft':
+            styles.create_button(header_row, "❌", self.delete_order, 'Danger.TButton').pack(side='left', padx=(10, 0))
         
         if order.client:
             client_info = order.client.name or ""
@@ -537,12 +545,6 @@ class OrderWidget:
         
         self.items_tree.bind('<Double-1>', self.edit_item)
         self.items_tree.bind('<Delete>', self.delete_item)
-        
-        # Кнопки управления нарядом (под таблицей услуг)
-        control_frame = ttk.Frame(main_container)
-        control_frame.pack(fill='x', pady=(5, 0))
-        
-        styles.create_button(control_frame, "🗑 Удалить наряд", self.delete_order, 'Danger.TButton').pack(side='left', padx=(0, 5))
         
         # Загрузка данных
         self.refresh_items()
