@@ -269,12 +269,7 @@ class TireStorageTab:
             wheel_type = self.wheel_type_var.get()
         
         try:
-            # 1. Создаём запись в хранилище
-            storage = self.service.accept_storage(
-                car_number, driver_license, storage_type, diameter, brand, damage, wear, comments, wheel_type
-            )
-            
-            # 2. Создаём наряд (WorkOrder) для статистики
+            # 1. Создаём наряд (WorkOrder) для статистики
             order_service = OrderService(self.db)
             work_order = order_service.create_order(
                 license_plate=car_number,
@@ -282,6 +277,16 @@ class TireStorageTab:
                 vehicle_type='car',
                 client_name=f"Хранение ({storage_type})"
             )
+            
+            # 2. Создаём запись в хранилище с привязкой к наряду
+            storage = self.service.accept_storage(
+                car_number, driver_license, storage_type, diameter, brand, damage, wear, comments, wheel_type
+            )
+            
+            # Привязываем наряд к записи хранилища
+            storage.work_order_id = work_order.id
+            self.db.commit()
+            self.db.refresh(storage)
             
             # 3. Добавляем услугу "Хранение" в наряд
             # Создаём фиктивную услугу хранения для наряда
@@ -431,7 +436,10 @@ class TireStorageTab:
         storage_id = self.storage_tree.item(selected[0])['values'][0]
         
         try:
+            # Выдаём комплект (обновляет status='released' и released_date)
             storage = self.service.release_storage(storage_id)
+            
+            # Наряд остаётся со статусом 'paid' - информация о выдаче хранится в TireStorage
             
             if storage:
                 self.print_release_receipt(storage)
