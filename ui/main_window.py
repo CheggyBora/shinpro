@@ -14,7 +14,7 @@ class MainWindow:
     def __init__(self, root):
         self.root = root
         self.root.title("Система учёта шиномонтажа")
-        self.root.geometry("1280x800")
+        self.root.geometry("1400x950")
         
         styles.apply_modern_styles(self.root)
         
