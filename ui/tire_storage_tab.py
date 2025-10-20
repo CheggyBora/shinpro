@@ -400,38 +400,36 @@ class TireStorageTab:
         info_label = styles.create_label(content, f"Способ оплаты: {payment_text}\nСумма: {int(storage.price)} ₽", 'Card.TLabel')
         info_label.pack(pady=(0, 20))
         
-        def print_receipt():
-            """Печать чека оплаты"""
+        def print_all_documents():
+            """Печать чека оплаты и акта приёма"""
             try:
-                print(f"DEBUG: Starting print process for receipt: {receipt_file}")
+                print(f"DEBUG: Starting print process")
                 
                 # Генерируем акт приёма (2 копии)
                 self.print_receipt(storage, copies=2)
                 storage_act = f"receipts/storage_{storage.id}.pdf"
-                print(f"DEBUG: Storage act created: {storage_act}")
+                print(f"DEBUG: Documents ready - Receipt: {receipt_file}, Storage act: {storage_act}")
                 
                 if platform.system() == 'Windows':
-                    # Печатаем чек оплаты
+                    # Открываем и печатаем чек оплаты (1 экземпляр)
                     receipt_abs = os.path.abspath(receipt_file)
-                    print(f"DEBUG: Printing receipt: {receipt_abs}")
+                    print(f"DEBUG: Opening receipt: {receipt_abs}")
                     try:
                         os.startfile(receipt_abs, "print")
                     except Exception as e:
-                        print(f"WARNING: Could not print receipt: {e}")
-                        # Открываем для ручной печати
+                        print(f"WARNING: Auto-print failed for receipt: {e}")
                         os.startfile(receipt_abs)
                     
-                    # Печатаем акт приёма (2 экземпляра)
+                    # Открываем и печатаем акт приёма (2 экземпляра в одном PDF)
                     storage_act_abs = os.path.abspath(storage_act)
-                    print(f"DEBUG: Printing storage act: {storage_act_abs}")
+                    print(f"DEBUG: Opening storage act: {storage_act_abs}")
                     try:
                         os.startfile(storage_act_abs, "print")
                     except Exception as e:
-                        print(f"WARNING: Could not print storage act: {e}")
-                        # Открываем для ручной печати
+                        print(f"WARNING: Auto-print failed for storage act: {e}")
                         os.startfile(storage_act_abs)
                     
-                    messagebox.showinfo("Печать", f"Комплект #{storage.id} принят на хранение!\n\nДокументы открыты для печати.\nЕсли автоматическая печать не сработала,\nнапечатайте документы вручную из открытых окон.")
+                    messagebox.showinfo("Печать", f"Комплект #{storage.id} принят на хранение!\n\n✓ Чек оплаты (1 экз.)\n✓ Акт приёма (2 экз.)\n\nДокументы отправлены на печать.\nЕсли автопечать не сработала - напечатайте вручную.")
                 else:
                     try:
                         import subprocess
@@ -439,57 +437,21 @@ class TireStorageTab:
                         subprocess.run(['lp', storage_act], check=True)
                         messagebox.showinfo("Успех", f"Комплект #{storage.id} принят на хранение!\n\nДокументы отправлены на печать")
                     except:
-                        messagebox.showinfo("Успех", f"Комплект #{storage.id} принят на хранение!\n\nДокументы сохранены:\n{receipt_file}\n{storage_act}")
+                        messagebox.showinfo("Успех", f"Комплект #{storage.id} принят на хранение!\n\nДокументы сохранены")
                 
                 dialog.destroy()
-                print(f"DEBUG: Print process completed successfully")
+                print(f"DEBUG: Print process completed")
                 
             except Exception as e:
                 import traceback
-                error_msg = traceback.format_exc()
-                print(f"ERROR in print_receipt: {error_msg}")
-                messagebox.showerror("Ошибка печати", f"Произошла ошибка при печати:\n{str(e)}\n\nДокументы сохранены в папке receipts/")
+                print(f"ERROR in print_all_documents: {traceback.format_exc()}")
+                messagebox.showerror("Ошибка печати", f"Ошибка: {str(e)}\n\nДокументы сохранены в папке receipts/")
         
-        def preview_receipt():
-            """Просмотр чека"""
-            abs_path = os.path.abspath(receipt_file)
-            if platform.system() == 'Windows':
-                os.startfile(abs_path)
-            elif platform.system() == 'Darwin':
-                import subprocess
-                subprocess.Popen(['open', abs_path])
-            else:
-                import subprocess
-                try:
-                    subprocess.Popen(['evince', abs_path])
-                except:
-                    pass
-            
-            # Генерируем акт приёма для просмотра
-            self.print_receipt(storage, copies=1)
-            storage_act = f"receipts/storage_{storage.id}.pdf"
-            
-            # Открываем акт приёма
-            if platform.system() == 'Windows':
-                os.startfile(os.path.abspath(storage_act))
-            elif platform.system() == 'Darwin':
-                import subprocess
-                subprocess.Popen(['open', os.path.abspath(storage_act)])
-            else:
-                import subprocess
-                try:
-                    subprocess.Popen(['evince', os.path.abspath(storage_act)])
-                except:
-                    pass
-            
-            messagebox.showinfo("Просмотр", f"Документы открыты для просмотра.\n\nВы можете закрыть это окно\nили нажать 'Печать' для печати документов.")
-        
-        # Кнопки
+        # Кнопка печати
         button_frame = ttk.Frame(content, style='White.TFrame')
         button_frame.pack(fill='x', pady=(10, 0))
         
-        styles.create_button(button_frame, "🖨 Печать всех документов", print_receipt, 'Success.TButton').pack(side='left', fill='x', expand=True, padx=(0, 5))
-        styles.create_button(button_frame, "👁 Просмотр чека", preview_receipt, 'Primary.TButton').pack(side='left', fill='x', expand=True, padx=(5, 0))
+        styles.create_button(button_frame, "🖨 Печать документов", print_all_documents, 'Success.TButton').pack(fill='x', expand=True)
     
     def search_storage(self):
         car_number = self.search_car_entry.get().strip()
@@ -575,61 +537,41 @@ class TireStorageTab:
                 title_label = styles.create_label(content, f"Акт выдачи #{storage.id} создан", 'CardHeading.TLabel')
                 title_label.pack(pady=(0, 20))
                 
-                def print_doc():
+                def print_release_doc():
                     try:
                         print(f"DEBUG: Starting print process for release act: {filepath}")
                         
                         if platform.system() == 'Windows':
                             filepath_abs = os.path.abspath(filepath)
-                            print(f"DEBUG: Printing release act: {filepath_abs}")
+                            print(f"DEBUG: Opening release act: {filepath_abs}")
                             try:
                                 os.startfile(filepath_abs, "print")
                             except Exception as e:
-                                print(f"WARNING: Could not print release act: {e}")
-                                # Открываем для ручной печати
+                                print(f"WARNING: Auto-print failed: {e}")
                                 os.startfile(filepath_abs)
                             
-                            messagebox.showinfo("Печать", f"Комплект #{storage.id} выдан!\n\nАкт выдачи (2 экземпляра) открыт для печати.\nЕсли автоматическая печать не сработала,\nнапечатайте документ вручную из открытого окна.")
+                            messagebox.showinfo("Печать", f"Комплект #{storage.id} выдан!\n\n✓ Акт выдачи (2 экз.)\n\nДокумент отправлен на печать.\nЕсли автопечать не сработала - напечатайте вручную.")
                         else:
                             try:
                                 import subprocess
                                 subprocess.run(['lp', filepath], check=True)
                                 messagebox.showinfo("Успех", f"Комплект #{storage.id} выдан.\nДокумент отправлен на печать")
                             except:
-                                messagebox.showinfo("Успех", f"Комплект #{storage.id} выдан.\nДокумент: {filepath}")
+                                messagebox.showinfo("Успех", f"Комплект #{storage.id} выдан.\nДокумент сохранён")
                         
                         dialog.destroy()
                         self.search_storage()
-                        print(f"DEBUG: Print process completed successfully")
+                        print(f"DEBUG: Print completed")
                         
                     except Exception as e:
                         import traceback
-                        error_msg = traceback.format_exc()
-                        print(f"ERROR in print_doc: {error_msg}")
-                        messagebox.showerror("Ошибка печати", f"Произошла ошибка при печати:\n{str(e)}\n\nДокумент сохранён: {filepath}")
-                
-                def preview_doc():
-                    abs_path = os.path.abspath(filepath)
-                    if platform.system() == 'Windows':
-                        os.startfile(abs_path)
-                    elif platform.system() == 'Darwin':
-                        import subprocess
-                        subprocess.Popen(['open', filepath])
-                    else:
-                        # Linux (Replit) - используем evince
-                        import subprocess
-                        try:
-                            subprocess.Popen(['evince', abs_path])
-                        except Exception as e:
-                            messagebox.showwarning("Информация", f"Акт создан и сохранён:\n{abs_path}\n\nОткройте его вручную в файловом менеджере.")
-                    
-                    messagebox.showinfo("Просмотр", f"Документ открыт для просмотра.\n\nВы можете закрыть это окно\nили нажать 'Печать' для печати документа.")
+                        print(f"ERROR in print_release_doc: {traceback.format_exc()}")
+                        messagebox.showerror("Ошибка печати", f"Ошибка: {str(e)}\n\nДокумент сохранён: {filepath}")
                 
                 button_frame = ttk.Frame(content, style='White.TFrame')
                 button_frame.pack(fill='x')
                 
-                styles.create_button(button_frame, "🖨 Печать", print_doc, 'Success.TButton').pack(side='left', fill='x', expand=True, padx=(0, 5))
-                styles.create_button(button_frame, "👁 Просмотр", preview_doc, 'Primary.TButton').pack(side='left', fill='x', expand=True, padx=(5, 0))
+                styles.create_button(button_frame, "🖨 Печать документов", print_release_doc, 'Success.TButton').pack(fill='x', expand=True)
             else:
                 messagebox.showerror("Ошибка", "Комплект не найден")
         except Exception as e:
