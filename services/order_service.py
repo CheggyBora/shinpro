@@ -78,12 +78,30 @@ class OrderService:
             price_field = f'price_{diameter}'
             price = getattr(service, price_field, 0.0)
             
+            # Определяем начальную скидку для новой позиции
+            # Выбираем максимум из всех доступных скидок
+            discount_candidates = [0]
+            
+            # Автоскидка 5%
+            if order.auto_discount:
+                discount_candidates.append(5)
+            
+            # Общая скидка
+            if order.general_discount > 0:
+                discount_candidates.append(order.general_discount)
+            
+            # Скидка на диски (только для "Правка литого диска")
+            if service.name == 'Правка литого диска' and order.rim_discount > 0:
+                discount_candidates.append(order.rim_discount)
+            
+            initial_discount = max(discount_candidates)
+            
             item = WorkOrderItem(
                 work_order_id=order_id,
                 service_id=service_id,
                 quantity=1,
                 price=price,
-                discount_percent=0
+                discount_percent=initial_discount
             )
             self.db.add(item)
             self.db.commit()
@@ -145,7 +163,8 @@ class OrderService:
     
     def update_rim_discount(self, order_id: int, discount: int):
         """
-        Применяет скидку на диски только к услуге 'Правка литого диска'
+        Применяет скидку на диски только к услуге 'Правка литого диска'.
+        Для каждой позиции выбирается максимум между текущей скидкой и новой скидкой на диски.
         """
         try:
             order = self.db.query(WorkOrder).filter(WorkOrder.id == order_id).first()
@@ -156,7 +175,8 @@ class OrderService:
                 items = self.db.query(WorkOrderItem).filter(WorkOrderItem.work_order_id == order_id).all()
                 for item in items:
                     if item.service.name == 'Правка литого диска':
-                        item.discount_percent = discount
+                        # Выбираем максимальную скидку между текущей и новой скидкой на диски
+                        item.discount_percent = max(item.discount_percent, discount)
                 
                 self.db.commit()
         except Exception as e:
@@ -164,10 +184,21 @@ class OrderService:
             raise
     
     def update_general_discount(self, order_id: int, discount: int):
+        """
+        Применяет общую скидку ко всем позициям наряда.
+        Для каждой позиции выбирается максимум между текущей скидкой и новой общей скидкой.
+        """
         try:
             order = self.db.query(WorkOrder).filter(WorkOrder.id == order_id).first()
             if order:
                 order.general_discount = discount
+                
+                # Применяем скидку ко всем позициям
+                items = self.db.query(WorkOrderItem).filter(WorkOrderItem.work_order_id == order_id).all()
+                for item in items:
+                    # Выбираем максимальную скидку между текущей и новой общей
+                    item.discount_percent = max(item.discount_percent, discount)
+                
                 self.db.commit()
         except Exception as e:
             self.db.rollback()
@@ -180,22 +211,13 @@ class OrderService:
         
         items = self.db.query(WorkOrderItem).filter(WorkOrderItem.work_order_id == order_id).all()
         
-        subtotal = 0
+        total = 0
         for item in items:
             # Учитываем количество и скидку на позицию
+            # Все скидки (автоскидка, общая, на диски) уже учтены в discount_percent каждой позиции
             item_price = item.price * item.quantity * (1 - item.discount_percent / 100)
-            subtotal += item_price
+            total += item_price
         
-        # Общая скидка или автоскидка (но не скидка на диски, она уже учтена в позициях)
-        # Приоритет: general_discount > auto_discount
-        final_discount = 0
-        if order.general_discount > 0:
-            final_discount = order.general_discount
-        elif order.auto_discount:
-            final_discount = 5
-        
-        discount_amount = subtotal * (final_discount / 100)
-        total = subtotal - discount_amount
         return round(total, 2)
     
     def get_order_items(self, order_id: int):

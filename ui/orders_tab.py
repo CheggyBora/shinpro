@@ -795,29 +795,21 @@ class OrderWidget:
             items = self.order_service.get_order_items(self.order.id)
             self.db.refresh(self.order)
         
-        # Определяем общую скидку (НЕ включает rim_discount - он применяется к конкретным позициям)
-        # Приоритет: general_discount > auto_discount
-        general_discount_value = 0
-        if self.order.general_discount > 0:
-            general_discount_value = self.order.general_discount
-        elif self.order.auto_discount:
-            general_discount_value = 5
-        
         # Обновляем значения в комбобоксах
         self.rim_discount_var.set(str(self.order.rim_discount))
         self.general_discount_var.set(str(self.order.general_discount))
         
-        # Рассчитываем общую цену
+        # Отображаем позиции
         total_without_discount = 0
         for item in items:
-            # Цена с учетом скидки на позицию (rim_discount) и количества
-            item_after_own_discount = item.price * item.quantity * (1 - item.discount_percent / 100)
-            total_without_discount += item_after_own_discount
+            # Цена без скидки
+            item_no_discount = item.price * item.quantity
+            total_without_discount += item_no_discount
             
-            # Итоговая цена позиции С общей скидкой
-            item_total = item_after_own_discount * (1 - general_discount_value / 100)
+            # Итоговая цена позиции с учетом скидки (все скидки уже учтены в discount_percent)
+            item_total = item.price * item.quantity * (1 - item.discount_percent / 100)
             
-            # Показываем ТОЛЬКО индивидуальную скидку позиции (rim_discount), общая скидка считается отдельно
+            # Показываем скидку позиции (содержит максимальную из: автоскидка 5%, общая, на диски)
             discount_display = f"{item.discount_percent}%" if item.discount_percent > 0 else "0%"
             
             self.items_tree.insert('', 'end', values=(
