@@ -292,6 +292,10 @@ class TireStorageTab:
             )
             print(f"DEBUG: Storage created: ID={storage.id}")
             
+            # Перезагружаем storage в нашу сессию (т.к. сервис использует свою сессию)
+            from models import TireStorage
+            storage = self.db.query(TireStorage).filter(TireStorage.id == storage.id).first()
+            
             # Привязываем наряд к записи хранилища
             storage.work_order_id = work_order.id
             self.db.commit()
