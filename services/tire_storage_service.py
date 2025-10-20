@@ -52,9 +52,13 @@ class TireStorageService:
     def search_by_car_number(car_number):
         db = SessionLocal()
         try:
+            # Возвращаем все комплекты (и на хранении, и выданные)
+            # Сортируем: сначала на хранении (stored), потом выданные (released)
             storages = db.query(TireStorage).filter(
-                TireStorage.car_number == car_number,
-                TireStorage.status == 'stored'
+                TireStorage.car_number == car_number
+            ).order_by(
+                TireStorage.status.desc(),  # 'stored' идёт после 'released' в алфавите, поэтому desc()
+                TireStorage.accepted_date.desc()
             ).all()
             return storages
         finally:
@@ -82,7 +86,12 @@ class TireStorageService:
     def get_all_stored():
         db = SessionLocal()
         try:
-            storages = db.query(TireStorage).filter(TireStorage.status == 'stored').all()
+            # Возвращаем все комплекты (и на хранении, и выданные)
+            # Сортируем: сначала на хранении (stored), потом выданные (released)
+            storages = db.query(TireStorage).order_by(
+                TireStorage.status.desc(),  # 'stored' идёт после 'released' в алфавите, поэтому desc()
+                TireStorage.accepted_date.desc()
+            ).all()
             return storages
         finally:
             db.close()

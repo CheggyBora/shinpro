@@ -152,13 +152,13 @@ class TireStorageTab:
         self.search_car_entry.pack(side='left', padx=(0, 10))
         styles.create_button(search_frame, "Найти", self.search_storage, 'Primary.TButton').pack(side='left')
         
-        styles.create_label(card_inner, "Комплекты на хранении:", 'Card.TLabel').pack(anchor='w', pady=(15, 5))
+        styles.create_label(card_inner, "Все комплекты (на хранении и выданные):", 'Card.TLabel').pack(anchor='w', pady=(15, 5))
         
         tree_frame = ttk.Frame(card_inner, style='White.TFrame')
         tree_frame.pack(fill='both', expand=True, pady=5)
         
         self.storage_tree = ttk.Treeview(tree_frame, 
-                                         columns=('ID', 'Номер авто', 'Тип', 'Диаметр', 'Марка', 'Цена', 'Дата приёма'), 
+                                         columns=('ID', 'Номер авто', 'Тип', 'Диаметр', 'Марка', 'Цена', 'Дата приёма', 'Статус', 'Дата выдачи'), 
                                          show='headings', height=10)
         self.storage_tree.heading('ID', text='№')
         self.storage_tree.heading('Номер авто', text='Номер авто')
@@ -167,24 +167,34 @@ class TireStorageTab:
         self.storage_tree.heading('Марка', text='Марка')
         self.storage_tree.heading('Цена', text='Цена')
         self.storage_tree.heading('Дата приёма', text='Дата приёма')
+        self.storage_tree.heading('Статус', text='Статус')
+        self.storage_tree.heading('Дата выдачи', text='Дата выдачи')
         
-        self.storage_tree.column('ID', width=50)
-        self.storage_tree.column('Номер авто', width=100)
-        self.storage_tree.column('Тип', width=150)
-        self.storage_tree.column('Диаметр', width=80)
-        self.storage_tree.column('Марка', width=150)
-        self.storage_tree.column('Цена', width=100)
-        self.storage_tree.column('Дата приёма', width=150)
+        self.storage_tree.column('ID', width=40)
+        self.storage_tree.column('Номер авто', width=90)
+        self.storage_tree.column('Тип', width=130)
+        self.storage_tree.column('Диаметр', width=70)
+        self.storage_tree.column('Марка', width=120)
+        self.storage_tree.column('Цена', width=80)
+        self.storage_tree.column('Дата приёма', width=130)
+        self.storage_tree.column('Статус', width=90)
+        self.storage_tree.column('Дата выдачи', width=130)
         
         self.storage_tree.pack(side='left', fill='both', expand=True)
         scrollbar = ttk.Scrollbar(tree_frame, orient='vertical', command=self.storage_tree.yview)
         scrollbar.pack(side='right', fill='y')
         self.storage_tree.config(yscrollcommand=scrollbar.set)
         
+        # Настройка цветовой схемы для выданных комплектов
+        self.storage_tree.tag_configure('released', foreground='#94a3b8')
+        
         btn_frame = ttk.Frame(card_inner, style='White.TFrame')
         btn_frame.pack(fill='x', pady=10)
         styles.create_button(btn_frame, "Выдать комплект", 
                            self.release_storage, 'Success.TButton').pack(side='left')
+        
+        # Загружаем все комплекты при создании вкладки
+        self.search_storage()
     
     def update_price(self, event=None):
         diameter = self.diameter_var.get()
@@ -445,15 +455,29 @@ class TireStorageTab:
             self.storage_tree.delete(item)
         
         for storage in storages:
-            self.storage_tree.insert('', 'end', values=(
-                storage.id,
-                storage.car_number,
-                storage.storage_type,
-                storage.diameter,
-                storage.brand or '-',
-                f"{int(storage.price)} ₽",
-                storage.accepted_date.strftime('%d.%m.%Y %H:%M')
-            ))
+            # Определяем статус и дату выдачи
+            status_text = "✅ На хранении" if storage.status == 'stored' else "📦 Выдан"
+            release_date = storage.released_date.strftime('%d.%m.%Y %H:%M') if storage.released_date else '-'
+            
+            # Вставляем строку с тегом для хранения статуса
+            item_id = self.storage_tree.insert('', 'end', 
+                values=(
+                    storage.id,
+                    storage.car_number,
+                    storage.storage_type,
+                    storage.diameter,
+                    storage.brand or '-',
+                    f"{int(storage.price)} ₽",
+                    storage.accepted_date.strftime('%d.%m.%Y %H:%M'),
+                    status_text,
+                    release_date
+                ),
+                tags=(storage.status,)
+            )
+            
+            # Выделяем выданные комплекты серым цветом
+            if storage.status == 'released':
+                self.storage_tree.item(item_id, tags=('released',))
     
     def release_storage(self):
         import platform
@@ -464,6 +488,12 @@ class TireStorageTab:
             return
         
         storage_id = self.storage_tree.item(selected[0])['values'][0]
+        item_tags = self.storage_tree.item(selected[0])['tags']
+        
+        # Проверяем статус комплекта
+        if item_tags and 'released' in item_tags:
+            messagebox.showwarning("Предупреждение", "Этот комплект уже был выдан!")
+            return
         
         try:
             # Выдаём комплект (обновляет status='released' и released_date)
