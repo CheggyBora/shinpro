@@ -238,9 +238,13 @@ class TireStorageTab:
             """Оплата и создание документов"""
             try:
                 payment_method = payment_var.get()
+                print(f"DEBUG: Starting payment with method={payment_method}, price={price}")
                 self.accept_storage_with_payment(payment_method, price)
                 dialog.destroy()
             except Exception as e:
+                import traceback
+                error_details = traceback.format_exc()
+                print(f"ERROR in pay_and_process: {error_details}")
                 messagebox.showerror("Ошибка", str(e))
         
         # Кнопка оплаты
@@ -271,6 +275,7 @@ class TireStorageTab:
         
         try:
             # 1. Создаём наряд (WorkOrder) для статистики
+            print(f"DEBUG: Step 1 - Creating work order for car {car_number}")
             order_service = OrderService(self.db)
             work_order = order_service.create_order(
                 license_plate=car_number,
@@ -278,22 +283,28 @@ class TireStorageTab:
                 vehicle_type='car',
                 client_name=f"Хранение ({storage_type})"
             )
+            print(f"DEBUG: Work order created: ID={work_order.id}")
             
             # 2. Создаём запись в хранилище с привязкой к наряду
+            print(f"DEBUG: Step 2 - Creating storage record")
             storage = self.service.accept_storage(
                 car_number, driver_license, storage_type, diameter, brand, damage, wear, comments, wheel_type
             )
+            print(f"DEBUG: Storage created: ID={storage.id}")
             
             # Привязываем наряд к записи хранилища
             storage.work_order_id = work_order.id
             self.db.commit()
             self.db.refresh(storage)
+            print(f"DEBUG: Storage linked to work order")
             
             # 3. Добавляем услугу "Хранение шин" в наряд
+            print(f"DEBUG: Step 3 - Adding storage service to work order")
             from models import Service, WorkOrderItem
             storage_service = self.db.query(Service).filter(Service.name == 'Хранение шин').first()
             
             if storage_service:
+                print(f"DEBUG: Found storage service: ID={storage_service.id}")
                 # Используем существующую услугу хранения
                 storage_item = WorkOrderItem(
                     work_order_id=work_order.id,
@@ -304,23 +315,30 @@ class TireStorageTab:
                 )
                 self.db.add(storage_item)
                 self.db.flush()
+                print(f"DEBUG: Storage service item added to work order")
             else:
                 raise ValueError("Услуга 'Хранение шин' не найдена в базе данных. Обратитесь к администратору.")
             
             # 4. Оплачиваем наряд БЕЗ начисления зарплаты
+            print(f"DEBUG: Step 4 - Marking work order as paid")
             work_order.paid_at = datetime.now()
             work_order.payment_method = payment_method
             work_order.total_amount = price
             work_order.status = 'paid'
             self.db.commit()
             self.db.refresh(work_order)
+            print(f"DEBUG: Work order marked as paid")
             
             # 5. Генерируем чек оплаты
+            print(f"DEBUG: Step 5 - Generating receipt")
             print_service = PrintService()
             items = order_service.get_order_items(work_order.id)
+            print(f"DEBUG: Got {len(items)} items for receipt")
             receipt_file = print_service.generate_receipt(work_order, items, price)
+            print(f"DEBUG: Receipt generated: {receipt_file}")
             
             # 6. Показываем диалог с чеком
+            print(f"DEBUG: Step 6 - Showing receipt dialog")
             self.show_receipt_dialog(receipt_file, storage, payment_method)
             
             # Очищаем поля
@@ -330,8 +348,12 @@ class TireStorageTab:
             self.damage_entry.delete(0, tk.END)
             self.wear_entry.delete(0, tk.END)
             self.comments_entry.delete(0, tk.END)
+            print(f"DEBUG: Storage payment process completed successfully")
             
         except Exception as e:
+            import traceback
+            error_details = traceback.format_exc()
+            print(f"ERROR in accept_storage_with_payment: {error_details}")
             self.db.rollback()
             messagebox.showerror("Ошибка", str(e))
     
