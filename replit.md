@@ -39,6 +39,13 @@ The system manages over 42 services, categorized by type, with prices varying by
 **Database Schema:**
 The SQLite database includes tables for `employees`, `work_shifts`, `clients`, `cars`, `services`, `work_orders`, `work_order_items`, `salary_transactions`, `settings`, and `tire_storage`.
 
+**Car Parameter Memory:**
+The system automatically remembers and saves vehicle parameters (vehicle_type and wheel_diameter) for each car:
+- When creating a new order, the selected vehicle type and wheel diameter are saved to the Car record
+- When creating subsequent orders for the same car, these parameters are automatically pre-filled
+- Parameters are updated with each new order to always reflect the most recent configuration
+- Autofill priority: Car saved parameters > Last WorkOrder > Empty (new car)
+
 **Order Deletion System:**
 The system implements two types of deletion based on order status:
 
