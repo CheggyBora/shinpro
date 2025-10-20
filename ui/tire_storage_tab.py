@@ -703,7 +703,7 @@ class TireStorageTab:
         
         c.save()
     
-    def print_release_receipt(self, storage):
+    def print_release_receipt(self, storage, copies=2):
         if not os.path.exists('receipts'):
             os.makedirs('receipts')
         
@@ -715,101 +715,105 @@ class TireStorageTab:
         
         width, height = letter
         
-        # Заголовок
-        y = height - 50
-        c.setFont(font_name, 24)
-        c.drawCentredString(width/2, y, "Шиномонтаж РИФ")
-        
-        y -= 30
-        c.setFont(font_name, 16)
-        c.drawCentredString(width/2, y, "АКТ ВЫДАЧИ ШИН С ХРАНЕНИЯ")
-        
-        y -= 25
-        c.setFont(font_name, 12)
-        c.drawCentredString(width/2, y, f"№ {storage.id}")
-        
-        y -= 40
-        c.line(50, y, width-50, y)
-        
-        # Даты
-        y -= 30
-        c.setFont(font_name, 12)
-        c.drawString(50, y, f"Дата приёма:")
-        c.drawString(250, y, storage.accepted_date.strftime('%d.%m.%Y %H:%M'))
-        
-        y -= 20
-        c.drawString(50, y, f"Дата выдачи:")
-        c.setFont(font_name, 14)
-        c.drawString(250, y, storage.released_date.strftime('%d.%m.%Y %H:%M'))
-        
-        y -= 30
-        c.line(50, y, width-50, y)
-        
-        # Информация об автомобиле
-        y -= 30
-        c.setFont(font_name, 12)
-        c.drawString(50, y, f"Номер автомобиля:")
-        c.setFont(font_name, 14)
-        c.drawString(250, y, storage.car_number)
-        
-        if storage.driver_license:
+        for copy in range(copies):
+            if copy > 0:
+                c.showPage()
+            
+            # Заголовок
+            y = height - 50
+            c.setFont(font_name, 24)
+            c.drawCentredString(width/2, y, "Шиномонтаж РИФ")
+            
+            y -= 30
+            c.setFont(font_name, 16)
+            c.drawCentredString(width/2, y, "АКТ ВЫДАЧИ ШИН С ХРАНЕНИЯ")
+            
             y -= 25
             c.setFont(font_name, 12)
-            c.drawString(50, y, f"Водительское удостоверение:")
-            c.setFont(font_name, 14)
-            c.drawString(250, y, storage.driver_license)
-        
-        y -= 30
-        c.line(50, y, width-50, y)
-        
-        # Информация о шинах
-        y -= 30
-        c.setFont(font_name, 12)
-        c.drawString(50, y, "Информация о шинах:")
-        
-        y -= 25
-        c.drawString(50, y, f"Тип хранения:")
-        c.drawString(250, y, storage.storage_type)
-        
-        y -= 20
-        c.drawString(50, y, f"Диаметр:")
-        c.drawString(250, y, storage.diameter)
-        
-        if storage.wheel_type:
+            c.drawCentredString(width/2, y, f"№ {storage.id}")
+            
+            y -= 40
+            c.line(50, y, width-50, y)
+            
+            # Даты
+            y -= 30
+            c.setFont(font_name, 12)
+            c.drawString(50, y, f"Дата приёма:")
+            c.drawString(250, y, storage.accepted_date.strftime('%d.%m.%Y %H:%M'))
+            
             y -= 20
-            c.drawString(50, y, f"Тип дисков:")
-            c.drawString(250, y, storage.wheel_type)
-        
-        y -= 20
-        c.drawString(50, y, f"Марка шины:")
-        c.drawString(250, y, storage.brand or '-')
-        
-        if storage.comments:
+            c.drawString(50, y, f"Дата выдачи:")
+            c.setFont(font_name, 14)
+            c.drawString(250, y, storage.released_date.strftime('%d.%m.%Y %H:%M'))
+            
+            y -= 30
+            c.line(50, y, width-50, y)
+            
+            # Информация об автомобиле
+            y -= 30
+            c.setFont(font_name, 12)
+            c.drawString(50, y, f"Номер автомобиля:")
+            c.setFont(font_name, 14)
+            c.drawString(250, y, storage.car_number)
+            
+            if storage.driver_license:
+                y -= 25
+                c.setFont(font_name, 12)
+                c.drawString(50, y, f"Водительское удостоверение:")
+                c.setFont(font_name, 14)
+                c.drawString(250, y, storage.driver_license)
+            
+            y -= 30
+            c.line(50, y, width-50, y)
+            
+            # Информация о шинах
+            y -= 30
+            c.setFont(font_name, 12)
+            c.drawString(50, y, "Информация о шинах:")
+            
             y -= 25
-            c.drawString(50, y, f"Комментарии:")
+            c.drawString(50, y, f"Тип хранения:")
+            c.drawString(250, y, storage.storage_type)
+            
+            y -= 20
+            c.drawString(50, y, f"Диаметр:")
+            c.drawString(250, y, storage.diameter)
+            
+            if storage.wheel_type:
+                y -= 20
+                c.drawString(50, y, f"Тип дисков:")
+                c.drawString(250, y, storage.wheel_type)
+            
+            y -= 20
+            c.drawString(50, y, f"Марка шины:")
+            c.drawString(250, y, storage.brand or '-')
+            
+            if storage.comments:
+                y -= 25
+                c.drawString(50, y, f"Комментарии:")
+                c.setFont(font_name, 11)
+                c.drawString(250, y, storage.comments[:50])
+            
+            y -= 30
+            c.line(50, y, width-50, y)
+            
+            # Стоимость
+            y -= 35
+            c.setFont(font_name, 16)
+            c.drawString(50, y, "СТОИМОСТЬ ХРАНЕНИЯ:")
+            c.drawRightString(width-50, y, f"{int(storage.price)} ₽")
+            
+            y -= 10
+            c.line(50, y, width-50, y)
+            
+            # Подпись и экземпляр
+            y -= 50
             c.setFont(font_name, 11)
-            c.drawString(250, y, storage.comments[:50])
-        
-        y -= 30
-        c.line(50, y, width-50, y)
-        
-        # Стоимость
-        y -= 35
-        c.setFont(font_name, 16)
-        c.drawString(50, y, "СТОИМОСТЬ ХРАНЕНИЯ:")
-        c.drawRightString(width-50, y, f"{int(storage.price)} ₽")
-        
-        y -= 10
-        c.line(50, y, width-50, y)
-        
-        # Подпись
-        y -= 50
-        c.setFont(font_name, 11)
-        c.drawString(50, y, "Выдал: _________________")
-        c.drawRightString(width-50, y, "Получил: _________________")
-        
-        y = 80
-        c.setFont(font_name, 12)
-        c.drawCentredString(width/2, y, "Шины выданы владельцу")
+            c.drawString(50, y, "Выдал: _________________")
+            c.drawRightString(width-50, y, "Получил: _________________")
+            
+            y = 80
+            c.setFont(font_name, 10)
+            c.drawCentredString(width/2, y, f"Экземпляр {copy + 1} из {copies}")
         
         c.save()
