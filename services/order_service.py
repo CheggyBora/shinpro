@@ -12,8 +12,13 @@ class OrderService:
         try:
             car = self.db.query(Car).filter(Car.license_plate == license_plate).first()
             if not car:
-                car = Car(license_plate=license_plate)
+                car = Car(license_plate=license_plate, vehicle_type=vehicle_type, wheel_diameter=wheel_diameter)
                 self.db.add(car)
+                self.db.flush()
+            else:
+                # Обновляем параметры машины при каждом создании наряда
+                car.vehicle_type = vehicle_type
+                car.wheel_diameter = wheel_diameter
                 self.db.flush()
             
             client_id = None
@@ -203,6 +208,10 @@ class OrderService:
         """Получить список всех уникальных номеров машин"""
         cars = self.db.query(Car.license_plate).distinct().order_by(Car.license_plate).all()
         return [car.license_plate for car in cars]
+    
+    def get_car_by_license_plate(self, license_plate: str):
+        """Получить машину по номеру для автоподстановки параметров"""
+        return self.db.query(Car).filter(Car.license_plate == license_plate).first()
     
     def get_last_order_for_car(self, license_plate: str):
         """Получить последний наряд для машины по номеру"""

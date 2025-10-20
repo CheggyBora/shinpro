@@ -226,19 +226,34 @@ class OrdersTab:
         if not selected_plate:
             return
         
-        # Получаем последний наряд для этой машины
-        last_order = self.order_service.get_last_order_for_car(selected_plate)
+        # Сначала пытаемся получить данные из машины (приоритет)
+        car = self.order_service.get_car_by_license_plate(selected_plate)
         
-        if last_order:
-            # Сохраняем данные для автозаполнения при создании нового наряда
+        if car and car.vehicle_type and car.wheel_diameter:
+            # Данные из Car (запомненные параметры машины)
             self.prefilled_data = {
-                'diameter': last_order.wheel_diameter,
-                'vehicle_type': last_order.vehicle_type,
-                'client_name': last_order.client.name if last_order.client else None,
-                'client_phone': last_order.client.phone if last_order.client else None
+                'diameter': car.wheel_diameter,
+                'vehicle_type': car.vehicle_type,
+                'client_name': None,
+                'client_phone': None
             }
+            # Также пытаемся получить данные клиента из последнего наряда
+            last_order = self.order_service.get_last_order_for_car(selected_plate)
+            if last_order and last_order.client:
+                self.prefilled_data['client_name'] = last_order.client.name
+                self.prefilled_data['client_phone'] = last_order.client.phone
         else:
-            self.prefilled_data = None
+            # Если нет данных в Car, получаем из последнего наряда
+            last_order = self.order_service.get_last_order_for_car(selected_plate)
+            if last_order:
+                self.prefilled_data = {
+                    'diameter': last_order.wheel_diameter,
+                    'vehicle_type': last_order.vehicle_type,
+                    'client_name': last_order.client.name if last_order.client else None,
+                    'client_phone': last_order.client.phone if last_order.client else None
+                }
+            else:
+                self.prefilled_data = None
     
     def create_new_order(self):
         license = self.license_entry.get().strip()

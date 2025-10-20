@@ -6,3 +6,5 @@ class Car(Base):
     
     id = Column(Integer, primary_key=True, autoincrement=True)
     license_plate = Column(String(50), unique=True, nullable=False)
+    vehicle_type = Column(String(20))
+    wheel_diameter = Column(String(10))
