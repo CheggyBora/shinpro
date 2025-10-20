@@ -23,14 +23,18 @@ The application is built with Python 3.11, using Tkinter for the GUI and SQLAlch
 
 **Core Modules:**
 - **Employees Tab**: Manages employee registration, PIN-protected commission rates, shift tracking, and salary viewing.
-- **Orders Tab**: Facilitates comprehensive order processing with license plate autocomplete, a two-step order creation workflow, and a detailed 4-column service panel allowing quantity editing. It supports multi-tab work orders, automatic pricing based on vehicle type and wheel diameter, discount systems (including an auto-discount for full client data), and **A4 PDF receipt printing**.
+- **Orders Tab**: Facilitates comprehensive order processing with license plate autocomplete, a two-step order creation workflow, and a detailed 4-column service panel allowing quantity editing. Column 3 (editable services) is ordered with "Ремонт жгутом" and "Подкачка/проверка давления" at the top for quick access. It supports multi-tab work orders, automatic pricing based on vehicle type and wheel diameter, discount systems (including an auto-discount for full client data and rim-specific discount), and **A4 PDF receipt printing**. Receipt format shows: service name, quantity, discounted unit price, and line total without strikethrough or explicit discount percentages.
 - **History Tab**: Provides a paginated view of past work orders, searchable by vehicle license plate. Includes a **Delete Order** button with confirmation dialog for soft-deleting work orders (marks as deleted without removing from database).
 - **Tire Storage Tab**: Manages tire intake and release with full payment integration. Features payment method selection (cash/card), creates WorkOrder for statistics tracking, generates **payment receipt PDF** and **2 copies of storage acceptance act**. Upon release, generates **release act PDF**. All storage orders appear in statistics and history without salary accrual.
 - **Statistics/Reports Tab**: Displays sales statistics with date filtering (default: last 30 days). Shows summary cards (cars serviced, total services, average check) and a detailed services breakdown table. All deleted orders are automatically excluded from statistics.
 - **Price List Tab**: Allows administrators to view and edit service prices across different vehicle types and wheel diameters (R13-R24). Price modifications are PIN-protected and saved in batches, with real-time updates.
 
-**Service Pricing:**
-The system manages over 42 services, categorized by type, with prices varying by vehicle type and wheel diameter for basic services. It supports "from" pricing for special services and implements automated discounts.
+**Service Pricing & Discounts:**
+The system manages over 42 services, categorized by type, with prices varying by vehicle type and wheel diameter for basic services. It supports "from" pricing for special services and implements automated discounts:
+- **Rim Discount**: Applied only to "Правка литого диска" service via per-item `discount_percent` field (10% or 20%)
+- **General Discount**: Applied to the entire order subtotal (10% or 15%)
+- **Auto Discount**: 5% automatic discount when full client information is provided
+- **Discount Priority**: general_discount > auto_discount (only one applies to order total)
 
 **Database Schema:**
 The SQLite database includes tables for `employees`, `work_shifts`, `clients`, `cars`, `services`, `work_orders`, `work_order_items`, `salary_transactions`, `settings`, and `tire_storage`.

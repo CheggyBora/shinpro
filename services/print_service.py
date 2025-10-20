@@ -91,7 +91,7 @@ class PrintService:
         c.drawString(50, y, "Наименование услуги")
         c.drawRightString(width-280, y, "Кол-во")
         c.drawRightString(width-180, y, "Цена")
-        c.drawRightString(width-50, y, "Сумма")
+        c.drawRightString(width-50, y, "Итого")
         
         y -= 5
         c.line(50, y, width-50, y)
@@ -105,35 +105,28 @@ class PrintService:
             quantity = item.quantity
             unit_price = item.price
             
-            # Если есть скидка на позицию
+            # Если есть скидка на позицию - применяем её
             if item.discount_percent > 0:
                 discounted_unit_price = unit_price * (1 - item.discount_percent / 100)
                 item_total = discounted_unit_price * quantity
-                
-                c.drawString(50, y, service_name)
-                c.drawRightString(width-280, y, f"{quantity}")
-                c.setFont(self.font_name, 9)
-                c.drawRightString(width-180, y, f"{unit_price:.0f} ₽")
-                y -= 12
-                c.setFont(self.font_name, 11)
-                c.drawRightString(width-180, y, f"{discounted_unit_price:.0f} ₽ (-{item.discount_percent}%)")
-                c.drawRightString(width-50, y, f"{item_total:.0f} ₽")
-                y -= 13
+                display_price = discounted_unit_price
             else:
                 item_total = unit_price * quantity
-                
-                c.drawString(50, y, service_name)
-                c.drawRightString(width-280, y, f"{quantity}")
-                c.drawRightString(width-180, y, f"{unit_price:.0f} ₽")
-                c.drawRightString(width-50, y, f"{item_total:.0f} ₽")
+                display_price = unit_price
+            
+            c.drawString(50, y, service_name)
+            c.drawRightString(width-280, y, f"{quantity}")
+            c.drawRightString(width-180, y, f"{display_price:.0f} ₽")
+            c.drawRightString(width-50, y, f"{item_total:.0f} ₽")
             
             subtotal += item_total
             
             if item.comment:
-                y -= 15
+                y -= 20
                 c.setFont(self.font_name, 9)
                 c.drawString(70, y, f"({item.comment[:50]})")
                 c.setFont(self.font_name, 11)
+                y -= 5
         
         y -= 10
         c.line(50, y, width-50, y)
