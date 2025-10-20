@@ -500,7 +500,7 @@ class OrderWidget:
         tree_frame = ttk.Frame(main_container)
         tree_frame.pack(fill='both', expand=True)
         
-        self.items_tree = ttk.Treeview(tree_frame, columns=('Услуга', 'Кол-во', 'Цена', 'Скидка', 'Итого'), show='headings', height=10)
+        self.items_tree = ttk.Treeview(tree_frame, columns=('Услуга', 'Кол-во', 'Цена', 'Скидка', 'Итого'), show='headings', height=15)
         self.items_tree.heading('Услуга', text='Услуга')
         self.items_tree.heading('Кол-во', text='Кол-во')
         self.items_tree.heading('Цена', text='Цена')
