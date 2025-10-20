@@ -164,7 +164,7 @@ class OrderService:
     def update_rim_discount(self, order_id: int, discount: int):
         """
         Применяет скидку на диски только к услуге 'Правка литого диска'.
-        Для каждой позиции выбирается максимум между текущей скидкой и новой скидкой на диски.
+        Скидка на диски ЗАМЕНЯЕТ текущую скидку (с учётом автоскидки 5% если активна).
         """
         try:
             order = self.db.query(WorkOrder).filter(WorkOrder.id == order_id).first()
@@ -175,8 +175,12 @@ class OrderService:
                 items = self.db.query(WorkOrderItem).filter(WorkOrderItem.work_order_id == order_id).all()
                 for item in items:
                     if item.service.name == 'Правка литого диска':
-                        # Выбираем максимальную скидку между текущей и новой скидкой на диски
-                        item.discount_percent = max(item.discount_percent, discount)
+                        # Заменяем скидку на новую
+                        # Но учитываем автоскидку 5% как минимум, если она активна
+                        if order.auto_discount:
+                            item.discount_percent = max(discount, 5)
+                        else:
+                            item.discount_percent = discount
                 
                 self.db.commit()
         except Exception as e:
@@ -186,7 +190,7 @@ class OrderService:
     def update_general_discount(self, order_id: int, discount: int):
         """
         Применяет общую скидку ко всем позициям наряда.
-        Для каждой позиции выбирается максимум между текущей скидкой и новой общей скидкой.
+        Общая скидка ЗАМЕНЯЕТ текущую скидку (с учётом автоскидки 5% если активна).
         """
         try:
             order = self.db.query(WorkOrder).filter(WorkOrder.id == order_id).first()
@@ -196,8 +200,12 @@ class OrderService:
                 # Применяем скидку ко всем позициям
                 items = self.db.query(WorkOrderItem).filter(WorkOrderItem.work_order_id == order_id).all()
                 for item in items:
-                    # Выбираем максимальную скидку между текущей и новой общей
-                    item.discount_percent = max(item.discount_percent, discount)
+                    # Заменяем скидку на новую общую
+                    # Но учитываем автоскидку 5% как минимум, если она активна
+                    if order.auto_discount:
+                        item.discount_percent = max(discount, 5)
+                    else:
+                        item.discount_percent = discount
                 
                 self.db.commit()
         except Exception as e:
