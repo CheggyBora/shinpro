@@ -292,3 +292,48 @@ class OrderService:
         if not include_deleted:
             query = query.filter_by(is_deleted=False)
         return query.first()
+    
+    def hard_delete_unpaid_order(self, order_id: int):
+        """
+        Полное удаление непробитого наряда из базы данных
+        
+        Args:
+            order_id: ID наряда для удаления
+        
+        Returns:
+            tuple: (success: bool, message: str)
+        """
+        from models import SalaryTransaction
+        
+        try:
+            # Находим наряд
+            order = self.db.query(WorkOrder).filter_by(id=order_id).first()
+            if not order:
+                return False, f"Наряд №{order_id} не найден"
+            
+            # Проверяем, что наряд не оплачен (только draft можно удалять)
+            if order.status != 'draft':
+                return False, f"Наряд №{order_id} уже в работе или оплачен. Можно удалять только черновики."
+            
+            # Проверяем, что нет транзакций ЗП
+            salary_transactions = self.db.query(SalaryTransaction).filter_by(
+                work_order_id=order_id
+            ).count()
+            
+            if salary_transactions > 0:
+                return False, f"Наряд №{order_id} имеет начисления ЗП. Используйте функцию отмены."
+            
+            # Удаляем все позиции наряда
+            self.db.query(WorkOrderItem).filter_by(work_order_id=order_id).delete()
+            
+            # Удаляем сам наряд
+            self.db.delete(order)
+            
+            # Сохраняем изменения
+            self.db.commit()
+            
+            return True, f"Наряд №{order_id} успешно удалён"
+            
+        except Exception as e:
+            self.db.rollback()
+            return False, f"Ошибка при удалении наряда: {str(e)}"

@@ -523,6 +523,11 @@ class OrderWidget:
         self.items_tree.bind('<Double-1>', self.edit_item)
         self.items_tree.bind('<Delete>', self.delete_item)
         
+        # Кнопки управления нарядом (под таблицей услуг)
+        control_frame = ttk.Frame(main_container)
+        control_frame.pack(fill='x', pady=(5, 0))
+        
+        styles.create_button(control_frame, "🗑 Удалить наряд", self.delete_order, 'Danger.TButton').pack(side='left', padx=(0, 5))
         
         # Загрузка данных
         self.refresh_items()
@@ -873,3 +878,37 @@ class OrderWidget:
                 print(f"Error updating employees display: {e2}")
                 # Если не удалось получить данные, просто не показываем
                 self.employees_label.config(text="")
+    
+    def delete_order(self):
+        """Удаляет непробитый наряд с подтверждением"""
+        # Проверяем, что наряд - черновик (только черновики можно удалять)
+        if self.order.status != 'draft':
+            messagebox.showerror("Ошибка", "Нельзя удалить наряд в работе или оплаченный.\nМожно удалять только черновики.")
+            return
+        
+        # Диалог подтверждения
+        confirm = messagebox.askyesno(
+            "Подтверждение удаления", 
+            f"Вы действительно хотите удалить наряд №{self.order.id}?\n\n"
+            f"Машина: {self.order.car.license_plate}\n"
+            f"Этот наряд будет полностью удалён из базы данных.\n\n"
+            f"Продолжить?",
+            icon='warning'
+        )
+        
+        if not confirm:
+            return
+        
+        try:
+            # Вызываем метод полного удаления
+            success, message = self.order_service.hard_delete_unpaid_order(self.order.id)
+            
+            if success:
+                messagebox.showinfo("Успех", message)
+                # Закрываем вкладку с нарядом
+                self.close_callback(self.order.id)
+            else:
+                messagebox.showerror("Ошибка", message)
+        
+        except Exception as e:
+            messagebox.showerror("Ошибка", f"Не удалось удалить наряд:\n{str(e)}")
