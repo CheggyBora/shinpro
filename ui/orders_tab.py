@@ -692,12 +692,12 @@ class OrderWidget:
         if not item:
             return
         
-        # ПРОВЕРКА: редактировать можно только если в названии услуги есть " от "
+        # ПРОВЕРКА: редактировать можно только если editable_price = True
         service_name = item.service.name
-        if " от " not in service_name:
+        if not item.service.editable_price:
             messagebox.showwarning(
                 "Редактирование недоступно", 
-                f"Цену можно изменять только для услуг с пометкой 'от'.\n\n"
+                f"Цену можно изменять только для специальных услуг.\n\n"
                 f"Услуга '{service_name}' имеет фиксированную цену."
             )
             return
