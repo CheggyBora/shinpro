@@ -243,7 +243,9 @@ class OrderService:
         return round(total, 2)
     
     def get_order_items(self, order_id: int):
-        return self.db.query(WorkOrderItem).filter(WorkOrderItem.work_order_id == order_id).all()
+        from sqlalchemy.orm import joinedload
+        # Явно подгружаем связанную таблицу service с актуальными данными
+        return self.db.query(WorkOrderItem).options(joinedload(WorkOrderItem.service)).filter(WorkOrderItem.work_order_id == order_id).all()
     
     def get_all_services(self):
         return self.db.query(Service).filter(Service.is_active == True).all()
