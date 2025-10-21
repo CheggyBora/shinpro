@@ -621,9 +621,11 @@ class OrderWidget:
         if not selected:
             return
         
-        # Редактируем только колонку "Кол-во" (#2)
+        # Редактируем колонку "Кол-во" (#2) или "Цена" (#3)
         if column == '#2':
             self.edit_quantity_inline(selected[0], event)
+        elif column == '#3':
+            self.edit_price_inline(selected[0], event)
     
     def edit_quantity_inline(self, item_id_str, event):
         # Получаем данные позиции
@@ -660,6 +662,64 @@ class OrderWidget:
                     item_id, 
                     quantity, 
                     item.price, 
+                    item.discount_percent, 
+                    item.comment or ""
+                )
+                self.refresh_items()
+                
+                if self.edit_entry:
+                    self.edit_entry.destroy()
+                    self.edit_entry = None
+            except ValueError:
+                messagebox.showerror("Ошибка", "Введите число")
+        
+        def cancel_inline(event=None):
+            if self.edit_entry:
+                self.edit_entry.destroy()
+                self.edit_entry = None
+        
+        # Горячие клавиши
+        self.edit_entry.bind('<Return>', save_inline)
+        self.edit_entry.bind('<KP_Enter>', save_inline)
+        self.edit_entry.bind('<Escape>', cancel_inline)
+        self.edit_entry.bind('<FocusOut>', save_inline)
+    
+    def edit_price_inline(self, item_id_str, event):
+        # Получаем данные позиции
+        item_id = int(self.items_tree.item(item_id_str)['tags'][0])
+        item = next((i for i in self.order_service.get_order_items(self.order.id) if i.id == item_id), None)
+        
+        if not item:
+            return
+        
+        # Удаляем предыдущий Entry если он есть
+        if self.edit_entry:
+            self.edit_entry.destroy()
+            self.edit_entry = None
+        
+        # Получаем координаты ячейки
+        x, y, width, height = self.items_tree.bbox(item_id_str, '#3')
+        
+        # Создаём Entry поверх ячейки
+        self.edit_entry = tk.Entry(self.items_tree, justify='center')
+        self.edit_entry.place(x=x, y=y, width=width, height=height)
+        # Показываем точную цену (без округления)
+        self.edit_entry.insert(0, f"{item.price:.2f}")
+        self.edit_entry.select_range(0, tk.END)
+        self.edit_entry.focus_set()
+        
+        def save_inline(event=None):
+            try:
+                price = float(self.edit_entry.get())
+                if price < 0:
+                    messagebox.showerror("Ошибка", "Цена не может быть отрицательной")
+                    return
+                
+                # Сохраняем новую цену
+                self.order_service.update_item_full(
+                    item_id, 
+                    item.quantity, 
+                    price, 
                     item.discount_percent, 
                     item.comment or ""
                 )
