@@ -692,6 +692,19 @@ class OrderWidget:
         if not item:
             return
         
+        # ПРОВЕРКА: редактировать можно только если в названии услуги есть " от "
+        service_name = item.service.name
+        if " от " not in service_name:
+            messagebox.showwarning(
+                "Редактирование недоступно", 
+                f"Цену можно изменять только для услуг с пометкой 'от'.\n\n"
+                f"Услуга '{service_name}' имеет фиксированную цену."
+            )
+            return
+        
+        # Получаем базовую (минимальную) цену из service
+        base_price = item.service.price
+        
         # Удаляем предыдущий Entry если он есть
         if self.edit_entry:
             self.edit_entry.destroy()
@@ -711,6 +724,17 @@ class OrderWidget:
         def save_inline(event=None):
             try:
                 price = float(self.edit_entry.get())
+                
+                # Проверка: цена не может быть меньше базовой (минимальной)
+                if price < base_price:
+                    messagebox.showerror(
+                        "Ошибка", 
+                        f"Цена не может быть меньше минимальной!\n\n"
+                        f"Минимальная цена для '{service_name}': {base_price:.2f} ₽\n"
+                        f"Вы ввели: {price:.2f} ₽"
+                    )
+                    return
+                
                 if price < 0:
                     messagebox.showerror("Ошибка", "Цена не может быть отрицательной")
                     return
