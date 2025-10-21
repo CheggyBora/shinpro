@@ -702,9 +702,6 @@ class OrderWidget:
             )
             return
         
-        # Получаем базовую (минимальную) цену из service
-        base_price = item.service.price
-        
         # Удаляем предыдущий Entry если он есть
         if self.edit_entry:
             self.edit_entry.destroy()
@@ -725,18 +722,9 @@ class OrderWidget:
             try:
                 price = float(self.edit_entry.get())
                 
-                # Проверка: цена не может быть меньше базовой (минимальной)
-                if price < base_price:
-                    messagebox.showerror(
-                        "Ошибка", 
-                        f"Цена не может быть меньше минимальной!\n\n"
-                        f"Минимальная цена для '{service_name}': {base_price:.2f} ₽\n"
-                        f"Вы ввели: {price:.2f} ₽"
-                    )
-                    return
-                
-                if price < 0:
-                    messagebox.showerror("Ошибка", "Цена не может быть отрицательной")
+                # Проверка: цена должна быть положительной
+                if price <= 0:
+                    messagebox.showerror("Ошибка", "Цена должна быть больше нуля")
                     return
                 
                 # Сохраняем новую цену
