@@ -143,23 +143,25 @@ class PrintService:
             quantity = item.quantity
             unit_price = item.price
             
-            # Считаем полную сумму БЕЗ скидок
-            subtotal_without_discount += unit_price * quantity
+            # Считаем полную сумму БЕЗ скидок (округляем цену за единицу)
+            rounded_unit_price = round(unit_price)
+            subtotal_without_discount += rounded_unit_price * quantity
             
             # Если есть скидка на позицию - применяем её для отображения
             if item.discount_percent > 0:
                 discounted_unit_price = unit_price * (1 - item.discount_percent / 100)
-                item_total = discounted_unit_price * quantity
-                display_price = discounted_unit_price
+                # Округляем цену со скидкой до целого числа
+                display_price = round(discounted_unit_price)
+                item_total = display_price * quantity
             else:
-                item_total = unit_price * quantity
-                display_price = unit_price
+                display_price = rounded_unit_price
+                item_total = display_price * quantity
             
             table_data.append([
                 service_name,
                 str(quantity),
-                f"{display_price:.2f} ₽",  # Показываем копейки
-                f"{item_total:.2f} ₽"      # Показываем копейки
+                f"{display_price:.0f} ₽",  # Целое число
+                f"{item_total:.0f} ₽"      # Целое число
             ])
         
         # Создание таблицы с фиксированными размерами колонок
@@ -204,19 +206,19 @@ class PrintService:
         y -= 30
         c.setFont(self.font_name, 12)
         c.drawString(50, y, "Сумма:")
-        c.drawRightString(width-50, y, f"{subtotal_without_discount:.2f} ₽")
+        c.drawRightString(width-50, y, f"{subtotal_without_discount:.0f} ₽")
         
         # Показываем скидку, если она есть
-        discount_amount = subtotal_without_discount - total_amount
-        if discount_amount > 0.01:  # Показываем только если скидка больше 1 копейки
+        discount_amount = subtotal_without_discount - round(total_amount)
+        if discount_amount > 0:  # Показываем только если скидка есть
             y -= 20
             c.drawString(50, y, "Скидка:")
-            c.drawRightString(width-50, y, f"-{discount_amount:.2f} ₽")
+            c.drawRightString(width-50, y, f"-{discount_amount:.0f} ₽")
         
         y -= 30
         c.setFont(self.font_name, 16)
         c.drawString(50, y, "ИТОГО К ОПЛАТЕ:")
-        c.drawRightString(width-50, y, f"{total_amount:.2f} ₽")
+        c.drawRightString(width-50, y, f"{round(total_amount):.0f} ₽")
         
         y -= 10
         c.line(50, y, width-50, y)
