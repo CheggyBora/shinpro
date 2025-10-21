@@ -5,6 +5,8 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.fonts import addMapping
 from reportlab.lib.utils import ImageReader
+from reportlab.platypus import Table, TableStyle
+from reportlab.lib import colors
 from datetime import datetime
 import os
 import sys
@@ -29,8 +31,10 @@ class PrintService:
         if not os.path.exists(self.receipts_dir):
             os.makedirs(self.receipts_dir)
         
-        # Путь к логотипу
-        self.logo_path = os.path.join(base_path, "assets", "logo.jpg")
+        # Путь к логотипу (нормализуем для Windows)
+        self.logo_path = os.path.normpath(os.path.join(base_path, "assets", "logo.jpg"))
+        print(f"Путь к логотипу: {self.logo_path}")
+        print(f"Логотип существует: {os.path.exists(self.logo_path)}")
         
         # Регистрируем шрифт DejaVu Sans для PDF с поддержкой кириллицы
         fonts_dir = os.path.join(base_path, "fonts")
@@ -61,13 +65,17 @@ class PrintService:
         y = height - 40
         
         # Логотип слева
-        if os.path.exists(self.logo_path):
-            try:
-                logo = ImageReader(self.logo_path)
-                # Размер логотипа: 60x60 мм
-                c.drawImage(logo, 50, y - 60, width=60, height=60, preserveAspectRatio=True, mask='auto')
-            except Exception as e:
-                print(f"Ошибка загрузки логотипа: {e}")
+        try:
+            if os.path.exists(self.logo_path):
+                # Прямой путь к файлу
+                c.drawImage(self.logo_path, 50, y - 60, width=60, height=60, preserveAspectRatio=True, mask='auto')
+                print(f"✓ Логотип успешно загружен из {self.logo_path}")
+            else:
+                print(f"✗ Файл логотипа не найден: {self.logo_path}")
+        except Exception as e:
+            print(f"✗ Ошибка загрузки логотипа: {e}")
+            import traceback
+            traceback.print_exc()
         
         # Информация о компании справа
         company_x = width - 50
@@ -120,23 +128,17 @@ class PrintService:
         y -= 30
         c.line(50, y, width-50, y)
         
-        # Заголовок таблицы услуг
-        y -= 30
-        c.setFont(self.font_name, 12)
-        c.drawString(50, y, "Наименование услуги")
-        c.drawRightString(width-280, y, "Кол-во")
-        c.drawRightString(width-180, y, "Цена")
-        c.drawRightString(width-50, y, "Итого")
+        # === ТАБЛИЦА УСЛУГ ===
+        y -= 20
         
-        y -= 5
-        c.line(50, y, width-50, y)
+        # Подготовка данных для таблицы
+        table_data = [
+            ['Наименование услуги', 'Кол-во', 'Цена', 'Итого']
+        ]
         
-        # Услуги
-        c.setFont(self.font_name, 11)
         subtotal_without_discount = 0  # Полная сумма БЕЗ скидок
         for item in items:
-            y -= 25
-            service_name = item.service.name[:35]
+            service_name = item.service.name
             quantity = item.quantity
             unit_price = item.price
             
@@ -152,20 +154,50 @@ class PrintService:
                 item_total = unit_price * quantity
                 display_price = unit_price
             
-            c.drawString(50, y, service_name)
-            c.drawRightString(width-280, y, f"{quantity}")
-            c.drawRightString(width-180, y, f"{display_price:.0f} ₽")
-            c.drawRightString(width-50, y, f"{item_total:.0f} ₽")
-            
-            if item.comment:
-                y -= 20
-                c.setFont(self.font_name, 9)
-                c.drawString(70, y, f"({item.comment[:50]})")
-                c.setFont(self.font_name, 11)
-                y -= 5
+            table_data.append([
+                service_name,
+                str(quantity),
+                f"{display_price:.0f} ₽",
+                f"{item_total:.0f} ₽"
+            ])
         
-        y -= 10
-        c.line(50, y, width-50, y)
+        # Создание таблицы с фиксированными размерами колонок
+        col_widths = [280, 60, 80, 75]  # ширина колонок
+        table = Table(table_data, colWidths=col_widths)
+        
+        # Стиль таблицы
+        table.setStyle(TableStyle([
+            # Заголовок
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#E8F4F8')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.black),
+            ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), self.font_name),
+            ('FONTSIZE', (0, 0), (-1, 0), 11),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+            ('TOPPADDING', (0, 0), (-1, 0), 8),
+            
+            # Данные
+            ('FONTNAME', (0, 1), (-1, -1), self.font_name),
+            ('FONTSIZE', (0, 1), (-1, -1), 10),
+            ('ALIGN', (1, 1), (-1, -1), 'CENTER'),  # Центр для кол-ва, цены, итого
+            ('ALIGN', (0, 1), (0, -1), 'LEFT'),     # Левое для названия
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('TOPPADDING', (0, 1), (-1, -1), 6),
+            ('BOTTOMPADDING', (0, 1), (-1, -1), 6),
+            ('LEFTPADDING', (0, 0), (-1, -1), 8),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+            
+            # Границы
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('LINEBELOW', (0, 0), (-1, 0), 1.5, colors.HexColor('#2196F3')),
+        ]))
+        
+        # Рисуем таблицу
+        table_width, table_height = table.wrap(0, 0)
+        table.drawOn(c, 50, y - table_height)
+        
+        # Обновляем позицию Y
+        y = y - table_height - 20
         
         # Итоги
         y -= 30
