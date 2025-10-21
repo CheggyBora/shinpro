@@ -543,8 +543,12 @@ class OrderWidget:
         tree_scroll.pack(side='right', fill='y')
         self.items_tree.config(yscrollcommand=tree_scroll.set)
         
-        self.items_tree.bind('<Double-1>', self.edit_item)
+        # Inline редактирование количества по двойному клику
+        self.items_tree.bind('<Double-1>', self.on_double_click)
         self.items_tree.bind('<Delete>', self.delete_item)
+        
+        # Entry для inline редактирования
+        self.edit_entry = None
         
         # Загрузка данных
         self.refresh_items()
@@ -604,42 +608,49 @@ class OrderWidget:
             except Exception as e2:
                 messagebox.showerror("Ошибка", str(e2))
     
-    def edit_item(self, event):
+    def on_double_click(self, event):
+        # Определяем на какую колонку кликнули
+        region = self.items_tree.identify_region(event.x, event.y)
+        if region != "cell":
+            return
+        
+        column = self.items_tree.identify_column(event.x)
         selected = self.items_tree.selection()
         if not selected:
             return
         
-        item_id = int(self.items_tree.item(selected[0])['tags'][0])
+        # Редактируем только колонку "Кол-во" (#2)
+        if column == '#2':
+            self.edit_quantity_inline(selected[0], event)
+    
+    def edit_quantity_inline(self, item_id_str, event):
+        # Получаем данные позиции
+        item_id = int(self.items_tree.item(item_id_str)['tags'][0])
         item = next((i for i in self.order_service.get_order_items(self.order.id) if i.id == item_id), None)
         
         if not item:
             return
         
-        # Компактное окно для редактирования количества
-        dialog = tk.Toplevel(self.frame)
-        dialog.title("Количество")
-        dialog.geometry("300x150")
-        dialog.configure(bg=styles.COLORS['bg'])
-        dialog.transient(self.frame.winfo_toplevel())
-        dialog.grab_set()
-        styles.center_window(dialog, self.frame.winfo_toplevel())
+        # Удаляем предыдущий Entry если он есть
+        if self.edit_entry:
+            self.edit_entry.destroy()
+            self.edit_entry = None
         
-        content = ttk.Frame(dialog, style='White.TFrame')
-        content.pack(fill='both', expand=True, padx=20, pady=20)
+        # Получаем координаты ячейки
+        x, y, width, height = self.items_tree.bbox(item_id_str, 'Кол-во')
         
-        # Только поле количества
-        styles.create_label(content, "Количество:", 'Card.TLabel').pack(anchor='w', pady=(0, 10))
-        quantity_entry = styles.create_entry(content, width=30)
-        quantity_entry.insert(0, str(item.quantity))
-        quantity_entry.pack(fill='x', pady=(0, 20))
-        quantity_entry.select_range(0, tk.END)
-        quantity_entry.focus_set()
+        # Создаём Entry поверх ячейки
+        self.edit_entry = tk.Entry(self.items_tree, justify='center')
+        self.edit_entry.place(x=x, y=y, width=width, height=height)
+        self.edit_entry.insert(0, str(item.quantity))
+        self.edit_entry.select_range(0, tk.END)
+        self.edit_entry.focus_set()
         
-        def save():
+        def save_inline(event=None):
             try:
-                quantity = int(quantity_entry.get())
+                quantity = int(self.edit_entry.get())
                 if quantity < 1:
-                    messagebox.showerror("Ошибка", "Количество должно быть больше 0", parent=dialog)
+                    messagebox.showerror("Ошибка", "Количество должно быть больше 0")
                     return
                 
                 # Сохраняем все остальные поля без изменений
@@ -651,24 +662,23 @@ class OrderWidget:
                     item.comment or ""
                 )
                 self.refresh_items()
-                dialog.destroy()
+                
+                if self.edit_entry:
+                    self.edit_entry.destroy()
+                    self.edit_entry = None
             except ValueError:
-                messagebox.showerror("Ошибка", "Введите число", parent=dialog)
+                messagebox.showerror("Ошибка", "Введите число")
         
-        def cancel():
-            dialog.destroy()
-        
-        # Кнопки
-        buttons_frame = ttk.Frame(content, style='White.TFrame')
-        buttons_frame.pack(fill='x')
-        
-        styles.create_button(buttons_frame, "OK", save, 'Primary.TButton').pack(side='left', expand=True, fill='x', padx=(0, 5))
-        styles.create_button(buttons_frame, "Отмена", cancel, 'Secondary.TButton').pack(side='left', expand=True, fill='x', padx=(5, 0))
+        def cancel_inline(event=None):
+            if self.edit_entry:
+                self.edit_entry.destroy()
+                self.edit_entry = None
         
         # Горячие клавиши
-        quantity_entry.bind('<Return>', lambda e: save())
-        quantity_entry.bind('<KP_Enter>', lambda e: save())
-        dialog.bind('<Escape>', lambda e: cancel())
+        self.edit_entry.bind('<Return>', save_inline)
+        self.edit_entry.bind('<KP_Enter>', save_inline)
+        self.edit_entry.bind('<Escape>', cancel_inline)
+        self.edit_entry.bind('<FocusOut>', cancel_inline)
     
     def delete_item(self, event):
         selected = self.items_tree.selection()
