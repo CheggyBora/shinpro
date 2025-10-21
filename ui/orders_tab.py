@@ -680,7 +680,7 @@ class OrderWidget:
         self.edit_entry.bind('<Return>', save_inline)
         self.edit_entry.bind('<KP_Enter>', save_inline)
         self.edit_entry.bind('<Escape>', cancel_inline)
-        self.edit_entry.bind('<FocusOut>', cancel_inline)
+        self.edit_entry.bind('<FocusOut>', save_inline)
     
     def delete_item(self, event):
         selected = self.items_tree.selection()
