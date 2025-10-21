@@ -157,8 +157,8 @@ class PrintService:
             table_data.append([
                 service_name,
                 str(quantity),
-                f"{display_price:.0f} ₽",
-                f"{item_total:.0f} ₽"
+                f"{display_price:.2f} ₽",  # Показываем копейки
+                f"{item_total:.2f} ₽"      # Показываем копейки
             ])
         
         # Создание таблицы с фиксированными размерами колонок
@@ -203,19 +203,19 @@ class PrintService:
         y -= 30
         c.setFont(self.font_name, 12)
         c.drawString(50, y, "Сумма:")
-        c.drawRightString(width-50, y, f"{subtotal_without_discount:.0f} ₽")
+        c.drawRightString(width-50, y, f"{subtotal_without_discount:.2f} ₽")
         
         # Показываем скидку, если она есть
         discount_amount = subtotal_without_discount - total_amount
-        if discount_amount > 0:
+        if discount_amount > 0.01:  # Показываем только если скидка больше 1 копейки
             y -= 20
             c.drawString(50, y, "Скидка:")
-            c.drawRightString(width-50, y, f"-{discount_amount:.0f} ₽")
+            c.drawRightString(width-50, y, f"-{discount_amount:.2f} ₽")
         
         y -= 30
         c.setFont(self.font_name, 16)
         c.drawString(50, y, "ИТОГО К ОПЛАТЕ:")
-        c.drawRightString(width-50, y, f"{total_amount:.0f} ₽")
+        c.drawRightString(width-50, y, f"{total_amount:.2f} ₽")
         
         y -= 10
         c.line(50, y, width-50, y)

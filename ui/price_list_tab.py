@@ -305,29 +305,42 @@ class PriceListTab:
     
     def on_double_click(self, event):
         """Обработка двойного клика для редактирования"""
+        print(f"🔧 DOUBLE CLICK DETECTED at x={event.x}, y={event.y}")
+        
         # Получаем элемент и колонку
         item = self.tree.identify_row(event.y)
         column = self.tree.identify_column(event.x)
         
+        print(f"🔧 Item: {item}, Column: {column}")
+        
         if not item or column == '#1':  # Не редактируем название услуги
+            print(f"🔧 SKIP: No item or column is #1")
             return
         
         # Определяем индекс колонки (R13=1, R14=2, и т.д.)
         column_index = int(column.replace('#', '')) - 1
         
+        print(f"🔧 Column index: {column_index}")
+        
         if column_index < 1:  # Не редактируем название
+            print(f"🔧 SKIP: Column index < 1")
             return
         
         # Получаем текущее значение
         current_value = self.tree.item(item)['values'][column_index]
+        
+        print(f"🔧 Current value: {current_value}")
         
         # Запрашиваем новое значение
         new_value = simpledialog.askfloat(
             "Изменить цену",
             f"Введите новую цену:\n(текущая: {current_value} руб.)",
             initialvalue=current_value,
-            minvalue=0
+            minvalue=0,
+            parent=self.frame.winfo_toplevel()
         )
+        
+        print(f"🔧 New value: {new_value}")
         
         if new_value is not None:
             # Обновляем в таблице
@@ -337,6 +350,7 @@ class PriceListTab:
             
             # Помечаем как измененное
             self.tree.item(item, tags=self.tree.item(item)['tags'] + ('modified',))
+            print(f"🔧 Price updated to {int(new_value)}")
     
     def save_changes(self):
         """Сохранить изменения в БД"""
