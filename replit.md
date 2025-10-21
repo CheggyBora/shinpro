@@ -17,7 +17,7 @@ This **Windows desktop application**, built with Python and Tkinter, streamlines
 The application features a modern, clean design with card-based layouts, consistent spacing, and a blue/gray/light color scheme. Typography prioritizes readability with larger headings and platform-specific fonts, ensuring full Cyrillic support. `ttkthemes` are used for all UI elements, and primary actions are indicated by blue buttons. Custom font handling ensures proper display across Windows, Linux, and Mac, including bundled DejaVu Sans for Cyrillic support in both GUI and PDF documents.
 
 ### Technical Implementation
-The application is built with Python 3.11, using Tkinter for the GUI and SQLAlchemy for ORM. It primarily uses an SQLite database (`tire_shop.db`) but supports PostgreSQL via an environment variable. ReportLab generates all A4 PDF documents, branded "Шиномонтаж РИФ", with DejaVu Sans for Cyrillic text. The application is designed for Windows 10/11, leveraging native `os.startfile(file, "print")` for automated printing.
+The application is built with Python 3.11, using Tkinter for the GUI and SQLAlchemy for ORM. It primarily uses an SQLite database (`tire_shop.db`) but supports PostgreSQL via an environment variable. ReportLab generates all A4 PDF documents, branded "Шиномонтаж РИФ", with DejaVu Sans for Cyrillic text. PDF receipts feature professional table formatting with borders, header styling (blue background #E8F4F8), and a company logo (60x60px). Windows path normalization ensures logo rendering across all platforms. The application is designed for Windows 10/11, leveraging native `os.startfile(file, "print")` for automated printing.
 
 ### Feature Specifications
 
