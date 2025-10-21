@@ -67,14 +67,30 @@ class PrintService:
         # Логотип слева
         try:
             if os.path.exists(self.logo_path):
-                # Используем ImageReader для корректной загрузки изображения
-                logo_img = ImageReader(self.logo_path)
-                c.drawImage(logo_img, 50, y - 60, width=60, height=60, preserveAspectRatio=True, mask='auto')
-                print(f"✓ Логотип успешно загружен из {self.logo_path}")
+                # Способ 1: Прямой путь без ImageReader
+                try:
+                    c.drawImage(self.logo_path, 50, y - 60, width=60, height=60, preserveAspectRatio=True)
+                    print(f"✓ Логотип загружен (прямой путь): {self.logo_path}")
+                except Exception as e1:
+                    print(f"⚠ Прямой путь не сработал: {e1}")
+                    # Способ 2: ImageReader без mask
+                    try:
+                        from PIL import Image
+                        # Открываем через PIL и конвертируем в RGB (убираем альфа-канал если есть)
+                        pil_img = Image.open(self.logo_path)
+                        if pil_img.mode != 'RGB':
+                            pil_img = pil_img.convert('RGB')
+                        logo_img = ImageReader(pil_img)
+                        c.drawImage(logo_img, 50, y - 60, width=60, height=60, preserveAspectRatio=True)
+                        print(f"✓ Логотип загружен через PIL+ImageReader: {self.logo_path}")
+                    except Exception as e2:
+                        print(f"✗ ImageReader тоже не сработал: {e2}")
+                        import traceback
+                        traceback.print_exc()
             else:
                 print(f"✗ Файл логотипа не найден: {self.logo_path}")
         except Exception as e:
-            print(f"✗ Ошибка загрузки логотипа: {e}")
+            print(f"✗ Критическая ошибка загрузки логотипа: {e}")
             import traceback
             traceback.print_exc()
         
