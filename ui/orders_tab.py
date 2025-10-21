@@ -615,62 +615,60 @@ class OrderWidget:
         if not item:
             return
         
+        # Компактное окно для редактирования количества
         dialog = tk.Toplevel(self.frame)
-        dialog.title("Редактировать услугу")
-        
-        is_editable = item.service.editable_price
-        dialog_height = "480" if is_editable else "400"
-        dialog.geometry(f"450x{dialog_height}")
+        dialog.title("Количество")
+        dialog.geometry("300x150")
         dialog.configure(bg=styles.COLORS['bg'])
+        dialog.transient(self.frame.winfo_toplevel())
+        dialog.grab_set()
         styles.center_window(dialog, self.frame.winfo_toplevel())
         
         content = ttk.Frame(dialog, style='White.TFrame')
         content.pack(fill='both', expand=True, padx=20, pady=20)
         
-        styles.create_label(content, f"Услуга: {item.service.name}", 'CardHeading.TLabel').pack(anchor='w', pady=(0, 20))
-        
-        # Количество
-        styles.create_label(content, "Количество:", 'Card.TLabel').pack(anchor='w', pady=(0, 5))
-        quantity_entry = styles.create_entry(content, width=50)
+        # Только поле количества
+        styles.create_label(content, "Количество:", 'Card.TLabel').pack(anchor='w', pady=(0, 10))
+        quantity_entry = styles.create_entry(content, width=30)
         quantity_entry.insert(0, str(item.quantity))
-        quantity_entry.pack(fill='x', pady=(0, 15))
-        
-        price_entry = None
-        if is_editable:
-            styles.create_label(content, "Цена (редактируемая):", 'Card.TLabel').pack(anchor='w', pady=(0, 5))
-            price_entry = styles.create_entry(content, width=50)
-            price_entry.insert(0, str(item.price))
-            price_entry.pack(fill='x', pady=(0, 15))
-        
-        styles.create_label(content, "Комментарий:", 'Card.TLabel').pack(anchor='w', pady=(0, 5))
-        comment_entry = styles.create_entry(content, width=50)
-        comment_entry.insert(0, item.comment or "")
-        comment_entry.pack(fill='x', pady=(0, 15))
-        
-        styles.create_label(content, "Скидка (для правки дисков):", 'Card.TLabel').pack(anchor='w', pady=(0, 5))
-        discount_var = tk.StringVar(value=str(item.discount_percent))
-        discount_combo = ttk.Combobox(content, textvariable=discount_var, values=['0', '10', '20'],
-                                      font=styles.FONTS['normal'])
-        discount_combo.pack(fill='x', pady=(0, 20))
+        quantity_entry.pack(fill='x', pady=(0, 20))
+        quantity_entry.select_range(0, tk.END)
+        quantity_entry.focus_set()
         
         def save():
             try:
                 quantity = int(quantity_entry.get())
                 if quantity < 1:
-                    messagebox.showerror("Ошибка", "Количество должно быть больше 0")
+                    messagebox.showerror("Ошибка", "Количество должно быть больше 0", parent=dialog)
                     return
-                    
-                if is_editable and price_entry:
-                    new_price = float(price_entry.get())
-                    self.order_service.update_item_full(item_id, quantity, new_price, int(discount_var.get()), comment_entry.get())
-                else:
-                    self.order_service.update_item_full(item_id, quantity, item.price, int(discount_var.get()), comment_entry.get())
+                
+                # Сохраняем все остальные поля без изменений
+                self.order_service.update_item_full(
+                    item_id, 
+                    quantity, 
+                    item.price, 
+                    item.discount_percent, 
+                    item.comment or ""
+                )
                 self.refresh_items()
                 dialog.destroy()
             except ValueError:
-                messagebox.showerror("Ошибка", "Введите корректные значения")
+                messagebox.showerror("Ошибка", "Введите число", parent=dialog)
         
-        styles.create_button(content, "Сохранить", save, 'Primary.TButton').pack(fill='x')
+        def cancel():
+            dialog.destroy()
+        
+        # Кнопки
+        buttons_frame = ttk.Frame(content, style='White.TFrame')
+        buttons_frame.pack(fill='x')
+        
+        styles.create_button(buttons_frame, "OK", save, 'Primary.TButton').pack(side='left', expand=True, fill='x', padx=(0, 5))
+        styles.create_button(buttons_frame, "Отмена", cancel, 'Secondary.TButton').pack(side='left', expand=True, fill='x', padx=(5, 0))
+        
+        # Горячие клавиши
+        quantity_entry.bind('<Return>', lambda e: save())
+        quantity_entry.bind('<KP_Enter>', lambda e: save())
+        dialog.bind('<Escape>', lambda e: cancel())
     
     def delete_item(self, event):
         selected = self.items_tree.selection()
