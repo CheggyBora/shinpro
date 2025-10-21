@@ -219,7 +219,6 @@ class OrdersTab:
         """Установить выбранный номер и автозаполнить данные"""
         self.license_var.set(plate)
         self.hide_autocomplete_list()
-        self.license_entry.focus_set()
         
         # Автозаполнение характеристик
         selected_plate = plate
@@ -254,6 +253,9 @@ class OrdersTab:
                 }
             else:
                 self.prefilled_data = None
+        
+        # Автоматически открываем диалог создания наряда
+        self.create_new_order()
     
     def create_new_order(self):
         license = self.license_entry.get().strip()
