@@ -68,24 +68,30 @@ class PrintService:
         try:
             if os.path.exists(self.logo_path):
                 from PIL import Image
-                import io
+                import tempfile
                 
                 # Открываем изображение через PIL
                 pil_img = Image.open(self.logo_path)
                 
-                # Конвертируем в RGB (убираем альфа-канал и CMYK если есть)
-                if pil_img.mode not in ('RGB', 'L'):
+                # Конвертируем в RGB
+                if pil_img.mode != 'RGB':
                     pil_img = pil_img.convert('RGB')
                 
-                # Сохраняем в буфер как PNG
-                img_buffer = io.BytesIO()
-                pil_img.save(img_buffer, format='PNG')
-                img_buffer.seek(0)
+                # Сохраняем во временный PNG файл
+                with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp_png:
+                    pil_img.save(tmp_png.name, format='PNG')
+                    temp_png_path = tmp_png.name
                 
-                # Загружаем через ImageReader из буфера
-                logo_img = ImageReader(img_buffer)
-                c.drawImage(logo_img, 50, y - 60, width=60, height=60, preserveAspectRatio=True)
-                print(f"✓ Логотип успешно загружен (JPG→PNG conversion): {self.logo_path}")
+                # Загружаем PNG напрямую
+                c.drawImage(temp_png_path, 50, y - 60, width=60, height=60, preserveAspectRatio=True)
+                
+                # Удаляем временный файл
+                try:
+                    os.unlink(temp_png_path)
+                except:
+                    pass
+                
+                print(f"✓ Логотип успешно загружен через temp PNG: {self.logo_path}")
             else:
                 print(f"✗ Файл логотипа не найден: {self.logo_path}")
         except Exception as e:
