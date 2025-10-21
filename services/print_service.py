@@ -67,8 +67,9 @@ class PrintService:
         # Логотип слева
         try:
             if os.path.exists(self.logo_path):
-                # Прямой путь к файлу
-                c.drawImage(self.logo_path, 50, y - 60, width=60, height=60, preserveAspectRatio=True, mask='auto')
+                # Используем ImageReader для корректной загрузки изображения
+                logo_img = ImageReader(self.logo_path)
+                c.drawImage(logo_img, 50, y - 60, width=60, height=60, preserveAspectRatio=True, mask='auto')
                 print(f"✓ Логотип успешно загружен из {self.logo_path}")
             else:
                 print(f"✗ Файл логотипа не найден: {self.logo_path}")
