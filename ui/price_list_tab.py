@@ -150,22 +150,44 @@ class PriceListTab:
         storage_grid = ttk.Frame(storage_inner, style='White.TFrame')
         storage_grid.pack(fill='x')
         
-        # Создаём поля для ввода
+        # Создаём поля для ввода - индивидуальная цена для каждого размера
         self.storage_price_vars = {}
         
-        storage_ranges = [
-            ('storage_price_r13_r15', 'R13-R15', 4000),
-            ('storage_price_r16_r18', 'R16-R18', 5000),
-            ('storage_price_r19_r20', 'R19-R20', 6000),
-            ('storage_price_r21_r24', 'R21-R24', 8000)
+        # Индивидуальные размеры с дефолтными ценами
+        storage_sizes = [
+            ('storage_price_r13', 'R13', 4000),
+            ('storage_price_r14', 'R14', 4000),
+            ('storage_price_r15', 'R15', 4000),
+            ('storage_price_r16', 'R16', 5000),
+            ('storage_price_r17', 'R17', 5000),
+            ('storage_price_r18', 'R18', 5000),
+            ('storage_price_r19', 'R19', 6000),
+            ('storage_price_r20', 'R20', 6000),
+            ('storage_price_r21', 'R21', 8000),
+            ('storage_price_r22', 'R22', 8000),
+            ('storage_price_r23', 'R23', 8000),
+            ('storage_price_r24', 'R24', 8000),
         ]
         
-        for idx, (key, label, default) in enumerate(storage_ranges):
+        # Размещаем в 4 колонки для компактности
+        columns_container = ttk.Frame(storage_grid, style='White.TFrame')
+        columns_container.pack(fill='x')
+        
+        # Создаём 4 колонки
+        column_frames = []
+        for i in range(4):
+            col_frame = ttk.Frame(columns_container, style='White.TFrame')
+            col_frame.pack(side='left', fill='y', expand=True, padx=10)
+            column_frames.append(col_frame)
+        
+        for idx, (key, label, default) in enumerate(storage_sizes):
             # Получаем текущую цену из БД
             setting = self.db.query(Settings).filter(Settings.key == key).first()
             current_price = float(setting.value) if setting else default
             
-            row_frame = ttk.Frame(storage_grid, style='White.TFrame')
+            # Размещаем в соответствующей колонке
+            col_idx = idx // 3  # По 3 элемента в каждой колонке
+            row_frame = ttk.Frame(column_frames[col_idx], style='White.TFrame')
             row_frame.pack(fill='x', pady=5)
             
             label_widget = styles.create_label(row_frame, f"{label}:", 'Card.TLabel')
@@ -174,7 +196,7 @@ class PriceListTab:
             var = tk.StringVar(value=str(int(current_price)))
             self.storage_price_vars[key] = var
             
-            entry = ttk.Entry(row_frame, textvariable=var, width=10, font=(styles.DEFAULT_FONT, 12))
+            entry = ttk.Entry(row_frame, textvariable=var, width=8, font=(styles.DEFAULT_FONT, 12))
             entry.pack(side='left', padx=(0, 5))
             
             styles.create_label(row_frame, "₽", 'Card.TLabel').pack(side='left')
