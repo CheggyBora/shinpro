@@ -5,25 +5,29 @@ from models import TireStorage, Settings
 class TireStorageService:
     @staticmethod
     def calculate_price(diameter):
+        """Получить цену хранения для конкретного размера шин"""
         diameter_num = int(diameter.replace('R', ''))
+        
+        # Дефолтные цены по размерам
+        default_prices = {
+            13: 4000, 14: 4000, 15: 4000,
+            16: 5000, 17: 5000, 18: 5000,
+            19: 6000, 20: 6000,
+            21: 8000, 22: 8000, 23: 8000, 24: 8000
+        }
+        
+        # Если размер не поддерживается
+        if diameter_num not in default_prices:
+            return 0.0
         
         db = SessionLocal()
         try:
-            # Получаем цены из настроек
-            if 13 <= diameter_num <= 15:
-                price_setting = db.query(Settings).filter(Settings.key == 'storage_price_r13_r15').first()
-                return float(price_setting.value) if price_setting else 4000.0
-            elif 16 <= diameter_num <= 18:
-                price_setting = db.query(Settings).filter(Settings.key == 'storage_price_r16_r18').first()
-                return float(price_setting.value) if price_setting else 5000.0
-            elif 19 <= diameter_num <= 20:
-                price_setting = db.query(Settings).filter(Settings.key == 'storage_price_r19_r20').first()
-                return float(price_setting.value) if price_setting else 6000.0
-            elif 21 <= diameter_num <= 24:
-                price_setting = db.query(Settings).filter(Settings.key == 'storage_price_r21_r24').first()
-                return float(price_setting.value) if price_setting else 8000.0
-            else:
-                return 0.0
+            # Формируем ключ настройки: storage_price_r13, storage_price_r14 и т.д.
+            setting_key = f'storage_price_r{diameter_num}'
+            price_setting = db.query(Settings).filter(Settings.key == setting_key).first()
+            
+            # Возвращаем цену из БД или дефолтную
+            return float(price_setting.value) if price_setting else default_prices[diameter_num]
         finally:
             db.close()
     
