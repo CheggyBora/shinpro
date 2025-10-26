@@ -1,22 +1,31 @@
 from datetime import datetime
 from config import SessionLocal
-from models import TireStorage
+from models import TireStorage, Settings
 
 class TireStorageService:
     @staticmethod
     def calculate_price(diameter):
         diameter_num = int(diameter.replace('R', ''))
         
-        if 13 <= diameter_num <= 15:
-            return 4000.0
-        elif 16 <= diameter_num <= 18:
-            return 5000.0
-        elif 19 <= diameter_num <= 20:
-            return 6000.0
-        elif 21 <= diameter_num <= 24:
-            return 8000.0
-        else:
-            return 0.0
+        db = SessionLocal()
+        try:
+            # Получаем цены из настроек
+            if 13 <= diameter_num <= 15:
+                price_setting = db.query(Settings).filter(Settings.key == 'storage_price_r13_r15').first()
+                return float(price_setting.value) if price_setting else 4000.0
+            elif 16 <= diameter_num <= 18:
+                price_setting = db.query(Settings).filter(Settings.key == 'storage_price_r16_r18').first()
+                return float(price_setting.value) if price_setting else 5000.0
+            elif 19 <= diameter_num <= 20:
+                price_setting = db.query(Settings).filter(Settings.key == 'storage_price_r19_r20').first()
+                return float(price_setting.value) if price_setting else 6000.0
+            elif 21 <= diameter_num <= 24:
+                price_setting = db.query(Settings).filter(Settings.key == 'storage_price_r21_r24').first()
+                return float(price_setting.value) if price_setting else 8000.0
+            else:
+                return 0.0
+        finally:
+            db.close()
     
     @staticmethod
     def accept_storage(car_number, driver_license, storage_type, diameter, brand, damage, wear, comments='', wheel_type=None):

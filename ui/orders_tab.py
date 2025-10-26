@@ -702,57 +702,30 @@ class OrderWidget:
             )
             return
         
-        # Удаляем предыдущий Entry если он есть
-        if self.edit_entry:
-            self.edit_entry.destroy()
-            self.edit_entry = None
+        # Диалоговое окно для редактирования цены (работает везде, включая Windows)
+        from tkinter import simpledialog
         
-        # Получаем координаты ячейки
-        x, y, width, height = self.items_tree.bbox(item_id_str, '#3')
+        new_price = simpledialog.askfloat(
+            "Изменение цены",
+            f"Введите новую цену для '{service_name}':\n(текущая цена: {item.price:.2f} ₽)",
+            initialvalue=item.price,
+            minvalue=0.01,
+            parent=self.frame
+        )
         
-        # Создаём Entry поверх ячейки
-        self.edit_entry = tk.Entry(self.items_tree, justify='center')
-        self.edit_entry.place(x=x, y=y, width=width, height=height)
-        # Показываем точную цену (без округления)
-        self.edit_entry.insert(0, f"{item.price:.2f}")
-        self.edit_entry.select_range(0, tk.END)
-        self.edit_entry.focus_set()
-        
-        def save_inline(event=None):
+        if new_price is not None and new_price > 0:
             try:
-                price = float(self.edit_entry.get())
-                
-                # Проверка: цена должна быть положительной
-                if price <= 0:
-                    messagebox.showerror("Ошибка", "Цена должна быть больше нуля")
-                    return
-                
                 # Сохраняем новую цену
                 self.order_service.update_item_full(
                     item_id, 
                     item.quantity, 
-                    price, 
+                    new_price, 
                     item.discount_percent, 
                     item.comment or ""
                 )
                 self.refresh_items()
-                
-                if self.edit_entry:
-                    self.edit_entry.destroy()
-                    self.edit_entry = None
-            except ValueError:
-                messagebox.showerror("Ошибка", "Введите число")
-        
-        def cancel_inline(event=None):
-            if self.edit_entry:
-                self.edit_entry.destroy()
-                self.edit_entry = None
-        
-        # Горячие клавиши
-        self.edit_entry.bind('<Return>', save_inline)
-        self.edit_entry.bind('<KP_Enter>', save_inline)
-        self.edit_entry.bind('<Escape>', cancel_inline)
-        self.edit_entry.bind('<FocusOut>', save_inline)
+            except Exception as e:
+                messagebox.showerror("Ошибка", f"Не удалось изменить цену: {str(e)}")
     
     def delete_item(self, event):
         selected = self.items_tree.selection()

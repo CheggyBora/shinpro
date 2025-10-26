@@ -136,7 +136,50 @@ class PriceListTab:
         
         styles.create_button(btn_frame, "💾 Сохранить изменения", self.save_changes, 'Success.TButton').pack(side='right')
         
-        # Карточка с таблицей
+        # Карточка с ценами на хранение
+        storage_card = styles.create_card_frame(self.content_frame)
+        storage_card.pack(fill='x', padx=15, pady=(0, 15))
+        
+        storage_inner = ttk.Frame(storage_card, style='White.TFrame')
+        storage_inner.pack(fill='both', expand=True, padx=15, pady=15)
+        
+        storage_title = styles.create_label(storage_inner, "💰 Цены на хранение шин", 'CardHeading.TLabel')
+        storage_title.pack(anchor='w', pady=(0, 10))
+        
+        # Таблица цен на хранение
+        storage_grid = ttk.Frame(storage_inner, style='White.TFrame')
+        storage_grid.pack(fill='x')
+        
+        # Создаём поля для ввода
+        self.storage_price_vars = {}
+        
+        storage_ranges = [
+            ('storage_price_r13_r15', 'R13-R15', 4000),
+            ('storage_price_r16_r18', 'R16-R18', 5000),
+            ('storage_price_r19_r20', 'R19-R20', 6000),
+            ('storage_price_r21_r24', 'R21-R24', 8000)
+        ]
+        
+        for idx, (key, label, default) in enumerate(storage_ranges):
+            # Получаем текущую цену из БД
+            setting = self.db.query(Settings).filter(Settings.key == key).first()
+            current_price = float(setting.value) if setting else default
+            
+            row_frame = ttk.Frame(storage_grid, style='White.TFrame')
+            row_frame.pack(fill='x', pady=5)
+            
+            label_widget = styles.create_label(row_frame, f"{label}:", 'Card.TLabel')
+            label_widget.pack(side='left', padx=(0, 10))
+            
+            var = tk.StringVar(value=str(int(current_price)))
+            self.storage_price_vars[key] = var
+            
+            entry = ttk.Entry(row_frame, textvariable=var, width=10, font=(styles.DEFAULT_FONT, 12))
+            entry.pack(side='left', padx=(0, 5))
+            
+            styles.create_label(row_frame, "₽", 'Card.TLabel').pack(side='left')
+        
+        # Карточка с таблицей услуг
         card = styles.create_card_frame(self.content_frame)
         card.pack(fill='both', expand=True, padx=15, pady=(0, 15))
         
@@ -355,12 +398,44 @@ class PriceListTab:
     def save_changes(self):
         """Сохранить изменения в БД"""
         modified_items = [item for item in self.tree.get_children() if 'modified' in self.tree.item(item)['tags']]
+        total_changes = len(modified_items)
         
-        if not modified_items:
+        # Проверяем изменения в ценах на хранение
+        storage_changes = 0
+        for key, var in self.storage_price_vars.items():
+            try:
+                new_price = float(var.get())
+                setting = self.db.query(Settings).filter(Settings.key == key).first()
+                if setting:
+                    if float(setting.value) != new_price:
+                        storage_changes += 1
+                else:
+                    storage_changes += 1
+            except ValueError:
+                pass
+        
+        total_changes += storage_changes
+        
+        if total_changes == 0:
             messagebox.showinfo("Информация", "Нет изменений для сохранения")
             return
         
         try:
+            # Сохраняем цены на хранение
+            for key, var in self.storage_price_vars.items():
+                try:
+                    new_price = float(var.get())
+                    setting = self.db.query(Settings).filter(Settings.key == key).first()
+                    if setting:
+                        setting.value = str(int(new_price))
+                    else:
+                        new_setting = Settings(key=key, value=str(int(new_price)))
+                        self.db.add(new_setting)
+                except ValueError:
+                    messagebox.showerror("Ошибка", f"Неверное значение цены для {key}")
+                    return
+            
+            # Сохраняем изменённые услуги
             for item in modified_items:
                 values = self.tree.item(item)['values']
                 service_id = int(self.tree.item(item)['tags'][0])
@@ -391,7 +466,7 @@ class PriceListTab:
                         service.price_r24 = int(values[12])
             
             self.db.commit()
-            messagebox.showinfo("Успех", f"Сохранено изменений: {len(modified_items)}")
+            messagebox.showinfo("Успех", f"Сохранено изменений: {total_changes}")
             
             # Перезагружаем данные
             self.load_services()
