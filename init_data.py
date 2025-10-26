@@ -10,6 +10,30 @@ def initialize_data():
         db.add(admin_pin)
         db.commit()
     
+    # Создаём начальные цены на хранение шин для каждого размера
+    storage_prices = {
+        'storage_price_r13': '4000',
+        'storage_price_r14': '4000',
+        'storage_price_r15': '4000',
+        'storage_price_r16': '5000',
+        'storage_price_r17': '5000',
+        'storage_price_r18': '5000',
+        'storage_price_r19': '6000',
+        'storage_price_r20': '6000',
+        'storage_price_r21': '8000',
+        'storage_price_r22': '8000',
+        'storage_price_r23': '8000',
+        'storage_price_r24': '8000',
+    }
+    
+    for key, value in storage_prices.items():
+        existing_price = db.query(Settings).filter(Settings.key == key).first()
+        if not existing_price:
+            price_setting = Settings(key=key, value=value)
+            db.add(price_setting)
+    
+    db.commit()
+    
     existing_services = db.query(Service).count()
     if existing_services == 0:
         services_data = []
