@@ -777,28 +777,48 @@ class OrderWidget:
         
         def pay_and_print():
             try:
+                # 1. Проводим оплату
                 self.salary_service.process_payment(self.order.id, payment_var.get(), total)
                 self.db.refresh(self.order)
                 
+                # 2. Генерируем чек
                 items = self.order_service.get_order_items(self.order.id)
                 receipt_file = self.print_service.generate_receipt(self.order, items, total)
                 
-                # Автоматическая печать для Windows
+                # 3. Отправляем на печать
+                print_success = False
                 if platform.system() == 'Windows':
                     os.startfile(receipt_file, "print")
-                    messagebox.showinfo("Успех", f"Оплата проведена!\nЧек отправлен на печать")
+                    print_success = True
                 else:
                     # Для Linux/Mac используем lp
                     try:
                         import subprocess
                         subprocess.run(['lp', receipt_file], check=True)
-                        messagebox.showinfo("Успех", f"Оплата проведена!\nЧек отправлен на печать")
+                        print_success = True
                     except:
-                        messagebox.showinfo("Успех", f"Оплата проведена!\nЧек сохранён: {receipt_file}")
+                        pass
                 
+                # 4. Закрываем диалог оплаты
                 dialog.destroy()
-                self.close_callback(self.order.id)
+                
+                # 5. Закрываем вкладку наряда
+                try:
+                    self.close_callback(self.order.id)
+                    print(f"✓ Вкладка наряда #{self.order.id} успешно закрыта")
+                except Exception as e:
+                    print(f"⚠ Ошибка закрытия вкладки наряда #{self.order.id}: {e}")
+                
+                # 6. Показываем сообщение об успехе (в самом конце!)
+                if print_success:
+                    messagebox.showinfo("Успех", f"Оплата проведена!\nЧек отправлен на печать")
+                else:
+                    messagebox.showinfo("Успех", f"Оплата проведена!\nЧек сохранён: {receipt_file}")
+                    
             except Exception as e:
+                print(f"❌ Ошибка оплаты: {e}")
+                import traceback
+                traceback.print_exc()
                 messagebox.showerror("Ошибка", str(e))
         
         def preview_only():
