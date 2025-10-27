@@ -785,11 +785,24 @@ class OrderWidget:
                 items = self.order_service.get_order_items(self.order.id)
                 receipt_file = self.print_service.generate_receipt(self.order, items, total)
                 
-                # 3. Отправляем на печать
+                # 3. Пытаемся отправить на печать
                 print_success = False
+                print_error = None
+                
                 if platform.system() == 'Windows':
-                    os.startfile(receipt_file, "print")
-                    print_success = True
+                    try:
+                        # Пытаемся отправить на принтер
+                        os.startfile(receipt_file, "print")
+                        print_success = True
+                    except Exception as print_err:
+                        # Если не удалось печатать, просто откроем PDF
+                        print_error = str(print_err)
+                        print(f"⚠ Не удалось отправить на печать: {print_err}")
+                        try:
+                            os.startfile(receipt_file)  # Открыть для просмотра
+                            print("✓ PDF открыт для просмотра")
+                        except Exception as open_err:
+                            print(f"❌ Не удалось открыть PDF: {open_err}")
                 else:
                     # Для Linux/Mac используем lp
                     try:
@@ -812,6 +825,13 @@ class OrderWidget:
                 # 6. Показываем сообщение об успехе (в самом конце!)
                 if print_success:
                     messagebox.showinfo("Успех", f"Оплата проведена!\nЧек отправлен на печать")
+                elif print_error:
+                    # Если была ошибка печати, но PDF открыт
+                    messagebox.showinfo("Успех", 
+                        f"Оплата проведена!\n\n"
+                        f"PDF-чек открыт для просмотра.\n"
+                        f"Распечатайте его через Ctrl+P\n\n"
+                        f"Путь: {receipt_file}")
                 else:
                     messagebox.showinfo("Успех", f"Оплата проведена!\nЧек сохранён: {receipt_file}")
                     
