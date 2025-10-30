@@ -5,18 +5,24 @@ export X11VNC_CREATE_XAUTH_FILE=/tmp/xauth_file
 x11vnc -forever -nopw -rfbport 5900 -shared -create -env X11VNC_CREATE_GEOM=1280x1024x24 &
 
 # Ждём пока создастся X дисплей
-sleep 3
+sleep 5
 
 # Ждём создания X display и автоматически определяем его
-# Ищем последний (самый свежий) Xvfb созданный x11vnc
-for i in {1..10}; do
-  XVFB_INFO=$(ps aux | grep 'Xvfb.*-auth' | grep -v grep | tail -1)
+# Ищем Xvfb процесс созданный x11vnc
+for i in {1..15}; do
+  XVFB_INFO=$(ps aux | grep '[X]vfb' | tail -1)
   if [ -n "$XVFB_INFO" ]; then
-    DISPLAY_NUM=$(echo "$XVFB_INFO" | grep -o 'Xvfb :[0-9]*' | grep -o ':[0-9]*')
-    AUTH_FILE=$(echo "$XVFB_INFO" | grep -o '\-auth [^ ]*' | cut -d' ' -f2)
-    if [ -n "$DISPLAY_NUM" ] && [ -n "$AUTH_FILE" ]; then
+    # Извлекаем номер дисплея (например, :20)
+    DISPLAY_NUM=$(echo "$XVFB_INFO" | grep -oP 'Xvfb\s+:\d+' | grep -oP ':\d+')
+    # Извлекаем auth файл если есть
+    AUTH_FILE=$(echo "$XVFB_INFO" | grep -oP '\-auth\s+\S+' | awk '{print $2}')
+    
+    if [ -n "$DISPLAY_NUM" ]; then
       export DISPLAY=$DISPLAY_NUM
-      export XAUTHORITY=$AUTH_FILE
+      if [ -n "$AUTH_FILE" ]; then
+        export XAUTHORITY=$AUTH_FILE
+      fi
+      echo "Found X server on display: $DISPLAY_NUM"
       break
     fi
   fi

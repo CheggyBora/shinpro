@@ -22,7 +22,10 @@ class SalaryService:
             employee = self.db.query(Employee).filter(Employee.id == employee_id).first()
             employee_percent = employee.salary_percent if employee else 40.0
             
-            salary_amount = (total_amount * (employee_percent / 100)) / num_employees
+            # Процент делится на количество сотрудников в наряде
+            # Например: 40% / 2 сотрудника = 20% для каждого
+            divided_percent = employee_percent / num_employees
+            salary_amount = total_amount * (divided_percent / 100)
             
             transaction = SalaryTransaction(
                 employee_id=employee_id,

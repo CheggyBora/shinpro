@@ -27,7 +27,7 @@ class MainWindow:
         self.notebook.pack(fill='both', expand=True, padx=10, pady=10)
         
         self.employees_tab = EmployeesTab(self.notebook, self.db)
-        self.orders_tab = OrdersTab(self.notebook, self.db)
+        self.orders_tab = OrdersTab(self.notebook, self.db, self.employees_tab)
         self.history_tab = HistoryTab(self.notebook, self.db)
         self.tire_storage_tab = TireStorageTab(self.notebook, self.db)
         self.statistics_tab = StatisticsTab(self.notebook, self.db)

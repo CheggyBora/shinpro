@@ -8,6 +8,7 @@ from .work_order_item import WorkOrderItem
 from .salary_transaction import SalaryTransaction
 from .settings import Settings
 from .tire_storage import TireStorage
+from .shift import Shift
 
 __all__ = [
     'Employee',
@@ -19,5 +20,6 @@ __all__ = [
     'WorkOrderItem',
     'SalaryTransaction',
     'Settings',
-    'TireStorage'
+    'TireStorage',
+    'Shift'
 ]

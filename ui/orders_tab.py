@@ -1,15 +1,18 @@
 import tkinter as tk
 from tkinter import ttk, messagebox, simpledialog
 from services import OrderService, SalaryService, PrintService
+from services.shift_service import ShiftService
 from datetime import datetime
 import styles
 
 class OrdersTab:
-    def __init__(self, parent, db):
+    def __init__(self, parent, db, employees_tab=None):
         self.db = db
         self.order_service = OrderService(db)
         self.salary_service = SalaryService(db)
         self.print_service = PrintService()
+        self.shift_service = ShiftService(db)
+        self.employees_tab = employees_tab
         self.frame = ttk.Frame(parent, style='BG.TFrame')
         self.active_orders = {}
         
@@ -263,6 +266,12 @@ class OrdersTab:
             messagebox.showerror("Ошибка", "Введите номер автомобиля")
             return
         
+        # Проверяем наличие открытой смены
+        current_shift = self.shift_service.get_current_shift()
+        if not current_shift:
+            messagebox.showwarning("Предупреждение", "Откройте смену перед началом работы")
+            return
+        
         dialog = tk.Toplevel(self.frame)
         dialog.title("Детали наряда")
         dialog.geometry("450x450")
@@ -346,7 +355,7 @@ class OrdersTab:
         self.order_notebook.add(tab_frame, text=tab_title)
         
         order_widget = OrderWidget(tab_frame, order, self.db, self.order_service, 
-                                   self.salary_service, self.print_service, self.close_order_tab)
+                                   self.salary_service, self.print_service, self.close_order_tab, self)
         self.active_orders[order.id] = order_widget
         
         self.order_notebook.select(tab_frame)
@@ -435,7 +444,7 @@ class OrdersTab:
         pass
 
 class OrderWidget:
-    def __init__(self, frame, order, db, order_service, salary_service, print_service, close_callback):
+    def __init__(self, frame, order, db, order_service, salary_service, print_service, close_callback, parent_orders_tab=None):
         self.frame = frame
         self.order = order
         self.db = db
@@ -443,6 +452,7 @@ class OrderWidget:
         self.salary_service = salary_service
         self.print_service = print_service
         self.close_callback = close_callback
+        self.parent_orders_tab = parent_orders_tab
         
         # КОМПАКТНЫЙ ИНТЕРФЕЙС
         main_container = ttk.Frame(frame)
@@ -485,6 +495,30 @@ class OrderWidget:
         # Сотрудники (под машиной)
         self.employees_label = ttk.Label(info_frame, text="", font=(styles.DEFAULT_FONT, 9), foreground='#64748b')
         self.employees_label.pack(anchor='w')
+        
+        # Рекомендации (под сотрудниками)
+        recommendations_frame = ttk.Frame(main_container)
+        recommendations_frame.pack(fill='x', pady=(5, 0))
+        
+        ttk.Label(recommendations_frame, text="Рекомендации:", font=(styles.DEFAULT_FONT, 9, 'bold')).pack(anchor='w')
+        
+        self.recommendations_text = tk.Text(recommendations_frame, height=3, font=styles.FONTS['normal'], 
+                                           bg=styles.COLORS['bg_card'], fg=styles.COLORS['text'],
+                                           relief='solid', borderwidth=1, wrap='word')
+        self.recommendations_text.pack(fill='x', pady=(2, 5))
+        
+        # Устанавливаем placeholder и загружаем существующие рекомендации
+        if order.recommendations:
+            self.recommendations_text.insert('1.0', order.recommendations)
+            self.recommendations_text.tag_configure('placeholder', foreground='#94a3b8')
+        else:
+            self.recommendations_text.insert('1.0', 'Рекомендации для клиента...')
+            self.recommendations_text.tag_add('placeholder', '1.0', 'end')
+            self.recommendations_text.tag_configure('placeholder', foreground='#94a3b8')
+        
+        # Обработчики для placeholder и автосохранения
+        self.recommendations_text.bind('<FocusIn>', self.on_recommendations_focus_in)
+        self.recommendations_text.bind('<FocusOut>', self.on_recommendations_focus_out)
         
         # Скидки (левее)
         discount_frame = ttk.Frame(top_frame)
@@ -781,6 +815,10 @@ class OrderWidget:
                 self.salary_service.process_payment(self.order.id, payment_var.get(), total)
                 self.db.refresh(self.order)
                 
+                # 1.5. Обновляем таблицу сотрудников (зарплату за смену)
+                if hasattr(self, 'parent_orders_tab') and self.parent_orders_tab.employees_tab:
+                    self.parent_orders_tab.employees_tab.refresh_employees()
+                
                 # 2. Генерируем чек
                 items = self.order_service.get_order_items(self.order.id)
                 receipt_file = self.print_service.generate_receipt(self.order, items, total)
@@ -982,6 +1020,35 @@ class OrderWidget:
                 print(f"Error updating employees display: {e2}")
                 # Если не удалось получить данные, просто не показываем
                 self.employees_label.config(text="")
+    
+    def on_recommendations_focus_in(self, event):
+        """Убираем placeholder при получении фокуса"""
+        content = self.recommendations_text.get('1.0', 'end-1c')
+        if content == 'Рекомендации для клиента...':
+            self.recommendations_text.delete('1.0', 'end')
+            self.recommendations_text.tag_remove('placeholder', '1.0', 'end')
+    
+    def on_recommendations_focus_out(self, event):
+        """Сохраняем рекомендации при потере фокуса"""
+        content = self.recommendations_text.get('1.0', 'end-1c').strip()
+        
+        if not content:
+            # Если пусто, показываем placeholder
+            self.recommendations_text.delete('1.0', 'end')
+            self.recommendations_text.insert('1.0', 'Рекомендации для клиента...')
+            self.recommendations_text.tag_add('placeholder', '1.0', 'end')
+            # Сохраняем пустое значение
+            self.order.recommendations = None
+        else:
+            # Сохраняем введённый текст
+            self.order.recommendations = content
+        
+        # Сохраняем в базу данных
+        try:
+            self.db.commit()
+        except Exception as e:
+            self.db.rollback()
+            print(f"Ошибка сохранения рекомендаций: {e}")
     
     def delete_order(self):
         """Удаляет непробитый наряд с подтверждением"""

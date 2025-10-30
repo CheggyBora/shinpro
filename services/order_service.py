@@ -1,10 +1,12 @@
 from models import Car, Client, WorkOrder, WorkOrderItem, Service, WorkShift
 from sqlalchemy.orm import Session
 from typing import Optional
+from services.shift_service import ShiftService
 
 class OrderService:
     def __init__(self, db: Session):
         self.db = db
+        self.shift_service = ShiftService(db)
     
     def create_order(self, license_plate: str, wheel_diameter: str, 
                      vehicle_type: str = 'car', client_number: Optional[str] = None, 
@@ -35,6 +37,10 @@ class OrderService:
             employee_ids_list = [str(shift.employee_id) for shift in active_shifts]
             employee_ids_str = ','.join(employee_ids_list) if employee_ids_list else None
             
+            # Получаем текущую смену и присваиваем shift_id
+            current_shift = self.shift_service.get_current_shift()
+            shift_id = current_shift.id if current_shift else None
+            
             order = WorkOrder(
                 car_id=car.id,
                 client_id=client_id,
@@ -42,7 +48,8 @@ class OrderService:
                 vehicle_type=vehicle_type,
                 auto_discount=auto_discount,
                 status='draft',
-                employee_ids=employee_ids_str
+                employee_ids=employee_ids_str,
+                shift_id=shift_id
             )
             self.db.add(order)
             self.db.commit()

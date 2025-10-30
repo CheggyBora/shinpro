@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, ForeignKey, Text
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from config import Base
@@ -9,6 +9,7 @@ class WorkOrder(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     car_id = Column(Integer, ForeignKey('cars.id'), nullable=False)
     client_id = Column(Integer, ForeignKey('clients.id'), nullable=True)
+    shift_id = Column(Integer, ForeignKey('shifts.id'), nullable=True)
     wheel_diameter = Column(String(10), nullable=False)
     vehicle_type = Column(String(50), default='car')
     auto_discount = Column(Boolean, default=False)
@@ -20,6 +21,7 @@ class WorkOrder(Base):
     total_amount = Column(Float, default=0.0)
     status = Column(String(20), default='draft')
     employee_ids = Column(String(200), nullable=True)
+    recommendations = Column(Text, nullable=True)
     
     is_deleted = Column(Boolean, default=False)
     deleted_at = Column(DateTime(timezone=True), nullable=True)
