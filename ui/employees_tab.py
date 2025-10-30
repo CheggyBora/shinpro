@@ -39,9 +39,6 @@ class EmployeesTab:
         self.open_shift_btn = styles.create_button(buttons_frame, "Открыть смену", self.open_shift, 'Success.TButton')
         self.close_shift_btn = styles.create_button(buttons_frame, "Закрыть смену", self.close_shift, 'Danger.TButton')
         
-        # Обновляем отображение статуса смены
-        self.update_shift_status()
-        
         shift_card = styles.create_card_frame(left_frame)
         shift_card.pack(fill='x', pady=(0, 15))
         
@@ -55,8 +52,10 @@ class EmployeesTab:
         styles.create_label(shift_frame, "Номер сотрудника:", 'Card.TLabel').pack(side='left', padx=(0, 10))
         self.shift_employee_entry = styles.create_entry(shift_frame, width=15)
         self.shift_employee_entry.pack(side='left', padx=(0, 10))
-        styles.create_button(shift_frame, "Начать смену", self.start_shift, 'Success.TButton').pack(side='left', padx=(0, 5))
-        styles.create_button(shift_frame, "Закончить смену", self.end_shift, 'Danger.TButton').pack(side='left')
+        self.start_shift_btn = styles.create_button(shift_frame, "Начать смену", self.start_shift, 'Success.TButton')
+        self.start_shift_btn.pack(side='left', padx=(0, 5))
+        self.end_shift_btn = styles.create_button(shift_frame, "Закончить смену", self.end_shift, 'Danger.TButton')
+        self.end_shift_btn.pack(side='left')
         
         styles.create_label(shift_inner, "Текущие смены:", 'Card.TLabel').pack(anchor='w', pady=(15, 5))
         
@@ -166,6 +165,9 @@ class EmployeesTab:
         
         self.refresh_employees()
         self.refresh_active_shifts()
+        
+        # Обновляем отображение статуса смены (в конце после создания всех элементов)
+        self.update_shift_status()
     
     def register_employee(self):
         try:
@@ -295,6 +297,11 @@ class EmployeesTab:
             # Показываем кнопку закрытия, скрываем кнопку открытия
             self.open_shift_btn.pack_forget()
             self.close_shift_btn.pack(side='left')
+            
+            # Разблокируем регистрацию сотрудников
+            self.shift_employee_entry.config(state='normal')
+            self.start_shift_btn.config(state='normal')
+            self.end_shift_btn.config(state='normal')
         else:
             # Смена закрыта
             status_text = "Смена не открыта"
@@ -307,6 +314,11 @@ class EmployeesTab:
             # Показываем кнопку открытия, скрываем кнопку закрытия
             self.close_shift_btn.pack_forget()
             self.open_shift_btn.pack(side='left')
+            
+            # Блокируем регистрацию сотрудников
+            self.shift_employee_entry.config(state='disabled')
+            self.start_shift_btn.config(state='disabled')
+            self.end_shift_btn.config(state='disabled')
     
     def open_shift(self):
         """Открывает новую смену"""

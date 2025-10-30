@@ -502,7 +502,7 @@ class OrderWidget:
         
         ttk.Label(recommendations_frame, text="Рекомендации:", font=(styles.DEFAULT_FONT, 9, 'bold')).pack(anchor='w')
         
-        self.recommendations_text = tk.Text(recommendations_frame, height=3, font=styles.FONTS['normal'], 
+        self.recommendations_text = tk.Text(recommendations_frame, height=2, font=styles.FONTS['normal'], 
                                            bg=styles.COLORS['bg_card'], fg=styles.COLORS['text'],
                                            relief='solid', borderwidth=1, wrap='word')
         self.recommendations_text.pack(fill='x', pady=(2, 5))
