@@ -42,21 +42,6 @@ class EmployeesTab:
         # Обновляем отображение статуса смены
         self.update_shift_status()
         
-        reg_card = styles.create_card_frame(left_frame)
-        reg_card.pack(fill='x', pady=(0, 15))
-        
-        card_inner = ttk.Frame(reg_card, style='White.TFrame')
-        card_inner.pack(fill='both', expand=True, padx=20, pady=20)
-        
-        styles.create_label(card_inner, "Создать нового сотрудника", 'CardHeading.TLabel').pack(anchor='w', pady=(0, 15))
-        
-        reg_frame = ttk.Frame(card_inner, style='White.TFrame')
-        reg_frame.pack(fill='x', pady=5)
-        styles.create_label(reg_frame, "Номер сотрудника:", 'Card.TLabel').pack(side='left', padx=(0, 10))
-        self.employee_id_entry = styles.create_entry(reg_frame, width=15)
-        self.employee_id_entry.pack(side='left', padx=(0, 10))
-        styles.create_button(reg_frame, "Зарегистрировать", self.register_employee, 'Primary.TButton').pack(side='left')
-        
         shift_card = styles.create_card_frame(left_frame)
         shift_card.pack(fill='x', pady=(0, 15))
         
@@ -112,6 +97,22 @@ class EmployeesTab:
         tree_scroll = ttk.Scrollbar(tree_frame, orient='vertical', command=self.employees_tree.yview)
         tree_scroll.pack(side='right', fill='y')
         self.employees_tree.config(yscrollcommand=tree_scroll.set)
+        
+        # СОЗДАТЬ НОВОГО СОТРУДНИКА (компактная версия внизу)
+        reg_card = styles.create_card_frame(left_frame)
+        reg_card.pack(fill='x', pady=(15, 0))
+        
+        card_inner = ttk.Frame(reg_card, style='White.TFrame')
+        card_inner.pack(fill='both', expand=True, padx=15, pady=10)
+        
+        styles.create_label(card_inner, "Создать нового сотрудника", 'CardHeading.TLabel').pack(anchor='w', pady=(0, 8))
+        
+        reg_frame = ttk.Frame(card_inner, style='White.TFrame')
+        reg_frame.pack(fill='x')
+        styles.create_label(reg_frame, "Номер:", 'Card.TLabel').pack(side='left', padx=(0, 5))
+        self.employee_id_entry = styles.create_entry(reg_frame, width=12)
+        self.employee_id_entry.pack(side='left', padx=(0, 8))
+        styles.create_button(reg_frame, "Зарегистрировать", self.register_employee, 'Primary.TButton').pack(side='left')
         
         right_frame = ttk.Frame(self.frame, style='BG.TFrame')
         right_frame.pack(side='right', fill='both', expand=True, padx=15, pady=15)
