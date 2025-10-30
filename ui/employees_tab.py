@@ -87,7 +87,7 @@ class EmployeesTab:
         tree_frame = ttk.Frame(emp_inner, style='White.TFrame')
         tree_frame.pack(fill='both', expand=True)
         
-        self.employees_tree = ttk.Treeview(tree_frame, columns=('ID', 'Ставка %', 'Дата регистрации'), show='headings', height=8)
+        self.employees_tree = ttk.Treeview(tree_frame, columns=('ID', 'Ставка %', 'Дата регистрации'), show='headings', height=6)
         self.employees_tree.heading('ID', text='Номер')
         self.employees_tree.heading('Ставка %', text='Ставка %')
         self.employees_tree.heading('Дата регистрации', text='Дата регистрации')
