@@ -105,12 +105,12 @@ class EmployeesTab:
         reg_card.pack(fill='x', pady=(15, 0))
         
         card_inner = ttk.Frame(reg_card, style='White.TFrame')
-        card_inner.pack(fill='both', expand=True, padx=15, pady=10)
+        card_inner.pack(fill='both', expand=True, padx=20, pady=18)
         
-        styles.create_label(card_inner, "Создать нового сотрудника", 'CardHeading.TLabel').pack(anchor='w', pady=(0, 8))
+        styles.create_label(card_inner, "Создать нового сотрудника", 'CardHeading.TLabel').pack(anchor='w', pady=(0, 12))
         
         reg_frame = ttk.Frame(card_inner, style='White.TFrame')
-        reg_frame.pack(fill='x')
+        reg_frame.pack(fill='x', pady=(0, 5))
         styles.create_label(reg_frame, "Номер:", 'Card.TLabel').pack(side='left', padx=(0, 5))
         self.employee_id_entry = styles.create_entry(reg_frame, width=12)
         self.employee_id_entry.pack(side='left', padx=(0, 8))
