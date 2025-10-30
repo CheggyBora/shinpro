@@ -63,7 +63,7 @@ class EmployeesTab:
         shift_inner = ttk.Frame(shift_card, style='White.TFrame')
         shift_inner.pack(fill='both', expand=True, padx=20, pady=20)
         
-        styles.create_label(shift_inner, "Управление сменами", 'CardHeading.TLabel').pack(anchor='w', pady=(0, 15))
+        styles.create_label(shift_inner, "Регистрация сотрудников", 'CardHeading.TLabel').pack(anchor='w', pady=(0, 15))
         
         shift_frame = ttk.Frame(shift_inner, style='White.TFrame')
         shift_frame.pack(fill='x', pady=5)
@@ -100,15 +100,13 @@ class EmployeesTab:
         tree_frame = ttk.Frame(emp_inner, style='White.TFrame')
         tree_frame.pack(fill='both', expand=True)
         
-        self.employees_tree = ttk.Treeview(tree_frame, columns=('ID', 'Ставка %', 'За текущую смену', 'Дата регистрации'), show='headings', height=8)
+        self.employees_tree = ttk.Treeview(tree_frame, columns=('ID', 'Ставка %', 'Дата регистрации'), show='headings', height=8)
         self.employees_tree.heading('ID', text='Номер')
         self.employees_tree.heading('Ставка %', text='Ставка %')
-        self.employees_tree.heading('За текущую смену', text='За текущую смену')
         self.employees_tree.heading('Дата регистрации', text='Дата регистрации')
-        self.employees_tree.column('ID', width=100)
-        self.employees_tree.column('Ставка %', width=100)
-        self.employees_tree.column('За текущую смену', width=150)
-        self.employees_tree.column('Дата регистрации', width=150)
+        self.employees_tree.column('ID', width=120)
+        self.employees_tree.column('Ставка %', width=120)
+        self.employees_tree.column('Дата регистрации', width=180)
         self.employees_tree.pack(side='left', fill='both', expand=True)
         
         tree_scroll = ttk.Scrollbar(tree_frame, orient='vertical', command=self.employees_tree.yview)
@@ -256,22 +254,11 @@ class EmployeesTab:
         for item in self.employees_tree.get_children():
             self.employees_tree.delete(item)
         
-        # Получаем текущую смену
-        current_shift = self.shift_service.get_current_shift()
-        
         employees = self.service.get_all_employees()
         for emp in employees:
-            # Получаем зарплату за текущую смену если она открыта
-            shift_salary_text = "-"
-            if current_shift:
-                shift_salary = self.shift_service.get_employee_shift_salary(current_shift.id, emp.id)
-                if shift_salary > 0:
-                    shift_salary_text = f"{shift_salary:,.0f} руб.".replace(',', ' ')
-            
             self.employees_tree.insert('', 'end', values=(
                 emp.id,
                 f"{emp.salary_percent:.1f}",
-                shift_salary_text,
                 emp.created_at.strftime('%d.%m.%Y')
             ))
     
