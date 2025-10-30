@@ -288,7 +288,9 @@ class EmployeesTab:
         if current_shift:
             # Смена открыта
             start_time = current_shift.start_time
-            duration = datetime.now() - start_time
+            # Используем тот же часовой пояс, что и start_time
+            current_time = datetime.now(start_time.tzinfo) if start_time.tzinfo else datetime.now()
+            duration = current_time - start_time
             hours = int(duration.total_seconds() // 3600)
             minutes = int((duration.total_seconds() % 3600) // 60)
             
