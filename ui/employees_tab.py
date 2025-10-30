@@ -63,7 +63,7 @@ class EmployeesTab:
         shift_inner = ttk.Frame(shift_card, style='White.TFrame')
         shift_inner.pack(fill='both', expand=True, padx=20, pady=20)
         
-        styles.create_label(shift_inner, "Регистрация сотрудников", 'CardHeading.TLabel').pack(anchor='w', pady=(0, 15))
+        styles.create_label(shift_inner, "Создать нового сотрудника", 'CardHeading.TLabel').pack(anchor='w', pady=(0, 15))
         
         shift_frame = ttk.Frame(shift_inner, style='White.TFrame')
         shift_frame.pack(fill='x', pady=5)
