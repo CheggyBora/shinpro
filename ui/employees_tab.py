@@ -71,6 +71,9 @@ class EmployeesTab:
         scrollbar.pack(side='right', fill='y')
         self.active_shifts_list.config(yscrollcommand=scrollbar.set)
         
+        # Кнопка просмотра зарплаты за смену
+        styles.create_button(shift_inner, "💰 Посмотреть зарплату за смену", self.view_shift_salaries, 'Primary.TButton').pack(anchor='w', pady=(10, 0))
+        
         emp_card = styles.create_card_frame(left_frame)
         emp_card.pack(fill='both', expand=True)
         
@@ -316,6 +319,100 @@ class EmployeesTab:
             messagebox.showerror("Ошибка", str(e))
         except Exception as e:
             messagebox.showerror("Ошибка", f"Не удалось открыть смену: {str(e)}")
+    
+    def view_shift_salaries(self):
+        """Показывает зарплату всех сотрудников за текущую смену"""
+        current_shift = self.shift_service.get_current_shift()
+        
+        if not current_shift:
+            messagebox.showinfo("Информация", "Нет открытой смены")
+            return
+        
+        # Получаем данные о зарплате сотрудников
+        employees_salary = self.shift_service.get_all_employees_shift_salary(current_shift.id)
+        total_salary = sum(data['salary'] for data in employees_salary.values())
+        
+        # Создаём диалог
+        dialog = tk.Toplevel(self.frame)
+        dialog.title("Зарплата за текущую смену")
+        dialog.geometry("450x500")
+        dialog.configure(bg=styles.COLORS['bg'])
+        styles.center_window(dialog, self.frame.winfo_toplevel())
+        dialog.transient(self.frame.winfo_toplevel())
+        dialog.grab_set()
+        
+        # Основной контейнер
+        main_frame = tk.Frame(dialog, bg='white', padx=30, pady=25)
+        main_frame.pack(fill='both', expand=True, padx=2, pady=2)
+        
+        # Заголовок
+        title = tk.Label(main_frame, text="💰 Зарплата за смену", 
+                        font=(styles.DEFAULT_FONT, 14, 'bold'), 
+                        fg='#1e293b', bg='white')
+        title.pack(pady=(0, 20))
+        
+        # Разделитель
+        separator1 = ttk.Separator(main_frame, orient='horizontal')
+        separator1.pack(fill='x', pady=(0, 15))
+        
+        # Информация о смене
+        start_time = current_shift.start_time
+        current_time = datetime.now(start_time.tzinfo) if start_time.tzinfo else datetime.now()
+        duration = current_time - start_time
+        hours = int(duration.total_seconds() // 3600)
+        minutes = int((duration.total_seconds() % 3600) // 60)
+        
+        shift_text = (f"Смена: {start_time.strftime('%d.%m.%Y %H:%M')}\n"
+                     f"Работает: {hours}ч {minutes}м")
+        
+        shift_label = tk.Label(main_frame, text=shift_text, 
+                              font=(styles.DEFAULT_FONT, 11), 
+                              fg='#1e293b', bg='white', justify='left')
+        shift_label.pack(anchor='w', pady=(0, 15))
+        
+        # Разделитель
+        separator2 = ttk.Separator(main_frame, orient='horizontal')
+        separator2.pack(fill='x', pady=(0, 15))
+        
+        # Начисления
+        salaries_label = tk.Label(main_frame, text="Начислено по сотрудникам:", 
+                                 font=(styles.DEFAULT_FONT, 11, 'bold'), 
+                                 fg='#1e293b', bg='white')
+        salaries_label.pack(anchor='w', pady=(0, 10))
+        
+        # Список сотрудников с зарплатой
+        employees_frame = tk.Frame(main_frame, bg='white')
+        employees_frame.pack(fill='both', expand=True, pady=(0, 15))
+        
+        if employees_salary:
+            for emp_id, data in employees_salary.items():
+                employee = data['employee']
+                salary = data['salary']
+                emp_text = f"• №{employee.id} - {salary:,.0f} руб.".replace(',', ' ')
+                emp_label = tk.Label(employees_frame, text=emp_text, 
+                                    font=(styles.DEFAULT_FONT, 10), 
+                                    fg='#1e293b', bg='white', anchor='w')
+                emp_label.pack(anchor='w', pady=2)
+        else:
+            no_emp_label = tk.Label(employees_frame, text="Пока нет начислений за эту смену", 
+                                   font=(styles.DEFAULT_FONT, 10), 
+                                   fg='#94a3b8', bg='white')
+            no_emp_label.pack(anchor='w')
+        
+        # Разделитель
+        separator3 = ttk.Separator(main_frame, orient='horizontal')
+        separator3.pack(fill='x', pady=(0, 15))
+        
+        # Итого
+        total_text = f"Всего начислено: {total_salary:,.0f} руб.".replace(',', ' ')
+        total_label = tk.Label(main_frame, text=total_text, 
+                              font=(styles.DEFAULT_FONT, 12, 'bold'), 
+                              fg='#2563eb', bg='white')
+        total_label.pack(pady=(0, 20))
+        
+        # Кнопка OK
+        ok_btn = styles.create_button(main_frame, "Закрыть", dialog.destroy, 'Primary.TButton')
+        ok_btn.pack()
     
     def close_shift(self):
         """Закрывает текущую смену и показывает информационное окно"""
