@@ -63,7 +63,7 @@ class EmployeesTab:
         shift_inner = ttk.Frame(shift_card, style='White.TFrame')
         shift_inner.pack(fill='both', expand=True, padx=20, pady=20)
         
-        styles.create_label(shift_inner, "Создать нового сотрудника", 'CardHeading.TLabel').pack(anchor='w', pady=(0, 15))
+        styles.create_label(shift_inner, "Регистрация сотрудников", 'CardHeading.TLabel').pack(anchor='w', pady=(0, 15))
         
         shift_frame = ttk.Frame(shift_inner, style='White.TFrame')
         shift_frame.pack(fill='x', pady=5)
@@ -94,7 +94,7 @@ class EmployeesTab:
         
         header_frame = ttk.Frame(emp_inner, style='White.TFrame')
         header_frame.pack(fill='x', pady=(0, 10))
-        styles.create_label(header_frame, "Список сотрудников", 'CardHeading.TLabel').pack(side='left')
+        styles.create_label(header_frame, "Создать нового сотрудника", 'CardHeading.TLabel').pack(side='left')
         styles.create_button(header_frame, "Изменить ставку", self.change_salary_percent, 'Secondary.TButton').pack(side='right')
         
         tree_frame = ttk.Frame(emp_inner, style='White.TFrame')
