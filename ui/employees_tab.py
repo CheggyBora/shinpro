@@ -531,11 +531,11 @@ class EmployeesTab:
             ok_btn = styles.create_button(main_frame, "OK", dialog.destroy, 'Primary.TButton')
             ok_btn.pack()
             
-            # Обновляем интерфейс
-            self.update_shift_status()
-            self.refresh_employees()
-            
         except ValueError as e:
             messagebox.showerror("Ошибка", str(e))
         except Exception as e:
             messagebox.showerror("Ошибка", f"Не удалось закрыть смену: {str(e)}")
+        finally:
+            # Всегда обновляем интерфейс, даже при ошибке
+            self.update_shift_status()
+            self.refresh_employees()
