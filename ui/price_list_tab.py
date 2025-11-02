@@ -415,13 +415,34 @@ class PriceListTab:
             self.tree.item(item, values=values)
             
             # Помечаем как измененное
-            self.tree.item(item, tags=self.tree.item(item)['tags'] + ('modified',))
+            current_tags = self.tree.item(item)['tags']
+            print(f"🔧 Current tags: {current_tags}, type: {type(current_tags)}")
+            
+            # Конвертируем в список для универсальности
+            if isinstance(current_tags, str):
+                new_tags = [current_tags, 'modified']
+            elif isinstance(current_tags, tuple):
+                new_tags = list(current_tags) + ['modified']
+            else:
+                new_tags = list(current_tags) + ['modified']
+            
+            self.tree.item(item, tags=tuple(new_tags))
+            print(f"🔧 New tags: {self.tree.item(item)['tags']}")
             print(f"🔧 Price updated to {int(new_value)}")
     
     def save_changes(self):
         """Сохранить изменения в БД"""
+        print("💾 === SAVE CHANGES НАЧАЛО ===")
+        all_items = self.tree.get_children()
+        print(f"💾 Всего элементов в таблице: {len(all_items)}")
+        
+        for item in all_items:
+            item_tags = self.tree.item(item)['tags']
+            print(f"💾 Item tags: {item_tags}, 'modified' in tags: {'modified' in item_tags}")
+        
         modified_items = [item for item in self.tree.get_children() if 'modified' in self.tree.item(item)['tags']]
         total_changes = len(modified_items)
+        print(f"💾 Найдено измененных услуг: {total_changes}")
         
         # Проверяем изменения в ценах на хранение
         storage_changes = 0
