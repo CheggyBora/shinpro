@@ -98,19 +98,25 @@ class PriceListTab:
     
     def check_pin(self):
         """Проверка введенного PIN-кода"""
-        settings = self.db.query(Settings).filter(Settings.key == 'admin_pin').first()
-        stored_pin = settings.value if settings else '0000'
-        
-        entered_pin = self.pin_entry.get()
-        
-        if entered_pin == stored_pin:
-            # PIN верный - показываем основной интерфейс
-            self.is_authenticated = True
-            self.login_frame.destroy()
-            self.show_content_screen()
-        else:
-            # PIN неверный - показываем ошибку
-            messagebox.showerror("Ошибка доступа", "Неверный PIN-код!\nДоступ запрещен.")
+        try:
+            settings = self.db.query(Settings).filter(Settings.key == 'admin_pin').first()
+            stored_pin = settings.value if settings else '0000'
+            
+            entered_pin = self.pin_entry.get()
+            
+            if entered_pin == stored_pin:
+                # PIN верный - показываем основной интерфейс
+                self.is_authenticated = True
+                self.login_frame.destroy()
+                self.show_content_screen()
+            else:
+                # PIN неверный - показываем ошибку
+                messagebox.showerror("Ошибка доступа", "Неверный PIN-код!\nДоступ запрещен.")
+                self.pin_entry.delete(0, tk.END)
+                self.pin_entry.focus_set()
+        except Exception as e:
+            self.db.rollback()
+            messagebox.showerror("Ошибка", f"Ошибка при проверке PIN: {str(e)}")
             self.pin_entry.delete(0, tk.END)
             self.pin_entry.focus_set()
     
