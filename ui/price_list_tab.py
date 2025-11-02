@@ -488,9 +488,16 @@ class PriceListTab:
             # Сохраняем изменённые услуги
             for item in modified_items:
                 values = self.tree.item(item)['values']
-                service_id = int(self.tree.item(item)['tags'][0])
+                tags = self.tree.item(item)['tags']
+                print(f"💾 Processing item with tags: {tags}, type: {type(tags)}")
+                print(f"💾 Values: {values}")
+                
+                # Tags может быть списком [69, 'modified'], берем первый элемент
+                service_id = int(tags[0])
+                print(f"💾 Service ID: {service_id}")
                 
                 service = self.db.query(Service).filter(Service.id == service_id).first()
+                print(f"💾 Found service: {service.name if service else 'None'}")
                 
                 if service:
                     if self.current_vehicle_type == 'truck':
@@ -522,5 +529,8 @@ class PriceListTab:
             self.load_services()
             
         except Exception as e:
+            import traceback
+            error_details = traceback.format_exc()
+            print(f"💾 ERROR: {error_details}")
             self.db.rollback()
             messagebox.showerror("Ошибка", f"Не удалось сохранить изменения:\n{str(e)}")
