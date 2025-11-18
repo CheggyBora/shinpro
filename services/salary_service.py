@@ -1,6 +1,7 @@
 from models import WorkOrder, WorkShift, SalaryTransaction, Employee
 from sqlalchemy.orm import Session
 from datetime import datetime
+from utils import get_moscow_time
 
 class SalaryService:
     def __init__(self, db: Session):
@@ -34,7 +35,7 @@ class SalaryService:
             )
             self.db.add(transaction)
         
-        order.paid_at = datetime.now()
+        order.paid_at = get_moscow_time()
         order.payment_method = payment_method
         order.total_amount = total_amount
         order.status = 'paid'

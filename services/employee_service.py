@@ -1,6 +1,7 @@
 from models import Employee, WorkShift, SalaryTransaction, Settings
 from sqlalchemy.orm import Session
 from datetime import datetime
+from utils import get_moscow_time
 
 class EmployeeService:
     def __init__(self, db: Session):
@@ -64,7 +65,7 @@ class EmployeeService:
         if not shift:
             raise ValueError("Открытая смена не найдена")
         
-        shift.end_time = datetime.now()
+        shift.end_time = get_moscow_time()
         self.db.commit()
         self.db.refresh(shift)
         return shift

@@ -10,6 +10,7 @@ from reportlab.lib import colors
 from datetime import datetime
 import os
 import sys
+from utils import get_moscow_time
 
 class PrintService:
     def __init__(self):
@@ -129,7 +130,7 @@ class PrintService:
         
         y -= 20
         c.setFont(self.font_name, 11)
-        c.drawCentredString(width/2, y, datetime.now().strftime("%d.%m.%Y %H:%M"))
+        c.drawCentredString(width/2, y, get_moscow_time().strftime("%d.%m.%Y %H:%M"))
         
         y -= 30
         c.line(50, y, width-50, y)

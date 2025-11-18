@@ -1,6 +1,7 @@
 from datetime import datetime
 from config import SessionLocal
 from models import TireStorage, Settings
+from utils import get_moscow_time
 
 class TireStorageService:
     @staticmethod
@@ -84,7 +85,7 @@ class TireStorageService:
             storage = db.query(TireStorage).filter(TireStorage.id == storage_id).first()
             if storage:
                 storage.status = 'released'
-                storage.released_date = datetime.now()
+                storage.released_date = get_moscow_time()
                 db.commit()
                 db.refresh(storage)
                 return storage
