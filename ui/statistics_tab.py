@@ -4,6 +4,7 @@ from tkcalendar import DateEntry
 from datetime import datetime, timedelta
 import styles
 from services.statistics_service import StatisticsService
+from utils import get_moscow_time
 
 class StatisticsTab:
     def __init__(self, parent, db):
@@ -36,7 +37,7 @@ class StatisticsTab:
         self.date_from = DateEntry(period_frame, width=12, background='darkblue',
                                    foreground='white', borderwidth=2,
                                    date_pattern='dd.mm.yyyy')
-        self.date_from.set_date(datetime.now() - timedelta(days=30))  # По умолчанию последние 30 дней
+        self.date_from.set_date(get_moscow_time() - timedelta(days=30))  # По умолчанию последние 30 дней
         self.date_from.pack(side='left', padx=(0, 20))
         
         # По:
@@ -46,7 +47,7 @@ class StatisticsTab:
         self.date_to = DateEntry(period_frame, width=12, background='darkblue',
                                 foreground='white', borderwidth=2,
                                 date_pattern='dd.mm.yyyy')
-        self.date_to.set_date(datetime.now())
+        self.date_to.set_date(get_moscow_time())
         self.date_to.pack(side='left', padx=(0, 20))
         
         # Кнопка показать отчёт

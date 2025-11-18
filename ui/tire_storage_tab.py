@@ -5,6 +5,7 @@ from datetime import datetime
 import styles
 import os
 import sys
+from utils import get_moscow_time
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 from reportlab.pdfbase import pdfmetrics
@@ -384,7 +385,7 @@ class TireStorageTab:
             
             # 4. Оплачиваем наряд БЕЗ начисления зарплаты
             print(f"DEBUG: Step 4 - Marking work order as paid")
-            work_order.paid_at = datetime.now()
+            work_order.paid_at = get_moscow_time()
             work_order.payment_method = payment_method
             work_order.total_amount = price
             work_order.status = 'paid'

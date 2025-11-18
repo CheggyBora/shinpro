@@ -4,6 +4,7 @@ from services import EmployeeService
 from services.shift_service import ShiftService
 from datetime import datetime, timedelta
 import styles
+from utils import get_moscow_time
 
 class EmployeesTab:
     def __init__(self, parent, db):
@@ -137,11 +138,11 @@ class EmployeesTab:
         date_frame.pack(fill='x', pady=(0, 10))
         styles.create_label(date_frame, "Дата от:", 'Card.TLabel').pack(side='left', padx=(0, 5))
         self.date_from_entry = styles.create_entry(date_frame, width=12)
-        self.date_from_entry.insert(0, (datetime.now() - timedelta(days=30)).strftime('%d.%m.%Y'))
+        self.date_from_entry.insert(0, (get_moscow_time() - timedelta(days=30)).strftime('%d.%m.%Y'))
         self.date_from_entry.pack(side='left', padx=(0, 15))
         styles.create_label(date_frame, "до:", 'Card.TLabel').pack(side='left', padx=(0, 5))
         self.date_to_entry = styles.create_entry(date_frame, width=12)
-        self.date_to_entry.insert(0, datetime.now().strftime('%d.%m.%Y'))
+        self.date_to_entry.insert(0, get_moscow_time().strftime('%d.%m.%Y'))
         self.date_to_entry.pack(side='left')
         
         styles.create_button(salary_inner, "Показать зарплату", self.show_salary, 'Primary.TButton').pack(pady=(0, 15))
@@ -281,8 +282,8 @@ class EmployeesTab:
         if current_shift:
             # Смена открыта
             start_time = current_shift.start_time
-            # Используем тот же часовой пояс, что и start_time
-            current_time = datetime.now(start_time.tzinfo) if start_time.tzinfo else datetime.now()
+            # Используем московское время
+            current_time = get_moscow_time()
             duration = current_time - start_time
             hours = int(duration.total_seconds() // 3600)
             minutes = int((duration.total_seconds() % 3600) // 60)
@@ -369,7 +370,7 @@ class EmployeesTab:
         
         # Информация о смене
         start_time = current_shift.start_time
-        current_time = datetime.now(start_time.tzinfo) if start_time.tzinfo else datetime.now()
+        current_time = get_moscow_time()
         duration = current_time - start_time
         hours = int(duration.total_seconds() // 3600)
         minutes = int((duration.total_seconds() % 3600) // 60)
