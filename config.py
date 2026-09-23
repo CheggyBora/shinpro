@@ -88,3 +88,66 @@ def init_db():
                         Shift, AuditLog, Appointment,
                         BookingPosts)
     Base.metadata.create_all(bind=engine)
+    add_missing_columns()
+
+
+def add_missing_columns():
+    """
+    Дописать в существующие таблицы колонки, появившиеся в новой версии.
+
+    create_all() создаёт недостающие таблицы, но не трогает те, что уже
+    есть: добавили поле в модель — в рабочей базе его не будет, и
+    программа упадёт при первом же запросе. Раньше это чинили скриптами
+    миграции вручную. Для шиномонтажа, у которого стоит .exe и нет
+    Python, такой способ не работает: человек просто обновит программу
+    и получит сломанную базу.
+
+    Добавляем только новые колонки. Ничего не переименовываем, не
+    удаляем и не переносим данные — такие правки по-прежнему делаются
+    отдельными скриптами, где есть резервная копия и проверка.
+    """
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(engine)
+    try:
+        existing_tables = set(inspector.get_table_names())
+    except Exception as e:
+        # Без списка таблиц доводку не сделать, но и падать нельзя:
+        # программа должна открыться и сказать о беде человеку
+        print(f"Не удалось прочитать схему базы: {e}")
+        return
+
+    for table in Base.metadata.sorted_tables:
+        if table.name not in existing_tables:
+            continue
+
+        have = {column['name'] for column in inspector.get_columns(table.name)}
+
+        for column in table.columns:
+            if column.name in have:
+                continue
+
+            kind = column.type.compile(dialect=engine.dialect)
+            clause = f'ALTER TABLE {table.name} ADD COLUMN {column.name} {kind}'
+
+            # NOT NULL без значения по умолчанию SQLite не примет: в уже
+            # существующих строках это поле пустое. Колонка добавляется
+            # необязательной — данные важнее строгости схемы
+            default = getattr(column.default, 'arg', None)
+            if default is not None and not callable(default):
+                clause += f' DEFAULT {_sql_literal(default)}'
+
+            try:
+                with engine.begin() as connection:
+                    connection.execute(text(clause))
+                print(f"В таблицу {table.name} добавлена колонка {column.name}")
+            except Exception as e:
+                print(f"Не удалось добавить {table.name}.{column.name}: {e}")
+
+
+def _sql_literal(value):
+    if isinstance(value, bool):
+        return '1' if value else '0'
+    if isinstance(value, (int, float)):
+        return str(value)
+    return "'" + str(value).replace("'", "''") + "'"

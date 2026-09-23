@@ -68,34 +68,55 @@ class ShiftService:
         
         return float(total) if total else 0.0
     
+    def get_shift_salary_details(self, shift_id: int) -> dict:
+        """
+        Начисления за смену с разбором по нарядам.
+
+        Возвращает по каждому сотруднику: итог и строки нарядов, из
+        которых он сложился. В строке только номер наряда, машина и
+        сумма — этого хватает, чтобы мастер узнал свою работу, а
+        разбираться в составе наряда надо не здесь.
+
+            {employee_id: {'employee': Employee, 'salary': 1234.0,
+                           'orders': [{'order_id': 412,
+                                       'license_plate': 'А123ВВ777',
+                                       'amount': 480.0}]}}
+        """
+        rows = self.db.query(SalaryTransaction, WorkOrder).join(
+            WorkOrder, SalaryTransaction.work_order_id == WorkOrder.id
+        ).filter(
+            WorkOrder.shift_id == shift_id
+        ).order_by(WorkOrder.id).all()
+
+        details = {}
+        for transaction, order in rows:
+            emp_id = transaction.employee_id
+            if emp_id not in details:
+                employee = self.db.query(Employee).filter(
+                    Employee.id == emp_id).first()
+                details[emp_id] = {'employee': employee, 'salary': 0.0,
+                                   'orders': []}
+
+            details[emp_id]['salary'] += transaction.amount
+            details[emp_id]['orders'].append({
+                'order_id': order.id,
+                'license_plate': order.car.license_plate if order.car else '',
+                'amount': transaction.amount,
+            })
+
+        return details
+
     def get_all_employees_shift_salary(self, shift_id: int) -> dict:
         """Получить зарплату всех сотрудников за смену
         
         Returns:
             dict: {employee_id: {'employee': Employee, 'salary': float}}
         """
-        # Получаем всех сотрудников, которые работали в эту смену
-        employee_salaries = {}
-        
-        # Находим все транзакции за смену
-        transactions = self.db.query(SalaryTransaction).join(
-            WorkOrder, SalaryTransaction.work_order_id == WorkOrder.id
-        ).filter(
-            WorkOrder.shift_id == shift_id
-        ).all()
-        
-        # Группируем по сотрудникам
-        for transaction in transactions:
-            emp_id = transaction.employee_id
-            if emp_id not in employee_salaries:
-                employee = self.db.query(Employee).filter(Employee.id == emp_id).first()
-                employee_salaries[emp_id] = {
-                    'employee': employee,
-                    'salary': 0.0
-                }
-            employee_salaries[emp_id]['salary'] += transaction.amount
-        
-        return employee_salaries
+        # Считает get_shift_salary_details, здесь только отбрасываем
+        # разбор по нарядам: два одинаковых подсчёта рано или поздно
+        # разойдутся, и объяснять разницу придётся мастеру
+        return {emp_id: {'employee': data['employee'], 'salary': data['salary']}
+                for emp_id, data in self.get_shift_salary_details(shift_id).items()}
     
     def close_shift(self, shift_id: int) -> dict:
         """Закрыть смену и вернуть статистику
@@ -104,7 +125,8 @@ class ShiftService:
             dict: {
                 'shift': Shift,
                 'duration_hours': float,
-                'employees': {employee_id: {'employee': Employee, 'salary': float}},
+                'employees': {employee_id: {'employee': Employee, 'salary': float,
+                                            'orders': [...]}},
                 'total_salary': float
             }
         """
@@ -115,8 +137,9 @@ class ShiftService:
         if shift.status == 'closed':
             raise ValueError("Смена уже закрыта")
         
-        # Получаем зарплату всех сотрудников
-        employees_salary = self.get_all_employees_shift_salary(shift_id)
+        # Начисления с разбором по нарядам: при закрытии смены мастер
+        # первым делом спрашивает, за что вышла сумма
+        employees_salary = self.get_shift_salary_details(shift_id)
         
         # Вычисляем общую сумму
         total_salary = sum(data['salary'] for data in employees_salary.values())

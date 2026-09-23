@@ -92,8 +92,13 @@ class EmployeesTab:
         reg_frame = ttk.Frame(card_inner, style='White.TFrame')
         reg_frame.pack(fill='x')
         styles.create_label(reg_frame, "Номер:", 'Card.TLabel').pack(side='left', padx=(0, 8))
-        self.employee_id_entry = styles.create_entry(reg_frame, width=12)
+        self.employee_id_entry = styles.create_entry(reg_frame, width=8)
         self.employee_id_entry.pack(side='left', padx=(0, 10))
+        # Имя видно только там, где речь о зарплате. В наряде и чеке
+        # сотрудник остаётся номером
+        styles.create_label(reg_frame, "Имя:", 'Card.TLabel').pack(side='left', padx=(0, 8))
+        self.employee_name_entry = styles.create_entry(reg_frame, width=16)
+        self.employee_name_entry.pack(side='left', padx=(0, 10))
         styles.create_button(reg_frame, "Зарегистрировать", self.register_employee,
                              'Primary.TButton').pack(side='left')
 
@@ -107,17 +112,20 @@ class EmployeesTab:
         header_frame.pack(fill='x', pady=(0, 10))
         styles.create_label(header_frame, "Список сотрудников", 'CardHeading.TLabel').pack(side='left')
         styles.create_button(header_frame, "Изменить ставку", self.change_salary_percent, 'Secondary.TButton').pack(side='right')
+        styles.create_button(header_frame, "Имя", self.change_name, 'Secondary.TButton').pack(side='right', padx=(0, 8))
         
         tree_frame = ttk.Frame(emp_inner, style='White.TFrame')
         tree_frame.pack(fill='both', expand=True)
         
-        self.employees_tree = ttk.Treeview(tree_frame, columns=('ID', 'Ставка %', 'Дата регистрации'), show='headings', height=6)
+        self.employees_tree = ttk.Treeview(tree_frame, columns=('ID', 'Имя', 'Ставка %', 'Дата регистрации'), show='headings', height=6)
         self.employees_tree.heading('ID', text='Номер')
+        self.employees_tree.heading('Имя', text='Имя')
         self.employees_tree.heading('Ставка %', text='Ставка %')
         self.employees_tree.heading('Дата регистрации', text='Дата регистрации')
-        self.employees_tree.column('ID', width=120)
-        self.employees_tree.column('Ставка %', width=120)
-        self.employees_tree.column('Дата регистрации', width=180)
+        self.employees_tree.column('ID', width=80)
+        self.employees_tree.column('Имя', width=150)
+        self.employees_tree.column('Ставка %', width=100)
+        self.employees_tree.column('Дата регистрации', width=160)
         self.employees_tree.pack(side='left', fill='both', expand=True)
         
         tree_scroll = ttk.Scrollbar(tree_frame, orient='vertical', command=self.employees_tree.yview)
@@ -180,9 +188,34 @@ class EmployeesTab:
     def register_employee(self):
         try:
             emp_id = int(self.employee_id_entry.get())
-            self.service.register_employee(emp_id)
+            name = self.employee_name_entry.get()
+            self.service.register_employee(emp_id, name)
             messagebox.showinfo("Успех", f"Сотрудник {emp_id} зарегистрирован")
             self.employee_id_entry.delete(0, tk.END)
+            self.employee_name_entry.delete(0, tk.END)
+            self.refresh_employees()
+        except ValueError as e:
+            messagebox.showerror("Ошибка", str(e))
+
+    def change_name(self):
+        """Задать или поправить имя выбранного сотрудника."""
+        selected = self.employees_tree.selection()
+        if not selected:
+            messagebox.showwarning("Предупреждение", "Выберите сотрудника")
+            return
+
+        emp_id = int(self.employees_tree.item(selected[0])['values'][0])
+        employee = next((e for e in self.service.get_all_employees()
+                         if e.id == emp_id), None)
+
+        name = simpledialog.askstring(
+            "Имя сотрудника", f"Имя сотрудника №{emp_id}:",
+            initialvalue=(employee.name if employee else '') or '')
+        if name is None:
+            return
+
+        try:
+            self.service.set_name(emp_id, name)
             self.refresh_employees()
         except ValueError as e:
             messagebox.showerror("Ошибка", str(e))
@@ -272,6 +305,7 @@ class EmployeesTab:
         for emp in employees:
             self.employees_tree.insert('', 'end', values=(
                 emp.id,
+                emp.name or '',
                 f"{emp.salary_percent:.1f}",
                 emp.created_at.strftime('%d.%m.%Y')
             ))
@@ -372,7 +406,7 @@ class EmployeesTab:
             return
         
         # Получаем данные о зарплате сотрудников
-        employees_salary = self.shift_service.get_all_employees_shift_salary(current_shift.id)
+        employees_salary = self.shift_service.get_shift_salary_details(current_shift.id)
         total_salary = sum(data['salary'] for data in employees_salary.values())
         
         # Создаём диалог
@@ -430,11 +464,27 @@ class EmployeesTab:
             for emp_id, data in employees_salary.items():
                 employee = data['employee']
                 salary = data['salary']
-                emp_text = f"• №{employee.id} - {salary:,.0f} руб.".replace(',', ' ')
-                emp_label = tk.Label(employees_frame, text=emp_text, 
-                                    font=(styles.DEFAULT_FONT, 10), 
+                orders = data.get('orders') or []
+
+                # Имя показываем здесь и в закрытии смены: это разговор
+                # о деньгах человека. В нарядах и чеках он остаётся номером
+                count = f" — нарядов: {len(orders)}" if orders else ''
+                emp_text = (f"• {employee.title}{count}"
+                            f"    {salary:,.0f} руб.".replace(',', ' '))
+                emp_label = tk.Label(employees_frame, text=emp_text,
+                                    font=(styles.DEFAULT_FONT, 10, 'bold'),
                                     fg='#1e293b', bg='white', anchor='w')
-                emp_label.pack(anchor='w', pady=2)
+                emp_label.pack(anchor='w', pady=(6, 2))
+
+                # Разбор: номер наряда, машина, начислено. Тот же вид,
+                # что на дашборде, — иначе мастер придёт спорить о разнице
+                for row in orders:
+                    plate = row['license_plate'] or '—'
+                    line = (f"      №{row['order_id']}   {plate}"
+                            f"   {row['amount']:,.0f} руб.".replace(',', ' '))
+                    tk.Label(employees_frame, text=line,
+                             font=(styles.DEFAULT_FONT, 9),
+                             fg='#64748b', bg='white', anchor='w').pack(anchor='w')
         else:
             no_emp_label = tk.Label(employees_frame, text="Пока нет начислений за эту смену", 
                                    font=(styles.DEFAULT_FONT, 10), 
@@ -542,11 +592,23 @@ class EmployeesTab:
             for emp_id, data in employees_data.items():
                 employee = data['employee']
                 salary = data['salary']
-                emp_text = f"• №{employee.id} - {salary:,.0f} руб.".replace(',', ' ')
-                emp_label = tk.Label(employees_frame, text=emp_text, 
-                                    font=(styles.DEFAULT_FONT, 10), 
+                orders = data.get('orders') or []
+
+                count = f" — нарядов: {len(orders)}" if orders else ''
+                emp_text = (f"• {employee.title}{count}"
+                            f"    {salary:,.0f} руб.".replace(',', ' '))
+                emp_label = tk.Label(employees_frame, text=emp_text,
+                                    font=(styles.DEFAULT_FONT, 10, 'bold'),
                                     fg='#1e293b', bg='white', anchor='w')
-                emp_label.pack(anchor='w', pady=2)
+                emp_label.pack(anchor='w', pady=(6, 2))
+
+                for row in orders:
+                    plate = row['license_plate'] or '—'
+                    line = (f"      №{row['order_id']}   {plate}"
+                            f"   {row['amount']:,.0f} руб.".replace(',', ' '))
+                    tk.Label(employees_frame, text=line,
+                             font=(styles.DEFAULT_FONT, 9),
+                             fg='#64748b', bg='white', anchor='w').pack(anchor='w')
             
             if not employees_data:
                 no_emp_label = tk.Label(employees_frame, text="Нет начислений", 

@@ -7,17 +7,35 @@ class EmployeeService:
     def __init__(self, db: Session):
         self.db = db
     
-    def register_employee(self, employee_id: int) -> Employee:
+    def register_employee(self, employee_id: int, name: str = None) -> Employee:
         existing = self.db.query(Employee).filter(Employee.id == employee_id).first()
         if existing:
             raise ValueError(f"Сотрудник с номером {employee_id} уже существует")
-        
-        employee = Employee(id=employee_id, salary_percent=40.0)
+
+        employee = Employee(id=employee_id, salary_percent=40.0,
+                            name=(name or '').strip() or None)
         self.db.add(employee)
         self.db.commit()
         self.db.refresh(employee)
         return employee
-    
+
+    def set_name(self, employee_id: int, name: str) -> Employee:
+        """
+        Записать имя сотрудника.
+
+        Имя не обязательно: у старых сотрудников его нет, и заставлять
+        цех заполнять их разом незачем — где пусто, там останется номер.
+        """
+        employee = self.db.query(Employee).filter(
+            Employee.id == employee_id).first()
+        if employee is None:
+            raise ValueError(f"Сотрудник №{employee_id} не найден")
+
+        employee.name = (name or '').strip() or None
+        self.db.commit()
+        self.db.refresh(employee)
+        return employee
+
     def get_all_employees(self):
         return self.db.query(Employee).filter(Employee.is_active == True).all()
     
