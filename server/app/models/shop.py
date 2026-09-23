@@ -12,6 +12,7 @@ from sqlalchemy import (Column, Integer, String, Boolean, DateTime, Date,
 from sqlalchemy.orm import relationship
 
 from app.database import Base
+from app.utils import now as shop_now
 
 # Заявка из приложения проходит три состояния: ждёт цеха, забрана
 # цехом, отклонена. Пока не забрана — клиент видит «подтверждаем».
@@ -33,8 +34,8 @@ class ShopSetting(Base):
 
     key = Column(String(64), primary_key=True)
     value = Column(String(255), nullable=True)
-    updated_at = Column(DateTime, default=datetime.utcnow,
-                        onupdate=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=shop_now,
+                        onupdate=shop_now, nullable=False)
 
 
 class Appointment(Base):
@@ -71,9 +72,9 @@ class Appointment(Base):
     sync_state = Column(String(20), default=PENDING, nullable=False, index=True)
     reject_reason = Column(String(255), nullable=True)
 
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow,
-                        onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=shop_now, nullable=False)
+    updated_at = Column(DateTime, default=shop_now,
+                        onupdate=shop_now, nullable=False)
 
     client = relationship('Client')
     car = relationship('Car')
@@ -300,7 +301,7 @@ class QueueSnapshot(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
 
-    taken_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    taken_at = Column(DateTime, default=shop_now, nullable=False, index=True)
 
     cars_in_work = Column(Integer, default=0, nullable=False)
     cars_waiting = Column(Integer, default=0, nullable=False)

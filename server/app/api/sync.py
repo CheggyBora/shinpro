@@ -37,7 +37,7 @@ from app.models import (Client, Car, Appointment, BookingDay, StoredSet,
 from app.security import require_sync_key
 from app.services import shop_settings
 from app.services.booking_service import BookingService
-from app.utils import normalize_phone, normalize_plate, normalize_email
+from app.utils import normalize_phone, normalize_plate, normalize_email, now as shop_now
 
 router = APIRouter(prefix='/sync', tags=['Обмен с цехом'],
                    dependencies=[Depends(require_sync_key)])
@@ -447,7 +447,7 @@ def push(payload: PushIn, db: Session = Depends(get_db)):
     # --- Очередь --------------------------------------------------------
     if payload.queue is not None:
         db.add(QueueSnapshot(
-            taken_at=datetime.utcnow(),
+            taken_at=shop_now(),
             cars_in_work=payload.queue.cars_in_work,
             cars_waiting=payload.queue.cars_waiting,
             open_posts=payload.queue.open_posts,

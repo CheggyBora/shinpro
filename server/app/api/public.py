@@ -26,7 +26,7 @@ from app.models import Appointment, Car, Client, StoredSet, PENDING
 from app.schemas import DayOut, SlotOut
 from app.services import shop_settings, notify
 from app.services.booking_service import BookingService, BookingError
-from app.utils import normalize_plate, normalize_phone, format_phone
+from app.utils import normalize_plate, normalize_phone, format_phone, now as shop_now
 
 router = APIRouter(prefix='/public', tags=['Запись по ссылке'])
 
@@ -45,7 +45,7 @@ _recent = {}
 
 def _too_often(address):
     """Простой счётчик в памяти: от баловства хватает, базу не трогаем."""
-    now = datetime.utcnow()
+    now = shop_now()
     edge = now - timedelta(hours=1)
 
     marks = [mark for mark in _recent.get(address, []) if mark > edge]
@@ -150,7 +150,7 @@ def book(payload: PublicBookingIn, request: Request,
                             detail='Укажите номер телефона полностью')
 
     service = BookingService(db)
-    now = datetime.now()
+    now = shop_now()
 
     if payload.at <= now:
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
@@ -256,4 +256,4 @@ def _active_count(db, phone):
     return db.query(Appointment).filter(
         Appointment.client_phone == phone,
         Appointment.status == 'scheduled',
-        Appointment.scheduled_at >= datetime.now()).count()
+        Appointment.scheduled_at >= shop_now()).count()

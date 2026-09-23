@@ -24,7 +24,7 @@ from app.security import (generate_code, hash_secret, secrets_match,
 from app.services import sms, mail, shop_settings
 from app.services.auth_service import (AuthError, NeedEmail, STEP_PIN,
                                        STEP_VERIFY, CHANNEL_EMAIL, CHANNEL_SMS)
-from app.utils import normalize_phone, normalize_email, is_valid_phone
+from app.utils import normalize_phone, normalize_email, is_valid_phone, now as shop_now
 
 PURPOSE_STAFF = 'staff'
 
@@ -107,7 +107,7 @@ class StaffService:
             channel=channel,
             code_hash=hash_secret(phone, code),
             purpose=PURPOSE_STAFF,
-            expires_at=datetime.utcnow() + timedelta(
+            expires_at=shop_now() + timedelta(
                 minutes=settings.CODE_TTL_MINUTES))
         self.db.add(record)
         self.db.commit()
@@ -129,7 +129,7 @@ class StaffService:
         return client.email if client else None
 
     def _check_rate_limit(self, phone):
-        hour_ago = datetime.utcnow() - timedelta(hours=1)
+        hour_ago = shop_now() - timedelta(hours=1)
         recent = self.db.query(LoginCode).filter(
             LoginCode.login == phone,
             LoginCode.purpose == PURPOSE_STAFF,
@@ -151,9 +151,9 @@ class StaffService:
         if staff is None or not staff.is_active:
             raise AuthError('Доступ к дашборду закрыт. Обратитесь к владельцу')
 
-        record.used_at = datetime.utcnow()
-        staff.phone_verified_at = datetime.utcnow()
-        staff.last_seen_at = datetime.utcnow()
+        record.used_at = shop_now()
+        staff.phone_verified_at = shop_now()
+        staff.last_seen_at = shop_now()
         staff.pin_failures = 0
         staff.pin_blocked_at = None
 
@@ -172,7 +172,7 @@ class StaffService:
         if record is None:
             raise AuthError('Запросите код заново')
 
-        if record.expires_at < datetime.utcnow():
+        if record.expires_at < shop_now():
             raise AuthError('Срок действия кода истёк, запросите новый')
 
         if record.attempts >= settings.CODE_MAX_ATTEMPTS:
@@ -197,7 +197,7 @@ class StaffService:
                 f'и не быть слишком простым')
 
         staff.pin_hash = hash_secret(staff.phone, pin)
-        staff.pin_updated_at = datetime.utcnow()
+        staff.pin_updated_at = shop_now()
         staff.pin_failures = 0
         staff.pin_blocked_at = None
         self.db.commit()
@@ -222,7 +222,7 @@ class StaffService:
         if not secrets_match(phone, str(pin or '').strip(), staff.pin_hash):
             staff.pin_failures += 1
             if staff.pin_failures >= settings.PIN_MAX_FAILURES:
-                staff.pin_blocked_at = datetime.utcnow()
+                staff.pin_blocked_at = shop_now()
             self.db.commit()
 
             left = settings.PIN_MAX_FAILURES - staff.pin_failures
@@ -232,7 +232,7 @@ class StaffService:
             raise AuthError(f'ПИН неверный. Осталось попыток: {left}')
 
         staff.pin_failures = 0
-        staff.last_seen_at = datetime.utcnow()
+        staff.last_seen_at = shop_now()
         self.db.commit()
         self.db.refresh(staff)
         self.log(staff, 'login', 'вход по ПИНу')
@@ -315,7 +315,7 @@ class StaffService:
         # Права изменились — старый токен больше не годится. Иначе
         # снятая галочка подействует только через месяц, когда токен
         # протухнет сам
-        staff.access_changed_at = datetime.utcnow()
+        staff.access_changed_at = shop_now()
 
         self.db.commit()
         self.db.refresh(staff)

@@ -15,6 +15,7 @@ from app.database import get_db
 from app.models import Client, StoredSet, PENDING
 from app.schemas import StoredSetOut, StorageRequestIn
 from app.security import current_client
+from app.utils import now as shop_now
 
 router = APIRouter(prefix='/storage', tags=['Хранение шин'])
 
@@ -24,7 +25,7 @@ MIN_HOURS_AHEAD = 12
 
 
 def _to_public(row, now=None):
-    now = now or datetime.now()
+    now = now or shop_now()
     days_left = None
     if row.expires_at:
         days_left = (row.expires_at - now).days
@@ -73,7 +74,7 @@ def request_delivery(set_id: int, payload: StorageRequestIn,
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
                             detail='Этот комплект уже выдан')
 
-    now = datetime.now()
+    now = shop_now()
     if payload.at < now + timedelta(hours=MIN_HOURS_AHEAD):
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,

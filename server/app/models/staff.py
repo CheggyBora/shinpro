@@ -17,6 +17,7 @@ from sqlalchemy import (Column, Integer, String, Boolean, DateTime, Text,
 from sqlalchemy.orm import relationship
 
 from app.database import Base
+from app.utils import now as shop_now
 
 # --- Роли -------------------------------------------------------------
 # Роль — это заготовка прав, а не жёсткая рамка: любую галочку у
@@ -103,12 +104,12 @@ class StaffUser(Base):
     # Кто завёл и когда: без этого в журнале не разобрать, откуда
     # у человека взялся доступ
     created_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=shop_now, nullable=False)
     last_seen_at = Column(DateTime, nullable=True)
 
     # Пересоздание доступа: после смены роли или отключения старые токены
     # должны перестать работать сразу, а не доживать свои тридцать дней
-    access_changed_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    access_changed_at = Column(DateTime, default=shop_now, nullable=False)
 
     created_by = relationship('StaffUser', remote_side=[id])
 
@@ -147,7 +148,7 @@ class StaffAction(Base):
 
     staff_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True,
                       index=True)
-    happened_at = Column(DateTime, default=datetime.utcnow, nullable=False,
+    happened_at = Column(DateTime, default=shop_now, nullable=False,
                          index=True)
 
     action = Column(String(50), nullable=False)

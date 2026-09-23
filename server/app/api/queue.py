@@ -19,6 +19,7 @@ from app.models import Client, QueueSnapshot
 from app.schemas import QueueOut
 from app.security import current_client
 from app.services import shop_settings
+from app.utils import now as shop_now
 
 router = APIRouter(prefix='/queue', tags=['Очередь'])
 
@@ -37,7 +38,7 @@ def current_queue(client: Client = Depends(current_client),
                  'загрузку')
 
     stale_after = shop_settings.get_int(db, 'queue_stale_minutes')
-    age = datetime.utcnow() - snapshot.taken_at
+    age = shop_now() - snapshot.taken_at
     is_stale = age > timedelta(minutes=stale_after)
 
     if is_stale:

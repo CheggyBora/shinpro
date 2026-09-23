@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, date, time
 
 from app.models import Appointment, BookingDay, Car, Client, PENDING, TAKEN
 from app.services import shop_settings
-from app.utils import normalize_plate
+from app.utils import normalize_plate, now as shop_now
 
 # Состояния, при которых машина занимает пост
 BUSY_STATUSES = ('scheduled', 'arrived')
@@ -103,7 +103,7 @@ class BookingService:
         именно весь отрезок, а не момент начала: иначе клиента можно
         записать на 20:30 при закрытии в 21:00 на полуторачасовую работу.
         """
-        now = now or datetime.now()
+        now = now or shop_now()
         settings = self.day_settings(day)
         if settings['is_closed']:
             return []
@@ -139,7 +139,7 @@ class BookingService:
 
     def calendar(self, wheels_assembled=None, now=None):
         """Ближайшие дни со свободными окнами — то, что рисует приложение."""
-        now = now or datetime.now()
+        now = now or shop_now()
         duration = self.duration_for(wheels_assembled)
 
         days = []
@@ -197,7 +197,7 @@ class BookingService:
     def book(self, client, at, license_plate, wheels_assembled=None,
              comment=None, now=None, storage_ids=None):
         """Принять заявку на запись. Проверяет всё, что может пойти не так."""
-        now = now or datetime.now()
+        now = now or shop_now()
         stored = self.storage_sets(client, storage_ids)
         if stored:
             wheels_assembled = self.wheels_from_storage(stored)
@@ -336,7 +336,7 @@ class BookingService:
     # ------------------------------------------------------------------
 
     def my_appointments(self, client, include_past=False, now=None):
-        now = now or datetime.now()
+        now = now or shop_now()
         query = self.db.query(Appointment).filter(
             Appointment.client_id == client.id)
 
@@ -354,7 +354,7 @@ class BookingService:
         Незадолго до времени отменять в приложении не даём: цех уже
         держит под клиента пост, и такое лучше сказать голосом.
         """
-        now = now or datetime.now()
+        now = now or shop_now()
 
         appointment = self.db.query(Appointment).filter(
             Appointment.id == appointment_id,

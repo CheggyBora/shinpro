@@ -26,7 +26,7 @@ from app.security import (generate_code, hash_secret, secrets_match,
                           is_valid_pin)
 from app.services import sms, mail, shop_settings
 from app.utils import (normalize_phone, normalize_email,
-                       is_valid_phone, is_valid_email)
+                       is_valid_phone, is_valid_email, now as shop_now)
 
 PURPOSE_SIGNUP = 'signup'
 PURPOSE_PIN_RESET = 'pin_reset'
@@ -122,7 +122,7 @@ class AuthService:
             channel=channel,
             code_hash=hash_secret(phone, code),
             purpose=purpose,
-            expires_at=datetime.utcnow() + timedelta(
+            expires_at=shop_now() + timedelta(
                 minutes=settings.CODE_TTL_MINUTES))
         self.db.add(record)
         self.db.commit()
@@ -154,7 +154,7 @@ class AuthService:
 
     def _check_rate_limit(self, phone):
         """Не давать заказывать коды пачками — SMS платные."""
-        hour_ago = datetime.utcnow() - timedelta(hours=1)
+        hour_ago = shop_now() - timedelta(hours=1)
         recent = self.db.query(LoginCode).filter(
             LoginCode.login == phone,
             LoginCode.created_at >= hour_ago).count()
@@ -187,9 +187,9 @@ class AuthService:
             client = Client(phone=phone)
             self.db.add(client)
 
-        record.used_at = datetime.utcnow()
-        client.phone_verified_at = datetime.utcnow()
-        client.last_seen_at = datetime.utcnow()
+        record.used_at = shop_now()
+        client.phone_verified_at = shop_now()
+        client.last_seen_at = shop_now()
 
         # Код подтверждён — прежние промахи ПИНом прощаем
         client.pin_failures = 0
@@ -208,7 +208,7 @@ class AuthService:
         if record is None:
             raise AuthError('Запросите код заново')
 
-        if record.expires_at < datetime.utcnow():
+        if record.expires_at < shop_now():
             raise AuthError('Срок действия кода истёк, запросите новый')
 
         if record.attempts >= settings.CODE_MAX_ATTEMPTS:
@@ -239,7 +239,7 @@ class AuthService:
                 f'и 1234 не подойдут')
 
         client.pin_hash = hash_secret(client.phone, pin)
-        client.pin_updated_at = datetime.utcnow()
+        client.pin_updated_at = shop_now()
         client.pin_failures = 0
         client.pin_blocked_at = None
         self.db.commit()
@@ -265,7 +265,7 @@ class AuthService:
         if not secrets_match(phone, str(pin or '').strip(), client.pin_hash):
             client.pin_failures += 1
             if client.pin_failures >= settings.PIN_MAX_FAILURES:
-                client.pin_blocked_at = datetime.utcnow()
+                client.pin_blocked_at = shop_now()
             self.db.commit()
 
             left = settings.PIN_MAX_FAILURES - client.pin_failures
@@ -275,7 +275,7 @@ class AuthService:
             raise AuthError(f'ПИН неверный. Осталось попыток: {left}')
 
         client.pin_failures = 0
-        client.last_seen_at = datetime.utcnow()
+        client.last_seen_at = shop_now()
         self.db.commit()
         self.db.refresh(client)
         return client
@@ -308,7 +308,7 @@ class AuthService:
         device.push_token = (push_token or '').strip() or None
         device.platform = platform
         device.app_version = app_version
-        device.last_seen_at = datetime.utcnow()
+        device.last_seen_at = shop_now()
         device.is_active = True
 
         self.db.commit()

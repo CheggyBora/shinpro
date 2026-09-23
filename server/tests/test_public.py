@@ -29,6 +29,7 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.database import SessionLocal
+from app.utils import now as shop_now
 from app.models import BookingDay, Appointment, Client, Car
 from app.api import public
 from app.services import shop_settings
@@ -195,13 +196,13 @@ with TestClient(app) as client:
 
     relax()
     past = client.post('/public/book', json={
-        'at': (datetime.now() - timedelta(hours=1)).isoformat(),
+        'at': (shop_now() - timedelta(hours=1)).isoformat(),
         'license_plate': 'К900ОР99', 'client_phone': '79161234567'})
     check('в прошлое не записаться', past.status_code == 400, str(past.json()))
 
     relax()
     far = client.post('/public/book', json={
-        'at': (datetime.now() + timedelta(days=90)).isoformat(),
+        'at': (shop_now() + timedelta(days=90)).isoformat(),
         'license_plate': 'К900ОР99', 'client_phone': '79161234567'})
     check('слишком далеко не записаться', far.status_code == 400,
           str(far.json()))

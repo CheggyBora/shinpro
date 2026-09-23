@@ -21,6 +21,7 @@ from sqlalchemy import (Column, Integer, String, Boolean, DateTime,
 from sqlalchemy.orm import relationship
 
 from app.database import Base
+from app.utils import now as shop_now
 
 
 class Client(Base):
@@ -53,7 +54,7 @@ class Client(Base):
     pin_failures = Column(Integer, default=0, nullable=False)
     pin_blocked_at = Column(DateTime, nullable=True)
 
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=shop_now, nullable=False)
     last_seen_at = Column(DateTime, nullable=True)
 
     # Заблокированный клиент не может записываться: нужно, если кто-то
@@ -116,8 +117,8 @@ class Device(Base):
     platform = Column(String(10), nullable=True)     # ios / android
     app_version = Column(String(20), nullable=True)
 
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    last_seen_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=shop_now, nullable=False)
+    last_seen_at = Column(DateTime, default=shop_now, nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
 
     client = relationship('Client', back_populates='devices')
@@ -143,7 +144,7 @@ class LoginCode(Base):
     # Зачем запрашивали код: первый вход или забытый ПИН
     purpose = Column(String(20), default='signup', nullable=False)
 
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=shop_now, nullable=False)
     expires_at = Column(DateTime, nullable=False)
 
     attempts = Column(Integer, default=0, nullable=False)

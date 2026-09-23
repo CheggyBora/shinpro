@@ -166,6 +166,22 @@ input.code { letter-spacing: 8px; text-align: center; font-size: 22px; font-weig
 .block-title { font-size: 12.5px; color: var(--muted); text-transform: uppercase;
   letter-spacing: .04em; margin: 16px 0 4px; }
 
+/* --- Форма сотрудника --- */
+.form label { display: block; font-size: 13px; color: var(--ink-soft); margin: 14px 0 5px; }
+.form input[type="text"], .form input[type="tel"], .form input[type="number"], .form select {
+  width: 100%; padding: 12px 13px; border: 1.5px solid var(--line);
+  border-radius: 12px; font-size: 16px; font-family: inherit;
+  color: var(--ink); background: var(--card);
+}
+.form input:focus, .form select:focus { outline: none; border-color: var(--brand); }
+.form .note { font-size: 12.5px; color: var(--ink-soft); margin: 5px 0 0; }
+.perm { display: flex; align-items: center; gap: 10px; padding: 9px 0;
+  border-bottom: 1px solid var(--line); font-size: 14.5px; }
+.perm:last-child { border-bottom: 0; }
+.perm input { width: 20px; height: 20px; accent-color: var(--brand); flex: 0 0 auto; }
+.danger { background: none; border: 1.5px solid var(--line); color: var(--bad);
+  width: 100%; padding: 12px; border-radius: 12px; font-size: 15px; margin-top: 10px; }
+
 @media (min-width: 760px) {
   body { padding-bottom: 20px; }
   .tiles { grid-template-columns: repeat(4, 1fr); }
@@ -466,7 +482,9 @@ var ICONS = {
   services: '<path d="M4 6h16M4 12h16M4 18h10"/>',
   masters: '<circle cx="9" cy="8" r="3"/><path d="M3 20c0-3 3-5 6-5s6 2 6 5"/><path d="M17 11h4M19 9v4"/>',
   orders: '<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/>',
-  shifts: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'
+  shifts: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  staff: '<circle cx="9" cy="8" r="3"/><path d="M3 20c0-3 3-5 6-5s6 2 6 5"/>'
+       + '<path d="M16 5l2 2 4-4"/>'
 };
 
 function sections() {
@@ -480,6 +498,7 @@ function sections() {
   if (can('salary_all')) list.push({ key: 'masters', title: 'Мастера' });
   if (can('orders') || can('salary_own')) list.push({ key: 'orders', title: 'Наряды' });
   if (can('salary_all') || can('salary_own')) list.push({ key: 'shifts', title: 'Смены' });
+  if (can('staff')) list.push({ key: 'staff', title: 'Доступ' });
 
   return list;
 }
@@ -579,6 +598,12 @@ function load() {
   $('mainError').hidden = true;
   show('<div class="empty">Загружаем…</div>');
 
+  // На экране доступа период ни при чём: люди не относятся к месяцу
+  var aboutPeople = section === 'staff';
+  $('period').style.display = aboutPeople ? 'none' : '';
+  $('dates').style.display = aboutPeople ? 'none' : '';
+
+  if (section === 'staff') return loadStaff();
   if (section === 'summary') return loadSummary();
   if (section === 'services') return loadServices();
   if (section === 'masters') return loadMasters();
@@ -732,6 +757,204 @@ function loadShifts() {
       });
     });
   }).catch(function (e) { show(''); fail(e.message); });
+}
+
+// ------------------------------------------------------------------
+// Доступ: люди, роли, права
+// ------------------------------------------------------------------
+
+var roles = null;   // справочник ролей и прав, спрашиваем один раз
+
+function loadStaff() {
+  var need = roles ? Promise.resolve(roles) : api('/staff/roles');
+
+  Promise.all([need, api('/staff/people')]).then(function (answers) {
+    roles = answers[0];
+    var people = answers[1];
+
+    var html = '<div class="card"><h2>Кто имеет доступ</h2>'
+      + people.map(function (person) {
+        var tags = '';
+        if (!person.is_active) tags += '<span class="tag bad">доступ закрыт</span>';
+        else if (!person.pin_is_set) tags += '<span class="tag warn">ещё не заходил</span>';
+
+        return '<button class="row" type="button" data-person="' + person.id + '">'
+          + '<div class="main"><b>' + escape(person.name || person.phone) + tags + '</b>'
+          + '<span>' + escape(person.role_title) + ' · ' + escape(person.phone)
+          + (person.employee_shop_id ? ' · сотрудник №' + person.employee_shop_id : '')
+          + '</span></div>'
+          + '<div class="money" style="font-weight:400;color:var(--muted)">›</div>'
+          + '</button>';
+      }).join('') + '</div>';
+
+    html += '<button class="go" type="button" id="addPerson">Добавить сотрудника</button>';
+    html += '<button class="link" type="button" id="openLog">Журнал действий</button>';
+
+    show(html);
+
+    var index = {};
+    people.forEach(function (person) { index[person.id] = person; });
+
+    [].slice.call($('view').querySelectorAll('[data-person]')).forEach(function (button) {
+      button.addEventListener('click', function () {
+        openPerson(index[button.getAttribute('data-person')]);
+      });
+    });
+
+    $('addPerson').addEventListener('click', function () { openPerson(null); });
+    $('openLog').addEventListener('click', openLog);
+  }).catch(function (e) { show(''); fail(e.message); });
+}
+
+function roleOptions(current) {
+  return roles.roles.map(function (role) {
+    return '<option value="' + role.key + '"'
+      + (role.key === current ? ' selected' : '') + '>' + escape(role.title) + '</option>';
+  }).join('');
+}
+
+function rolePermissions(key) {
+  var role = roles.roles.filter(function (item) { return item.key === key; })[0];
+  return role ? role.permissions : [];
+}
+
+function openPerson(person) {
+  var adding = !person;
+  var current = person ? person.permissions : rolePermissions('manager');
+
+  var html = '<h2>' + (adding ? 'Новый сотрудник'
+                              : escape(person.name || person.phone)) + '</h2>';
+  html += '<div class="when">' + (adding
+    ? 'Человек войдёт сам: телефон, код, свой ПИН'
+    : escape(person.phone) + ' · ' + escape(person.role_title)) + '</div>';
+
+  html += '<div class="form">';
+
+  if (adding) {
+    html += '<label for="fPhone">Телефон</label>'
+      + '<input id="fPhone" type="tel" inputmode="tel" placeholder="+7 ___ ___-__-__">';
+  }
+
+  html += '<label for="fName">Имя</label>'
+    + '<input id="fName" type="text" value="' + escape(person ? (person.name || '') : '')
+    + '" placeholder="Игорь">';
+
+  html += '<label for="fRole">Роль</label><select id="fRole">'
+    + roleOptions(person ? person.role : 'manager') + '</select>';
+
+  html += '<label for="fEmployee">Номер сотрудника в программе цеха</label>'
+    + '<input id="fEmployee" type="number" inputmode="numeric" value="'
+    + (person && person.employee_shop_id ? person.employee_shop_id : '') + '">'
+    + '<p class="note">Нужен мастеру: по этому номеру находятся его наряды '
+    + 'и начисления. Без него мастер не увидит ничего своего.</p>';
+
+  html += '<label>Что доступно</label><div id="fPerms">'
+    + roles.permissions.map(function (item) {
+        return '<label class="perm"><input type="checkbox" value="' + item.key + '"'
+          + (current.indexOf(item.key) >= 0 ? ' checked' : '') + '>'
+          + escape(item.title) + '</label>';
+      }).join('') + '</div>'
+    + '<p class="note">Галочки подставляются по роли. Снимите или добавьте '
+    + 'любую — у этого человека будет по-своему.</p>';
+
+  html += '</div>';
+
+  html += '<button class="go" type="button" id="savePerson" style="margin-top:18px">'
+    + (adding ? 'Завести' : 'Сохранить') + '</button>';
+
+  if (!adding) {
+    html += '<button class="danger" type="button" id="togglePerson">'
+      + (person.is_active ? 'Закрыть доступ' : 'Открыть доступ снова') + '</button>';
+  }
+
+  html += '<div class="error" id="formError" hidden></div>';
+
+  sheet(html);
+
+  // Сменили роль — подставляем её галочки. Человек, меняющий роль,
+  // ждёт именно этого, а не сохранения прежних прав от старой
+  $('fRole').addEventListener('change', function () {
+    var allowed = rolePermissions($('fRole').value);
+    [].slice.call($('fPerms').querySelectorAll('input')).forEach(function (box) {
+      box.checked = allowed.indexOf(box.value) >= 0;
+    });
+  });
+
+  if (adding) {
+    $('fPhone').addEventListener('input', function (event) {
+      event.target.value = fixPhone(event.target.value);
+    });
+  }
+
+  $('savePerson').addEventListener('click', function () {
+    var chosen = [].slice.call($('fPerms').querySelectorAll('input'))
+      .filter(function (box) { return box.checked; })
+      .map(function (box) { return box.value; });
+
+    var body = {
+      name: $('fName').value,
+      role: $('fRole').value,
+      employee_shop_id: parseInt($('fEmployee').value, 10) || null,
+      permissions: chosen
+    };
+
+    var request = adding
+      ? api('/staff/people', { method: 'POST',
+            body: Object.assign({ phone: $('fPhone').value.replace(/\D/g, '') }, body) })
+      : api('/staff/people/' + person.id, { method: 'PATCH', body: body });
+
+    request.then(function () {
+      // Себе же меняли права — прежний вход больше не годится,
+      // и сервер это подтвердит отказом на первом же запросе
+      if (person && me && person.id === me.id) {
+        closeSheet();
+        forget();
+        loginError('Права изменились, войдите заново');
+        return;
+      }
+      closeSheet();
+      loadStaff();
+    }).catch(function (e) { formError(e.message); });
+  });
+
+  if (!adding) {
+    $('togglePerson').addEventListener('click', function () {
+      api('/staff/people/' + person.id, { method: 'PATCH',
+          body: { is_active: !person.is_active } })
+        .then(function () { closeSheet(); loadStaff(); })
+        .catch(function (e) { formError(e.message); });
+    });
+  }
+}
+
+function formError(text) {
+  var box = $('formError');
+  if (!box) { fail(text); return; }
+  box.textContent = text;
+  box.hidden = false;
+  box.scrollIntoView({ block: 'nearest' });
+}
+
+function openLog() {
+  api('/staff/log?limit=100').then(function (rows) {
+    var html = '<h2>Журнал действий</h2>'
+      + '<div class="when">Кто заходил и что менял</div>';
+
+    if (!rows.length) html += '<div class="empty">Пока пусто</div>';
+
+    var WHAT = {
+      login: 'вход по ПИНу', verify: 'вход по коду', set_pin: 'задан ПИН',
+      staff_add: 'заведён сотрудник', staff_update: 'изменён доступ'
+    };
+
+    html += rows.map(function (row) {
+      return '<div class="line"><span>' + timeText(row.happened_at) + ' · '
+        + escape(row.phone || '') + '</span><b style="white-space:normal">'
+        + escape(row.detail || WHAT[row.action] || row.action) + '</b></div>';
+    }).join('');
+
+    sheet(html);
+  }).catch(function (e) { fail(e.message); });
 }
 
 // ------------------------------------------------------------------

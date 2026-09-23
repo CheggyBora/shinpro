@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.database import get_db
 from app.models import Client
+from app.utils import now as shop_now
 
 ALGORITHM = 'HS256'
 
@@ -77,6 +78,8 @@ def is_valid_pin(pin):
 # ----------------------------------------------------------------------
 
 def create_token(client_id):
+    # Срок жизни токена — по UTC: так его проверяет библиотека. Всё
+    # остальное время на сервере — время шиномонтажа, см. app/utils.now
     payload = {
         'sub': str(client_id),
         'exp': datetime.utcnow() + timedelta(days=settings.TOKEN_DAYS),
@@ -119,7 +122,7 @@ def current_client(authorization: str = Header(default=''),
         raise HTTPException(status.HTTP_403_FORBIDDEN,
                             detail='Доступ закрыт, обратитесь в шиномонтаж')
 
-    client.last_seen_at = datetime.utcnow()
+    client.last_seen_at = shop_now()
     db.commit()
     return client
 
@@ -177,7 +180,7 @@ def current_staff(authorization: str = Header(default=''),
         raise HTTPException(status.HTTP_401_UNAUTHORIZED,
                             detail='Права изменились, войдите заново')
 
-    staff.last_seen_at = datetime.utcnow()
+    staff.last_seen_at = shop_now()
     db.commit()
     return staff
 

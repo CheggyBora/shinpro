@@ -32,6 +32,7 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.database import SessionLocal
+from app.utils import now as shop_now
 from app.models import BookingDay, StoredSet, Visit, QueueSnapshot, Client, TAKEN
 
 _failures = []
@@ -190,7 +191,7 @@ with TestClient(app) as client:
 
     # --- Готовим день в цеху -------------------------------------------
     db = SessionLocal()
-    TOMORROW = (datetime.now() + timedelta(days=1)).date()
+    TOMORROW = (shop_now() + timedelta(days=1)).date()
     db.add(BookingDay(day=TOMORROW, posts=2,
                       opens_at='09:00', closes_at='18:00'))
     db.add(BookingDay(day=TOMORROW + timedelta(days=1), posts=1,
@@ -251,14 +252,14 @@ with TestClient(app) as client:
 
     print('\n=== В прошлое не записаться ===')
     past = client.post('/booking', headers=headers,
-                       json={'at': (datetime.now() - timedelta(hours=2)).isoformat(),
+                       json={'at': (shop_now() - timedelta(hours=2)).isoformat(),
                              'license_plate': 'К900ОР99'})
     check('прошедшее время отклонено', past.status_code == 400,
           str(past.json()))
 
     print('\n=== Далеко вперёд не записаться ===')
     far = client.post('/booking', headers=headers,
-                      json={'at': (datetime.now() + timedelta(days=60)).isoformat(),
+                      json={'at': (shop_now() + timedelta(days=60)).isoformat(),
                             'license_plate': 'К900ОР99'})
     check('слишком далёкая дата отклонена', far.status_code == 400,
           str(far.json()))
@@ -275,7 +276,7 @@ with TestClient(app) as client:
           len(client.get('/booking/my', headers=headers).json()) == 0)
 
     print('\n=== Незадолго до записи отменять нельзя ===')
-    soon = (datetime.now() + timedelta(minutes=30))
+    soon = (shop_now() + timedelta(minutes=30))
     db = SessionLocal()
     from app.models import Appointment
     close_one = Appointment(client_id=client_id, scheduled_at=soon,
@@ -297,8 +298,8 @@ with TestClient(app) as client:
     stored = StoredSet(client_id=client_id, license_plate='А123ВВ777',
                        storage_type='Шины с дисками', diameter='R17',
                        brand='Nokian Hakkapeliitta', wheel_type='Литые',
-                       accepted_at=datetime.now() - timedelta(days=30),
-                       expires_at=datetime.now() + timedelta(days=150),
+                       accepted_at=shop_now() - timedelta(days=30),
+                       expires_at=shop_now() + timedelta(days=150),
                        status='stored')
     db.add(stored)
     db.commit()
@@ -313,12 +314,12 @@ with TestClient(app) as client:
 
     print('\n=== Заявка привезти комплект ===')
     early = client.post(f'/storage/{stored_id}/request', headers=headers,
-                        json={'at': (datetime.now() + timedelta(hours=2)).isoformat()})
+                        json={'at': (shop_now() + timedelta(hours=2)).isoformat()})
     check('слишком срочная заявка отклонена', early.status_code == 400,
           str(early.json()))
 
     ordered = client.post(f'/storage/{stored_id}/request', headers=headers,
-                          json={'at': (datetime.now() + timedelta(days=2)).isoformat()})
+                          json={'at': (shop_now() + timedelta(days=2)).isoformat()})
     check('заявка принята', ordered.status_code == 200, str(ordered.json()))
     check('видно, что ждём цеха',
           ordered.json()['request_state'] == 'pending',
@@ -340,19 +341,19 @@ with TestClient(app) as client:
           len(client.get('/storage', headers=headers).json()) == 1)
     check('заявку на чужой комплект не принять',
           client.post(f'/storage/{alien_id}/request', headers=headers,
-                      json={'at': (datetime.now() + timedelta(days=2)).isoformat()}
+                      json={'at': (shop_now() + timedelta(days=2)).isoformat()}
                       ).status_code == 404)
 
     # --- История ----------------------------------------------------------
     print('\n=== История визитов ===')
     db = SessionLocal()
     db.add(Visit(client_id=client_id, license_plate='А123ВВ777',
-                 visited_at=datetime.now() - timedelta(days=200),
+                 visited_at=shop_now() - timedelta(days=200),
                  total_amount=3200.0,
                  services='Шиномонтаж\nБалансировка',
                  recommendations='Через 5000 км заменить передние колодки'))
     db.add(Visit(client_id=client_id, license_plate='А123ВВ777',
-                 visited_at=datetime.now() - timedelta(days=30),
+                 visited_at=shop_now() - timedelta(days=30),
                  total_amount=1800.0, services='Ремонт грибком'))
     db.commit()
     db.close()
@@ -380,7 +381,7 @@ with TestClient(app) as client:
 
     print('\n=== Свежая очередь ===')
     db = SessionLocal()
-    db.add(QueueSnapshot(taken_at=datetime.utcnow(), cars_in_work=2,
+    db.add(QueueSnapshot(taken_at=shop_now(), cars_in_work=2,
                          cars_waiting=1, open_posts=2, free_in_minutes=25,
                          shift_is_open=True))
     db.commit()
@@ -397,7 +398,7 @@ with TestClient(app) as client:
     # не выходил на связь. Поэтому убираем прежние, а не добавляем к ним
     db = SessionLocal()
     db.query(QueueSnapshot).delete()
-    db.add(QueueSnapshot(taken_at=datetime.utcnow() - timedelta(hours=3),
+    db.add(QueueSnapshot(taken_at=shop_now() - timedelta(hours=3),
                          cars_in_work=5, cars_waiting=4, open_posts=2,
                          free_in_minutes=10, shift_is_open=True))
     db.commit()
