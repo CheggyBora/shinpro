@@ -28,7 +28,17 @@ emp_service = EmployeeService(db)
 order_service = OrderService(db)
 salary_service = SalaryService(db)
 
-print('=== Время смены ===')
+print('=== Время всегда московское ===')
+# Раньше время бралось у компьютера, и на машине с другим поясом всё
+# разъезжалось: наряд, смена и запись получали разное «сейчас».
+# Теперь оно считается от всемирного, а всемирное везде одно
+gap = (get_moscow_time() - datetime.utcnow()).total_seconds() / 3600
+check('московское время опережает всемирное на три часа',
+      2.9 < gap < 3.1, f'{gap:.2f} ч')
+check('время без часового пояса — как оно лежит в базе',
+      get_moscow_time().tzinfo is None)
+
+print('\n=== Время смены ===')
 shift = shift_service.open_shift()
 check('время начала смены без часового пояса', shift.start_time.tzinfo is None,
       repr(shift.start_time))

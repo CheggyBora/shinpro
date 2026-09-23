@@ -34,7 +34,7 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.database import SessionLocal
 from app.models import StaffUser, StaffAction, QueueSnapshot, Appointment
-from app.utils import now as shop_now, SHOP_TZ_HOURS
+from app.utils import now as shop_now, MOSCOW_OFFSET_HOURS
 from app.services.booking_service import BookingService
 
 _failures = []
@@ -59,10 +59,10 @@ def finish():
 
 
 print('=== «Сейчас» — московское, а не то, что на машине ===')
-check('сдвиг задан', SHOP_TZ_HOURS == 3, str(SHOP_TZ_HOURS))
+check('московский сдвиг', MOSCOW_OFFSET_HOURS == 3, str(MOSCOW_OFFSET_HOURS))
 
 gap = (shop_now() - datetime.utcnow()).total_seconds() / 3600
-check('время шиномонтажа опережает UTC на три часа',
+check('время опережает UTC на три часа',
       2.9 < gap < 3.1, f'{gap:.2f} ч')
 
 print('\n=== Никто не берёт время у машины напрямую ===')
