@@ -1,0 +1,1137 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f172a">
+<title>Запись на шиномонтаж</title>
+<style>
+/*
+  Страница открывается с телефона у обочины, часто на слабой связи.
+  Поэтому здесь нет ни одной внешней загрузки: ни шрифтов, ни картинок,
+  ни библиотек. Вся графика — вектор прямо в разметке.
+
+  Путей два, и разводятся они на первом же экране:
+    «Просто записаться»          — без входа, минимум полей
+    «Заказать шины с хранения»   — через кабинет, там человек уже свой
+
+  Что лежит у клиента на складе — закрытые сведения, и без входа их
+  не показываем: телефон не секрет, его может знать посторонний.
+*/
+:root {
+  --ink: #0f172a; --ink-soft: #475569; --muted: #94a3b8;
+  --line: #e2e8f0; --bg: #f1f5f9; --card: #fff;
+  --brand: #2563eb; --brand-dark: #1d4ed8;
+  --ok: #059669; --bad: #dc2626; --radius: 16px;
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: 16px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+        'Helvetica Neue', Arial, sans-serif;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.wrap { max-width: 520px; margin: 0 auto; padding: 0 14px 40px; }
+
+/* --- Шапка --- */
+.hero {
+  position: relative; overflow: hidden; color: #fff;
+  background: linear-gradient(160deg, #1e293b 0%, #0f172a 60%, #020617 100%);
+  padding: 26px 0 34px; margin-bottom: -22px;
+}
+.hero .tread {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  opacity: .18; pointer-events: none;
+}
+.hero-inner {
+  position: relative; padding: 0 20px;
+  display: flex; align-items: center; gap: 14px;
+}
+.logo {
+  width: 52px; height: 52px; border-radius: 14px; flex: 0 0 auto;
+  background: #fff; object-fit: contain; padding: 5px;
+  box-shadow: 0 6px 20px rgba(0,0,0,.35);
+}
+.hero h1 { margin: 0; font-size: 21px; font-weight: 700; letter-spacing: -.2px; }
+.hero .grow { flex: 1 1 auto; min-width: 0; }
+.hero p { margin: 3px 0 0; font-size: 13px; color: #cbd5e1; }
+
+/* --- Карточки --- */
+.card {
+  position: relative; background: var(--card); border-radius: var(--radius);
+  box-shadow: 0 2px 10px rgba(15,23,42,.07), 0 12px 30px rgba(15,23,42,.06);
+  padding: 20px 18px; margin-bottom: 14px;
+}
+.card h2 {
+  margin: 0 0 4px; font-size: 15px; font-weight: 700;
+  display: flex; align-items: center; gap: 8px;
+}
+.card h2 .num {
+  width: 22px; height: 22px; border-radius: 50%; flex: 0 0 auto;
+  background: var(--brand); color: #fff; font-size: 12px; font-weight: 700;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.hint { margin: 0 0 14px; font-size: 13px; color: var(--ink-soft); }
+
+/* --- Развилка на входе --- */
+.pick {
+  padding: 4px 0 8px;
+  /* Экран выбора — единственное, что на нём есть. Кнопки жмутся
+     к шапке и оставляют пустоту внизу, поэтому центрируем их
+     по высоте: смотреть на пустой низ экрана незачем */
+  display: flex; flex-direction: column; justify-content: center;
+  min-height: calc(100vh - 240px);
+}
+.big {
+  display: flex; align-items: center; gap: 14px; width: 100%; text-align: left;
+  padding: 18px 16px; margin-bottom: 12px; cursor: pointer;
+  border: 1.5px solid var(--line); border-radius: var(--radius);
+  background: #fff; font-family: inherit;
+  transition: border-color .15s, transform .06s, box-shadow .15s;
+}
+.big:last-child { margin-bottom: 0; }
+.big:active { transform: translateY(1px); }
+.big .ic {
+  width: 46px; height: 46px; flex: 0 0 auto; border-radius: 13px;
+  display: flex; align-items: center; justify-content: center;
+}
+.big .ic svg { width: 26px; height: 26px; }
+.big b { display: block; font-size: 17px; margin-bottom: 3px; color: var(--ink); }
+.big span { font-size: 13.5px; color: var(--ink-soft); line-height: 1.4; }
+.big.main { border-color: var(--brand); box-shadow: 0 6px 18px rgba(37,99,235,.13); }
+.big.main .ic { background: #eff6ff; }
+.big.store .ic { background: #f0fdf4; }
+
+/* --- Поля --- */
+label { display: block; font-size: 13px; color: var(--ink-soft); margin: 0 0 5px; }
+.field { margin-bottom: 14px; }
+input {
+  width: 100%; padding: 13px 14px; border: 1.5px solid var(--line);
+  border-radius: 12px; font-size: 17px; font-family: inherit; color: var(--ink);
+  background: #fff; transition: border-color .15s, box-shadow .15s;
+}
+input:focus {
+  outline: none; border-color: var(--brand);
+  box-shadow: 0 0 0 4px rgba(37,99,235,.12);
+}
+input.plate { text-transform: uppercase; letter-spacing: 1px; font-weight: 600; }
+input.code {
+  text-align: center; letter-spacing: 12px; font-size: 26px;
+  font-weight: 700; padding-left: 12px;
+}
+
+/* --- Выбор из двух --- */
+.choice { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.choice button {
+  border: 1.5px solid var(--line); background: #fff; border-radius: 12px;
+  padding: 12px 8px; cursor: pointer; font-family: inherit;
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  transition: border-color .15s, background .15s;
+}
+.choice button svg { width: 30px; height: 30px; }
+.choice button b { font-size: 13.5px; color: var(--ink); }
+.choice button span { font-size: 11.5px; color: var(--muted); }
+.choice button[aria-pressed="true"] { border-color: var(--brand); background: #eff6ff; }
+.choice button[aria-pressed="true"] b { color: var(--brand-dark); }
+
+/* --- Машины и комплекты --- */
+.row-pick {
+  display: flex; align-items: flex-start; gap: 12px; padding: 13px;
+  border: 1.5px solid var(--line); border-radius: 12px; margin-bottom: 9px;
+  cursor: pointer; transition: border-color .15s, background .15s;
+}
+.row-pick:last-child { margin-bottom: 0; }
+.row-pick[data-on="1"] { border-color: var(--brand); background: #eff6ff; }
+.row-pick.green[data-on="1"] { border-color: var(--ok); background: #f0fdf4; }
+.row-pick .box {
+  width: 24px; height: 24px; flex: 0 0 auto; margin-top: 1px;
+  border: 2px solid var(--line); border-radius: 7px; background: #fff;
+  display: flex; align-items: center; justify-content: center;
+}
+.row-pick[data-on="1"] .box { border-color: var(--brand); background: var(--brand); }
+.row-pick.green[data-on="1"] .box { border-color: var(--ok); background: var(--ok); }
+.row-pick .box svg { width: 14px; height: 14px; display: none; }
+.row-pick[data-on="1"] .box svg { display: block; }
+.row-pick .what { font-size: 14.5px; font-weight: 600; line-height: 1.35; }
+.row-pick .sub { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+
+/* --- Мои записи --- */
+.mine {
+  display: flex; align-items: center; gap: 12px; padding: 13px;
+  border: 1.5px solid var(--line); border-radius: 12px; margin-bottom: 9px;
+}
+.mine:last-child { margin-bottom: 0; }
+.mine .grow { flex: 1 1 auto; min-width: 0; }
+.mine .when-s { font-size: 15px; font-weight: 700; }
+.mine .sub { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+.drop {
+  flex: 0 0 auto; border: 1.5px solid #fecaca; background: #fef2f2;
+  color: #991b1b; border-radius: 10px; padding: 9px 13px;
+  font-family: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer;
+}
+.drop:disabled { opacity: .45; cursor: default; }
+
+/* --- Дни и окна --- */
+.days { display: flex; gap: 8px; overflow-x: auto; padding: 2px 0 10px;
+        scrollbar-width: none; -ms-overflow-style: none; }
+.days::-webkit-scrollbar { display: none; }
+.day {
+  flex: 0 0 auto; min-width: 64px; padding: 9px 12px; background: #fff;
+  border: 1.5px solid var(--line); border-radius: 12px; cursor: pointer;
+  text-align: center; font-family: inherit;
+  transition: border-color .15s, background .15s;
+}
+.day .dow { font-size: 11px; color: var(--muted); text-transform: lowercase; }
+.day .dnum { font-size: 16px; font-weight: 700; color: var(--ink); }
+.day .free { font-size: 10.5px; color: var(--ok); margin-top: 1px; }
+.day[aria-pressed="true"] { border-color: var(--brand); background: #eff6ff; }
+.day:disabled { opacity: .4; cursor: default; }
+.day:disabled .free { color: var(--muted); }
+
+.slots { display: grid; grid-template-columns: repeat(auto-fill, minmax(74px, 1fr)); gap: 8px; }
+.slot {
+  padding: 12px 4px; border-radius: 11px; cursor: pointer; background: #fff;
+  border: 1.5px solid var(--line); font-size: 15.5px; font-weight: 600;
+  color: var(--ink); font-family: inherit; font-variant-numeric: tabular-nums;
+  transition: border-color .15s, background .15s, color .15s;
+}
+.slot[aria-pressed="true"] { border-color: var(--brand); background: var(--brand); color: #fff; }
+.empty { padding: 26px 10px; text-align: center; color: var(--muted); font-size: 14px; }
+
+/* --- Кнопки --- */
+.go {
+  width: 100%; padding: 16px; border: 0; border-radius: 14px;
+  background: var(--brand); color: #fff; font-size: 17px; font-weight: 700;
+  font-family: inherit; cursor: pointer;
+  box-shadow: 0 8px 20px rgba(37,99,235,.28);
+  transition: background .15s, transform .06s;
+}
+.go:active { transform: translateY(1px); }
+.go:disabled { background: #cbd5e1; box-shadow: none; cursor: default; }
+.back {
+  background: none; border: 0; color: var(--ink-soft); font-family: inherit;
+  font-size: 14px; padding: 10px 0; cursor: pointer; margin-bottom: 4px;
+  /* Шапка заходит на содержимое на 22 пикселя — карточки под ней
+     выглядят нормально, а тёмный текст кнопки пропадал на тёмном
+     фоне. Опускаем её ниже полосы */
+  margin-top: 32px;
+}
+.link {
+  background: none; border: 0; color: var(--brand); font-family: inherit;
+  font-size: 14px; padding: 10px 0; cursor: pointer; text-decoration: underline;
+}
+.note { margin-top: 12px; font-size: 12.5px; color: var(--muted); text-align: center; }
+.error {
+  margin-top: 12px; padding: 12px 14px; border-radius: 12px;
+  background: #fef2f2; color: #991b1b; font-size: 14px; border: 1px solid #fecaca;
+}
+.who {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 13px; color: var(--ink-soft); padding: 2px 2px 12px;
+}
+
+/* --- Готово --- */
+.done { text-align: center; padding: 12px 4px 6px; }
+.done svg.big-ok { width: 68px; height: 68px; margin-bottom: 8px; }
+.done h2 { justify-content: center; font-size: 21px; margin-bottom: 10px; }
+.done .when { font-size: 27px; font-weight: 800; margin: 6px 0 2px; letter-spacing: -.5px; }
+.done .plate {
+  display: inline-block; margin-top: 12px; padding: 7px 16px;
+  border: 2px solid var(--ink); border-radius: 8px;
+  font-weight: 800; letter-spacing: 2px; font-size: 17px;
+}
+.done p { color: var(--ink-soft); font-size: 14px; }
+.done .store-note {
+  margin-top: 14px; padding: 12px 14px; border-radius: 12px;
+  background: #f0fdf4; border: 1px solid #bbf7d0; color: #14532d; font-size: 14px;
+}
+.call {
+  display: inline-block; margin-top: 16px; padding: 13px 26px;
+  border-radius: 12px; border: 1.5px solid var(--line);
+  color: var(--ink); text-decoration: none; font-weight: 600;
+}
+.foot { text-align: center; font-size: 12.5px; color: var(--muted); padding: 4px 0 10px; }
+.foot a { color: var(--ink-soft); }
+[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <svg class="tread" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <defs>
+      <pattern id="tread" width="64" height="52" patternUnits="userSpaceOnUse"
+               patternTransform="rotate(14)">
+        <rect x="4" y="0" width="16" height="20" rx="5" fill="#fff"/>
+        <rect x="30" y="12" width="16" height="20" rx="5" fill="#fff"/>
+        <rect x="4" y="30" width="16" height="16" rx="5" fill="#fff"/>
+        <rect x="44" y="36" width="14" height="14" rx="5" fill="#fff"/>
+      </pattern>
+    </defs>
+    <rect width="100%" height="100%" fill="url(#tread)"/>
+  </svg>
+  <div class="hero-inner">
+    <img class="logo" src="/z/logo.jpg" alt="" onerror="this.remove()">
+    <div class="grow">
+      <h1 id="shopName">Шиномонтаж</h1>
+      <p id="shopAddress">Запись на обслуживание</p>
+    </div>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <!-- ================================================ развилка -->
+  <div class="card pick" id="screenPick">
+    <button class="big main" id="goQuick" type="button">
+      <span class="ic">
+        <svg viewBox="0 0 26 26" fill="none" aria-hidden="true">
+          <rect x="2" y="4" width="22" height="20" rx="4" stroke="#2563eb" stroke-width="2"/>
+          <path d="M2 10h22M8 2v4M18 2v4" stroke="#2563eb" stroke-width="2" stroke-linecap="round"/>
+          <circle cx="13" cy="17" r="2.5" fill="#2563eb"/>
+        </svg>
+      </span>
+      <span>
+        <b>Просто записаться</b>
+        <span>Приеду со своими колёсами. Без регистрации, минута времени</span>
+      </span>
+    </button>
+
+    <button class="big store" id="goCabinet" type="button">
+      <span class="ic">
+        <svg viewBox="0 0 26 26" fill="none" aria-hidden="true">
+          <circle cx="13" cy="13" r="10.5" stroke="#059669" stroke-width="2"/>
+          <circle cx="13" cy="13" r="4.5" stroke="#059669" stroke-width="2"/>
+          <path d="M13 2.5v6M13 17.5v6M2.5 13h6M17.5 13h6" stroke="#059669" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+      </span>
+      <span>
+        <b>Заказать шины с хранения</b>
+        <span>Достанем ваш комплект к приезду. Нужен вход в кабинет</span>
+      </span>
+    </button>
+  </div>
+
+  <!-- ================================================ вход -->
+  <div id="screenLogin" hidden>
+    <button class="back" type="button" data-back>← Назад</button>
+
+    <div class="card">
+      <h2 id="loginTitle">Вход в кабинет</h2>
+      <p class="hint" id="loginHint">
+        Введите телефон, по которому вас знают в шиномонтаже.
+      </p>
+
+      <!-- шаг 1: телефон -->
+      <div id="stepPhone">
+        <div class="field">
+          <label for="lPhone">Телефон</label>
+          <input id="lPhone" type="tel" inputmode="tel" autocomplete="tel"
+                 placeholder="+7 (___) ___-__-__">
+        </div>
+        <button class="go" id="lNext" type="button" disabled>Продолжить</button>
+      </div>
+
+      <!-- шаг 2: ПИН -->
+      <div id="stepPin" hidden>
+        <div class="field">
+          <label for="lPin" id="pinLabel">ПИН-код</label>
+          <input id="lPin" class="code" inputmode="numeric" maxlength="4"
+                 autocomplete="off" placeholder="••••">
+        </div>
+        <button class="go" id="lPinGo" type="button" disabled>Войти</button>
+        <button class="link" id="lForgot" type="button">Забыли ПИН?</button>
+      </div>
+
+      <!-- шаг 3: код подтверждения -->
+      <div id="stepCode" hidden>
+        <div class="field" id="emailField" hidden>
+          <label for="lEmail">Почта — на неё придёт код</label>
+          <input id="lEmail" type="email" inputmode="email" placeholder="you@mail.ru">
+        </div>
+        <div class="field" id="codeField" hidden>
+          <label for="lCode">Код из сообщения</label>
+          <input id="lCode" class="code" inputmode="numeric" maxlength="4"
+                 autocomplete="one-time-code" placeholder="••••">
+        </div>
+        <button class="go" id="lCodeGo" type="button">Выслать код</button>
+      </div>
+
+      <!-- шаг 4: придумать ПИН -->
+      <div id="stepNewPin" hidden>
+        <div class="field">
+          <label for="lNewPin">Придумайте ПИН из 4 цифр</label>
+          <input id="lNewPin" class="code" inputmode="numeric" maxlength="4"
+                 autocomplete="off" placeholder="••••">
+        </div>
+        <button class="go" id="lNewPinGo" type="button" disabled>Сохранить</button>
+        <p class="note">Дальше входить будете телефоном и этим ПИНом.</p>
+      </div>
+
+      <div class="error" id="loginError" hidden></div>
+    </div>
+  </div>
+
+  <!-- ================================================ запись -->
+  <form id="screenBook" hidden>
+    <button class="back" type="button" data-back>← Назад</button>
+
+    <div class="who" id="whoBar" hidden>
+      <span id="whoName"></span>
+      <button class="link" type="button" id="logout" style="padding:0">Выйти</button>
+    </div>
+
+    <!-- уже записан: показываем и даём отменить -->
+    <div class="card" id="mineCard" hidden>
+      <h2>Ваши записи</h2>
+      <p class="hint">Планы поменялись — отмените, чтобы окно досталось другому.</p>
+      <div id="mineList"></div>
+    </div>
+
+    <!-- машина: список для вошедших, поле для остальных -->
+    <div class="card">
+      <h2><span class="num">1</span> Автомобиль</h2>
+      <p class="hint" id="carHint">Номер нужен, чтобы мастер знал, что готовить.</p>
+
+      <div id="carList" hidden></div>
+
+      <div class="field" id="plateField">
+        <label for="plate">Госномер</label>
+        <input id="plate" class="plate" autocomplete="off"
+               placeholder="А123ВВ777" maxlength="12">
+      </div>
+
+      <div class="field" id="wheelsField" style="margin-bottom:0">
+        <label>Что везёте</label>
+        <div class="choice">
+          <button type="button" id="wAssembled" aria-pressed="false">
+            <svg viewBox="0 0 40 40" fill="none" aria-hidden="true">
+              <circle cx="20" cy="20" r="16" stroke="#0f172a" stroke-width="3"/>
+              <circle cx="20" cy="20" r="8" fill="#94a3b8"/>
+              <circle cx="20" cy="20" r="3" fill="#0f172a"/>
+            </svg>
+            <b>В сборе</b><span id="tAssembled">быстрее</span>
+          </button>
+          <button type="button" id="wTires" aria-pressed="false">
+            <svg viewBox="0 0 40 40" fill="none" aria-hidden="true">
+              <circle cx="20" cy="20" r="16" stroke="#0f172a" stroke-width="3"/>
+              <circle cx="20" cy="20" r="9" stroke="#94a3b8" stroke-width="2" stroke-dasharray="3 3"/>
+            </svg>
+            <b>Только шины</b><span id="tTires">дольше</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- хранение: только для вошедших -->
+    <div class="card" id="storageCard" hidden>
+      <h2><span class="num" style="background:var(--ok)">2</span> Ваши шины на хранении</h2>
+      <p class="hint">Отметьте, что достать к приезду.</p>
+      <div id="storageList"></div>
+    </div>
+
+    <div class="card">
+      <h2><span class="num" id="numWhen">2</span> Когда вам удобно</h2>
+      <p class="hint">Показаны только свободные окна.</p>
+      <div class="days" id="days"></div>
+      <div class="slots" id="slots"></div>
+      <div class="empty" id="slotsEmpty" hidden>
+        На этот день свободных окон нет. Выберите другой.
+      </div>
+    </div>
+
+    <div class="card" id="contactCard">
+      <h2><span class="num" id="numWho">3</span> Как с вами связаться</h2>
+      <p class="hint">Позвоним, только если что-то изменится.</p>
+      <div class="field">
+        <label for="phone">Телефон</label>
+        <input id="phone" type="tel" inputmode="tel" autocomplete="tel"
+               placeholder="+7 (___) ___-__-__">
+      </div>
+      <div class="field" style="margin-bottom:0">
+        <label for="name">Как вас зовут <span style="color:var(--muted)">— по желанию</span></label>
+        <input id="name" autocomplete="given-name" placeholder="Андрей">
+      </div>
+    </div>
+
+    <button class="go" id="go" type="submit" disabled>Выберите время</button>
+    <div class="error" id="error" hidden></div>
+    <p class="note">Записываться заранее не обязательно, но так вы не будете ждать.</p>
+  </form>
+
+  <!-- ================================================ готово -->
+  <div class="card done" id="screenDone" hidden>
+    <svg class="big-ok" viewBox="0 0 68 68" fill="none" aria-hidden="true">
+      <circle cx="34" cy="34" r="31" fill="#dcfce7"/>
+      <path d="M21 35.5 L30 44 L47 25" stroke="#059669" stroke-width="5"
+            stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <h2>Вы записаны</h2>
+    <div class="when" id="doneWhen"></div>
+    <p id="doneDuration"></p>
+    <div class="plate" id="donePlate"></div>
+    <div class="store-note" id="doneStorage" hidden></div>
+    <p id="doneNote" style="margin-top:16px"></p>
+    <a class="call" id="doneCall" href="#" hidden>Позвонить в шиномонтаж</a>
+  </div>
+
+  <div class="foot"><span id="footPhone"></span></div>
+</div>
+
+<script>
+"use strict";
+
+var state = {
+  mode: null,        // quick — без входа, cabinet — из кабинета
+  token: null,
+  profile: null,
+  wheels: null,
+  car: null,         // выбранная машина в кабинете
+  day: null,
+  slot: null,
+  days: [],
+  storage: [],
+  picked: [],
+  mine: [],
+  loginPhone: '',
+  channel: 'sms'
+};
+
+var $ = function (id) { return document.getElementById(id); };
+
+// ------------------------------------------------------------------ экраны
+function show(name) {
+  ['screenPick', 'screenLogin', 'screenBook', 'screenDone'].forEach(function (id) {
+    $(id).hidden = (id !== name);
+  });
+  window.scrollTo(0, 0);
+}
+
+[].slice.call(document.querySelectorAll('[data-back]')).forEach(function (button) {
+  button.addEventListener('click', function () { show('screenPick'); });
+});
+
+// ------------------------------------------------------------------ номер
+// Латиницу заменяем на кириллицу прямо при вводе: человек набирает
+// с английской раскладки, а в базе номер должен лечь одинаково
+var LAT = 'ABEKMHOPCTYX', CYR = 'АВЕКМНОРСТУХ';
+
+function fixPlate(text) {
+  var out = '';
+  text = text.toUpperCase();
+  for (var i = 0; i < text.length; i++) {
+    var index = LAT.indexOf(text[i]);
+    out += index >= 0 ? CYR[index] : text[i];
+  }
+  return out.replace(/[^А-Я0-9]/g, '');
+}
+
+$('plate').addEventListener('input', function (event) {
+  var start = event.target.selectionStart;
+  event.target.value = fixPlate(event.target.value);
+  event.target.setSelectionRange(start, start);
+  refreshButton();
+});
+
+// ---------------------------------------------------------------- телефон
+function fixPhone(text) {
+  var digits = text.replace(/\D/g, '');
+  if (digits[0] === '8') digits = '7' + digits.slice(1);
+  if (digits[0] !== '7') digits = '7' + digits;
+  digits = digits.slice(0, 11);
+
+  var out = '+7';
+  if (digits.length > 1) out += ' (' + digits.slice(1, 4);
+  if (digits.length >= 4) out += ')';
+  if (digits.length > 4) out += ' ' + digits.slice(4, 7);
+  if (digits.length > 7) out += '-' + digits.slice(7, 9);
+  if (digits.length > 9) out += '-' + digits.slice(9, 11);
+  return out;
+}
+
+function digitsOf(value) { return (value || '').replace(/\D/g, ''); }
+
+['phone', 'lPhone'].forEach(function (id) {
+  var field = $(id);
+  field.addEventListener('input', function (event) {
+    event.target.value = fixPhone(event.target.value);
+    if (id === 'phone') refreshButton(); else refreshLogin();
+  });
+  field.addEventListener('focus', function (event) {
+    if (!event.target.value) event.target.value = '+7 ';
+  });
+});
+
+// ------------------------------------------------------------------- сеть
+function api(path, options) {
+  options = options || {};
+  options.headers = options.headers || {};
+  options.headers['Content-Type'] = 'application/json';
+  if (state.token) options.headers['Authorization'] = 'Bearer ' + state.token;
+  if (options.body) options.body = JSON.stringify(options.body);
+
+  return fetch(path, options).then(function (answer) {
+    return answer.json().catch(function () { return {}; }).then(function (data) {
+      return { ok: answer.ok, status: answer.status, data: data };
+    });
+  });
+}
+
+function reason(result) {
+  var detail = result.data && result.data.detail;
+  if (typeof detail === 'string') return detail;
+  if (detail && detail.detail) return detail.detail;
+  return 'Что-то пошло не так. Попробуйте ещё раз';
+}
+
+// ============================================================ ВХОД
+$('goQuick').addEventListener('click', function () {
+  state.mode = 'quick';
+  prepareBooking();
+  show('screenBook');
+});
+
+$('goCabinet').addEventListener('click', function () {
+  state.mode = 'cabinet';
+  loginStep('stepPhone');
+  show('screenLogin');
+});
+
+function loginStep(step) {
+  ['stepPhone', 'stepPin', 'stepCode', 'stepNewPin'].forEach(function (id) {
+    $(id).hidden = (id !== step);
+  });
+  $('loginError').hidden = true;
+}
+
+function loginError(text) {
+  var box = $('loginError');
+  box.textContent = text;
+  box.hidden = false;
+}
+
+function refreshLogin() {
+  $('lNext').disabled = digitsOf($('lPhone').value).length !== 11;
+}
+
+['lPin', 'lNewPin', 'lCode'].forEach(function (id) {
+  $(id).addEventListener('input', function (event) {
+    event.target.value = event.target.value.replace(/\D/g, '').slice(0, 4);
+    $('lPinGo').disabled = $('lPin').value.length !== 4;
+    $('lNewPinGo').disabled = $('lNewPin').value.length !== 4;
+  });
+});
+
+// шаг 1 — кто пришёл
+$('lNext').addEventListener('click', function () {
+  state.loginPhone = digitsOf($('lPhone').value);
+  $('lNext').disabled = true;
+  $('lNext').textContent = 'Проверяем…';
+
+  api('/auth/start', {method: 'POST', body: {phone: state.loginPhone}})
+    .then(function (result) {
+      $('lNext').disabled = false;
+      $('lNext').textContent = 'Продолжить';
+      if (!result.ok) { loginError(reason(result)); return; }
+
+      state.channel = result.data.channel;
+      if (result.data.step === 'pin') {
+        $('pinLabel').textContent = 'ПИН-код';
+        loginStep('stepPin');
+        $('lPin').focus();
+      } else {
+        $('loginHint').textContent = result.data.is_known
+          ? 'Подтвердите номер — и придумайте новый ПИН.'
+          : 'Вы здесь впервые. Подтвердим номер и придумаем ПИН.';
+        prepareCodeStep();
+      }
+    });
+});
+
+function prepareCodeStep() {
+  loginStep('stepCode');
+  $('emailField').hidden = (state.channel !== 'email');
+  $('codeField').hidden = true;
+  $('lCodeGo').textContent = 'Выслать код';
+  $('lCodeGo').onclick = sendCode;
+}
+
+function sendCode() {
+  var body = {phone: state.loginPhone};
+  if (state.channel === 'email') body.email = $('lEmail').value;
+
+  $('lCodeGo').disabled = true;
+  $('lCodeGo').textContent = 'Отправляем…';
+
+  api('/auth/code', {method: 'POST', body: body}).then(function (result) {
+    $('lCodeGo').disabled = false;
+    if (!result.ok) {
+      if (result.status === 422) {
+        state.channel = 'email';
+        $('emailField').hidden = false;
+      }
+      $('lCodeGo').textContent = 'Выслать код';
+      loginError(reason(result));
+      return;
+    }
+    $('emailField').hidden = true;
+    $('codeField').hidden = false;
+    $('lCodeGo').textContent = 'Подтвердить';
+    $('lCodeGo').onclick = checkCode;
+    $('lCode').focus();
+  });
+}
+
+function checkCode() {
+  api('/auth/verify', {method: 'POST',
+       body: {phone: state.loginPhone, code: $('lCode').value}})
+    .then(function (result) {
+      if (!result.ok) { loginError(reason(result)); return; }
+      state.token = result.data.token;
+      if (result.data.pin_is_set) {
+        afterLogin();
+      } else {
+        loginStep('stepNewPin');
+        $('lNewPin').focus();
+      }
+    });
+}
+
+// вход по ПИНу
+$('lPinGo').addEventListener('click', function () {
+  api('/auth/login', {method: 'POST',
+       body: {phone: state.loginPhone, pin: $('lPin').value}})
+    .then(function (result) {
+      if (!result.ok) { loginError(reason(result)); return; }
+      state.token = result.data.token;
+      afterLogin();
+    });
+});
+
+$('lForgot').addEventListener('click', function () {
+  $('loginHint').textContent = 'Подтвердим номер — и зададите новый ПИН.';
+  prepareCodeStep();
+});
+
+// новый ПИН
+$('lNewPinGo').addEventListener('click', function () {
+  api('/auth/pin', {method: 'POST', body: {pin: $('lNewPin').value}})
+    .then(function (result) {
+      if (!result.ok) { loginError(reason(result)); return; }
+      afterLogin();
+    });
+});
+
+function afterLogin() {
+  api('/auth/me').then(function (result) {
+    if (!result.ok) { loginError(reason(result)); return; }
+    state.profile = result.data;
+    return api('/storage').then(function (answer) {
+      state.storage = answer.ok ? answer.data : [];
+      prepareBooking();
+      show('screenBook');
+    });
+  });
+}
+
+$('logout').addEventListener('click', function () {
+  state.token = null;
+  state.profile = null;
+  state.storage = [];
+  state.picked = [];
+  show('screenPick');
+});
+
+// ============================================================ ЗАПИСЬ
+function prepareBooking() {
+  var inCabinet = state.mode === 'cabinet' && state.profile;
+
+  $('whoBar').hidden = !inCabinet;
+  $('contactCard').hidden = !!inCabinet;
+  $('storageCard').hidden = !inCabinet || !state.storage.length;
+  $('numWhen').textContent = (inCabinet && state.storage.length) ? '3' : '2';
+  $('numWho').textContent = '3';
+
+  if (inCabinet) {
+    $('whoName').textContent = (state.profile.name || 'Вы') + ' · '
+      + state.profile.phone;
+    drawCars();
+    drawStorage();
+    loadMine();
+  } else {
+    $('mineCard').hidden = true;
+    $('carList').hidden = true;
+    $('plateField').hidden = false;
+    $('wheelsField').hidden = false;
+    $('carHint').textContent = 'Номер нужен, чтобы мастер знал, что готовить.';
+  }
+
+  loadDays();
+  refreshButton();
+}
+
+function drawCars() {
+  var cars = state.profile.cars || [];
+  var list = $('carList');
+  list.textContent = '';
+
+  if (!cars.length) {
+    // Машин в базе нет — спросим номер как у всех
+    list.hidden = true;
+    $('plateField').hidden = false;
+    $('wheelsField').hidden = false;
+    return;
+  }
+
+  list.hidden = false;
+  // Одна машина — выбирать не из чего, но показать её стоит
+  if (cars.length === 1) state.car = cars[0];
+
+  cars.forEach(function (car) {
+    var on = state.car && state.car.id === car.id;
+    var row = document.createElement('div');
+    row.className = 'row-pick';
+    row.setAttribute('data-on', on ? '1' : '0');
+    row.innerHTML = tick() +
+      '<div><div class="what">' + escapeText(car.license_plate) + '</div>' +
+      '<div class="sub">' + (car.wheels_assembled === true ? 'колёса в сборе'
+        : car.wheels_assembled === false ? 'только шины' : 'колёса не выяснены') +
+      '</div></div>';
+    row.addEventListener('click', function () {
+      state.car = car;
+      state.wheels = car.wheels_assembled;
+      drawCars();
+      loadDays();
+      refreshButton();
+    });
+    list.appendChild(row);
+  });
+
+  $('plateField').hidden = true;
+  // Колёса известны из карточки машины, спрашивать незачем
+  $('wheelsField').hidden = !!state.car;
+  $('carHint').textContent = cars.length > 1
+    ? 'Выберите, на какой машине приедете.'
+    : 'Ваш автомобиль.';
+}
+
+function loadMine() {
+  if (state.mode !== 'cabinet' || !state.token) {
+    $('mineCard').hidden = true;
+    return;
+  }
+  api('/booking/my').then(function (result) {
+    state.mine = result.ok ? result.data : [];
+    drawMine();
+  });
+}
+
+function drawMine() {
+  var list = $('mineList');
+  list.textContent = '';
+  $('mineCard').hidden = !state.mine.length;
+
+  state.mine.forEach(function (item) {
+    var when = new Date(item.at);
+    var row = document.createElement('div');
+    row.className = 'mine';
+    row.innerHTML =
+      '<div class="grow"><div class="when-s">' + when.getDate() + ' ' +
+      MONTHS[when.getMonth()] + ', ' +
+      ('0' + when.getHours()).slice(-2) + ':' +
+      ('0' + when.getMinutes()).slice(-2) + '</div>' +
+      '<div class="sub">' + escapeText(item.license_plate || '') +
+      ' · ' + escapeText(item.status_title) +
+      ' · ' + item.duration_minutes + ' мин</div></div>';
+
+    if (item.status === 'scheduled') {
+      var drop = document.createElement('button');
+      drop.type = 'button';
+      drop.className = 'drop';
+      drop.textContent = 'Отменить';
+      drop.addEventListener('click', function () { cancelMine(item, drop); });
+      row.appendChild(drop);
+    }
+    list.appendChild(row);
+  });
+}
+
+function cancelMine(item, button) {
+  button.disabled = true;
+  button.textContent = 'Отменяем…';
+
+  api('/booking/' + item.id, {method: 'DELETE'}).then(function (result) {
+    if (!result.ok) {
+      // Незадолго до записи отменять нельзя — цех уже держит пост
+      button.disabled = false;
+      button.textContent = 'Отменить';
+      alert(reason(result));
+      return;
+    }
+    loadMine();
+    loadDays();   // освободившееся окно должно вернуться в список
+  });
+}
+
+function drawStorage() {
+  var list = $('storageList');
+  list.textContent = '';
+  $('storageCard').hidden = !state.storage.length;
+
+  state.storage.forEach(function (set) {
+    var on = state.picked.indexOf(set.id) >= 0;
+    var parts = [set.storage_type, set.diameter, set.brand].filter(Boolean);
+    var row = document.createElement('div');
+    row.className = 'row-pick green';
+    row.setAttribute('data-on', on ? '1' : '0');
+    row.innerHTML = tick() +
+      '<div><div class="what">' + escapeText(parts.join(' · ')) + '</div>' +
+      '<div class="sub">Комплект № ' + set.id +
+      (set.license_plate ? ' · ' + escapeText(set.license_plate) : '') +
+      (set.days_left != null ? ' · хранение ещё ' + set.days_left + ' дн.' : '') +
+      '</div></div>';
+    row.addEventListener('click', function () {
+      var index = state.picked.indexOf(set.id);
+      if (index >= 0) state.picked.splice(index, 1);
+      else state.picked.push(set.id);
+      drawStorage();
+      loadDays();
+      refreshButton();
+    });
+    list.appendChild(row);
+  });
+}
+
+function tick() {
+  return '<div class="box"><svg viewBox="0 0 14 14" fill="none">' +
+         '<path d="M2 7.5 L5.5 11 L12 3.5" stroke="#fff" stroke-width="2.5" ' +
+         'stroke-linecap="round" stroke-linejoin="round"/></svg></div>';
+}
+
+function escapeText(text) {
+  var box = document.createElement('div');
+  box.textContent = text || '';
+  return box.innerHTML;
+}
+
+// ----------------------------------------------------------------- колёса
+function pickWheels(value) {
+  state.wheels = state.wheels === value ? null : value;
+  $('wAssembled').setAttribute('aria-pressed', String(state.wheels === true));
+  $('wTires').setAttribute('aria-pressed', String(state.wheels === false));
+  loadDays();
+}
+$('wAssembled').addEventListener('click', function () { pickWheels(true); });
+$('wTires').addEventListener('click', function () { pickWheels(false); });
+
+// ------------------------------------------------------------------- дни
+var DOW = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
+var MONTHS = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля',
+              'августа', 'сентября', 'октября', 'ноября', 'декабря'];
+
+function plural(count, one, few, many) {
+  if (count % 100 >= 11 && count % 100 <= 14) return many;
+  var last = count % 10;
+  if (last === 1) return one;
+  if (last >= 2 && last <= 4) return few;
+  return many;
+}
+
+function currentWheels() {
+  // Комплект со склада главнее: что там лежит, программа знает точнее
+  if (state.picked.length) {
+    var chosen = state.storage.filter(function (s) {
+      return state.picked.indexOf(s.id) >= 0;
+    });
+    var allAssembled = chosen.every(function (s) {
+      return /диск/i.test(s.storage_type || '');
+    });
+    return allAssembled;
+  }
+  return state.wheels;
+}
+
+function loadDays() {
+  var wheels = currentWheels();
+  var query = wheels === null || wheels === undefined
+    ? '' : '?wheels_assembled=' + wheels;
+  var path = (state.mode === 'cabinet' && state.token
+    ? '/booking/days' : '/public/days') + query;
+
+  api(path).then(function (result) {
+    if (!result.ok) return;
+    state.days = result.data;
+
+    var keep = state.day;
+    state.day = null;
+    drawDays();
+    if (keep && state.days.some(function (d) {
+      return d.day === keep && d.slots.length;
+    })) pickDay(keep);
+
+    if (!state.day) {
+      var first = state.days.filter(function (d) { return d.slots.length; })[0];
+      if (first) pickDay(first.day);
+    }
+  });
+}
+
+function drawDays() {
+  var box = $('days');
+  box.textContent = '';
+
+  state.days.forEach(function (day) {
+    var when = new Date(day.day + 'T00:00:00');
+    var button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'day';
+    button.disabled = !day.slots.length;
+    button.setAttribute('aria-pressed', String(state.day === day.day));
+    button.innerHTML =
+      '<div class="dow">' + DOW[when.getDay()] + '</div>' +
+      '<div class="dnum">' + when.getDate() + '</div>' +
+      '<div class="free">' + (day.slots.length
+        ? day.slots.length + ' ' + plural(day.slots.length, 'окно', 'окна', 'окон')
+        : (day.is_closed ? 'выходной' : 'занято')) + '</div>';
+    button.addEventListener('click', function () { pickDay(day.day); });
+    box.appendChild(button);
+  });
+}
+
+function pickDay(value) {
+  state.day = value;
+  state.slot = null;
+  drawDays();
+  drawSlots();
+  refreshButton();
+}
+
+function drawSlots() {
+  var box = $('slots');
+  box.textContent = '';
+
+  var day = state.days.filter(function (d) { return d.day === state.day; })[0];
+  var slots = day ? day.slots : [];
+  $('slotsEmpty').hidden = slots.length > 0;
+
+  slots.forEach(function (slot) {
+    var button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'slot';
+    button.textContent = slot.at.slice(11, 16);
+    button.setAttribute('aria-pressed', String(state.slot === slot.at));
+    button.addEventListener('click', function () {
+      state.slot = slot.at;
+      drawSlots();
+      refreshButton();
+    });
+    box.appendChild(button);
+  });
+}
+
+// --------------------------------------------------------------- кнопка
+function plateValue() {
+  if (state.mode === 'cabinet' && state.car) return state.car.license_plate;
+  return $('plate').value;
+}
+
+function refreshButton() {
+  var inCabinet = state.mode === 'cabinet' && state.profile;
+  var hasPlate = plateValue().length >= 6;
+  var hasPhone = inCabinet || digitsOf($('phone').value).length === 11;
+  var ready = hasPlate && hasPhone && !!state.slot;
+
+  var button = $('go');
+  button.disabled = !ready;
+
+  if (!hasPlate) button.textContent = inCabinet
+    ? 'Выберите автомобиль' : 'Укажите номер машины';
+  else if (!state.slot) button.textContent = 'Выберите время';
+  else if (!hasPhone) button.textContent = 'Укажите телефон';
+  else button.textContent = 'Записаться на ' + state.slot.slice(11, 16);
+}
+
+function showError(text) {
+  var box = $('error');
+  box.textContent = text;
+  box.hidden = false;
+}
+
+// ------------------------------------------------------------ отправка
+$('screenBook').addEventListener('submit', function (event) {
+  event.preventDefault();
+  $('error').hidden = true;
+
+  var button = $('go');
+  button.disabled = true;
+  button.textContent = 'Записываем…';
+
+  var inCabinet = state.mode === 'cabinet' && state.token;
+  var path = inCabinet ? '/booking' : '/public/book';
+  var body = inCabinet
+    ? {at: state.slot, license_plate: plateValue(),
+       wheels_assembled: state.wheels, storage_ids: state.picked}
+    : {at: state.slot, license_plate: plateValue(),
+       client_phone: digitsOf($('phone').value),
+       client_name: $('name').value, wheels_assembled: state.wheels};
+
+  api(path, {method: 'POST', body: body}).then(function (result) {
+    if (!result.ok) {
+      showError(reason(result));
+      refreshButton();
+      loadDays();   // время могли занять, пока человек заполнял форму
+      return;
+    }
+    showDone(result.data);
+  }).catch(function () {
+    showError('Нет связи. Проверьте интернет и попробуйте ещё раз.');
+    refreshButton();
+  });
+});
+
+function showDone(data) {
+  var when = new Date(data.at);
+  show('screenDone');
+
+  $('doneWhen').textContent = when.getDate() + ' ' + MONTHS[when.getMonth()]
+    + ', ' + ('0' + when.getHours()).slice(-2) + ':'
+    + ('0' + when.getMinutes()).slice(-2);
+  $('doneDuration').textContent = 'Работы займут около '
+    + data.duration_minutes + ' мин';
+  $('donePlate').textContent = plateValue();
+  $('doneNote').textContent = 'Подъезжайте к назначенному времени. '
+    + 'Если планы поменяются — позвоните, освободим окно для другого.';
+
+  if (state.picked.length) {
+    $('doneStorage').hidden = false;
+    $('doneStorage').textContent = 'Ваш комплект достанем со склада '
+      + 'к этому времени — мастер уже знает.';
+  }
+
+  var phone = data.shop_phone || window.shopPhone;
+  if (phone) {
+    var call = $('doneCall');
+    call.href = 'tel:' + phone.replace(/[^\d+]/g, '');
+    call.hidden = false;
+  }
+}
+
+// -------------------------------------------------------------- запуск
+api('/public/info').then(function (result) {
+  if (!result.ok) return;
+  var info = result.data;
+  window.shopPhone = info.shop_phone;
+  document.title = 'Запись — ' + info.shop_name;
+  $('shopName').textContent = info.shop_name;
+  $('shopAddress').textContent = info.shop_address || 'Запись на обслуживание';
+  $('tAssembled').textContent = '≈ ' + info.minutes_assembled + ' мин';
+  $('tTires').textContent = '≈ ' + info.minutes_tires + ' мин';
+
+  if (info.shop_phone) {
+    $('footPhone').innerHTML = 'Вопросы по телефону: <a href="tel:'
+      + info.shop_phone.replace(/[^\d+]/g, '') + '">' + info.shop_phone + '</a>';
+  }
+});
+</script>
+</body>
+</html>

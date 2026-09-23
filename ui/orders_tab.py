@@ -1,9 +1,16 @@
 import tkinter as tk
 from tkinter import ttk, messagebox, simpledialog
-from services import OrderService, SalaryService, PrintService
+from services import OrderService, SalaryService, PrintService, ClientService
 from services.shift_service import ShiftService
+from models import Client
+from utils import normalize_plate, normalize_phone, format_phone, retry_after_rollback
 from datetime import datetime
 import styles
+from logger import log
+
+# Экран одного наряда живёт в ui/order_screen: он разросся до
+# полутора тысяч строк вместе с этим файлом
+from ui.order_screen import OrderWidget
 
 class OrdersTab:
     def __init__(self, parent, db, employees_tab=None):
@@ -12,6 +19,7 @@ class OrdersTab:
         self.salary_service = SalaryService(db)
         self.print_service = PrintService()
         self.shift_service = ShiftService(db)
+        self.client_service = ClientService(db)
         self.employees_tab = employees_tab
         self.frame = ttk.Frame(parent, style='BG.TFrame')
         self.active_orders = {}
@@ -48,7 +56,7 @@ class OrdersTab:
         
         styles.create_button(input_frame, "Создать наряд", self.create_new_order, 'Primary.TButton').pack(side='left', padx=(0, 10))
         
-        styles.create_button(input_frame, "💳 Пробить", self.process_payment_for_current_order, 'Success.TButton').pack(side='left')
+        styles.create_button(input_frame, "Пробить", self.process_payment_for_current_order, 'Success.TButton').pack(side='left')
         
         top_card = styles.create_card_frame(self.frame)
         top_card.pack(fill='x', padx=15, pady=(0, 10))
@@ -61,103 +69,60 @@ class OrdersTab:
         
         self.load_service_buttons()
         
+        # Область нарядов должна занимать всё оставшееся место.
+        # Раньше она паковалась как fill='x' и получала только свою
+        # естественную высоту, а всё свободное пространство забирал
+        # пустой фрейм под ней — из-за этого таблица услуг схлопывалась.
         tabs_frame = ttk.Frame(self.frame, style='BG.TFrame')
-        tabs_frame.pack(fill='x', padx=15, pady=(0, 10))
-        
+        tabs_frame.pack(fill='both', expand=True, padx=15, pady=(0, 15))
+
         self.order_notebook = ttk.Notebook(tabs_frame)
         self.order_notebook.pack(fill='both', expand=True)
-        
-        self.content_frame = ttk.Frame(self.frame, style='BG.TFrame')
-        self.content_frame.pack(fill='both', expand=True, padx=15, pady=(0, 15))
-        
+
         self.order_notebook.bind('<<NotebookTabChanged>>', self.on_tab_change)
-    
+
+
     def load_service_buttons(self):
+        """
+        Построить кнопки услуг из прайс-листа.
+
+        Список кнопок больше не вписан в код: имена берутся из прайса,
+        а порядок по колонкам — из настроек. Поэтому услуга, добавленная
+        в прайс-лист, сразу получает кнопку, а удалённая — теряет её.
+        """
+        from services.service_layout import build_columns, COLUMN_COUNT
+
         services = self.order_service.get_all_services()
         unique_names = list(dict.fromkeys([s.name for s in services]))
-        
-        column1 = ttk.Frame(self.services_frame, style='White.TFrame')
-        column1.pack(side='left', fill='both', expand=True, padx=(0, 5))
-        
-        column2 = ttk.Frame(self.services_frame, style='White.TFrame')
-        column2.pack(side='left', fill='both', expand=True, padx=(0, 5))
-        
-        column3 = ttk.Frame(self.services_frame, style='White.TFrame')
-        column3.pack(side='left', fill='both', expand=True, padx=(0, 5))
-        
-        column4 = ttk.Frame(self.services_frame, style='White.TFrame')
-        column4.pack(side='left', fill='both', expand=True)
-        
-        column1_services = [
-            'Съем+Установка', 'Мойка', 
-            'Шиномонтаж', 'Балансировка', 'Герметик обода', 
-            'Обработка смазкой', 'Правка литого диска',
-            'Ремонт грибком', 'Ремонт кордовой заплаткой'
-        ]
-        
-        column2_services = [
-            'Runflat', 'Оптимизация балансировки', 'Замена вентиля', 
-            'Установка датчика давления', 
-            'Шлифовка бортов диска', 'Шлифовка ступицы', 
-            'Косметический ремонт шины', 'Дошиповка (за 1 шип)', 
-            'Грязевая покрышка АТ/МТ'
-        ]
-        
-        column3_services = [
-            'Ремонт жгутом', 'Подкачка/проверка давления',
-            'Зачистка диска от скотча', 'Слесарные работы',
-            'Открутка секретного болта', 'Срыв болта/гайки', 'Прочие услуги',
-            'Ремонт бокового пореза',
-            'Съем+Установка внутреннего колеса'
-        ]
-        
-        column4_services = [
-            'Вентиль под датчик', 'Вентиль черный', 'Пакет', 
-            'Золотник', 'Колпочки',
-            'Проверка на герметичность', 'Проверка на балансировку', 
-            'Проверка затяжки болтов'
-        ]
-        
-        row1 = 0
-        for service_name in column1_services:
-            if service_name in unique_names:
-                btn = ttk.Button(column1, text=service_name, 
-                               command=lambda name=service_name: self.add_service_to_current_order_by_name(name),
-                               style='Service.TButton')
-                btn.grid(row=row1, column=0, padx=2, pady=2, sticky='ew')
-                row1 += 1
-        column1.columnconfigure(0, weight=1)
-        
-        row2 = 0
-        for service_name in column2_services:
-            if service_name in unique_names:
-                btn = ttk.Button(column2, text=service_name, 
-                               command=lambda name=service_name: self.add_service_to_current_order_by_name(name),
-                               style='Service.TButton')
-                btn.grid(row=row2, column=0, padx=2, pady=2, sticky='ew')
-                row2 += 1
-        column2.columnconfigure(0, weight=1)
-        
-        row3 = 0
-        for service_name in column3_services:
-            if service_name in unique_names:
-                btn = ttk.Button(column3, text=service_name, 
-                               command=lambda name=service_name: self.add_service_to_current_order_by_name(name),
-                               style='Service.TButton')
-                btn.grid(row=row3, column=0, padx=2, pady=2, sticky='ew')
-                row3 += 1
-        column3.columnconfigure(0, weight=1)
-        
-        row4 = 0
-        for service_name in column4_services:
-            if service_name in unique_names:
-                btn = ttk.Button(column4, text=service_name, 
-                               command=lambda name=service_name: self.add_service_to_current_order_by_name(name),
-                               style='Service.TButton')
-                btn.grid(row=row4, column=0, padx=2, pady=2, sticky='ew')
-                row4 += 1
-        column4.columnconfigure(0, weight=1)
-    
+        columns = build_columns(self.db, unique_names)
+
+        # Метод вызывают при каждом возврате в раздел. Перерисовываем
+        # только когда набор кнопок правда изменился: иначе кнопки
+        # моргали бы на ровном месте
+        signature = tuple(tuple(column) for column in columns)
+        if signature == getattr(self, '_service_buttons_signature', None):
+            return
+        self._service_buttons_signature = signature
+
+        for child in self.services_frame.winfo_children():
+            child.destroy()
+
+        for index in range(COLUMN_COUNT):
+            # У последней колонки отступа справа нет — иначе она
+            # отъезжает от края
+            right_padding = 0 if index == COLUMN_COUNT - 1 else 5
+            frame = ttk.Frame(self.services_frame, style='White.TFrame')
+            frame.pack(side='left', fill='both', expand=True, padx=(0, right_padding))
+            frame.columnconfigure(0, weight=1)
+
+            for row, service_name in enumerate(columns[index]):
+                ttk.Button(
+                    frame, text=service_name,
+                    command=lambda name=service_name: self.add_service_to_current_order_by_name(name),
+                    style='Service.TButton'
+                ).grid(row=row, column=0, padx=3 if index == 0 else 2,
+                       pady=2, sticky='ew')
+
     def update_license_plates_list(self):
         """Загрузить список всех номеров машин"""
         self.all_license_plates = self.order_service.get_all_license_plates()
@@ -168,18 +133,23 @@ class OrdersTab:
         if event.keysym in ('Down', 'Up', 'Return', 'Escape'):
             return
             
-        typed = self.license_var.get().lower()
-        
+        # Нормализуем ввод: набранное латиницей "a123" должно находить "А123..."
+        typed = normalize_plate(self.license_var.get())
+
         # Очищаем список
         self.autocomplete_listbox.delete(0, tk.END)
-        
+
         if typed == '':
             # Скрываем список если пусто
             self.hide_autocomplete_list()
         else:
-            # Фильтруем и показываем подсказки
-            filtered = [plate for plate in self.all_license_plates if plate.lower().startswith(typed)]
-            
+            # Сначала номера, начинающиеся с введённого, затем содержащие его:
+            # так можно искать и по началу номера, и по одним цифрам
+            starts = [p for p in self.all_license_plates if normalize_plate(p).startswith(typed)]
+            contains = [p for p in self.all_license_plates
+                        if typed in normalize_plate(p) and p not in starts]
+            filtered = starts + contains
+
             if filtered:
                 for plate in filtered:
                     self.autocomplete_listbox.insert(tk.END, plate)
@@ -220,30 +190,25 @@ class OrdersTab:
     
     def select_plate(self, plate):
         """Установить выбранный номер и автозаполнить данные"""
-        self.license_var.set(plate)
+        selected_plate = normalize_plate(plate)
+        self.license_var.set(selected_plate)
         self.hide_autocomplete_list()
-        
-        # Автозаполнение характеристик
-        selected_plate = plate
+
         if not selected_plate:
             return
-        
+
         # Сначала пытаемся получить данные из машины (приоритет)
         car = self.order_service.get_car_by_license_plate(selected_plate)
-        
+
         if car and car.vehicle_type and car.wheel_diameter:
             # Данные из Car (запомненные параметры машины)
             self.prefilled_data = {
                 'diameter': car.wheel_diameter,
                 'vehicle_type': car.vehicle_type,
                 'client_name': None,
-                'client_phone': None
+                'client_phone': None,
+                'client_id': None
             }
-            # Также пытаемся получить данные клиента из последнего наряда
-            last_order = self.order_service.get_last_order_for_car(selected_plate)
-            if last_order and last_order.client:
-                self.prefilled_data['client_name'] = last_order.client.name
-                self.prefilled_data['client_phone'] = last_order.client.phone
         else:
             # Если нет данных в Car, получаем из последнего наряда
             last_order = self.order_service.get_last_order_for_car(selected_plate)
@@ -251,9 +216,24 @@ class OrdersTab:
                 self.prefilled_data = {
                     'diameter': last_order.wheel_diameter,
                     'vehicle_type': last_order.vehicle_type,
-                    'client_name': last_order.client.name if last_order.client else None,
-                    'client_phone': last_order.client.phone if last_order.client else None
+                    'client_name': None,
+                    'client_phone': None,
+                    'client_id': None
                 }
+            else:
+                self.prefilled_data = None
+
+        # Владельца берём из самой машины: он закреплён за ней и не зависит
+        # от того, какой наряд был последним
+        if self.prefilled_data is not None:
+            owner = car.client if car else None
+            if owner is None:
+                last_order = self.order_service.get_last_order_for_car(selected_plate)
+                owner = last_order.client if last_order else None
+            if owner is not None:
+                self.prefilled_data['client_id'] = owner.id
+                self.prefilled_data['client_name'] = owner.name
+                self.prefilled_data['client_phone'] = owner.phone
             else:
                 self.prefilled_data = None
         
@@ -261,38 +241,38 @@ class OrdersTab:
         self.create_new_order()
     
     def create_new_order(self):
-        license = self.license_entry.get().strip()
+        license = normalize_plate(self.license_entry.get())
         if not license:
             messagebox.showerror("Ошибка", "Введите номер автомобиля")
             return
-        
+
         # Проверяем наличие открытой смены
         current_shift = self.shift_service.get_current_shift()
         if not current_shift:
             messagebox.showwarning("Предупреждение", "Откройте смену перед началом работы")
             return
-        
+
         dialog = tk.Toplevel(self.frame)
         dialog.title("Детали наряда")
-        dialog.geometry("450x450")
+        dialog.geometry("470x620")
         dialog.configure(bg=styles.COLORS['bg'])
         styles.center_window(dialog, self.frame.winfo_toplevel())
-        
+
         content = ttk.Frame(dialog, style='White.TFrame')
         content.pack(fill='both', expand=True, padx=20, pady=20)
-        
-        styles.create_label(content, f"Создание наряда для {license}", 'CardHeading.TLabel').pack(anchor='w', pady=(0, 20))
-        
+
+        styles.create_label(content, f"Создание наряда для {license}", 'CardHeading.TLabel').pack(anchor='w', pady=(0, 15))
+
         # Получаем предзаполненные данные если есть
         prefilled = getattr(self, 'prefilled_data', None)
-        
+
         styles.create_label(content, "Диаметр колеса*:", 'Card.TLabel').pack(anchor='w', pady=(0, 5))
         diameter_var = tk.StringVar(value=prefilled['diameter'] if prefilled else '')
-        diameter_combo = ttk.Combobox(content, textvariable=diameter_var, 
+        diameter_combo = ttk.Combobox(content, textvariable=diameter_var,
                                       values=['R13', 'R14', 'R15', 'R16', 'R17', 'R18', 'R19', 'R20', 'R21', 'R22', 'R23', 'R24'],
                                       font=styles.FONTS['normal'], state='readonly')
-        diameter_combo.pack(fill='x', pady=(0, 15))
-        
+        diameter_combo.pack(fill='x', pady=(0, 12))
+
         # Автозаполнение типа транспорта
         vehicle_type_map_reverse = {
             'car': 'Легковой',
@@ -302,52 +282,242 @@ class OrdersTab:
         default_vehicle_type = 'Легковой'
         if prefilled and prefilled.get('vehicle_type'):
             default_vehicle_type = vehicle_type_map_reverse.get(prefilled['vehicle_type'], 'Легковой')
-        
+
         styles.create_label(content, "Тип транспорта*:", 'Card.TLabel').pack(anchor='w', pady=(0, 5))
         vehicle_type_var = tk.StringVar(value=default_vehicle_type)
-        vehicle_type_combo = ttk.Combobox(content, textvariable=vehicle_type_var, 
+        vehicle_type_combo = ttk.Combobox(content, textvariable=vehicle_type_var,
                                           values=['Легковой', 'Джип/Кроссовер/Пикап', 'Категория С (коммерческий)'],
                                           font=styles.FONTS['normal'], state='readonly')
-        vehicle_type_combo.pack(fill='x', pady=(0, 15))
-        
+        vehicle_type_combo.pack(fill='x', pady=(0, 12))
+
+        # Колёса в сборе или нет. От этого втрое отличается время работы,
+        # поэтому спрашиваем сразу и запоминаем за машиной.
+        wheels_options = {
+            'Не выяснено': None,
+            'В сборе (на дисках)': True,
+            'Без дисков (только шины)': False,
+        }
+        wheels_reverse = {True: 'В сборе (на дисках)', False: 'Без дисков (только шины)'}
+
+        car = self.order_service.get_car_by_license_plate(license)
+        default_wheels = wheels_reverse.get(
+            car.wheels_assembled if car else None, 'Не выяснено')
+
+        styles.create_label(content, "Колёса:", 'Card.TLabel').pack(anchor='w', pady=(0, 5))
+        wheels_var = tk.StringVar(value=default_wheels)
+        ttk.Combobox(content, textvariable=wheels_var, values=list(wheels_options.keys()),
+                     font=styles.FONTS['normal'], state='readonly').pack(fill='x', pady=(0, 12))
+
+        # ---------------------------------------------------------------
+        # Клиент
+        # ---------------------------------------------------------------
+        ttk.Separator(content, orient='horizontal').pack(fill='x', pady=(5, 10))
+
+        client_header = ttk.Frame(content, style='White.TFrame')
+        client_header.pack(fill='x', pady=(0, 5))
+        styles.create_label(client_header, "Клиент", 'CardHeading.TLabel').pack(side='left')
+        styles.create_button(client_header, "Найти клиента",
+                             lambda: open_client_search(), 'Secondary.TButton').pack(side='right')
+
+        # Выбранный клиент хранится тут: None = будет создан новый по телефону
+        selected = {'client_id': prefilled.get('client_id') if prefilled else None}
+
+        styles.create_label(content, "Номер телефона:", 'Card.TLabel').pack(anchor='w', pady=(0, 5))
+        client_phone_entry = styles.create_entry(content, width=40)
+        if prefilled and prefilled.get('client_phone'):
+            client_phone_entry.insert(0, format_phone(prefilled['client_phone']))
+        client_phone_entry.pack(fill='x', pady=(0, 10))
+
         styles.create_label(content, "Имя клиента:", 'Card.TLabel').pack(anchor='w', pady=(0, 5))
         client_name_entry = styles.create_entry(content, width=40)
         if prefilled and prefilled.get('client_name'):
             client_name_entry.insert(0, prefilled['client_name'])
-        client_name_entry.pack(fill='x', pady=(0, 15))
-        
-        styles.create_label(content, "Номер телефона клиента:", 'Card.TLabel').pack(anchor='w', pady=(0, 5))
-        client_phone_entry = styles.create_entry(content, width=40)
-        if prefilled and prefilled.get('client_phone'):
-            client_phone_entry.insert(0, prefilled['client_phone'])
-        client_phone_entry.pack(fill='x', pady=(0, 20))
-        
+        client_name_entry.pack(fill='x', pady=(0, 8))
+
+        # Строка состояния: новый клиент или постоянный, и сколько у него машин
+        client_status = ttk.Label(content, text="", font=(styles.DEFAULT_FONT, 9),
+                                  foreground='#64748b', wraplength=410, justify='left')
+        client_status.pack(anchor='w', pady=(0, 12))
+
+        def show_client(client):
+            """Показать сведения о выбранном клиенте и подставить его данные."""
+            if client is None:
+                selected['client_id'] = None
+                client_status.config(text="Новый клиент — будет добавлен в базу",
+                                     foreground='#64748b')
+                return
+
+            selected['client_id'] = client.id
+
+            client_phone_entry.delete(0, tk.END)
+            client_phone_entry.insert(0, format_phone(client.phone) if client.phone else '')
+            client_name_entry.delete(0, tk.END)
+            client_name_entry.insert(0, client.name or '')
+
+            summary = self.client_service.get_client_summary(client.id)
+            plates = [c.license_plate for c in summary['cars']]
+            other = [p for p in plates if p != license]
+
+            text = f"Постоянный клиент · визитов: {summary['visits']}"
+            if other:
+                text += f"\nДругие машины: {', '.join(other)}"
+            if license not in plates:
+                text += f"\nМашина {license} будет закреплена за этим клиентом"
+            client_status.config(text=text, foreground='#059669')
+
+        def lookup_by_phone(event=None):
+            """Когда кассир ввёл телефон — сразу проверяем, знаем ли мы клиента."""
+            phone = client_phone_entry.get().strip()
+            if not phone:
+                show_client(None)
+                return
+            existing = self.client_service.find_by_phone(phone)
+            show_client(existing)
+
+        client_phone_entry.bind('<FocusOut>', lookup_by_phone)
+        client_phone_entry.bind('<Return>', lookup_by_phone)
+
+        def open_client_search():
+            chosen = self.open_client_search_dialog(dialog)
+            if chosen is not None:
+                show_client(chosen)
+
+        # Начальное состояние строки
+        if selected['client_id']:
+            existing = self.db.query(Client).filter(Client.id == selected['client_id']).first()
+            show_client(existing)
+        else:
+            lookup_by_phone()
+
         def create():
             diameter = diameter_var.get()
             vehicle_type_display = vehicle_type_combo.get()
             client_name = client_name_entry.get().strip() or None
             client_phone = client_phone_entry.get().strip() or None
-            
+
             vehicle_type_map = {
                 'Легковой': 'car',
                 'Джип/Кроссовер/Пикап': 'suv',
                 'Категория С (коммерческий)': 'truck'
             }
             vehicle_type = vehicle_type_map.get(vehicle_type_display, 'car')
-            
+
             if not diameter:
                 messagebox.showerror("Ошибка", "Заполните диаметр колеса")
                 return
-            
+
+            # Если кассир правил телефон после выбора клиента, ищем заново:
+            # выбранный ранее клиент мог перестать соответствовать введённому номеру
+            client_id = selected['client_id']
+            if client_id is not None and client_phone:
+                current = self.db.query(Client).filter(Client.id == client_id).first()
+                if current and normalize_phone(current.phone) != normalize_phone(client_phone):
+                    client_id = None
+
             try:
-                order = self.order_service.create_order(license, diameter, vehicle_type, None, client_name, client_phone)
+                order = self.order_service.create_order(
+                    license, diameter, vehicle_type,
+                    client_name=client_name,
+                    client_phone=client_phone,
+                    client_id=client_id,
+                    wheels_assembled=wheels_options.get(wheels_var.get())
+                )
                 self.open_order_tab(order)
                 self.license_entry.delete(0, tk.END)
+                self.update_license_plates_list()
                 dialog.destroy()
             except Exception as e:
                 messagebox.showerror("Ошибка", str(e))
-        
+
         styles.create_button(content, "Создать наряд", create, 'Primary.TButton').pack(fill='x')
+
+    def open_client_search_dialog(self, parent):
+        """
+        Окно поиска клиента. Возвращает выбранного клиента или None.
+
+        Искать можно как угодно: по телефону (хватит последних цифр),
+        по имени или по госномеру любой из машин клиента.
+        """
+        result = {'client': None}
+
+        dialog = tk.Toplevel(parent)
+        dialog.title("Поиск клиента")
+        dialog.geometry("640x460")
+        dialog.configure(bg=styles.COLORS['bg'])
+        dialog.transient(parent)
+        dialog.grab_set()
+        styles.center_window(dialog, parent)
+
+        content = ttk.Frame(dialog, style='White.TFrame')
+        content.pack(fill='both', expand=True, padx=20, pady=20)
+
+        styles.create_label(content, "Поиск по телефону, имени или номеру машины",
+                            'CardHeading.TLabel').pack(anchor='w', pady=(0, 12))
+
+        search_row = ttk.Frame(content, style='White.TFrame')
+        search_row.pack(fill='x', pady=(0, 12))
+
+        query_entry = styles.create_entry(search_row, width=36)
+        query_entry.pack(side='left', fill='x', expand=True, padx=(0, 8))
+        query_entry.focus_set()
+
+        tree = ttk.Treeview(content, columns=('Имя', 'Телефон', 'Машины'),
+                            show='headings', height=12)
+        tree.heading('Имя', text='Имя')
+        tree.heading('Телефон', text='Телефон')
+        tree.heading('Машины', text='Машины')
+        tree.column('Имя', width=170, anchor='w')
+        tree.column('Телефон', width=150, anchor='center')
+        tree.column('Машины', width=250, anchor='w')
+
+        status = ttk.Label(content, text="", font=(styles.DEFAULT_FONT, 9), foreground='#64748b')
+
+        def do_search(event=None):
+            for row in tree.get_children():
+                tree.delete(row)
+
+            query = query_entry.get().strip()
+            if not query:
+                status.config(text="Введите телефон, имя или номер машины")
+                return
+
+            found = self.client_service.search(query)
+            if not found:
+                status.config(text=f"По запросу «{query}» никого не нашлось", foreground='#dc2626')
+                return
+
+            for client in found:
+                plates = [c.license_plate for c in self.client_service.get_client_cars(client.id)]
+                tree.insert('', 'end', values=(
+                    client.name or 'без имени',
+                    format_phone(client.phone) if client.phone else '—',
+                    ', '.join(plates) if plates else '—'
+                ), tags=(str(client.id),))
+
+            status.config(text=f"Найдено: {len(found)}", foreground='#059669')
+
+        def choose(event=None):
+            selection = tree.selection()
+            if not selection:
+                return
+            client_id = int(tree.item(selection[0])['tags'][0])
+            result['client'] = self.db.query(Client).filter(Client.id == client_id).first()
+            dialog.destroy()
+
+        styles.create_button(search_row, "Найти", do_search, 'Primary.TButton').pack(side='left')
+        query_entry.bind('<Return>', do_search)
+
+        tree.pack(fill='both', expand=True, pady=(0, 8))
+        tree.bind('<Double-1>', choose)
+        status.pack(anchor='w', pady=(0, 10))
+
+        buttons = ttk.Frame(content, style='White.TFrame')
+        buttons.pack(fill='x')
+        styles.create_button(buttons, "Выбрать", choose, 'Success.TButton').pack(side='left', fill='x', expand=True, padx=(0, 5))
+        styles.create_button(buttons, "Отмена", dialog.destroy, 'Secondary.TButton').pack(side='left', fill='x', expand=True, padx=(5, 0))
+
+        parent.wait_window(dialog)
+        return result['client']
     
     def open_order_tab(self, order):
         tab_frame = ttk.Frame(self.order_notebook)
@@ -363,44 +533,47 @@ class OrdersTab:
     def close_order_tab(self, order_id):
         if order_id in self.active_orders:
             widget = self.active_orders[order_id]
+            # Отменяем отложенное автосохранение: вкладки уже не будет,
+            # а обращение к разрушенному виджету уронит программу
+            widget.cancel_autosave()
             self.order_notebook.forget(widget.frame)
             del self.active_orders[order_id]
     
     def add_service_to_current_order_by_name(self, service_name):
-        print(f"!!! BUTTON CLICKED: {service_name}")
+        log.debug(f"!!! BUTTON CLICKED: {service_name}")
         try:
-            print(f"Active orders: {list(self.active_orders.keys())}")
-            print(f"Notebook tabs: {len(self.order_notebook.tabs())}")
+            log.debug(f"Active orders: {list(self.active_orders.keys())}")
+            log.debug(f"Notebook tabs: {len(self.order_notebook.tabs())}")
             
             if len(self.order_notebook.tabs()) == 0:
-                print("No tabs open!")
+                log.debug("No tabs open!")
                 messagebox.showwarning("Предупреждение", "Создайте наряд")
                 return
             
             current_index = self.order_notebook.index(self.order_notebook.select())
             tabs = self.order_notebook.tabs()
             
-            print(f"Current tab index: {current_index}")
-            print(f"Total tabs: {len(tabs)}")
+            log.debug(f"Current tab index: {current_index}")
+            log.debug(f"Total tabs: {len(tabs)}")
             
             if current_index < 0 or current_index >= len(tabs):
                 messagebox.showwarning("Предупреждение", "Создайте наряд")
                 return
             
             current_tab_widget = self.order_notebook.nametowidget(tabs[current_index])
-            print(f"Current tab widget: {current_tab_widget}")
+            log.debug(f"Current tab widget: {current_tab_widget}")
             
             for order_id, widget in self.active_orders.items():
-                print(f"Checking order_id={order_id}, widget.frame={widget.frame}")
+                log.debug(f"Checking order_id={order_id}, widget.frame={widget.frame}")
                 if widget.frame == current_tab_widget:
-                    print(f"MATCH! Calling add_service_by_name for order {order_id}")
+                    log.debug(f"MATCH! Calling add_service_by_name for order {order_id}")
                     widget.add_service_by_name(service_name)
                     return
             
-            print("No matching widget found!")
+            log.debug("No matching widget found!")
             messagebox.showwarning("Ошибка", "Не удалось найти активный наряд")
         except Exception as e:
-            print(f"!!! ERROR in add_service_to_current_order_by_name: {e}")
+            log.error(f"!!! ERROR in add_service_to_current_order_by_name: {e}")
             import traceback
             traceback.print_exc()
             messagebox.showerror("Ошибка", str(e))
@@ -435,651 +608,10 @@ class OrdersTab:
             
             messagebox.showwarning("Ошибка", "Не удалось найти активный наряд")
         except Exception as e:
-            print(f"ERROR in process_payment_for_current_order: {e}")
+            log.error(f"ERROR in process_payment_for_current_order: {e}")
             import traceback
             traceback.print_exc()
             messagebox.showerror("Ошибка", str(e))
     
     def on_tab_change(self, event):
         pass
-
-class OrderWidget:
-    def __init__(self, frame, order, db, order_service, salary_service, print_service, close_callback, parent_orders_tab=None):
-        self.frame = frame
-        self.order = order
-        self.db = db
-        self.order_service = order_service
-        self.salary_service = salary_service
-        self.print_service = print_service
-        self.close_callback = close_callback
-        self.parent_orders_tab = parent_orders_tab
-        
-        # КОМПАКТНЫЙ ИНТЕРФЕЙС
-        main_container = ttk.Frame(frame)
-        main_container.pack(fill='both', expand=True, padx=5, pady=3)
-        
-        # Верхняя строка: машина, скидки, цены
-        top_frame = ttk.Frame(main_container)
-        top_frame.pack(fill='x', pady=(0, 2))
-        
-        # Машина и клиент (слева)
-        info_frame = ttk.Frame(top_frame)
-        info_frame.pack(side='left')
-        
-        vehicle_type_map = {
-            'car': 'Легковой',
-            'suv': 'Джип/Кроссовер/Пикап',
-            'truck': 'Категория С (коммерческий)'
-        }
-        vehicle_type_display = vehicle_type_map.get(order.vehicle_type, order.vehicle_type)
-        
-        # Верхняя строка: номер наряда, машина и кнопка удаления
-        header_row = ttk.Frame(info_frame)
-        header_row.pack(anchor='w', fill='x')
-        
-        ttk.Label(header_row, text=f"Наряд #{order.id} | Машина: {order.car.license_plate} | Класс: {vehicle_type_display} | Диаметр: {order.wheel_diameter}", font=(styles.DEFAULT_FONT, 10, 'bold')).pack(side='left')
-        
-        # Кнопка удаления наряда (только для черновиков)
-        if order.status == 'draft':
-            styles.create_button(header_row, "❌", self.delete_order, 'Danger.TButton').pack(side='left', padx=(10, 0))
-        
-        if order.client:
-            client_info = order.client.name or ""
-            if order.client.phone:
-                client_info += f" ({order.client.phone})"
-            client_text = f"Клиент: {client_info}"
-            if order.auto_discount:
-                client_text += " (Автоскидка: 5%)"
-            ttk.Label(info_frame, text=client_text, font=(styles.DEFAULT_FONT, 9), foreground='#059669' if order.auto_discount else 'black').pack(anchor='w')
-        
-        # Сотрудники (под машиной)
-        self.employees_label = ttk.Label(info_frame, text="", font=(styles.DEFAULT_FONT, 9), foreground='#64748b')
-        self.employees_label.pack(anchor='w')
-        
-        # Рекомендации (под сотрудниками)
-        recommendations_frame = ttk.Frame(main_container)
-        recommendations_frame.pack(fill='x', pady=(5, 0))
-        
-        ttk.Label(recommendations_frame, text="Рекомендации:", font=(styles.DEFAULT_FONT, 9, 'bold')).pack(anchor='w')
-        
-        self.recommendations_text = tk.Text(recommendations_frame, height=2, font=styles.FONTS['normal'], 
-                                           bg=styles.COLORS['bg_card'], fg=styles.COLORS['text'],
-                                           relief='solid', borderwidth=1, wrap='word')
-        self.recommendations_text.pack(fill='x', pady=(2, 5))
-        
-        # Устанавливаем placeholder и загружаем существующие рекомендации
-        if order.recommendations:
-            self.recommendations_text.insert('1.0', order.recommendations)
-            self.recommendations_text.tag_configure('placeholder', foreground='#94a3b8')
-        else:
-            self.recommendations_text.insert('1.0', 'Рекомендации для клиента...')
-            self.recommendations_text.tag_add('placeholder', '1.0', 'end')
-            self.recommendations_text.tag_configure('placeholder', foreground='#94a3b8')
-        
-        # Обработчики для placeholder и автосохранения
-        self.recommendations_text.bind('<FocusIn>', self.on_recommendations_focus_in)
-        self.recommendations_text.bind('<FocusOut>', self.on_recommendations_focus_out)
-        
-        # Скидки (левее)
-        discount_frame = ttk.Frame(top_frame)
-        discount_frame.pack(side='left', padx=(15, 0))
-        
-        ttk.Label(discount_frame, text="Скидки:", font=(styles.DEFAULT_FONT, 11, 'bold')).pack(anchor='w')
-        
-        disc_row = ttk.Frame(discount_frame)
-        disc_row.pack()
-        
-        ttk.Label(disc_row, text="Диски:", font=(styles.DEFAULT_FONT, 10)).pack(side='left', padx=(0, 3))
-        self.rim_discount_var = tk.StringVar(value='0')
-        rim_combo = ttk.Combobox(disc_row, textvariable=self.rim_discount_var, values=['0', '10', '20'], 
-                                 width=5, font=(styles.DEFAULT_FONT, 10), state='readonly')
-        rim_combo.pack(side='left', padx=(0, 3))
-        ttk.Button(disc_row, text="OK", command=self.apply_rim_discount, width=3).pack(side='left', padx=(0, 10))
-        
-        ttk.Label(disc_row, text="Общ:", font=(styles.DEFAULT_FONT, 10)).pack(side='left', padx=(0, 3))
-        self.general_discount_var = tk.StringVar(value='0')
-        general_combo = ttk.Combobox(disc_row, textvariable=self.general_discount_var, values=['0', '10', '15'], 
-                                      width=5, font=(styles.DEFAULT_FONT, 10), state='readonly')
-        general_combo.pack(side='left', padx=(0, 3))
-        ttk.Button(disc_row, text="OK", command=self.apply_general_discount, width=3).pack(side='left')
-        
-        # Цены (справа)
-        price_frame = ttk.Frame(top_frame)
-        price_frame.pack(side='right')
-        
-        self.price_label = ttk.Label(price_frame, text="0.00 руб.", font=(styles.DEFAULT_FONT, 14, 'bold'), foreground='#2563eb')
-        self.price_label.pack(anchor='e')
-        
-        self.discount_price_label = ttk.Label(price_frame, text="", font=(styles.DEFAULT_FONT, 12, 'bold'), foreground='#059669')
-        self.discount_price_label.pack(anchor='e')
-        
-        # Список услуг
-        ttk.Label(main_container, text="Услуги:", font=(styles.DEFAULT_FONT, 9, 'bold'), style='ServiceHeading.TLabel').pack(fill='x', pady=(2, 1))
-        
-        tree_frame = ttk.Frame(main_container)
-        tree_frame.pack(fill='both', expand=True)
-        
-        self.items_tree = ttk.Treeview(tree_frame, columns=('Услуга', 'Кол-во', 'Цена', 'Скидка', 'Итого'), show='headings', height=15)
-        self.items_tree.heading('Услуга', text='Услуга')
-        self.items_tree.heading('Кол-во', text='Кол-во')
-        self.items_tree.heading('Цена', text='Цена')
-        self.items_tree.heading('Скидка', text='Скидка %')
-        self.items_tree.heading('Итого', text='Итого')
-        
-        # Ширина колонок
-        self.items_tree.column('Услуга', width=250, anchor='w')
-        self.items_tree.column('Кол-во', width=60, anchor='center')
-        self.items_tree.column('Цена', width=90, anchor='center')
-        self.items_tree.column('Скидка', width=90, anchor='center')
-        self.items_tree.column('Итого', width=90, anchor='center')
-        
-        self.items_tree.pack(side='left', fill='both', expand=True)
-        
-        tree_scroll = ttk.Scrollbar(tree_frame, orient='vertical', command=self.items_tree.yview)
-        tree_scroll.pack(side='right', fill='y')
-        self.items_tree.config(yscrollcommand=tree_scroll.set)
-        
-        # Inline редактирование количества по двойному клику
-        self.items_tree.bind('<Double-1>', self.on_double_click)
-        self.items_tree.bind('<Delete>', self.delete_item)
-        
-        # Entry для inline редактирования
-        self.edit_entry = None
-        
-        # Загрузка данных
-        self.refresh_items()
-    
-    def add_service_by_name(self, service_name):
-        from models import Service
-        vehicle_type = self.order.vehicle_type
-        
-        try:
-            service = self.db.query(Service).filter(
-                Service.name == service_name,
-                Service.vehicle_type == vehicle_type
-            ).first()
-            
-            if not service:
-                service = self.db.query(Service).filter(
-                    Service.name == service_name,
-                    Service.vehicle_type == 'all'
-                ).first()
-            
-            if service:
-                self.add_service(service)
-            else:
-                messagebox.showerror("Ошибка", f"Услуга '{service_name}' не найдена")
-        except Exception as e:
-            # При ошибке соединения откатываем транзакцию и пробуем снова
-            self.db.rollback()
-            try:
-                service = self.db.query(Service).filter(
-                    Service.name == service_name,
-                    Service.vehicle_type == vehicle_type
-                ).first()
-                
-                if not service:
-                    service = self.db.query(Service).filter(
-                        Service.name == service_name,
-                        Service.vehicle_type == 'all'
-                    ).first()
-                
-                if service:
-                    self.add_service(service)
-                else:
-                    messagebox.showerror("Ошибка", f"Услуга '{service_name}' не найдена")
-            except Exception as e2:
-                messagebox.showerror("Ошибка", f"Ошибка добавления услуги: {str(e2)}")
-    
-    def add_service(self, service):
-        try:
-            self.order_service.add_service_to_order(self.order.id, service.id)
-            self.refresh_items()
-        except Exception as e:
-            # При ошибке соединения откатываем и пробуем снова
-            self.db.rollback()
-            try:
-                self.order_service.add_service_to_order(self.order.id, service.id)
-                self.refresh_items()
-            except Exception as e2:
-                messagebox.showerror("Ошибка", str(e2))
-    
-    def on_double_click(self, event):
-        # Определяем на какую колонку кликнули
-        region = self.items_tree.identify_region(event.x, event.y)
-        if region != "cell":
-            return
-        
-        column = self.items_tree.identify_column(event.x)
-        selected = self.items_tree.selection()
-        if not selected:
-            return
-        
-        # Редактируем колонку "Кол-во" (#2) или "Цена" (#3)
-        if column == '#2':
-            self.edit_quantity_inline(selected[0], event)
-        elif column == '#3':
-            self.edit_price_inline(selected[0], event)
-    
-    def edit_quantity_inline(self, item_id_str, event):
-        # Получаем данные позиции
-        item_id = int(self.items_tree.item(item_id_str)['tags'][0])
-        item = next((i for i in self.order_service.get_order_items(self.order.id) if i.id == item_id), None)
-        
-        if not item:
-            return
-        
-        # Удаляем предыдущий Entry если он есть
-        if self.edit_entry:
-            self.edit_entry.destroy()
-            self.edit_entry = None
-        
-        # Получаем координаты ячейки
-        x, y, width, height = self.items_tree.bbox(item_id_str, 'Кол-во')
-        
-        # Создаём Entry поверх ячейки
-        self.edit_entry = tk.Entry(self.items_tree, justify='center')
-        self.edit_entry.place(x=x, y=y, width=width, height=height)
-        self.edit_entry.insert(0, str(item.quantity))
-        self.edit_entry.select_range(0, tk.END)
-        self.edit_entry.focus_set()
-        
-        def save_inline(event=None):
-            try:
-                quantity = int(self.edit_entry.get())
-                if quantity < 1:
-                    messagebox.showerror("Ошибка", "Количество должно быть больше 0")
-                    return
-                
-                # Сохраняем все остальные поля без изменений
-                self.order_service.update_item_full(
-                    item_id, 
-                    quantity, 
-                    item.price, 
-                    item.discount_percent, 
-                    item.comment or ""
-                )
-                self.refresh_items()
-                
-                if self.edit_entry:
-                    self.edit_entry.destroy()
-                    self.edit_entry = None
-            except ValueError:
-                messagebox.showerror("Ошибка", "Введите число")
-        
-        def cancel_inline(event=None):
-            if self.edit_entry:
-                self.edit_entry.destroy()
-                self.edit_entry = None
-        
-        # Горячие клавиши
-        self.edit_entry.bind('<Return>', save_inline)
-        self.edit_entry.bind('<KP_Enter>', save_inline)
-        self.edit_entry.bind('<Escape>', cancel_inline)
-        self.edit_entry.bind('<FocusOut>', save_inline)
-    
-    def edit_price_inline(self, item_id_str, event):
-        # Получаем данные позиции
-        item_id = int(self.items_tree.item(item_id_str)['tags'][0])
-        item = next((i for i in self.order_service.get_order_items(self.order.id) if i.id == item_id), None)
-        
-        if not item:
-            return
-        
-        # ПРОВЕРКА: редактировать можно только если editable_price = True
-        service_name = item.service.name
-        if not item.service.editable_price:
-            messagebox.showwarning(
-                "Редактирование недоступно", 
-                f"Цену можно изменять только для специальных услуг.\n\n"
-                f"Услуга '{service_name}' имеет фиксированную цену."
-            )
-            return
-        
-        # Диалоговое окно для редактирования цены (работает везде, включая Windows)
-        from tkinter import simpledialog
-        
-        new_price = simpledialog.askfloat(
-            "Изменение цены",
-            f"Введите новую цену для '{service_name}':\n(текущая цена: {item.price:.2f} ₽)",
-            initialvalue=item.price,
-            minvalue=0.01,
-            parent=self.frame
-        )
-        
-        if new_price is not None and new_price > 0:
-            try:
-                # Сохраняем новую цену
-                self.order_service.update_item_full(
-                    item_id, 
-                    item.quantity, 
-                    new_price, 
-                    item.discount_percent, 
-                    item.comment or ""
-                )
-                self.refresh_items()
-            except Exception as e:
-                messagebox.showerror("Ошибка", f"Не удалось изменить цену: {str(e)}")
-    
-    def delete_item(self, event):
-        selected = self.items_tree.selection()
-        if not selected:
-            return
-        
-        item_id = int(self.items_tree.item(selected[0])['tags'][0])
-        self.order_service.delete_item(item_id)
-        self.refresh_items()
-    
-    def apply_rim_discount(self):
-        discount = int(self.rim_discount_var.get())
-        self.order_service.update_rim_discount(self.order.id, discount)
-        self.db.refresh(self.order)
-        self.refresh_items()
-    
-    def apply_general_discount(self):
-        discount = int(self.general_discount_var.get())
-        self.order_service.update_general_discount(self.order.id, discount)
-        self.db.refresh(self.order)
-        self.refresh_items()
-    
-    def process_payment(self):
-        import os
-        import platform
-        
-        total = self.order_service.calculate_total(self.order.id)
-        
-        dialog = tk.Toplevel(self.frame)
-        dialog.title("Оплата")
-        dialog.geometry("400x300")
-        dialog.configure(bg=styles.COLORS['bg'])
-        styles.center_window(dialog, self.frame.winfo_toplevel())
-        
-        content = ttk.Frame(dialog, style='White.TFrame')
-        content.pack(fill='both', expand=True, padx=20, pady=20)
-        
-        total_label = styles.create_label(content, f"Сумма к оплате: {total:.2f} руб.", 'CardHeading.TLabel')
-        total_label.pack(pady=(0, 20))
-        total_label.configure(font=(styles.DEFAULT_FONT, 16, 'bold'), foreground=styles.COLORS['primary'])
-        
-        payment_var = tk.StringVar(value='cash')
-        
-        radio_frame = ttk.Frame(content, style='White.TFrame')
-        radio_frame.pack(fill='x', pady=(0, 20))
-        
-        ttk.Radiobutton(radio_frame, text="Наличные", variable=payment_var, value='cash').pack(anchor='w', pady=5)
-        ttk.Radiobutton(radio_frame, text="Безналичный расчёт", variable=payment_var, value='card').pack(anchor='w', pady=5)
-        
-        def pay_and_print():
-            try:
-                # 1. Проводим оплату
-                self.salary_service.process_payment(self.order.id, payment_var.get(), total)
-                self.db.refresh(self.order)
-                
-                # 1.5. Обновляем таблицу сотрудников (зарплату за смену)
-                if hasattr(self, 'parent_orders_tab') and self.parent_orders_tab.employees_tab:
-                    self.parent_orders_tab.employees_tab.refresh_employees()
-                
-                # 2. Генерируем чек
-                items = self.order_service.get_order_items(self.order.id)
-                receipt_file = self.print_service.generate_receipt(self.order, items, total)
-                
-                # 3. Пытаемся отправить на печать
-                print_success = False
-                print_error = None
-                
-                if platform.system() == 'Windows':
-                    try:
-                        # Пытаемся отправить на принтер
-                        os.startfile(receipt_file, "print")
-                        print_success = True
-                    except Exception as print_err:
-                        # Если не удалось печатать, просто откроем PDF
-                        print_error = str(print_err)
-                        print(f"⚠ Не удалось отправить на печать: {print_err}")
-                        try:
-                            os.startfile(receipt_file)  # Открыть для просмотра
-                            print("✓ PDF открыт для просмотра")
-                        except Exception as open_err:
-                            print(f"❌ Не удалось открыть PDF: {open_err}")
-                else:
-                    # Для Linux/Mac используем lp
-                    try:
-                        import subprocess
-                        subprocess.run(['lp', receipt_file], check=True)
-                        print_success = True
-                    except:
-                        pass
-                
-                # 4. Закрываем диалог оплаты
-                dialog.destroy()
-                
-                # 5. Закрываем вкладку наряда
-                try:
-                    self.close_callback(self.order.id)
-                    print(f"✓ Вкладка наряда #{self.order.id} успешно закрыта")
-                except Exception as e:
-                    print(f"⚠ Ошибка закрытия вкладки наряда #{self.order.id}: {e}")
-                
-                # 6. Показываем сообщение об успехе (в самом конце!)
-                if print_success:
-                    messagebox.showinfo("Успех", f"Оплата проведена!\nЧек отправлен на печать")
-                elif print_error:
-                    # Если была ошибка печати, но PDF открыт
-                    messagebox.showinfo("Успех", 
-                        f"Оплата проведена!\n\n"
-                        f"PDF-чек открыт для просмотра.\n"
-                        f"Распечатайте его через Ctrl+P\n\n"
-                        f"Путь: {receipt_file}")
-                else:
-                    messagebox.showinfo("Успех", f"Оплата проведена!\nЧек сохранён: {receipt_file}")
-                    
-            except Exception as e:
-                print(f"❌ Ошибка оплаты: {e}")
-                import traceback
-                traceback.print_exc()
-                messagebox.showerror("Ошибка", str(e))
-        
-        def preview_only():
-            try:
-                items = self.order_service.get_order_items(self.order.id)
-                receipt_file = self.print_service.generate_receipt(self.order, items, total)
-                abs_path = os.path.abspath(receipt_file)
-                
-                # Просто открыть PDF для просмотра
-                if platform.system() == 'Windows':
-                    os.startfile(receipt_file)
-                    messagebox.showinfo("Просмотр", f"Чек открыт для просмотра:\n{receipt_file}")
-                elif platform.system() == 'Darwin':
-                    # macOS
-                    import subprocess
-                    subprocess.Popen(['open', receipt_file])
-                    messagebox.showinfo("Просмотр", f"Чек открыт для просмотра:\n{receipt_file}")
-                else:
-                    # Linux (Replit) - используем evince
-                    import subprocess
-                    try:
-                        subprocess.Popen(['evince', abs_path])
-                        messagebox.showinfo("Просмотр", f"Чек открыт для просмотра:\n{abs_path}")
-                    except Exception as e:
-                        messagebox.showwarning("Информация", f"Чек создан и сохранён:\n{abs_path}\n\nОткройте его вручную в файловом менеджере.")
-            except Exception as e:
-                messagebox.showerror("Ошибка", str(e))
-        
-        # Две кнопки: Оплатить (печать) и Просмотр
-        button_frame = ttk.Frame(content, style='White.TFrame')
-        button_frame.pack(fill='x', pady=(10, 0))
-        
-        styles.create_button(button_frame, "🖨 Оплатить", pay_and_print, 'Success.TButton').pack(side='left', fill='x', expand=True, padx=(0, 5))
-        styles.create_button(button_frame, "👁 Просмотр", preview_only, 'Primary.TButton').pack(side='left', fill='x', expand=True, padx=(5, 0))
-    
-    def refresh_items(self):
-        try:
-            for item in self.items_tree.get_children():
-                self.items_tree.delete(item)
-            
-            items = self.order_service.get_order_items(self.order.id)
-            self.db.refresh(self.order)
-        except Exception as e:
-            # При ошибке соединения откатываем и пробуем снова
-            self.db.rollback()
-            for item in self.items_tree.get_children():
-                self.items_tree.delete(item)
-            
-            items = self.order_service.get_order_items(self.order.id)
-            self.db.refresh(self.order)
-        
-        # Обновляем значения в комбобоксах
-        self.rim_discount_var.set(str(self.order.rim_discount))
-        self.general_discount_var.set(str(self.order.general_discount))
-        
-        # Отображаем позиции
-        total_without_discount = 0
-        for item in items:
-            # Цена без скидки
-            item_no_discount = item.price * item.quantity
-            total_without_discount += item_no_discount
-            
-            # Итоговая цена позиции с учетом скидки (все скидки уже учтены в discount_percent)
-            item_total = item.price * item.quantity * (1 - item.discount_percent / 100)
-            
-            # Показываем скидку позиции (содержит максимальную из: автоскидка 5%, общая, на диски)
-            discount_display = f"{item.discount_percent}%" if item.discount_percent > 0 else "0%"
-            
-            self.items_tree.insert('', 'end', values=(
-                item.service.name,
-                item.quantity,
-                f"{item.price:.2f}",
-                discount_display,
-                f"{item_total:.2f}"
-            ), tags=(str(item.id),))
-        
-        total_with_discount = self.order_service.calculate_total(self.order.id)
-        
-        # Обновляем лейблы с ценами
-        self.price_label.config(text=f"{total_without_discount:.2f} руб.")
-        
-        if total_with_discount < total_without_discount:
-            self.discount_price_label.config(text=f"{total_with_discount:.2f} руб. со скидкой")
-        else:
-            self.discount_price_label.config(text="")
-        
-        # Обновляем список сотрудников
-        self.update_employees_display()
-    
-    def update_employees_display(self):
-        """Обновляет отображение сотрудников, работающих над нарядом"""
-        try:
-            from models import SalaryTransaction
-            
-            # Если наряд оплачен, показываем сотрудников из транзакций
-            if self.order.status == 'paid':
-                transactions = self.db.query(SalaryTransaction).filter(
-                    SalaryTransaction.work_order_id == self.order.id
-                ).all()
-                
-                if transactions:
-                    employee_ids = [str(t.employee_id) for t in transactions]
-                    employees_text = "№" + ", №".join(employee_ids)
-                    self.employees_label.config(text=employees_text, foreground='#64748b')
-                else:
-                    self.employees_label.config(text="")
-            else:
-                # Если наряд не оплачен, показываем сохранённых сотрудников из наряда
-                if self.order.employee_ids:
-                    employee_ids = self.order.employee_ids.split(',')
-                    employees_text = "№" + ", №".join(employee_ids)
-                    self.employees_label.config(text=employees_text, foreground='#059669')
-                else:
-                    self.employees_label.config(text="Нет сотрудников", foreground='#dc2626')
-        except Exception as e:
-            # При ошибке соединения откатываем и пробуем снова
-            try:
-                self.db.rollback()
-                
-                from models import SalaryTransaction
-                
-                if self.order.status == 'paid':
-                    transactions = self.db.query(SalaryTransaction).filter(
-                        SalaryTransaction.work_order_id == self.order.id
-                    ).all()
-                    
-                    if transactions:
-                        employee_ids = [str(t.employee_id) for t in transactions]
-                        employees_text = "№" + ", №".join(employee_ids)
-                        self.employees_label.config(text=employees_text, foreground='#64748b')
-                    else:
-                        self.employees_label.config(text="")
-                else:
-                    if self.order.employee_ids:
-                        employee_ids = self.order.employee_ids.split(',')
-                        employees_text = "№" + ", №".join(employee_ids)
-                        self.employees_label.config(text=employees_text, foreground='#059669')
-                    else:
-                        self.employees_label.config(text="Нет сотрудников", foreground='#dc2626')
-            except Exception as e2:
-                print(f"Error updating employees display: {e2}")
-                # Если не удалось получить данные, просто не показываем
-                self.employees_label.config(text="")
-    
-    def on_recommendations_focus_in(self, event):
-        """Убираем placeholder при получении фокуса"""
-        content = self.recommendations_text.get('1.0', 'end-1c')
-        if content == 'Рекомендации для клиента...':
-            self.recommendations_text.delete('1.0', 'end')
-            self.recommendations_text.tag_remove('placeholder', '1.0', 'end')
-    
-    def on_recommendations_focus_out(self, event):
-        """Сохраняем рекомендации при потере фокуса"""
-        content = self.recommendations_text.get('1.0', 'end-1c').strip()
-        
-        if not content:
-            # Если пусто, показываем placeholder
-            self.recommendations_text.delete('1.0', 'end')
-            self.recommendations_text.insert('1.0', 'Рекомендации для клиента...')
-            self.recommendations_text.tag_add('placeholder', '1.0', 'end')
-            # Сохраняем пустое значение
-            self.order.recommendations = None
-        else:
-            # Сохраняем введённый текст
-            self.order.recommendations = content
-        
-        # Сохраняем в базу данных
-        try:
-            self.db.commit()
-        except Exception as e:
-            self.db.rollback()
-            print(f"Ошибка сохранения рекомендаций: {e}")
-    
-    def delete_order(self):
-        """Удаляет непробитый наряд с подтверждением"""
-        # Проверяем, что наряд - черновик (только черновики можно удалять)
-        if self.order.status != 'draft':
-            messagebox.showerror("Ошибка", "Нельзя удалить наряд в работе или оплаченный.\nМожно удалять только черновики.")
-            return
-        
-        # Диалог подтверждения
-        confirm = messagebox.askyesno(
-            "Подтверждение удаления", 
-            f"Вы действительно хотите удалить наряд №{self.order.id}?\n\n"
-            f"Машина: {self.order.car.license_plate}\n"
-            f"Этот наряд будет полностью удалён из базы данных.\n\n"
-            f"Продолжить?",
-            icon='warning'
-        )
-        
-        if not confirm:
-            return
-        
-        try:
-            # Вызываем метод полного удаления
-            success, message = self.order_service.hard_delete_unpaid_order(self.order.id)
-            
-            if success:
-                messagebox.showinfo("Успех", message)
-                # Закрываем вкладку с нарядом
-                self.close_callback(self.order.id)
-            else:
-                messagebox.showerror("Ошибка", message)
-        
-        except Exception as e:
-            messagebox.showerror("Ошибка", f"Не удалось удалить наряд:\n{str(e)}")

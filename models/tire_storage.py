@@ -1,7 +1,7 @@
 from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, ForeignKey
 from sqlalchemy.orm import relationship
-from sqlalchemy.sql import func
 from config import Base
+from utils import get_moscow_time
 
 class TireStorage(Base):
     __tablename__ = 'tire_storage'
@@ -19,8 +19,8 @@ class TireStorage(Base):
     price = Column(Float, nullable=False)
     status = Column(String(20), default='stored', nullable=False)
     work_order_id = Column(Integer, ForeignKey('work_orders.id'), nullable=True)
-    accepted_date = Column(DateTime(timezone=True), server_default=func.now())
+    accepted_date = Column(DateTime(timezone=True), default=get_moscow_time)
     released_date = Column(DateTime(timezone=True), nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at = Column(DateTime(timezone=True), default=get_moscow_time)
     
     work_order = relationship("WorkOrder", backref="tire_storage")

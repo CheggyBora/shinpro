@@ -2,26 +2,54 @@ from models import Shift, WorkOrder, SalaryTransaction, Employee
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from datetime import datetime
+from utils import get_moscow_time, as_naive
 
 class ShiftService:
     def __init__(self, db: Session):
         self.db = db
     
-    def open_shift(self) -> Shift:
-        """Открыть новую смену"""
+    def open_shift(self, open_posts: int = None) -> Shift:
+        """
+        Открыть новую смену.
+
+        open_posts — сколько постов работает сегодня. Если не указано,
+        берётся значение по умолчанию из настроек. От этого числа зависит,
+        сколько машин обслуживается одновременно, а значит расчёт
+        очереди и записи.
+        """
         # Проверяем, нет ли уже открытой смены
         existing_shift = self.db.query(Shift).filter(
             Shift.status == 'open'
         ).first()
-        
+
         if existing_shift:
             raise ValueError("Уже есть открытая смена. Закройте текущую смену перед открытием новой.")
-        
+
+        if open_posts is None:
+            from services.settings_service import SettingsService
+            open_posts = SettingsService(self.db).get_int('default_posts')
+
+        if open_posts < 1:
+            raise ValueError("В смене должен быть открыт хотя бы один пост")
+
         # Создаём новую смену
-        shift = Shift(status='open')
+        shift = Shift(status='open', open_posts=open_posts)
         self.db.add(shift)
         self.db.commit()
         self.db.refresh(shift)
+        return shift
+
+    def set_open_posts(self, shift_id: int, open_posts: int) -> Shift:
+        """Изменить число открытых постов посреди смены."""
+        if open_posts < 1:
+            raise ValueError("В смене должен быть открыт хотя бы один пост")
+
+        shift = self.db.query(Shift).filter(Shift.id == shift_id).first()
+        if not shift:
+            raise ValueError("Смена не найдена")
+
+        shift.open_posts = open_posts
+        self.db.commit()
         return shift
     
     def get_current_shift(self):
@@ -94,12 +122,13 @@ class ShiftService:
         total_salary = sum(data['salary'] for data in employees_salary.values())
         
         # Закрываем смену
-        shift.end_time = datetime.now()
+        shift.end_time = get_moscow_time()
         shift.status = 'closed'
         shift.total_salary = round(total_salary, 2)
-        
+
         # Вычисляем продолжительность смены
-        duration = shift.end_time - shift.start_time
+        # as_naive защищает от старых записей, сохранённых с часовым поясом
+        duration = as_naive(shift.end_time) - as_naive(shift.start_time)
         duration_hours = duration.total_seconds() / 3600
         
         self.db.commit()

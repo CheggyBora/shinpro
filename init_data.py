@@ -4,11 +4,15 @@ from models import Service, Settings
 def initialize_data():
     db = get_db()
     
-    existing_settings = db.query(Settings).filter(Settings.key == 'admin_pin').first()
-    if not existing_settings:
-        admin_pin = Settings(key='admin_pin', value='0000')
-        db.add(admin_pin)
-        db.commit()
+    # PIN хранится хешем. Если в базе остался старый открытый PIN,
+    # он будет превращён в хеш, а открытая запись удалена.
+    from services.auth_service import AuthService
+    AuthService(db).ensure_pin_hashed()
+
+    # Настройки планирования времени: базовое время наряда, число постов,
+    # запас к прогнозу, автосохранение состава
+    from services.settings_service import SettingsService
+    SettingsService(db).ensure_defaults()
     
     # Создаём начальные цены на хранение шин для каждого размера
     storage_prices = {

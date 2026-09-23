@@ -1,4 +1,4 @@
-from models import Employee, WorkShift, SalaryTransaction, Settings
+from models import Employee, WorkShift, SalaryTransaction
 from sqlalchemy.orm import Session
 from datetime import datetime
 from utils import get_moscow_time
@@ -22,19 +22,29 @@ class EmployeeService:
         return self.db.query(Employee).filter(Employee.is_active == True).all()
     
     def update_salary_percent(self, employee_id: int, new_percent: float, pin: str) -> Employee:
-        admin_pin = self.db.query(Settings).filter(Settings.key == 'admin_pin').first()
-        correct_pin = admin_pin.value if admin_pin else "0000"
-        
-        if pin != correct_pin:
+        from services.auth_service import AuthService
+        from services.audit_service import AuditService
+
+        auth = AuthService(self.db)
+        audit = AuditService(self.db)
+
+        if not auth.verify_pin(pin):
+            audit.log(AuditService.PIN_FAILED,
+                      f"Неверный PIN при попытке изменить ставку сотрудника №{employee_id}")
             raise ValueError("Неверный PIN-код")
-        
+
         employee = self.db.query(Employee).filter(Employee.id == employee_id).first()
         if not employee:
             raise ValueError("Сотрудник не найден")
-        
+
+        old_percent = employee.salary_percent
         employee.salary_percent = new_percent
         self.db.commit()
         self.db.refresh(employee)
+
+        audit.log(AuditService.SALARY_PERCENT_CHANGE,
+                  f"Сотрудник №{employee_id}: ставка {old_percent}% -> {new_percent}%",
+                  entity_type='employee', entity_id=employee_id)
         return employee
     
     def start_shift(self, employee_id: int) -> WorkShift:

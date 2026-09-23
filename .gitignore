@@ -34,10 +34,27 @@ Thumbs.db
 receipts/*.pdf
 nohup.out
 
+# Резервные копии базы (создаются миграцией)
+backups/
+
+# Выгрузки отчётов
+exports/
+
+# Наклейки
+labels/
+
 # Logs
 *.log
+logs/
 
 # PyInstaller build files
 build/
 dist/
 *.spec.backup
+
+# Сервер приложения
+server/server.db
+server/.env
+
+# Навыки Claude Code, к проекту не относятся
+.local/

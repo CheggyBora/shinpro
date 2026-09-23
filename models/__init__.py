@@ -9,6 +9,9 @@ from .salary_transaction import SalaryTransaction
 from .settings import Settings
 from .tire_storage import TireStorage
 from .shift import Shift
+from .audit_log import AuditLog
+from .appointment import Appointment
+from .booking_posts import BookingPosts
 
 __all__ = [
     'Employee',
@@ -21,5 +24,8 @@ __all__ = [
     'SalaryTransaction',
     'Settings',
     'TireStorage',
-    'Shift'
+    'Shift',
+    'AuditLog',
+    'Appointment',
+    'BookingPosts'
 ]

@@ -18,9 +18,12 @@ a = Analysis(
         ('services', 'services'),
         ('ui', 'ui'),
         ('fonts', 'fonts'),
+        # Логотип для чеков: без него PDF собирается без картинки
+        ('assets', 'assets'),
         ('config.py', '.'),
         ('styles.py', '.'),
         ('init_data.py', '.'),
+        ('utils.py', '.'),
         ('README_USER.txt', '.'),
     ] + ttkthemes_datas,
     hiddenimports=[

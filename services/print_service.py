@@ -10,10 +10,17 @@ from reportlab.lib import colors
 from datetime import datetime
 import os
 import sys
-from utils import get_moscow_time
+from utils import get_moscow_time, money_round
+from logger import log
 
 class PrintService:
-    def __init__(self):
+    def __init__(self, db=None):
+        # Сессия для чтения реквизитов. Печать вызывается из мест, где
+        # сессии под рукой нет, поэтому её можно не передавать — тогда
+        # реквизиты читаются своей короткой сессией.
+        self.db = db
+        self._company = None
+
         # Определяем базовый путь для ресурсов (шрифтов)
         if getattr(sys, 'frozen', False):
             # PyInstaller создаёт временную папку sys._MEIPASS для упакованных ресурсов
@@ -34,8 +41,8 @@ class PrintService:
         
         # Путь к логотипу (нормализуем для Windows)
         self.logo_path = os.path.normpath(os.path.join(base_path, "assets", "logo.jpg"))
-        print(f"Путь к логотипу: {self.logo_path}")
-        print(f"Логотип существует: {os.path.exists(self.logo_path)}")
+        log.debug(f"Путь к логотипу: {self.logo_path}")
+        log.debug(f"Логотип существует: {os.path.exists(self.logo_path)}")
         
         # Регистрируем шрифт DejaVu Sans для PDF с поддержкой кириллицы
         fonts_dir = os.path.join(base_path, "fonts")
@@ -46,16 +53,158 @@ class PrintService:
             if 'DejaVuSans' not in pdfmetrics.getRegisteredFontNames():
                 if os.path.exists(font_path):
                     pdfmetrics.registerFont(TTFont('DejaVuSans', font_path))
-                    print(f"✓ Шрифт DejaVuSans зарегистрирован для PDF: {font_path}")
+                    log.debug(f"Шрифт DejaVuSans зарегистрирован для PDF: {font_path}")
                 else:
                     raise FileNotFoundError(f"Файл шрифта не найден: {font_path}")
             
             self.font_name = 'DejaVuSans'
         except Exception as e:
-            print(f"✗ Ошибка регистрации шрифта DejaVu: {e}")
-            print(f"  Используется Helvetica в качестве резервного шрифта")
+            log.error(f"Ошибка регистрации шрифта DejaVu: {e}")
+            log.debug(f"  Используется Helvetica в качестве резервного шрифта")
             self.font_name = 'Helvetica'
     
+    def company(self):
+        """Реквизиты из настроек. Читаем один раз на документ."""
+        if self._company is None:
+            from services.company_service import get_company
+            self._company = get_company(self.db)
+        return self._company
+
+    def generate_thermal_receipt(self, order, items, total_amount, width_mm=58):
+        """
+        Чек для термопринтера: узкая лента вместо листа A4.
+
+        Высота считается по содержимому — у ленты её нет заранее.
+        Всё в одну колонку: на 58 мм две колонки не помещаются.
+        """
+        from reportlab.lib.units import mm
+        from reportlab.pdfgen import canvas as pdf_canvas
+        from reportlab.pdfbase.pdfmetrics import stringWidth
+        from services.order_service import OrderService
+
+        padding = 3 * mm
+        width = width_mm * mm
+        inner = width - padding * 2
+
+        # Прикидываем высоту: шапка, позиции, итоги, рекомендации, подвал
+        lines_count = 14 + len(items) * 2
+        if order.recommendations and order.recommendations.strip():
+            lines_count += 3 + len(order.recommendations) // 30
+        height = max(120 * mm, lines_count * 4.6 * mm)
+
+        os.makedirs(self.receipts_dir, exist_ok=True)
+        filename = os.path.join(self.receipts_dir, f'thermal_{order.id}.pdf')
+        c = pdf_canvas.Canvas(filename, pagesize=(width, height))
+
+        y = height - padding - 4 * mm
+
+        def line(text, size=7.5, bold_gap=False, align='left'):
+            nonlocal y
+            c.setFont(self.font_name, size)
+            if align == 'center':
+                c.drawCentredString(width / 2, y, text)
+            elif align == 'right':
+                c.drawRightString(width - padding, y, text)
+            else:
+                c.drawString(padding, y, text)
+            y -= (size + (2.5 if bold_gap else 1.5))
+
+        def separator():
+            nonlocal y
+            c.setLineWidth(0.4)
+            c.line(padding, y + 2, width - padding, y + 2)
+            y -= 4
+
+        def pair(left, right, size=7.5):
+            nonlocal y
+            c.setFont(self.font_name, size)
+            c.drawString(padding, y, left)
+            c.drawRightString(width - padding, y, right)
+            y -= size + 1.5
+
+        company = self.company()
+        if company.name:
+            line(company.name, size=10, align='center', bold_gap=True)
+        if company.slogan:
+            line(company.slogan, size=6, align='center')
+        if company.phone:
+            line(company.phone, size=6, align='center', bold_gap=True)
+        separator()
+
+        line(f"Наряд № {order.id}", size=8)
+        if order.paid_at:
+            line(order.paid_at.strftime('%d.%m.%Y %H:%M'), size=7)
+        line(f"Автомобиль: {order.car.license_plate if order.car else '—'}", size=7)
+        if order.client and order.client.name:
+            line(f"Клиент: {order.client.name}", size=7)
+        separator()
+
+        subtotal = 0
+        for item in items:
+            unit = OrderService.item_unit_price(item)
+            item_total = OrderService.item_total(item)
+            subtotal += OrderService.item_total_without_discount(item)
+
+            name = item.service.name
+            while stringWidth(name, self.font_name, 7.5) > inner and len(name) > 4:
+                name = name[:-2]
+            line(name, size=7.5)
+            pair(f"  {item.quantity} x {unit:.0f}", f"{item_total:.0f} ₽", size=7)
+
+        separator()
+        lines_total = sum(OrderService.item_total(i) for i in items)
+        final_total = money_round(lines_total)
+
+        pair("Сумма", f"{subtotal:.0f} ₽", size=8)
+        discount = subtotal - final_total
+        if discount > 0:
+            pair("Скидка", f"-{discount:.0f} ₽", size=8)
+        pair("ИТОГО", f"{final_total:.0f} ₽", size=10)
+
+        payment = "Наличные" if order.payment_method == "cash" else "Карта"
+        line(f"Оплата: {payment}", size=7)
+
+        if order.recommendations and order.recommendations.strip():
+            separator()
+            line("Рекомендации:", size=7.5)
+            for text_line in self._wrap_text(order.recommendations.strip(), inner, 6.5):
+                line(text_line, size=6.5)
+
+        separator()
+        line("Спасибо за визит!", size=7.5, align='center')
+
+        c.save()
+        return filename
+
+    def _wrap_text(self, text, max_width, font_size):
+        """
+        Разбить текст на строки, влезающие по ширине.
+
+        Считаем по реальной ширине символов выбранного шрифта, а не по
+        числу букв: кириллица в DejaVu Sans шире латиницы, и деление
+        «по сто символов» вылезало бы за край листа.
+        """
+        from reportlab.pdfbase.pdfmetrics import stringWidth
+
+        lines = []
+        for paragraph in text.split('\n'):
+            words = paragraph.split()
+            if not words:
+                lines.append('')
+                continue
+
+            current = words[0]
+            for word in words[1:]:
+                candidate = f"{current} {word}"
+                if stringWidth(candidate, self.font_name, font_size) <= max_width:
+                    current = candidate
+                else:
+                    lines.append(current)
+                    current = word
+            lines.append(current)
+
+        return lines
+
     def generate_receipt(self, order, items, total_amount):
         filename = f"{self.receipts_dir}/receipt_{order.id}.pdf"
         
@@ -92,38 +241,34 @@ class PrintService:
                 except:
                     pass
                 
-                print(f"✓ Логотип успешно загружен через temp PNG: {self.logo_path}")
+                log.debug(f"Логотип успешно загружен через temp PNG: {self.logo_path}")
             else:
-                print(f"✗ Файл логотипа не найден: {self.logo_path}")
+                log.error(f"Файл логотипа не найден: {self.logo_path}")
         except Exception as e:
-            print(f"✗ Ошибка загрузки логотипа: {e}")
+            log.error(f"Ошибка загрузки логотипа: {e}")
             import traceback
             traceback.print_exc()
         
-        # Информация о компании справа
+        # Информация о компании справа — из настроек, а не из кода:
+        # переезд или смена телефона не должны требовать пересборки
+        company = self.company()
         company_x = width - 50
         c.setFont(self.font_name, 10)
-        c.drawRightString(company_x, y, "ИП Дюпин Андрей")
-        y -= 15
-        c.drawRightString(company_x, y, "ИНН 770208926387")
-        y -= 15
-        c.drawRightString(company_x, y, "115280, г. Москва,")
-        y -= 15
-        c.drawRightString(company_x, y, "ул. Автозаводская, д. 24 стр. 1")
-        y -= 15
-        c.drawRightString(company_x, y, "Телефон: +79099018931")
-        y -= 15
-        c.drawRightString(company_x, y, "email: rifshina@gmail.com")
-        
+        for text_line in company.header_lines():
+            c.drawRightString(company_x, y, text_line)
+            y -= 15
+
         # Заголовок по центру под логотипом
         y = height - 110
-        c.setFont(self.font_name, 18)
-        c.drawCentredString(width/2, y, "Шиномонтаж «РИФ»")
-        
+        if company.name:
+            c.setFont(self.font_name, 18)
+            c.drawCentredString(width/2, y, company.name)
+
         y -= 20
-        c.setFont(self.font_name, 10)
-        c.drawCentredString(width/2, y, "Правка дисков, аргон, покраска")
-        
+        if company.slogan:
+            c.setFont(self.font_name, 10)
+            c.drawCentredString(width/2, y, company.slogan)
+
         y -= 30
         c.setFont(self.font_name, 14)
         c.drawCentredString(width/2, y, f"Наряд-заказ № {order.id}")
@@ -159,29 +304,23 @@ class PrintService:
             ['Наименование услуги', 'Кол-во', 'Цена', 'Итого']
         ]
         
+        # Считаем ровно теми же функциями, что и касса, — иначе строки чека
+        # не сходятся с суммой к оплате
+        from services.order_service import OrderService
+
         subtotal_without_discount = 0  # Полная сумма БЕЗ скидок
+        lines_total = 0                # Сумма строк таблицы
+
         for item in items:
-            service_name = item.service.name
-            quantity = item.quantity
-            unit_price = item.price
-            
-            # Считаем полную сумму БЕЗ скидок (округляем цену за единицу)
-            rounded_unit_price = round(unit_price)
-            subtotal_without_discount += rounded_unit_price * quantity
-            
-            # Если есть скидка на позицию - применяем её для отображения
-            if item.discount_percent > 0:
-                discounted_unit_price = unit_price * (1 - item.discount_percent / 100)
-                # Округляем цену со скидкой до целого числа
-                display_price = round(discounted_unit_price)
-                item_total = display_price * quantity
-            else:
-                display_price = rounded_unit_price
-                item_total = display_price * quantity
-            
+            display_price = OrderService.item_unit_price(item)
+            item_total = OrderService.item_total(item)
+
+            subtotal_without_discount += OrderService.item_total_without_discount(item)
+            lines_total += item_total
+
             table_data.append([
-                service_name,
-                str(quantity),
+                item.service.name,
+                str(item.quantity),
                 f"{display_price:.0f} ₽",  # Целое число
                 f"{item_total:.0f} ₽"      # Целое число
             ])
@@ -224,23 +363,28 @@ class PrintService:
         # Обновляем позицию Y
         y = y - table_height - 20
         
-        # Итоги
+        # Итоги.
+        # Сумма строк таблицы (lines_total) — это и есть итог к оплате:
+        # обе величины считаются одними и теми же функциями. Поэтому
+        # «Сумма минус Скидка» всегда сходится с «Итого к оплате».
+        final_total = money_round(lines_total)
+
         y -= 30
         c.setFont(self.font_name, 12)
         c.drawString(50, y, "Сумма:")
         c.drawRightString(width-50, y, f"{subtotal_without_discount:.0f} ₽")
-        
+
         # Показываем скидку, если она есть
-        discount_amount = subtotal_without_discount - round(total_amount)
+        discount_amount = subtotal_without_discount - final_total
         if discount_amount > 0:  # Показываем только если скидка есть
             y -= 20
             c.drawString(50, y, "Скидка:")
             c.drawRightString(width-50, y, f"-{discount_amount:.0f} ₽")
-        
+
         y -= 30
         c.setFont(self.font_name, 16)
         c.drawString(50, y, "ИТОГО К ОПЛАТЕ:")
-        c.drawRightString(width-50, y, f"{round(total_amount):.0f} ₽")
+        c.drawRightString(width-50, y, f"{final_total:.0f} ₽")
         
         y -= 10
         c.line(50, y, width-50, y)
@@ -250,7 +394,27 @@ class PrintService:
         c.setFont(self.font_name, 12)
         payment_method = "Наличные" if order.payment_method == "cash" else "Карта"
         c.drawString(50, y, f"Способ оплаты: {payment_method}")
-        
+
+        # Рекомендации мастера.
+        # Раньше мастер их записывал, а клиент никогда не видел —
+        # текст оставался только внутри программы.
+        if order.recommendations and order.recommendations.strip():
+            y -= 40
+            c.setFont(self.font_name, 12)
+            c.drawString(50, y, "Рекомендации мастера:")
+
+            y -= 6
+            c.setLineWidth(0.5)
+            c.line(50, y, width - 50, y)
+
+            c.setFont(self.font_name, 10)
+            for line in self._wrap_text(order.recommendations.strip(),
+                                        width - 100, 10):
+                y -= 15
+                c.drawString(50, y, line)
+                if y < 140:  # не залезаем на подвал
+                    break
+
         # Подвал
         y = 100
         c.setFont(self.font_name, 10)

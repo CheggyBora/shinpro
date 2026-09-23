@@ -5,13 +5,14 @@ from datetime import datetime
 import styles
 import os
 import sys
-from utils import get_moscow_time
+from utils import get_moscow_time, normalize_plate
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.fonts import addMapping
 from reportlab.lib.utils import ImageReader
+from logger import log
 
 def register_dejavu_fonts():
     """Регистрирует шрифт DejaVu Sans для PDF документов с поддержкой кириллицы"""
@@ -33,7 +34,7 @@ def register_dejavu_fonts():
         
         return 'DejaVuSans'
     except Exception as e:
-        print(f"Ошибка регистрации шрифта DejaVu: {e}")
+        log.error(f"Ошибка регистрации шрифта DejaVu: {e}")
         return 'Helvetica'
 
 def get_logo_path():
@@ -56,51 +57,51 @@ def draw_company_header(c, width, height, font_name):
             logo = ImageReader(logo_path)
             c.drawImage(logo, 50, y - 60, width=60, height=60, preserveAspectRatio=True, mask='auto')
         except Exception as e:
-            print(f"Ошибка загрузки логотипа: {e}")
+            log.error(f"Ошибка загрузки логотипа: {e}")
     
-    # Информация о компании справа
+    # Информация о компании справа — из настроек, а не из кода
+    from services.company_service import get_company
+    company = get_company()
+
     company_x = width - 50
     c.setFont(font_name, 10)
-    c.drawRightString(company_x, y, "ИП Дюпин Андрей")
-    y -= 15
-    c.drawRightString(company_x, y, "ИНН 770208926387")
-    y -= 15
-    c.drawRightString(company_x, y, "115280, г. Москва,")
-    y -= 15
-    c.drawRightString(company_x, y, "ул. Автозаводская, д. 24 стр. 1")
-    y -= 15
-    c.drawRightString(company_x, y, "Телефон: +79099018931")
-    y -= 15
-    c.drawRightString(company_x, y, "email: rifshina@gmail.com")
-    
+    for text_line in company.header_lines():
+        c.drawRightString(company_x, y, text_line)
+        y -= 15
+
     # Заголовок по центру
     y = height - 110
-    c.setFont(font_name, 24)
-    c.drawCentredString(width/2, y, "Шиномонтаж «РИФ»")
-    
+    if company.name:
+        c.setFont(font_name, 24)
+        c.drawCentredString(width/2, y, company.name)
+
     y -= 22
-    c.setFont(font_name, 11)
-    c.drawCentredString(width/2, y, "Правка дисков, аргон, покраска")
-    
+    if company.slogan:
+        c.setFont(font_name, 11)
+        c.drawCentredString(width/2, y, company.slogan)
+
     return y - 30  # Возвращаем y-позицию для продолжения контента
 
 class TireStorageTab:
     def __init__(self, parent, db):
         self.db = db
-        self.service = TireStorageService()
+        self.service = TireStorageService(db)
         self.frame = ttk.Frame(parent, style='BG.TFrame')
         
-        notebook = ttk.Notebook(self.frame)
-        notebook.pack(fill='both', expand=True, padx=15, pady=15)
-        
-        accept_frame = ttk.Frame(notebook, style='BG.TFrame')
-        release_frame = ttk.Frame(notebook, style='BG.TFrame')
-        
-        notebook.add(accept_frame, text='Приём на хранение')
-        notebook.add(release_frame, text='Выдача с хранения')
-        
+        self.nav = styles.NavBar(self.frame, compact=True)
+        self.nav.pack(fill='x')
+
+        content = tk.Frame(self.frame, bg=styles.COLORS['bg'])
+        content.pack(fill='both', expand=True)
+
+        accept_frame = ttk.Frame(content, style='BG.TFrame')
+        release_frame = ttk.Frame(content, style='BG.TFrame')
+
         self.setup_accept_tab(accept_frame)
         self.setup_release_tab(release_frame)
+
+        self.nav.add('Приём на хранение', accept_frame)
+        self.nav.add('Выдача с хранения', release_frame)
     
     def setup_accept_tab(self, parent):
         card = styles.create_card_frame(parent)
@@ -201,7 +202,13 @@ class TireStorageTab:
         self.search_car_entry = styles.create_entry(search_frame, width=20)
         self.search_car_entry.pack(side='left', padx=(0, 10))
         styles.create_button(search_frame, "Найти", self.search_storage, 'Primary.TButton').pack(side='left')
-        
+
+        # Наклейку можно перепечатать в любой момент: отклеилась,
+        # затёрлась или комплект переложили
+        styles.create_button(search_frame, "Печать наклейки",
+                             self.print_label_for_selected,
+                             'Secondary.TButton').pack(side='left', padx=(10, 0))
+
         styles.create_label(card_inner, "Все комплекты (на хранении и выданные):", 'Card.TLabel').pack(anchor='w', pady=(15, 5))
         
         tree_frame = ttk.Frame(card_inner, style='White.TFrame')
@@ -263,7 +270,7 @@ class TireStorageTab:
         import platform
         
         # Проверяем обязательные поля
-        car_number = self.car_number_entry.get().strip()
+        car_number = normalize_plate(self.car_number_entry.get())
         if not car_number:
             messagebox.showerror("Ошибка", "Введите номер автомобиля")
             return
@@ -298,20 +305,20 @@ class TireStorageTab:
             """Оплата и создание документов"""
             try:
                 payment_method = payment_var.get()
-                print(f"DEBUG: Starting payment with method={payment_method}, price={price}")
+                log.debug(f"DEBUG: Starting payment with method={payment_method}, price={price}")
                 self.accept_storage_with_payment(payment_method, price)
                 dialog.destroy()
             except Exception as e:
                 import traceback
                 error_details = traceback.format_exc()
-                print(f"ERROR in pay_and_process: {error_details}")
+                log.error(f"ERROR in pay_and_process: {error_details}")
                 messagebox.showerror("Ошибка", str(e))
         
         # Кнопка оплаты
         button_frame = ttk.Frame(content, style='White.TFrame')
         button_frame.pack(fill='x', pady=(10, 0))
         
-        styles.create_button(button_frame, "💳 Оплатить", pay_and_process, 'Success.TButton').pack(fill='x')
+        styles.create_button(button_frame, "Оплатить", pay_and_process, 'Success.TButton').pack(fill='x')
     
     def accept_storage_with_payment(self, payment_method, price):
         """Принимает на хранение с оплатой и создаёт все документы"""
@@ -320,7 +327,7 @@ class TireStorageTab:
         from services.print_service import PrintService
         from datetime import datetime
         
-        car_number = self.car_number_entry.get().strip()
+        car_number = normalize_plate(self.car_number_entry.get())
         driver_license = self.driver_license_entry.get().strip()
         storage_type = self.storage_type_var.get()
         diameter = self.diameter_var.get()
@@ -328,47 +335,49 @@ class TireStorageTab:
         damage = self.damage_entry.get().strip()
         wear = self.wear_entry.get().strip()
         comments = self.comments_entry.get().strip()
-        
+
         wheel_type = None
         if storage_type == 'Шины с дисками':
             wheel_type = self.wheel_type_var.get()
-        
+
         try:
             # 1. Создаём наряд (WorkOrder) для статистики
-            print(f"DEBUG: Step 1 - Creating work order for car {car_number}")
+            log.debug(f"DEBUG: Step 1 - Creating work order for car {car_number}")
             order_service = OrderService(self.db)
+            # create_client=False: раньше сюда подставлялось имя вида
+            # "Хранение (Шины с дисками)", и на каждую приёмку в базу клиентов
+            # падала служебная запись. Хранение — это не клиент.
             work_order = order_service.create_order(
                 license_plate=car_number,
                 wheel_diameter=diameter,
                 vehicle_type='car',
-                client_name=f"Хранение ({storage_type})"
+                create_client=False
             )
-            print(f"DEBUG: Work order created: ID={work_order.id}")
+            log.debug(f"DEBUG: Work order created: ID={work_order.id}")
             
             # 2. Создаём запись в хранилище с привязкой к наряду
-            print(f"DEBUG: Step 2 - Creating storage record")
+            log.debug(f"DEBUG: Step 2 - Creating storage record")
             storage = self.service.accept_storage(
                 car_number, driver_license, storage_type, diameter, brand, damage, wear, comments, wheel_type
             )
-            print(f"DEBUG: Storage created: ID={storage.id}")
-            
-            # Перезагружаем storage в нашу сессию (т.к. сервис использует свою сессию)
-            from models import TireStorage
-            storage = self.db.query(TireStorage).filter(TireStorage.id == storage.id).first()
-            
+            log.debug(f"DEBUG: Storage created: ID={storage.id}")
+
+            # Сервис работает в той же сессии, что и вкладка, поэтому
+            # перезапрашивать запись больше не нужно
+
             # Привязываем наряд к записи хранилища
             storage.work_order_id = work_order.id
             self.db.commit()
             self.db.refresh(storage)
-            print(f"DEBUG: Storage linked to work order")
+            log.debug(f"DEBUG: Storage linked to work order")
             
             # 3. Добавляем услугу "Хранение шин" в наряд
-            print(f"DEBUG: Step 3 - Adding storage service to work order")
+            log.debug(f"DEBUG: Step 3 - Adding storage service to work order")
             from models import Service, WorkOrderItem
             storage_service = self.db.query(Service).filter(Service.name == 'Хранение шин').first()
             
             if storage_service:
-                print(f"DEBUG: Found storage service: ID={storage_service.id}")
+                log.debug(f"DEBUG: Found storage service: ID={storage_service.id}")
                 # Используем существующую услугу хранения
                 storage_item = WorkOrderItem(
                     work_order_id=work_order.id,
@@ -379,30 +388,30 @@ class TireStorageTab:
                 )
                 self.db.add(storage_item)
                 self.db.flush()
-                print(f"DEBUG: Storage service item added to work order")
+                log.debug(f"DEBUG: Storage service item added to work order")
             else:
                 raise ValueError("Услуга 'Хранение шин' не найдена в базе данных. Обратитесь к администратору.")
             
             # 4. Оплачиваем наряд БЕЗ начисления зарплаты
-            print(f"DEBUG: Step 4 - Marking work order as paid")
+            log.debug(f"DEBUG: Step 4 - Marking work order as paid")
             work_order.paid_at = get_moscow_time()
             work_order.payment_method = payment_method
             work_order.total_amount = price
             work_order.status = 'paid'
             self.db.commit()
             self.db.refresh(work_order)
-            print(f"DEBUG: Work order marked as paid")
+            log.debug(f"DEBUG: Work order marked as paid")
             
             # 5. Генерируем чек оплаты
-            print(f"DEBUG: Step 5 - Generating receipt")
+            log.debug(f"DEBUG: Step 5 - Generating receipt")
             print_service = PrintService()
             items = order_service.get_order_items(work_order.id)
-            print(f"DEBUG: Got {len(items)} items for receipt")
+            log.debug(f"DEBUG: Got {len(items)} items for receipt")
             receipt_file = print_service.generate_receipt(work_order, items, price)
-            print(f"DEBUG: Receipt generated: {receipt_file}")
+            log.debug(f"DEBUG: Receipt generated: {receipt_file}")
             
             # 6. Показываем диалог с чеком
-            print(f"DEBUG: Step 6 - Showing receipt dialog")
+            log.debug(f"DEBUG: Step 6 - Showing receipt dialog")
             self.show_receipt_dialog(receipt_file, storage, payment_method)
             
             # Очищаем поля
@@ -412,12 +421,12 @@ class TireStorageTab:
             self.damage_entry.delete(0, tk.END)
             self.wear_entry.delete(0, tk.END)
             self.comments_entry.delete(0, tk.END)
-            print(f"DEBUG: Storage payment process completed successfully")
+            log.debug(f"DEBUG: Storage payment process completed successfully")
             
         except Exception as e:
             import traceback
             error_details = traceback.format_exc()
-            print(f"ERROR in accept_storage_with_payment: {error_details}")
+            log.error(f"ERROR in accept_storage_with_payment: {error_details}")
             self.db.rollback()
             messagebox.showerror("Ошибка", str(e))
     
@@ -453,30 +462,30 @@ class TireStorageTab:
         def print_all_documents():
             """Печать чека оплаты и акта приёма"""
             try:
-                print(f"DEBUG: Starting print process")
+                log.debug(f"DEBUG: Starting print process")
                 
                 # Генерируем акт приёма (2 копии)
                 self.print_receipt(storage, copies=2)
                 storage_act = f"receipts/storage_{storage.id}.pdf"
-                print(f"DEBUG: Documents ready - Receipt: {receipt_file}, Storage act: {storage_act}")
+                log.debug(f"DEBUG: Documents ready - Receipt: {receipt_file}, Storage act: {storage_act}")
                 
                 if platform.system() == 'Windows':
                     # Открываем и печатаем чек оплаты (1 экземпляр)
                     receipt_abs = os.path.abspath(receipt_file)
-                    print(f"DEBUG: Opening receipt: {receipt_abs}")
+                    log.debug(f"DEBUG: Opening receipt: {receipt_abs}")
                     try:
                         os.startfile(receipt_abs, "print")
                     except Exception as e:
-                        print(f"WARNING: Auto-print failed for receipt: {e}")
+                        log.error(f"WARNING: Auto-print failed for receipt: {e}")
                         os.startfile(receipt_abs)
                     
                     # Открываем и печатаем акт приёма (2 экземпляра в одном PDF)
                     storage_act_abs = os.path.abspath(storage_act)
-                    print(f"DEBUG: Opening storage act: {storage_act_abs}")
+                    log.debug(f"DEBUG: Opening storage act: {storage_act_abs}")
                     try:
                         os.startfile(storage_act_abs, "print")
                     except Exception as e:
-                        print(f"WARNING: Auto-print failed for storage act: {e}")
+                        log.error(f"WARNING: Auto-print failed for storage act: {e}")
                         os.startfile(storage_act_abs)
                     
                     messagebox.showinfo("Печать", f"Комплект #{storage.id} принят на хранение!\n\n✓ Чек оплаты (1 экз.)\n✓ Акт приёма (2 экз.)\n\nДокументы отправлены на печать.\nЕсли автопечать не сработала - напечатайте вручную.")
@@ -490,22 +499,77 @@ class TireStorageTab:
                         messagebox.showinfo("Успех", f"Комплект #{storage.id} принят на хранение!\n\nДокументы сохранены")
                 
                 dialog.destroy()
-                print(f"DEBUG: Print process completed")
+                log.debug(f"DEBUG: Print process completed")
                 
             except Exception as e:
                 import traceback
-                print(f"ERROR in print_all_documents: {traceback.format_exc()}")
+                log.error(f"ERROR in print_all_documents: {traceback.format_exc()}")
                 messagebox.showerror("Ошибка печати", f"Ошибка: {str(e)}\n\nДокументы сохранены в папке receipts/")
         
         # Кнопка печати
         button_frame = ttk.Frame(content, style='White.TFrame')
         button_frame.pack(fill='x', pady=(10, 0))
-        
-        styles.create_button(button_frame, "🖨 Печать документов", print_all_documents, 'Success.TButton').pack(fill='x', expand=True)
-    
+
+        styles.create_button(button_frame, "Печать документов", print_all_documents,
+                             'Success.TButton').pack(fill='x', expand=True)
+
+        # Наклейка на комплект — только если печать наклеек включена
+        # в настройках: без принтера этикеток кнопка только мешала бы
+        from services.label_service import LabelService
+        if LabelService(self.db).is_enabled():
+            styles.create_button(button_frame, "Печать наклейки",
+                                 lambda: self.print_storage_label(storage),
+                                 'Secondary.TButton').pack(fill='x', expand=True,
+                                                           pady=(6, 0))
+
+    def print_storage_label(self, storage):
+        """Напечатать наклейку на комплект шин."""
+        from services.label_service import LabelService
+        from services import ClientService
+
+        try:
+            client = ClientService(self.db).find_by_plate(storage.car_number)
+            service = LabelService(self.db)
+            path = service.generate_storage_label(storage, client=client)
+        except Exception as e:
+            self.db.rollback()
+            messagebox.showerror("Ошибка", f"Не удалось собрать наклейку:\n{e}")
+            return
+
+        if service.print_file(path):
+            messagebox.showinfo("Наклейка", "Наклейка отправлена на печать")
+        else:
+            messagebox.showwarning(
+                "Наклейка",
+                f"Не удалось отправить на печать.\nФайл сохранён:\n{path}")
+
+    def print_label_for_selected(self):
+        """Напечатать наклейку для комплекта, выбранного в списке."""
+        from services.label_service import LabelService
+
+        selection = self.storage_tree.selection()
+        if not selection:
+            messagebox.showinfo("Выбор", "Выберите комплект в списке")
+            return
+
+        storage_id = int(self.storage_tree.item(selection[0])['values'][0])
+        storage = self.service.get_storage_by_id(storage_id)
+        if not storage:
+            messagebox.showerror("Ошибка", "Комплект не найден")
+            return
+
+        if not LabelService(self.db).is_enabled():
+            messagebox.showinfo(
+                "Печать наклеек выключена",
+                "Включите её в настройках:\nПрайс-лист → Настройки → Печать")
+            return
+
+        self.print_storage_label(storage)
+
     def search_storage(self):
-        car_number = self.search_car_entry.get().strip()
-        
+        # Номер нормализуем, чтобы комплект нашёлся при любом написании
+        car_number = normalize_plate(self.search_car_entry.get())
+
         if not car_number:
             storages = self.service.get_all_stored()
         else:
@@ -516,7 +580,8 @@ class TireStorageTab:
         
         for storage in storages:
             # Определяем статус и дату выдачи
-            status_text = "✅ На хранении" if storage.status == 'stored' else "📦 Выдан"
+            status_text = "На хранении" if storage.status == 'stored' else "Выдан"
+
             release_date = storage.released_date.strftime('%d.%m.%Y %H:%M') if storage.released_date else '-'
             
             # Вставляем строку с тегом для хранения статуса
@@ -589,15 +654,15 @@ class TireStorageTab:
                 
                 def print_release_doc():
                     try:
-                        print(f"DEBUG: Starting print process for release act: {filepath}")
+                        log.debug(f"DEBUG: Starting print process for release act: {filepath}")
                         
                         if platform.system() == 'Windows':
                             filepath_abs = os.path.abspath(filepath)
-                            print(f"DEBUG: Opening release act: {filepath_abs}")
+                            log.debug(f"DEBUG: Opening release act: {filepath_abs}")
                             try:
                                 os.startfile(filepath_abs, "print")
                             except Exception as e:
-                                print(f"WARNING: Auto-print failed: {e}")
+                                log.error(f"WARNING: Auto-print failed: {e}")
                                 os.startfile(filepath_abs)
                             
                             messagebox.showinfo("Печать", f"Комплект #{storage.id} выдан!\n\n✓ Акт выдачи (2 экз.)\n\nДокумент отправлен на печать.\nЕсли автопечать не сработала - напечатайте вручную.")
@@ -611,17 +676,17 @@ class TireStorageTab:
                         
                         dialog.destroy()
                         self.search_storage()
-                        print(f"DEBUG: Print completed")
+                        log.debug(f"DEBUG: Print completed")
                         
                     except Exception as e:
                         import traceback
-                        print(f"ERROR in print_release_doc: {traceback.format_exc()}")
+                        log.error(f"ERROR in print_release_doc: {traceback.format_exc()}")
                         messagebox.showerror("Ошибка печати", f"Ошибка: {str(e)}\n\nДокумент сохранён: {filepath}")
                 
                 button_frame = ttk.Frame(content, style='White.TFrame')
                 button_frame.pack(fill='x')
                 
-                styles.create_button(button_frame, "🖨 Печать документов", print_release_doc, 'Success.TButton').pack(fill='x', expand=True)
+                styles.create_button(button_frame, "Печать документов", print_release_doc, 'Success.TButton').pack(fill='x', expand=True)
             else:
                 messagebox.showerror("Ошибка", "Комплект не найден")
         except Exception as e:

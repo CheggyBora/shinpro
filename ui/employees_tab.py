@@ -4,7 +4,8 @@ from services import EmployeeService
 from services.shift_service import ShiftService
 from datetime import datetime, timedelta
 import styles
-from utils import get_moscow_time
+from utils import get_moscow_time, as_naive
+from logger import log
 
 class EmployeesTab:
     def __init__(self, parent, db):
@@ -72,11 +73,33 @@ class EmployeesTab:
         self.active_shifts_list.config(yscrollcommand=scrollbar.set)
         
         # Кнопка просмотра зарплаты за смену
-        styles.create_button(shift_inner, "💰 Посмотреть зарплату за смену", self.view_shift_salaries, 'Primary.TButton').pack(anchor='w', pady=(10, 0))
+        styles.create_button(shift_inner, "Посмотреть зарплату за смену", self.view_shift_salaries, 'Primary.TButton').pack(anchor='w', pady=(10, 0))
         
+        # СОЗДАТЬ НОВОГО СОТРУДНИКА.
+        # Раньше этот блок стоял ПОСЛЕ списка сотрудников, а список
+        # растягивался на всё оставшееся место и выдавливал его за нижний
+        # край — карточка была видна пустой полоской, и добавить сотрудника
+        # было негде.
+        reg_card = styles.create_card_frame(left_frame)
+        reg_card.pack(fill='x', pady=(0, 15))
+
+        card_inner = ttk.Frame(reg_card, style='White.TFrame')
+        card_inner.pack(fill='both', expand=True, padx=20, pady=18)
+
+        styles.create_label(card_inner, "Создать нового сотрудника",
+                            'CardHeading.TLabel').pack(anchor='w', pady=(0, 12))
+
+        reg_frame = ttk.Frame(card_inner, style='White.TFrame')
+        reg_frame.pack(fill='x')
+        styles.create_label(reg_frame, "Номер:", 'Card.TLabel').pack(side='left', padx=(0, 8))
+        self.employee_id_entry = styles.create_entry(reg_frame, width=12)
+        self.employee_id_entry.pack(side='left', padx=(0, 10))
+        styles.create_button(reg_frame, "Зарегистрировать", self.register_employee,
+                             'Primary.TButton').pack(side='left')
+
         emp_card = styles.create_card_frame(left_frame)
         emp_card.pack(fill='both', expand=True)
-        
+
         emp_inner = ttk.Frame(emp_card, style='White.TFrame')
         emp_inner.pack(fill='both', expand=True, padx=20, pady=20)
         
@@ -100,22 +123,6 @@ class EmployeesTab:
         tree_scroll = ttk.Scrollbar(tree_frame, orient='vertical', command=self.employees_tree.yview)
         tree_scroll.pack(side='right', fill='y')
         self.employees_tree.config(yscrollcommand=tree_scroll.set)
-        
-        # СОЗДАТЬ НОВОГО СОТРУДНИКА (компактная версия внизу)
-        reg_card = styles.create_card_frame(left_frame)
-        reg_card.pack(fill='x', pady=(15, 0))
-        
-        card_inner = ttk.Frame(reg_card, style='White.TFrame')
-        card_inner.pack(fill='both', expand=True, padx=20, pady=18)
-        
-        styles.create_label(card_inner, "Создать нового сотрудника", 'CardHeading.TLabel').pack(anchor='w', pady=(0, 12))
-        
-        reg_frame = ttk.Frame(card_inner, style='White.TFrame')
-        reg_frame.pack(fill='x', pady=(0, 5))
-        styles.create_label(reg_frame, "Номер:", 'Card.TLabel').pack(side='left', padx=(0, 5))
-        self.employee_id_entry = styles.create_entry(reg_frame, width=12)
-        self.employee_id_entry.pack(side='left', padx=(0, 8))
-        styles.create_button(reg_frame, "Зарегистрировать", self.register_employee, 'Primary.TButton').pack(side='left')
         
         right_frame = ttk.Frame(self.frame, style='BG.TFrame')
         right_frame.pack(side='right', fill='both', expand=True, padx=15, pady=15)
@@ -281,14 +288,15 @@ class EmployeesTab:
         
         if current_shift:
             # Смена открыта
-            start_time = current_shift.start_time
+            start_time = as_naive(current_shift.start_time)
             # Используем московское время
-            current_time = get_moscow_time()
+            current_time = as_naive(get_moscow_time())
             duration = current_time - start_time
             hours = int(duration.total_seconds() // 3600)
             minutes = int((duration.total_seconds() % 3600) // 60)
             
-            status_text = f"Смена открыта: {start_time.strftime('%d.%m.%Y %H:%M')} (работает {hours}ч {minutes}м)"
+            status_text = (f"Смена открыта: {start_time.strftime('%d.%m.%Y %H:%M')} "
+                           f"(работает {hours}ч {minutes}м) · постов: {current_shift.open_posts}")
             
             self.shift_status_label.config(text=status_text)
             self.shift_status_frame.config(bg='#10b981')
@@ -322,10 +330,32 @@ class EmployeesTab:
             self.end_shift_btn.config(state='disabled')
     
     def open_shift(self):
-        """Открывает новую смену"""
+        """Открывает новую смену, спросив число работающих постов"""
+        from services.settings_service import SettingsService
+
         try:
-            shift = self.shift_service.open_shift()
-            messagebox.showinfo("Успех", f"Смена #{shift.id} открыта\nВремя: {shift.start_time.strftime('%d.%m.%Y %H:%M')}")
+            default_posts = SettingsService(self.db).get_int('default_posts')
+        except Exception:
+            default_posts = 2
+
+        # Сколько постов работает сегодня — от этого зависит расчёт
+        # очереди и то, сколько машин можно записать на одно время
+        posts = simpledialog.askinteger(
+            "Открытие смены",
+            "Сколько постов работает в эту смену?",
+            initialvalue=default_posts, minvalue=1, maxvalue=20,
+            parent=self.frame
+        )
+        if posts is None:
+            return  # передумали открывать смену
+
+        try:
+            shift = self.shift_service.open_shift(open_posts=posts)
+            messagebox.showinfo(
+                "Успех",
+                f"Смена #{shift.id} открыта\n"
+                f"Время: {shift.start_time.strftime('%d.%m.%Y %H:%M')}\n"
+                f"Открыто постов: {shift.open_posts}")
             self.update_shift_status()
             self.refresh_employees()
         except ValueError as e:
@@ -359,8 +389,7 @@ class EmployeesTab:
         main_frame.pack(fill='both', expand=True, padx=2, pady=2)
         
         # Заголовок
-        title = tk.Label(main_frame, text="💰 Зарплата за смену", 
-                        font=(styles.DEFAULT_FONT, 14, 'bold'), 
+        title = tk.Label(main_frame, text="Зарплата за смену",                         font=(styles.DEFAULT_FONT, 14, 'bold'), 
                         fg='#1e293b', bg='white')
         title.pack(pady=(0, 20))
         
@@ -369,8 +398,8 @@ class EmployeesTab:
         separator1.pack(fill='x', pady=(0, 15))
         
         # Информация о смене
-        start_time = current_shift.start_time
-        current_time = get_moscow_time()
+        start_time = as_naive(current_shift.start_time)
+        current_time = as_naive(get_moscow_time())
         duration = current_time - start_time
         hours = int(duration.total_seconds() // 3600)
         minutes = int((duration.total_seconds() % 3600) // 60)
@@ -448,7 +477,16 @@ class EmployeesTab:
         try:
             # Закрываем смену
             result = self.shift_service.close_shift(current_shift.id)
-            
+
+            # Сводка по смене уходит владельцу в Telegram.
+            # Отправка идёт в фоне: сбой связи не должен мешать закрытию.
+            try:
+                from services.shift_report_service import ShiftReportService
+                self.db.refresh(current_shift)
+                ShiftReportService(self.db).send_summary(current_shift)
+            except Exception as e:
+                log.error(f"Сводку по смене отправить не удалось: {e}")
+
             # Формируем информационное окно
             dialog = tk.Toplevel(self.frame)
             dialog.title("Смена закрыта")
