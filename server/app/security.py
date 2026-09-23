@@ -101,6 +101,30 @@ def decode_token(token):
 # Проверки на входе в запрос
 # ----------------------------------------------------------------------
 
+def check_paid(db, account_id):
+    """
+    Пустить, если пользование оплачено.
+
+    Проверяется здесь, а не в интерфейсе: спрятанный раздел обходится
+    прямым запросом. Обмена с цехом это не касается — там проверки нет
+    намеренно, см. app/services/billing.py.
+    """
+    from app.models import Account
+    from app.services import billing
+
+    if account_id is None:
+        return
+
+    account = db.query(Account).filter(Account.id == account_id).first()
+    if billing.is_open(account):
+        return
+
+    raise HTTPException(
+        status.HTTP_402_PAYMENT_REQUIRED,
+        detail='Пользование программой не оплачено. '
+               'Цех работает как обычно, а онлайн откроется после оплаты')
+
+
 def current_client(authorization: str = Header(default=''),
                    db: Session = Depends(get_db)):
     """Клиент, приславший запрос. Без действующего токена — отказ."""
@@ -121,6 +145,8 @@ def current_client(authorization: str = Header(default=''),
     if client.is_blocked:
         raise HTTPException(status.HTTP_403_FORBIDDEN,
                             detail='Доступ закрыт, обратитесь в шиномонтаж')
+
+    check_paid(db, client.account_id)
 
     client.last_seen_at = shop_now()
     db.commit()
@@ -179,6 +205,8 @@ def current_staff(authorization: str = Header(default=''),
     if payload.get('acc') != saved:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED,
                             detail='Права изменились, войдите заново')
+
+    check_paid(db, staff.account_id)
 
     staff.last_seen_at = shop_now()
     db.commit()

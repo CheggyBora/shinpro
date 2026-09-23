@@ -52,6 +52,17 @@ class Settings:
     OWNER_PHONE = os.environ.get('SERVER_OWNER_PHONE', '')
     OWNER_NAME = os.environ.get('SERVER_OWNER_NAME', '')
 
+    # --- Оплата пользования --------------------------------------------
+    # Проверка выключена: пока заказчик один и это вы сами, платить
+    # некому. Включается, когда появится первый платящий — до тех пор
+    # место под проверку просто стоит на своём месте
+    BILLING_ENFORCE = _bool('SERVER_BILLING_ENFORCE', False)
+
+    # Сколько дней всё работает после конца оплаченного срока. Человек
+    # мог уехать, забыть, перепутать дату — закрывать в ту же минуту
+    # значит наказывать за невнимательность, а не взыскивать долг
+    BILLING_GRACE_DAYS = int(os.environ.get('SERVER_BILLING_GRACE_DAYS', '5'))
+
     # --- Коды подтверждения ------------------------------------------
     CODE_LENGTH = 4
     CODE_TTL_MINUTES = int(os.environ.get('SERVER_CODE_TTL_MINUTES', '15'))

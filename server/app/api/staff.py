@@ -20,7 +20,8 @@ from app.database import get_db
 from app.services import tenancy
 from app.models import (StaffUser, ALL_PERMISSIONS, PERMISSION_TITLES,
                         ROLE_TITLES, ROLE_PERMISSIONS, PERM_STAFF)
-from app.security import create_staff_token, current_staff, require
+from app.security import (create_staff_token, current_staff, require,
+                          check_paid)
 from app.services.auth_service import AuthError, NeedEmail
 from app.services.staff_service import StaffService, StaffError
 from app.utils import format_phone
@@ -38,9 +39,14 @@ def account_of(x_shop: str = Header(default=''),
     в каждом запросе.
     """
     try:
-        return tenancy.account_for(db, x_shop)
+        account_id = tenancy.account_for(db, x_shop)
     except tenancy.ShopNeeded as e:
         raise HTTPException(status.HTTP_409_CONFLICT, detail=str(e))
+
+    # Закрытый аккаунт не пускает с самого входа: пустить и отказать на
+    # первом же запросе — хуже, человек решит, что сломалось
+    check_paid(db, account_id)
+    return account_id
 
 
 

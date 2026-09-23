@@ -101,6 +101,9 @@ def _shop(db, wanted=None):
             status.HTTP_404_NOT_FOUND,
             detail='Шиномонтаж не найден. Проверьте ссылку')
 
+    from app.security import check_paid
+    check_paid(db, shop.account_id)
+
     return shop
 
 

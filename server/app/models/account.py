@@ -24,8 +24,8 @@
 """
 from datetime import datetime
 
-from sqlalchemy import (Column, Integer, String, Boolean, DateTime, Text,
-                        ForeignKey)
+from sqlalchemy import (Column, Integer, String, Boolean, DateTime, Float,
+                        Text, ForeignKey)
 from sqlalchemy.orm import relationship
 
 from app.database import Base
@@ -46,18 +46,69 @@ class Account(Base):
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, default=shop_now, nullable=False)
 
-    # Для продажи другим: до какого числа оплачено пользование. Пусто —
-    # ограничений нет. Проверку добавим, когда появится первый платящий:
-    # поле заводим сейчас, чтобы потом не менять боевую базу
+    # --- Оплата пользования ---------------------------------------------
+    #
+    # До какого числа оплачено. Пусто — ограничений нет: так живёт свой
+    # шиномонтаж, которому никто не выставляет счёт.
     paid_until = Column(DateTime, nullable=True)
+
+    # Название тарифа — строкой, а не ссылкой на справочник: пока тариф
+    # один, а заводить таблицу из одной строки незачем
+    plan = Column(String(64), nullable=True)
+
+    # Закрыт вручную: не за неоплату, а по решению — просьба заказчика,
+    # спор, что угодно. Отдельно от срока оплаты, чтобы одно не
+    # маскировало другое
+    blocked_at = Column(DateTime, nullable=True)
+    block_reason = Column(String(255), nullable=True)
+
     note = Column(Text, nullable=True)
 
     shops = relationship('Shop', back_populates='account',
                          cascade='all, delete-orphan')
+    payments = relationship('AccountPayment', back_populates='account',
+                            cascade='all, delete-orphan',
+                            order_by='AccountPayment.paid_at.desc()')
 
     @property
     def is_paid(self):
         return self.paid_until is None or self.paid_until >= shop_now()
+
+
+class AccountPayment(Base):
+    """
+    Платёж за пользование программой.
+
+    Каждый платёж — строка: когда пришёл, сколько, за какой period и
+    откуда про него узнали. Срок в аккаунте (paid_until) складывается
+    из этих строк, а не правится руками: иначе через полгода никто не
+    объяснит, почему там стоит именно эта дата.
+
+    Способ хранится строкой: сегодня это «отметили вручную», завтра —
+    название платёжной системы. external_id — её номер платежа, по
+    нему повторное уведомление не создаст вторую строку.
+    """
+    __tablename__ = 'account_payments'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    account_id = Column(Integer, ForeignKey('accounts.id'), nullable=False,
+                        index=True)
+
+    amount = Column(Float, default=0.0, nullable=False)
+    paid_at = Column(DateTime, default=shop_now, nullable=False, index=True)
+
+    # За какой отрезок заплатили. Нужен для ответа на вопрос «за что
+    # эти деньги», а не только «сколько всего пришло»
+    period_from = Column(DateTime, nullable=True)
+    period_to = Column(DateTime, nullable=True)
+
+    method = Column(String(32), default='manual', nullable=False)
+    external_id = Column(String(128), nullable=True, unique=True, index=True)
+
+    comment = Column(String(500), nullable=True)
+    created_at = Column(DateTime, default=shop_now, nullable=False)
+
+    account = relationship('Account', back_populates='payments')
 
 
 class Shop(Base):

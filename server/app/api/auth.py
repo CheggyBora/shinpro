@@ -18,7 +18,7 @@ from app.models import Client
 from app.schemas import (StartIn, StartOut, CodeRequestIn, CodeSentOut,
                          VerifyIn, PinLoginIn, PinIn, TokenOut, DeviceIn,
                          ProfileOut, ProfileIn, CarOut)
-from app.security import create_token, current_client
+from app.security import create_token, current_client, check_paid
 from app.services.auth_service import (AuthService, AuthError, NeedEmail,
                                        STEP_SET_PIN)
 from app.utils import format_phone
@@ -36,9 +36,14 @@ def account_of(x_shop: str = Header(default=''),
     в каждом запросе.
     """
     try:
-        return tenancy.account_for(db, x_shop)
+        account_id = tenancy.account_for(db, x_shop)
     except tenancy.ShopNeeded as e:
         raise HTTPException(status.HTTP_409_CONFLICT, detail=str(e))
+
+    # Закрытый аккаунт не пускает с самого входа: пустить и отказать на
+    # первом же запросе — хуже, человек решит, что сломалось
+    check_paid(db, account_id)
+    return account_id
 
 
 
