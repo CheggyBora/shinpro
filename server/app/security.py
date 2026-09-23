@@ -124,6 +124,81 @@ def current_client(authorization: str = Header(default=''),
     return client
 
 
+def create_staff_token(staff):
+    """
+    Токен сотрудника.
+
+    Отдельный от клиентского: у них разные двери, и токен от кабинета
+    не должен открывать дашборд с зарплатами всего шиномонтажа.
+
+    В токен кладём отметку времени последнего изменения доступа. Сняли
+    права или закрыли доступ — выданные раньше токены перестают
+    годиться сразу, а не доживают свои тридцать дней.
+    """
+    payload = {
+        'sub': str(staff.id),
+        'kind': 'staff',
+        'acc': staff.access_changed_at.isoformat() if staff.access_changed_at else '',
+        'exp': datetime.utcnow() + timedelta(days=settings.STAFF_TOKEN_DAYS),
+        'iat': datetime.utcnow(),
+    }
+    return jwt.encode(payload, settings.SECRET_KEY, algorithm=ALGORITHM)
+
+
+def current_staff(authorization: str = Header(default=''),
+                  db: Session = Depends(get_db)):
+    """Сотрудник, приславший запрос. Без действующего токена — отказ."""
+    from app.models import StaffUser
+
+    if not authorization.lower().startswith('bearer '):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED,
+                            detail='Нужен вход в дашборд')
+
+    try:
+        payload = jwt.decode(authorization[7:].strip(), settings.SECRET_KEY,
+                             algorithms=[ALGORITHM])
+    except jwt.PyJWTError:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED,
+                            detail='Вход устарел, войдите заново')
+
+    if payload.get('kind') != 'staff':
+        raise HTTPException(status.HTTP_403_FORBIDDEN,
+                            detail='Этот вход не для дашборда')
+
+    staff = db.query(StaffUser).filter(
+        StaffUser.id == int(payload.get('sub', 0) or 0)).first()
+
+    if staff is None or not staff.is_active:
+        raise HTTPException(status.HTTP_403_FORBIDDEN,
+                            detail='Доступ к дашборду закрыт')
+
+    saved = staff.access_changed_at.isoformat() if staff.access_changed_at else ''
+    if payload.get('acc') != saved:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED,
+                            detail='Права изменились, войдите заново')
+
+    staff.last_seen_at = datetime.utcnow()
+    db.commit()
+    return staff
+
+
+def require(permission):
+    """
+    Проверка права для конкретного запроса.
+
+    Используется как зависимость: Depends(require(PERM_REVENUE)).
+    Отказ говорит, что прав нет, и не уточняет, что именно скрыто:
+    подсказывать, где лежат зарплаты, незачем.
+    """
+    def check(staff=Depends(current_staff)):
+        if not staff.can(permission):
+            raise HTTPException(status.HTTP_403_FORBIDDEN,
+                                detail='Нет доступа к этому разделу')
+        return staff
+
+    return check
+
+
 def require_sync_key(x_sync_key: str = Header(default='')):
     """
     Пропустить только программу из цеха.

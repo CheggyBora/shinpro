@@ -16,6 +16,7 @@ TESTS_DIR = os.path.dirname(os.path.abspath(__file__))
 TESTS = [
     ('Вход, запись, хранение, история, очередь', 'test_api.py'),
     ('Страница записи по ссылке', 'test_public.py'),
+    ('Дашборд: вход персонала и права', 'test_staff.py'),
 ]
 
 

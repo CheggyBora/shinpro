@@ -32,6 +32,23 @@ async def lifespan(app: FastAPI):
     # О недостающих настройках говорим сразу и громко: сервер,
     # поднятый наполовину, хуже не поднятого — он делает вид,
     # что работает
+    # Первый владелец дашборда. Завести его из самого дашборда нельзя:
+    # заводить людей имеет право только владелец, а его ещё нет
+    if settings.OWNER_PHONE:
+        from app.database import SessionLocal
+        from app.services.staff_service import StaffService
+
+        session = SessionLocal()
+        try:
+            owner = StaffService(session).ensure_owner(
+                settings.OWNER_PHONE, settings.OWNER_NAME)
+            if owner is None:
+                log.warning('SERVER_OWNER_PHONE не похож на номер телефона')
+        except Exception as e:
+            log.error('Не удалось завести владельца дашборда: %s', e)
+        finally:
+            session.close()
+
     problems = settings.warnings()
     if problems:
         log.warning('Сервер запущен с ограничениями:')
@@ -60,7 +77,8 @@ if settings.CORS_ORIGINS:
         allow_headers=['*'],
     )
 
-from app.api import auth, booking, storage, history, queue, sync, public  # noqa: E402
+from app.api import (auth, booking, storage, history, queue, sync, public,  # noqa: E402
+                     staff)
 
 app.include_router(auth.router)
 app.include_router(booking.router)
@@ -68,6 +86,7 @@ app.include_router(storage.router)
 app.include_router(history.router)
 app.include_router(queue.router)
 app.include_router(sync.router)
+app.include_router(staff.router)
 app.include_router(public.router)
 
 

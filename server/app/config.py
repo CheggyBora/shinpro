@@ -41,6 +41,17 @@ class Settings:
     # 30 дней — компромисс между удобством и безопасностью.
     TOKEN_DAYS = int(os.environ.get('SERVER_TOKEN_DAYS', '30'))
 
+    # Сотрудник смотрит дашборд с телефона и заходит часто, но доступ
+    # к зарплатам всего цеха ценнее клиентского кабинета: неделя вместо
+    # месяца — разумная плата за то, чтобы забытый телефон не открывал
+    # выручку до конца месяца
+    STAFF_TOKEN_DAYS = int(os.environ.get('SERVER_STAFF_TOKEN_DAYS', '7'))
+
+    # Первый владелец. Из дашборда его завести нельзя: заводить людей
+    # имеет право только владелец, а его ещё нет
+    OWNER_PHONE = os.environ.get('SERVER_OWNER_PHONE', '')
+    OWNER_NAME = os.environ.get('SERVER_OWNER_NAME', '')
+
     # --- Коды подтверждения ------------------------------------------
     CODE_LENGTH = 4
     CODE_TTL_MINUTES = int(os.environ.get('SERVER_CODE_TTL_MINUTES', '15'))
@@ -110,6 +121,14 @@ class Settings:
         if cls.DATABASE_URL.startswith('sqlite'):
             problems.append(
                 'Используется SQLite: для боевого сервера нужен PostgreSQL')
+        if not cls.OWNER_PHONE:
+            problems.append(
+                'SERVER_OWNER_PHONE не задан: в дашборд войти некому — '
+                'первого владельца из самого дашборда не завести')
+        if cls.SMS_PROVIDER == 'log' and cls.MAIL_PROVIDER == 'log':
+            problems.append(
+                'SMS не настроены: коды входа пишутся в журнал сервера, '
+                'а не уходят человеку')
         return problems
 
 
