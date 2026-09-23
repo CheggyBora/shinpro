@@ -200,7 +200,7 @@ stored_row = srv.query(SrvStored).first()
 stored_row.requested_for = datetime.now() + timedelta(days=2)
 stored_row.request_state = PENDING
 srv.commit()
-stored_shop_id = stored_row.shop_id
+stored_shop_id = stored_row.local_id
 srv.close()
 
 result = sync.run_once()
@@ -243,7 +243,7 @@ sync.run_once()
 srv = ServerSession()
 check('наряд, сделанный офлайн, поднялся',
       srv.query(SrvVisit).filter(
-          SrvVisit.shop_id == offline_order.id).first() is not None)
+          SrvVisit.local_id == offline_order.id).first() is not None)
 srv.close()
 
 # --------------------------------------------------------------------
@@ -252,15 +252,15 @@ srv = ServerSession()
 from app.models import (VisitItem as SrvItem, SalaryAccrual as SrvAccrual,
                         ShopEmployee as SrvEmployee, ShopShift as SrvShift)
 
-visit = srv.query(SrvVisit).filter(SrvVisit.shop_id == order.id).first()
+visit = srv.query(SrvVisit).filter(SrvVisit.local_id == order.id).first()
 check('расходники доехали', visit.consumables_amount is not None,
       str(visit.consumables_amount))
 check('база для зарплаты доехала', visit.salary_base == order.salary_base,
       f'{visit.salary_base} против {order.salary_base}')
 check('способ оплаты доехал', visit.payment_method == 'cash',
       str(visit.payment_method))
-check('смена наряда доехала', visit.shift_shop_id == order.shift_id,
-      str(visit.shift_shop_id))
+check('смена наряда доехала', visit.shift_local_id == order.shift_id,
+      str(visit.shift_local_id))
 check('отметка изменения проставлена', visit.changed_at is not None)
 
 lines = srv.query(SrvItem).filter(SrvItem.visit_id == visit.id).all()
@@ -280,7 +280,7 @@ accruals = srv.query(SrvAccrual).filter(SrvAccrual.visit_id == visit.id).all()
 check('начисление доехало', len(accruals) == 1, str(len(accruals)))
 check('начислено 40% от базы 950', accruals[0].amount == 380.0,
       str(accruals[0].amount))
-check('начисление привязано к мастеру', accruals[0].employee_shop_id == 1)
+check('начисление привязано к мастеру', accruals[0].employee_local_id == 1)
 
 check('сотрудник доехал', srv.query(SrvEmployee).count() >= 1)
 check('смена доехала', srv.query(SrvShift).count() >= 1)
@@ -290,7 +290,7 @@ print('\n=== Имя сотрудника доезжает и показывае�
 employees.set_name(1, 'Игорь')
 sync.run_once()
 srv = ServerSession()
-row = srv.query(SrvEmployee).filter(SrvEmployee.shop_id == 1).first()
+row = srv.query(SrvEmployee).filter(SrvEmployee.local_id == 1).first()
 check('имя на сервере', row.name == 'Игорь', str(row.name))
 check('подпись с именем и номером', row.title == 'Игорь (№1)', row.title)
 srv.close()
@@ -299,7 +299,7 @@ print('\n=== Повторная присылка не плодит позици�
 sync.run_once()
 sync.run_once()
 srv = ServerSession()
-visit = srv.query(SrvVisit).filter(SrvVisit.shop_id == order.id).first()
+visit = srv.query(SrvVisit).filter(SrvVisit.local_id == order.id).first()
 check('позиция по-прежнему одна',
       srv.query(SrvItem).filter(SrvItem.visit_id == visit.id).count() == 1)
 check('начисление по-прежнему одно',
@@ -308,7 +308,7 @@ srv.close()
 
 print('\n=== Старые наряды второй раз не отправляются ===')
 srv = ServerSession()
-until = srv.query(SrvVisit).filter(SrvVisit.shop_id == order.id).first().changed_at
+until = srv.query(SrvVisit).filter(SrvVisit.local_id == order.id).first().changed_at
 srv.close()
 check('сервер знает, докуда у него всё есть', until is not None, str(until))
 
@@ -329,13 +329,13 @@ db.query(WorkOrder).filter(WorkOrder.id == old_order.id).update(
 db.commit()
 
 portion = sync.collect_push(changed_since=_dt.now() - timedelta(hours=2))
-sent_ids = [item['shop_id'] for item in portion['visits']]
+sent_ids = [item['local_id'] for item in portion['visits']]
 check('недельный наряд не поехал', old_order.id not in sent_ids, str(sent_ids))
 check('свежий наряд поехал', order.id in sent_ids, str(sent_ids))
 
 everything = sync.collect_push()
 check('без отметки уходит вся история',
-      old_order.id in [item['shop_id'] for item in everything['visits']])
+      old_order.id in [item['local_id'] for item in everything['visits']])
 
 print('\n=== Возврат досылается, хотя наряд старый ===')
 db.query(WorkOrder).filter(WorkOrder.id == old_order.id).update(
@@ -344,13 +344,13 @@ db.query(WorkOrder).filter(WorkOrder.id == old_order.id).update(
 db.commit()
 
 portion = sync.collect_push(changed_since=_dt.now() - timedelta(hours=2))
-returned = [item for item in portion['visits'] if item['shop_id'] == old_order.id]
+returned = [item for item in portion['visits'] if item['local_id'] == old_order.id]
 check('наряд с возвратом уехал заново', len(returned) == 1, str(len(returned)))
 check('сумма возврата в посылке', returned[0]['refunded_amount'] == 500.0)
 
 sync.run_once()
 srv = ServerSession()
-refunded = srv.query(SrvVisit).filter(SrvVisit.shop_id == old_order.id).first()
+refunded = srv.query(SrvVisit).filter(SrvVisit.local_id == old_order.id).first()
 check('возврат виден на сервере', refunded.refunded_amount == 500.0,
       str(refunded.refunded_amount))
 check('причина возврата на месте', 'колесо' in (refunded.refund_reason or ''))
@@ -364,7 +364,7 @@ db.commit()
 sync.run_once()
 
 srv = ServerSession()
-deleted = srv.query(SrvVisit).filter(SrvVisit.shop_id == old_order.id).first()
+deleted = srv.query(SrvVisit).filter(SrvVisit.local_id == old_order.id).first()
 check('на сервере наряд помечен удалённым', deleted.is_deleted is True)
 check('а сам не пропал — след остался', deleted.total_amount > 0)
 srv.close()
@@ -381,7 +381,7 @@ sync.run_once()
 srv = ServerSession()
 from app.models import SalaryPayout as SrvPayout, PENDING as SRV_PENDING
 
-up = srv.query(SrvPayout).filter(SrvPayout.shop_id == paid.id).first()
+up = srv.query(SrvPayout).filter(SrvPayout.local_id == paid.id).first()
 check('выплата уехала на сервер', up is not None)
 check('сумма совпала', up and up.amount == 100.0, str(up.amount if up else None))
 check('способ — наличные', up and up.method == 'cash')
@@ -395,14 +395,14 @@ from app.models import ShopEmployee as SrvEmployee
 
 # Сотрудник на сервере появляется при обмене — он уже там
 check('сотрудник известен серверу',
-      srv.query(SrvEmployee).filter(SrvEmployee.shop_id == 1).first() is not None)
+      srv.query(SrvEmployee).filter(SrvEmployee.local_id == 1).first() is not None)
 
 card = DashboardService(srv).pay_to_card(1, 250, 'за сентябрь')
 check('выплата создана на сервере', card.id is not None)
 check('помечена как ждущая цеха', card.sync_state == SRV_PENDING)
 check('способ — карта', card.method == 'card')
 
-balances = {row['employee_shop_id']: row
+balances = {row['employee_local_id']: row
             for row in DashboardService(srv).salary_balances()}
 check('в остатке на сервере перевод уже учтён',
       balances[1]['waiting'] == 250.0, str(balances[1]))
@@ -433,8 +433,8 @@ srv = ServerSession()
 taken = srv.query(SrvPayout).filter(SrvPayout.id == card.id).first()
 check('сервер знает, что цех её забрал', taken.sync_state == 'taken',
       str(taken.sync_state))
-check('и знает её номер в цеху', taken.shop_id == local.id,
-      f'{taken.shop_id} против {local.id}')
+check('и знает её номер в цеху', taken.local_id == local.id,
+      f'{taken.local_id} против {local.id}')
 srv.close()
 
 print('\n=== Отметка времени последнего обмена ===')

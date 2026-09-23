@@ -33,7 +33,13 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.database import SessionLocal
 from app.utils import now as shop_now
-from app.models import BookingDay, StoredSet, Visit, QueueSnapshot, Client, TAKEN
+from app.models import (BookingDay, StoredSet, Visit, QueueSnapshot, Client,
+                        Shop, TAKEN)
+
+
+def the_shop(db):
+    """Точка, заведённая при запуске сервера: данные принадлежат ей."""
+    return db.query(Shop).first()
 
 _failures = []
 
@@ -192,9 +198,10 @@ with TestClient(app) as client:
     # --- Готовим день в цеху -------------------------------------------
     db = SessionLocal()
     TOMORROW = (shop_now() + timedelta(days=1)).date()
-    db.add(BookingDay(day=TOMORROW, posts=2,
+    shop = the_shop(db)
+    db.add(BookingDay(shop_id=shop.id, day=TOMORROW, posts=2,
                       opens_at='09:00', closes_at='18:00'))
-    db.add(BookingDay(day=TOMORROW + timedelta(days=1), posts=1,
+    db.add(BookingDay(shop_id=shop.id, day=TOMORROW + timedelta(days=1), posts=1,
                       is_closed=True))
     db.commit()
     db.close()
@@ -295,7 +302,8 @@ with TestClient(app) as client:
     # --- Хранение --------------------------------------------------------
     print('\n=== Шины на хранении ===')
     db = SessionLocal()
-    stored = StoredSet(client_id=client_id, license_plate='А123ВВ777',
+    stored = StoredSet(shop_id=the_shop(db).id, client_id=client_id,
+                       license_plate='А123ВВ777',
                        storage_type='Шины с дисками', diameter='R17',
                        brand='Nokian Hakkapeliitta', wheel_type='Литые',
                        accepted_at=shop_now() - timedelta(days=30),
@@ -330,7 +338,8 @@ with TestClient(app) as client:
     stranger = Client(phone='79990001122')
     db.add(stranger)
     db.commit()
-    alien = StoredSet(client_id=stranger.id, license_plate='М777ММ199',
+    alien = StoredSet(shop_id=the_shop(db).id, client_id=stranger.id,
+                      license_plate='М777ММ199',
                       status='stored')
     db.add(alien)
     db.commit()
@@ -347,12 +356,14 @@ with TestClient(app) as client:
     # --- История ----------------------------------------------------------
     print('\n=== История визитов ===')
     db = SessionLocal()
-    db.add(Visit(client_id=client_id, license_plate='А123ВВ777',
+    db.add(Visit(shop_id=the_shop(db).id, client_id=client_id,
+                 license_plate='А123ВВ777',
                  visited_at=shop_now() - timedelta(days=200),
                  total_amount=3200.0,
                  services='Шиномонтаж\nБалансировка',
                  recommendations='Через 5000 км заменить передние колодки'))
-    db.add(Visit(client_id=client_id, license_plate='А123ВВ777',
+    db.add(Visit(shop_id=the_shop(db).id, client_id=client_id,
+                 license_plate='А123ВВ777',
                  visited_at=shop_now() - timedelta(days=30),
                  total_amount=1800.0, services='Ремонт грибком'))
     db.commit()
@@ -381,7 +392,7 @@ with TestClient(app) as client:
 
     print('\n=== Свежая очередь ===')
     db = SessionLocal()
-    db.add(QueueSnapshot(taken_at=shop_now(), cars_in_work=2,
+    db.add(QueueSnapshot(shop_id=the_shop(db).id, taken_at=shop_now(), cars_in_work=2,
                          cars_waiting=1, open_posts=2, free_in_minutes=25,
                          shift_is_open=True))
     db.commit()
@@ -398,7 +409,7 @@ with TestClient(app) as client:
     # не выходил на связь. Поэтому убираем прежние, а не добавляем к ним
     db = SessionLocal()
     db.query(QueueSnapshot).delete()
-    db.add(QueueSnapshot(taken_at=shop_now() - timedelta(hours=3),
+    db.add(QueueSnapshot(shop_id=the_shop(db).id, taken_at=shop_now() - timedelta(hours=3),
                          cars_in_work=5, cars_waiting=4, open_posts=2,
                          free_in_minutes=10, shift_is_open=True))
     db.commit()

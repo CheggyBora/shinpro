@@ -33,15 +33,18 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import (Client, Car, Appointment, BookingDay, StoredSet,
                         Visit, VisitItem, SalaryAccrual, SalaryPayout,
-                        ShopEmployee, ShopShift, QueueSnapshot,
+                        ShopEmployee, ShopShift, QueueSnapshot, Shop,
                         PENDING, TAKEN, REJECTED)
 from app.security import require_sync_key
 from app.services import shop_settings
 from app.services.booking_service import BookingService
 from app.utils import normalize_phone, normalize_plate, normalize_email, now as shop_now
 
-router = APIRouter(prefix='/sync', tags=['Обмен с цехом'],
-                   dependencies=[Depends(require_sync_key)])
+router = APIRouter(prefix='/sync', tags=['Обмен с цехом'])
+
+# Точка, предъявившая ключ обмена. Она же — единственное, что этот
+# запрос имеет право видеть и менять
+Mine = Depends(require_sync_key)
 
 
 # ----------------------------------------------------------------------
@@ -49,26 +52,26 @@ router = APIRouter(prefix='/sync', tags=['Обмен с цехом'],
 # ----------------------------------------------------------------------
 
 class ClientIn(BaseModel):
-    shop_id: int
+    local_id: int
     phone: str
     name: Optional[str] = None
 
 
 class CarIn(BaseModel):
-    shop_id: int
+    local_id: int
     license_plate: str
-    client_shop_id: Optional[int] = None
+    client_local_id: Optional[int] = None
     vehicle_type: Optional[str] = None
     wheel_diameter: Optional[str] = None
     wheels_assembled: Optional[bool] = None
 
 
 class AppointmentIn(BaseModel):
-    shop_id: int
+    local_id: int
     scheduled_at: datetime
     duration_minutes: int = 60
     license_plate: Optional[str] = None
-    client_shop_id: Optional[int] = None
+    client_local_id: Optional[int] = None
     client_name: Optional[str] = None
     client_phone: Optional[str] = None
     wheels_assembled: Optional[bool] = None
@@ -78,7 +81,7 @@ class AppointmentIn(BaseModel):
 
 
 class VisitItemIn(BaseModel):
-    shop_id: Optional[int] = None
+    local_id: Optional[int] = None
     service_name: str
     quantity: int = 1
     unit_price: float = 0.0
@@ -89,14 +92,14 @@ class VisitItemIn(BaseModel):
 
 
 class AccrualIn(BaseModel):
-    employee_shop_id: int
+    employee_local_id: int
     amount: float = 0.0
     accrued_at: Optional[datetime] = None
 
 
 class VisitIn(BaseModel):
-    shop_id: int
-    client_shop_id: Optional[int] = None
+    local_id: int
+    client_local_id: Optional[int] = None
     license_plate: Optional[str] = None
     visited_at: datetime
     total_amount: float = 0.0
@@ -106,7 +109,7 @@ class VisitIn(BaseModel):
 
     # Деньги и работа — для дашборда. Приложению клиента это не отдаётся
     changed_at: Optional[datetime] = None
-    shift_shop_id: Optional[int] = None
+    shift_local_id: Optional[int] = None
     vehicle_type: Optional[str] = None
     wheel_diameter: Optional[str] = None
     payment_method: Optional[str] = None
@@ -129,15 +132,15 @@ class VisitIn(BaseModel):
 
 
 class EmployeeIn(BaseModel):
-    shop_id: int
+    local_id: int
     name: Optional[str] = None
     salary_percent: float = 40.0
     is_active: bool = True
 
 
 class PayoutIn(BaseModel):
-    shop_id: int
-    employee_shop_id: int
+    local_id: int
+    employee_local_id: int
     amount: float = 0.0
     method: str = 'cash'
     paid_at: Optional[datetime] = None
@@ -147,7 +150,7 @@ class PayoutIn(BaseModel):
 
 
 class ShiftIn(BaseModel):
-    shop_id: int
+    local_id: int
     started_at: Optional[datetime] = None
     ended_at: Optional[datetime] = None
     status: str = 'open'
@@ -156,8 +159,8 @@ class ShiftIn(BaseModel):
 
 
 class StorageIn(BaseModel):
-    shop_id: int
-    client_shop_id: Optional[int] = None
+    local_id: int
+    client_local_id: Optional[int] = None
     license_plate: Optional[str] = None
     storage_type: Optional[str] = None
     wheel_type: Optional[str] = None
@@ -215,7 +218,7 @@ class PushOut(BaseModel):
 class NewAppointmentOut(BaseModel):
     """Заявка клиента, которую цех ещё не забрал."""
     server_id: int
-    shop_id: Optional[int] = None
+    local_id: Optional[int] = None
     scheduled_at: datetime
     duration_minutes: int
     license_plate: Optional[str] = None
@@ -228,7 +231,7 @@ class NewAppointmentOut(BaseModel):
 
 class StorageRequestOut(BaseModel):
     server_id: int
-    storage_shop_id: Optional[int] = None
+    storage_local_id: Optional[int] = None
     license_plate: Optional[str] = None
     requested_for: Optional[datetime] = None
     client_name: Optional[str] = None
@@ -243,7 +246,7 @@ class PullOut(BaseModel):
 class AckAppointment(BaseModel):
     server_id: int
     # Номер, который запись получила в базе цеха
-    shop_id: Optional[int] = None
+    local_id: Optional[int] = None
     accepted: bool = True
     reason: Optional[str] = None
 
@@ -263,28 +266,33 @@ class AckIn(BaseModel):
 # Наверх
 # ----------------------------------------------------------------------
 
-def _client_by_shop_id(db, shop_id, cache):
-    if shop_id is None:
+def _client_by_local_id(db, local_id, cache, account_id=None):
+    if local_id is None:
         return None
-    if shop_id in cache:
-        return cache[shop_id]
-    row = db.query(Client).filter(Client.shop_id == shop_id).first()
-    cache[shop_id] = row
+    if local_id in cache:
+        return cache[local_id]
+
+    row = db.query(Client).filter(
+        Client.local_id == local_id,
+        Client.account_id == account_id).first()
+    cache[local_id] = row
     return row
 
 
 @router.post('/push', response_model=PushOut, summary='Цех отдаёт свои данные')
-def push(payload: PushIn, db: Session = Depends(get_db)):
+def push(payload: PushIn, db: Session = Depends(get_db),
+         shop: Shop = Mine):
     """
     Принять всё, что цех накопил.
 
-    Записи находятся по shop_id — номеру строки в базе шиномонтажа.
+    Записи находятся по local_id — номеру строки в базе шиномонтажа.
     Повторная присылка того же не создаёт дубль, а обновляет: после
     долгого простоя цех присылает всё подряд, и это должно быть
     безопасно.
     """
     result = PushOut()
     cache = {}
+    account_id = shop.account_id
 
     # --- Клиенты ------------------------------------------------------
     for item in payload.clients:
@@ -292,24 +300,29 @@ def push(payload: PushIn, db: Session = Depends(get_db)):
         if not phone:
             continue
 
-        row = db.query(Client).filter(Client.shop_id == item.shop_id).first()
+        row = db.query(Client).filter(
+            Client.local_id == item.local_id,
+            Client.account_id == account_id).first()
         if row is None:
             # Человек мог зарегистрироваться в приложении раньше, чем
             # приехал в цех. Тогда он уже есть — по телефону
-            row = db.query(Client).filter(Client.phone == phone).first()
+            row = db.query(Client).filter(
+                Client.phone == phone,
+                Client.account_id == account_id).first()
 
         if row is None:
-            row = Client(phone=phone)
+            row = Client(phone=phone, account_id=account_id)
             db.add(row)
 
-        row.shop_id = item.shop_id
+        row.account_id = account_id
+        row.local_id = item.local_id
         row.phone = phone
         # Имя из цеха главнее: там его записывал человек, а не
         # подставляло приложение
         if item.name:
             row.name = item.name
         db.flush()
-        cache[item.shop_id] = row
+        cache[item.local_id] = row
         result.clients += 1
 
     # --- Машины -------------------------------------------------------
@@ -318,15 +331,21 @@ def push(payload: PushIn, db: Session = Depends(get_db)):
         if not plate:
             continue
 
-        row = db.query(Car).filter(Car.shop_id == item.shop_id).first()
+        row = db.query(Car).filter(
+            Car.local_id == item.local_id,
+            Car.account_id == account_id).first()
         if row is None:
-            row = db.query(Car).filter(Car.license_plate == plate).first()
+            row = db.query(Car).filter(
+                Car.license_plate == plate,
+                Car.account_id == account_id).first()
         if row is None:
-            row = Car(license_plate=plate)
+            row = Car(license_plate=plate, account_id=account_id)
             db.add(row)
 
-        owner = _client_by_shop_id(db, item.client_shop_id, cache)
-        row.shop_id = item.shop_id
+        row.account_id = account_id
+
+        owner = _client_by_local_id(db, item.client_local_id, cache, account_id)
+        row.local_id = item.local_id
         row.license_plate = plate
         row.vehicle_type = item.vehicle_type
         row.wheel_diameter = item.wheel_diameter
@@ -338,12 +357,15 @@ def push(payload: PushIn, db: Session = Depends(get_db)):
 
     # --- Визиты -------------------------------------------------------
     for item in payload.visits:
-        row = db.query(Visit).filter(Visit.shop_id == item.shop_id).first()
+        row = db.query(Visit).filter(
+            Visit.local_id == item.local_id,
+            Visit.shop_id == shop.id).first()
         if row is None:
-            row = Visit(shop_id=item.shop_id, visited_at=item.visited_at)
+            row = Visit(local_id=item.local_id, shop_id=shop.id,
+                        visited_at=item.visited_at)
             db.add(row)
 
-        owner = _client_by_shop_id(db, item.client_shop_id, cache)
+        owner = _client_by_local_id(db, item.client_local_id, cache, account_id)
         row.visited_at = item.visited_at
         row.license_plate = normalize_plate(item.license_plate) or None
         row.total_amount = item.total_amount
@@ -354,7 +376,7 @@ def push(payload: PushIn, db: Session = Depends(get_db)):
             row.client_id = owner.id
 
         row.changed_at = item.changed_at or item.visited_at
-        row.shift_shop_id = item.shift_shop_id
+        row.shift_local_id = item.shift_local_id
         row.vehicle_type = item.vehicle_type
         row.wheel_diameter = item.wheel_diameter
         row.payment_method = item.payment_method
@@ -383,7 +405,7 @@ def push(payload: PushIn, db: Session = Depends(get_db)):
             for line in item.items:
                 db.add(VisitItem(
                     visit_id=row.id,
-                    shop_id=line.shop_id,
+                    local_id=line.local_id,
                     service_name=line.service_name,
                     quantity=line.quantity,
                     unit_price=line.unit_price,
@@ -399,7 +421,7 @@ def push(payload: PushIn, db: Session = Depends(get_db)):
             for accrual in item.accruals:
                 db.add(SalaryAccrual(
                     visit_id=row.id,
-                    employee_shop_id=accrual.employee_shop_id,
+                    employee_local_id=accrual.employee_local_id,
                     amount=accrual.amount,
                     accrued_at=accrual.accrued_at or item.visited_at))
 
@@ -409,12 +431,13 @@ def push(payload: PushIn, db: Session = Depends(get_db)):
     # --- Выплаты ---------------------------------------------------
     for item in payload.payouts:
         row = db.query(SalaryPayout).filter(
-            SalaryPayout.shop_id == item.shop_id).first()
+            SalaryPayout.local_id == item.local_id,
+            SalaryPayout.shop_id == shop.id).first()
         if row is None:
-            row = SalaryPayout(shop_id=item.shop_id)
+            row = SalaryPayout(local_id=item.local_id, shop_id=shop.id)
             db.add(row)
 
-        row.employee_shop_id = item.employee_shop_id
+        row.employee_local_id = item.employee_local_id
         row.amount = item.amount
         row.method = item.method
         row.paid_at = item.paid_at
@@ -427,9 +450,10 @@ def push(payload: PushIn, db: Session = Depends(get_db)):
     # --- Сотрудники ---------------------------------------------------
     for item in payload.employees:
         row = db.query(ShopEmployee).filter(
-            ShopEmployee.shop_id == item.shop_id).first()
+            ShopEmployee.local_id == item.local_id,
+            ShopEmployee.shop_id == shop.id).first()
         if row is None:
-            row = ShopEmployee(shop_id=item.shop_id)
+            row = ShopEmployee(local_id=item.local_id, shop_id=shop.id)
             db.add(row)
 
         row.name = item.name
@@ -441,9 +465,10 @@ def push(payload: PushIn, db: Session = Depends(get_db)):
     # --- Смены ----------------------------------------------------------
     for item in payload.shifts:
         row = db.query(ShopShift).filter(
-            ShopShift.shop_id == item.shop_id).first()
+            ShopShift.local_id == item.local_id,
+            ShopShift.shop_id == shop.id).first()
         if row is None:
-            row = ShopShift(shop_id=item.shop_id)
+            row = ShopShift(local_id=item.local_id, shop_id=shop.id)
             db.add(row)
 
         row.started_at = item.started_at
@@ -457,12 +482,13 @@ def push(payload: PushIn, db: Session = Depends(get_db)):
     # --- Хранение -----------------------------------------------------
     for item in payload.storage:
         row = db.query(StoredSet).filter(
-            StoredSet.shop_id == item.shop_id).first()
+            StoredSet.local_id == item.local_id,
+            StoredSet.shop_id == shop.id).first()
         if row is None:
-            row = StoredSet(shop_id=item.shop_id)
+            row = StoredSet(local_id=item.local_id, shop_id=shop.id)
             db.add(row)
 
-        owner = _client_by_shop_id(db, item.client_shop_id, cache)
+        owner = _client_by_local_id(db, item.client_local_id, cache, account_id)
         row.license_plate = normalize_plate(item.license_plate) or None
         row.storage_type = item.storage_type
         row.wheel_type = item.wheel_type
@@ -479,6 +505,7 @@ def push(payload: PushIn, db: Session = Depends(get_db)):
     # --- Очередь --------------------------------------------------------
     if payload.queue is not None:
         db.add(QueueSnapshot(
+            shop_id=shop.id,
             taken_at=shop_now(),
             cars_in_work=payload.queue.cars_in_work,
             cars_waiting=payload.queue.cars_waiting,
@@ -489,7 +516,7 @@ def push(payload: PushIn, db: Session = Depends(get_db)):
 
     # --- Настройки ------------------------------------------------------
     for key, value in (payload.settings or {}).items():
-        shop_settings.set_value(db, key, value, commit=False)
+        shop_settings.set_value(db, key, value, commit=False, shop=shop)
         result.settings += 1
 
     db.commit()
@@ -521,7 +548,8 @@ def _drop_old_snapshots(db, keep=200):
 # ----------------------------------------------------------------------
 
 @router.get('/appointments', summary='Записи на день — то, что видит приёмщик')
-def day_appointments(day: str, db: Session = Depends(get_db)):
+def day_appointments(day: str, db: Session = Depends(get_db),
+                     shop: Shop = Mine):
     """
     Все записи дня, откуда бы они ни пришли, и разложенные по постам.
 
@@ -539,11 +567,12 @@ def day_appointments(day: str, db: Session = Depends(get_db)):
     end = start + timedelta(days=1)
 
     rows = db.query(Appointment).filter(
+        Appointment.shop_id == shop.id,
         Appointment.scheduled_at >= start,
         Appointment.scheduled_at < end).order_by(
         Appointment.scheduled_at).all()
 
-    settings = BookingService(db).day_settings(target)
+    settings = BookingService(db, shop).day_settings(target)
     posts = settings['posts']
 
     # Первая свободная колонка на это время. Записи сверх постов
@@ -591,7 +620,8 @@ class ShopBookingIn(BaseModel):
 
 
 @router.post('/appointments', summary='Приёмщик записывает клиента')
-def create_appointment(payload: ShopBookingIn, db: Session = Depends(get_db)):
+def create_appointment(payload: ShopBookingIn, db: Session = Depends(get_db),
+                       shop: Shop = Mine):
     """
     Записать клиента со стороны цеха.
 
@@ -603,7 +633,7 @@ def create_appointment(payload: ShopBookingIn, db: Session = Depends(get_db)):
     phone = normalize_phone(payload.client_phone)
     name = (payload.client_name or '').strip() or None
 
-    service = BookingService(db)
+    service = BookingService(db, shop)
     settings = service.day_settings(payload.scheduled_at.date())
     free = service._slot_is_free(payload.scheduled_at,
                                  payload.duration_minutes, settings['posts'])
@@ -614,13 +644,15 @@ def create_appointment(payload: ShopBookingIn, db: Session = Depends(get_db)):
 
     client = None
     if phone or name:
-        client = _client_for(db, phone, name)
+        client = _client_for(db, phone, name, shop.account_id)
 
     car = None
     if plate:
-        car = db.query(Car).filter(Car.license_plate == plate).first()
+        car = db.query(Car).filter(
+            Car.license_plate == plate,
+            Car.account_id == shop.account_id).first()
         if car is None:
-            car = Car(license_plate=plate)
+            car = Car(license_plate=plate, account_id=shop.account_id)
             db.add(car)
             db.flush()
         if client is not None and car.client_id is None:
@@ -631,6 +663,7 @@ def create_appointment(payload: ShopBookingIn, db: Session = Depends(get_db)):
             client = car.client
 
     row = Appointment(
+        shop_id=shop.id,
         client_id=client.id if client else None,
         car_id=car.id if car else None,
         scheduled_at=payload.scheduled_at,
@@ -652,16 +685,20 @@ def create_appointment(payload: ShopBookingIn, db: Session = Depends(get_db)):
     return {'id': row.id, 'was_free': free, 'posts': settings['posts']}
 
 
-def _client_for(db, phone, name):
+def _client_for(db, phone, name, account_id=None):
     """Найти клиента по телефону или завести. Имя из цеха главнее."""
     client = None
     if phone:
-        client = db.query(Client).filter(Client.phone == phone).first()
+        # Ищем среди клиентов своего аккаунта: тот же номер в другой
+        # сети — другой человек, и путать их нельзя
+        client = db.query(Client).filter(
+            Client.phone == phone,
+            Client.account_id == account_id).first()
 
     if client is None:
         if not phone:
             return None
-        client = Client(phone=phone, name=name)
+        client = Client(phone=phone, name=name, account_id=account_id)
         db.add(client)
         db.flush()
     elif name:
@@ -682,8 +719,11 @@ class AppointmentPatchIn(BaseModel):
 
 @router.patch('/appointments/{appointment_id}', summary='Изменить запись')
 def patch_appointment(appointment_id: int, payload: AppointmentPatchIn,
-                      db: Session = Depends(get_db)):
-    row = db.query(Appointment).filter(Appointment.id == appointment_id).first()
+                      db: Session = Depends(get_db),
+                      shop: Shop = Mine):
+    row = db.query(Appointment).filter(
+        Appointment.id == appointment_id,
+        Appointment.shop_id == shop.id).first()
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail='Запись не найдена')
 
@@ -707,14 +747,15 @@ def patch_appointment(appointment_id: int, payload: AppointmentPatchIn,
 
 
 @router.get('/posts', summary='Постов под запись по дням')
-def get_posts(day: str, days: int = 1, db: Session = Depends(get_db)):
+def get_posts(day: str, days: int = 1, db: Session = Depends(get_db),
+              shop: Shop = Mine):
     try:
         start = datetime.strptime(day, '%Y-%m-%d').date()
     except (ValueError, TypeError):
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
                             detail='Дату нужно как ГГГГ-ММ-ДД')
 
-    service = BookingService(db)
+    service = BookingService(db, shop)
     answer = {}
     for offset in range(max(1, min(days, 400))):
         target = start + timedelta(days=offset)
@@ -732,7 +773,8 @@ class PostsIn(BaseModel):
 
 
 @router.put('/posts', summary='Задать постов под запись')
-def set_posts(payload: PostsIn, db: Session = Depends(get_db)):
+def set_posts(payload: PostsIn, db: Session = Depends(get_db),
+              shop: Shop = Mine):
     try:
         start = datetime.strptime(payload.day, '%Y-%m-%d').date()
     except (ValueError, TypeError):
@@ -743,9 +785,11 @@ def set_posts(payload: PostsIn, db: Session = Depends(get_db)):
     changed = 0
     for offset in range(max(1, min(payload.days, 400))):
         target = start + timedelta(days=offset)
-        row = db.query(BookingDay).filter(BookingDay.day == target).first()
+        row = db.query(BookingDay).filter(
+            BookingDay.day == target,
+            BookingDay.shop_id == shop.id).first()
         if row is None:
-            row = BookingDay(day=target)
+            row = BookingDay(day=target, shop_id=shop.id)
             db.add(row)
 
         row.posts = posts
@@ -763,7 +807,8 @@ def set_posts(payload: PostsIn, db: Session = Depends(get_db)):
 
 @router.get('/storage-requests', response_model=List[StorageRequestOut],
             summary='Заявки клиентов привезти комплект')
-def storage_requests(db: Session = Depends(get_db)):
+def storage_requests(db: Session = Depends(get_db),
+                     shop: Shop = Mine):
     """
     Заявка висит здесь, пока цех не подтвердит приём.
 
@@ -773,7 +818,7 @@ def storage_requests(db: Session = Depends(get_db)):
     rows = db.query(StoredSet).filter(StoredSet.request_state == PENDING).all()
     return [StorageRequestOut(
         server_id=row.id,
-        storage_shop_id=row.shop_id,
+        storage_local_id=row.local_id,
         license_plate=row.license_plate,
         requested_for=row.requested_for,
         client_name=row.client.name if row.client else None,
@@ -781,10 +826,13 @@ def storage_requests(db: Session = Depends(get_db)):
 
 
 @router.post('/storage-requests/ack', summary='Цех принял заявки на комплекты')
-def ack_storage(payload: AckIn, db: Session = Depends(get_db)):
+def ack_storage(payload: AckIn, db: Session = Depends(get_db),
+                shop: Shop = Mine):
     taken = 0
     for item in payload.storage_requests:
-        row = db.query(StoredSet).filter(StoredSet.id == item.server_id).first()
+        row = db.query(StoredSet).filter(
+            StoredSet.id == item.server_id,
+            StoredSet.shop_id == shop.id).first()
         if row is None:
             continue
 
@@ -800,7 +848,7 @@ def ack_storage(payload: AckIn, db: Session = Depends(get_db)):
 class PayoutOut(BaseModel):
     """Выплата, отмеченная владельцем и ещё не учтённая цехом."""
     server_id: int
-    employee_shop_id: int
+    employee_local_id: int
     amount: float
     method: str
     comment: Optional[str] = None
@@ -809,7 +857,7 @@ class PayoutOut(BaseModel):
 
 class AckPayout(BaseModel):
     server_id: int
-    shop_id: Optional[int] = None
+    local_id: Optional[int] = None
     accepted: bool = True
     reason: Optional[str] = None
 
@@ -820,13 +868,15 @@ class AckPayoutsIn(BaseModel):
 
 @router.get('/payouts', response_model=List[PayoutOut],
             summary='Выплаты, которые цех ещё не забрал')
-def pending_payouts(db: Session = Depends(get_db)):
+def pending_payouts(db: Session = Depends(get_db),
+                    shop: Shop = Mine):
     rows = db.query(SalaryPayout).filter(
+        SalaryPayout.shop_id == shop.id,
         SalaryPayout.sync_state == PENDING).order_by(SalaryPayout.id).all()
 
     return [PayoutOut(
         server_id=row.id,
-        employee_shop_id=row.employee_shop_id,
+        employee_local_id=row.employee_local_id,
         amount=row.amount,
         method=row.method,
         comment=row.comment,
@@ -834,7 +884,8 @@ def pending_payouts(db: Session = Depends(get_db)):
 
 
 @router.post('/payouts/ack', summary='Цех подтверждает, что выплату учёл')
-def ack_payouts(payload: AckPayoutsIn, db: Session = Depends(get_db)):
+def ack_payouts(payload: AckPayoutsIn, db: Session = Depends(get_db),
+                shop: Shop = Mine):
     """
     Пока цех не подтвердил, выплата остаётся в очереди и придёт снова.
 
@@ -844,13 +895,14 @@ def ack_payouts(payload: AckPayoutsIn, db: Session = Depends(get_db)):
     taken = 0
     for item in payload.payouts:
         row = db.query(SalaryPayout).filter(
-            SalaryPayout.id == item.server_id).first()
+            SalaryPayout.id == item.server_id,
+            SalaryPayout.shop_id == shop.id).first()
         if row is None:
             continue
 
         if item.accepted:
             row.sync_state = TAKEN
-            row.shop_id = item.shop_id
+            row.local_id = item.local_id
             taken += 1
         else:
             row.sync_state = REJECTED
@@ -861,7 +913,8 @@ def ack_payouts(payload: AckPayoutsIn, db: Session = Depends(get_db)):
 
 
 @router.get('/state', summary='Что сейчас на сервере')
-def state(db: Session = Depends(get_db)):
+def state(db: Session = Depends(get_db),
+          shop: Shop = Mine):
     """
     Короткая сводка — по ней программа показывает состояние связи.
 
@@ -871,22 +924,31 @@ def state(db: Session = Depends(get_db)):
     заново из пустой базы, и тогда местная отметка врала бы, а история
     на сервере так и осталась бы дырявой.
     """
-    last = db.query(QueueSnapshot).order_by(
+    last = db.query(QueueSnapshot).filter(
+        QueueSnapshot.shop_id == shop.id).order_by(
         QueueSnapshot.taken_at.desc()).first()
 
-    changed_until = db.query(func.max(Visit.changed_at)).scalar()
+    changed_until = db.query(func.max(Visit.changed_at)).filter(
+        Visit.shop_id == shop.id).scalar()
 
     return {
+        'shop': {'id': shop.id, 'name': shop.name, 'slug': shop.slug},
         'visits_changed_until': changed_until,
-        'clients': db.query(Client).count(),
-        'appointments': db.query(Appointment).count(),
-        'visits': db.query(Visit).count(),
-        'storage': db.query(StoredSet).count(),
+        'clients': db.query(Client).filter(
+            Client.account_id == shop.account_id).count(),
+        'appointments': db.query(Appointment).filter(
+            Appointment.shop_id == shop.id).count(),
+        'visits': db.query(Visit).filter(Visit.shop_id == shop.id).count(),
+        'storage': db.query(StoredSet).filter(
+            StoredSet.shop_id == shop.id).count(),
         'pending_appointments': db.query(Appointment).filter(
+            Appointment.shop_id == shop.id,
             Appointment.sync_state == PENDING).count(),
         'pending_storage_requests': db.query(StoredSet).filter(
+            StoredSet.shop_id == shop.id,
             StoredSet.request_state == PENDING).count(),
         'pending_payouts': db.query(SalaryPayout).filter(
+            SalaryPayout.shop_id == shop.id,
             SalaryPayout.sync_state == PENDING).count(),
         'queue_taken_at': last.taken_at if last else None,
     }

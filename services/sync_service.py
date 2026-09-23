@@ -139,24 +139,24 @@ class SyncService:
         """
         from models import Client, Car, Employee, Shift
 
-        clients = [{'shop_id': row.id, 'phone': row.phone, 'name': row.name}
+        clients = [{'local_id': row.id, 'phone': row.phone, 'name': row.name}
                    for row in self.db.query(Client).all()]
 
-        cars = [{'shop_id': row.id,
+        cars = [{'local_id': row.id,
                  'license_plate': row.license_plate,
-                 'client_shop_id': row.client_id,
+                 'client_local_id': row.client_id,
                  'vehicle_type': row.vehicle_type,
                  'wheel_diameter': row.wheel_diameter,
                  'wheels_assembled': row.wheels_assembled}
                 for row in self.db.query(Car).all()]
 
-        employees = [{'shop_id': row.id,
+        employees = [{'local_id': row.id,
                       'name': row.name,
                       'salary_percent': row.salary_percent,
                       'is_active': bool(row.is_active)}
                      for row in self.db.query(Employee).all()]
 
-        shifts = [{'shop_id': row.id,
+        shifts = [{'local_id': row.id,
                    'started_at': as_naive(row.start_time),
                    'ended_at': as_naive(row.end_time),
                    'status': row.status,
@@ -180,7 +180,7 @@ class SyncService:
         """
         Выданная зарплата.
 
-        Отдаём и те выплаты, что пришли из дашборда: сервер по shop_id
+        Отдаём и те выплаты, что пришли из дашборда: сервер по local_id
         поймёт, что его же запись доехала до цеха и учтена.
         """
         from models import SalaryPayout
@@ -189,8 +189,8 @@ class SyncService:
         if changed_since is not None:
             query = query.filter(SalaryPayout.paid_at >= changed_since)
 
-        return [{'shop_id': row.id,
-                 'employee_shop_id': row.employee_id,
+        return [{'local_id': row.id,
+                 'employee_local_id': row.employee_id,
                  'amount': row.amount or 0.0,
                  'method': row.method,
                  'paid_at': as_naive(row.paid_at),
@@ -251,7 +251,7 @@ class SyncService:
                     + (f" x{item.quantity}" if item.quantity > 1 else '')
                     for item in items if item.service)
                 lines = [{
-                    'shop_id': item.id,
+                    'local_id': item.id,
                     'service_name': item.service.name if item.service else '—',
                     'quantity': item.quantity or 1,
                     'unit_price': service.item_unit_price(item),
@@ -265,15 +265,15 @@ class SyncService:
                 continue
 
             accruals = [{
-                'employee_shop_id': row.employee_id,
+                'employee_local_id': row.employee_id,
                 'amount': row.amount or 0.0,
                 'accrued_at': as_naive(row.transaction_date),
             } for row in self.db.query(SalaryTransaction).filter(
                 SalaryTransaction.work_order_id == order.id).all()]
 
             visits.append({
-                'shop_id': order.id,
-                'client_shop_id': order.client_id,
+                'local_id': order.id,
+                'client_local_id': order.client_id,
                 'license_plate': order.car.license_plate if order.car else None,
                 'visited_at': as_naive(order.paid_at),
                 'total_amount': order.total_amount or 0.0,
@@ -282,7 +282,7 @@ class SyncService:
                 'is_warranty': bool(getattr(order, 'is_warranty', False)),
 
                 'changed_at': as_naive(changed_at),
-                'shift_shop_id': order.shift_id,
+                'shift_local_id': order.shift_id,
                 'vehicle_type': order.vehicle_type,
                 'wheel_diameter': order.wheel_diameter,
                 'payment_method': order.payment_method,
@@ -317,8 +317,8 @@ class SyncService:
             car = self.db.query(Car).filter(
                 Car.license_plate == row.car_number).first()
             storage.append({
-                'shop_id': row.id,
-                'client_shop_id': car.client_id if car else None,
+                'local_id': row.id,
+                'client_local_id': car.client_id if car else None,
                 'license_plate': row.car_number,
                 'storage_type': row.storage_type,
                 'wheel_type': row.wheel_type,
@@ -453,7 +453,7 @@ class SyncService:
 
                 if already is None:
                     already = service.pay(
-                        item['employee_shop_id'], item['amount'],
+                        item['employee_local_id'], item['amount'],
                         item.get('method', 'card'),
                         comment=item.get('comment'),
                         allow_advance=True,
@@ -461,7 +461,7 @@ class SyncService:
                         server_id=server_id)
 
                 acks['payouts'].append({'server_id': server_id,
-                                        'shop_id': already.id,
+                                        'local_id': already.id,
                                         'accepted': True})
             except (PayoutError, KeyError, TypeError) as e:
                 self.db.rollback()
@@ -506,13 +506,13 @@ class SyncService:
         """
         from models import TireStorage
 
-        if not item.get('storage_shop_id'):
+        if not item.get('storage_local_id'):
             raise ValueError('Заявка без номера комплекта')
 
         row = self.db.query(TireStorage).filter(
-            TireStorage.id == item['storage_shop_id']).first()
+            TireStorage.id == item['storage_local_id']).first()
         if row is None:
-            raise ValueError(f"Комплект №{item['storage_shop_id']} не найден")
+            raise ValueError(f"Комплект №{item['storage_local_id']} не найден")
 
         when = _decode_time(item.get('requested_for'))
         note = (f"Клиент заказал через приложение на "

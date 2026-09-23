@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.services import tenancy
 from app.models import Client
 from app.schemas import DayOut, SlotOut, BookingIn, AppointmentOut
 from app.security import current_client
@@ -13,10 +14,40 @@ from app.services.booking_service import BookingService, BookingError, to_public
 router = APIRouter(prefix='/booking', tags=['Запись'])
 
 
+def _shop(db, client, wanted=None):
+    """
+    Точка, о которой спрашивает клиент.
+
+    У сети их может быть несколько, и тогда приложение обязано сказать,
+    какая имеется в виду. Чужую не подставить: выбираем только среди
+    точек того аккаунта, к которому относится сам клиент.
+    """
+    try:
+        shop = tenancy.shop_for(db, client.account_id, wanted)
+    except tenancy.ShopNeeded as e:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=str(e))
+
+    if shop is None:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE,
+                            detail='Шиномонтаж ещё не настроен')
+
+    return shop
+
+
+@router.get('/shops', summary='Точки, в которые можно записаться')
+def shops(client: Client = Depends(current_client),
+          db: Session = Depends(get_db)):
+    return [{'id': shop.id, 'slug': shop.slug, 'name': shop.name,
+             'address': shop.address, 'phone': shop.phone}
+            for shop in tenancy.shops_of(db, client.account_id)]
+
+
 @router.get('/days', response_model=List[DayOut],
             summary='Свободные окна на ближайшие дни')
 def days(wheels_assembled: Optional[bool] = Query(
              None, description='Колёса в сборе — от этого зависит время работ'),
+         shop: Optional[str] = Query(
+             None, description='Точка. Нужна, когда их у сети несколько'),
          client: Client = Depends(current_client),
          db: Session = Depends(get_db)):
     """
@@ -26,7 +57,8 @@ def days(wheels_assembled: Optional[bool] = Query(
     и окна разные: под перекидку готовых колёс место найдётся там,
     где под разбортовку уже не влезет.
     """
-    calendar = BookingService(db).calendar(wheels_assembled)
+    calendar = BookingService(db, _shop(db, client, shop)).calendar(
+        wheels_assembled)
     return [
         DayOut(day=day['day'], is_closed=day['is_closed'],
                opens_at=day['opens_at'], closes_at=day['closes_at'],
@@ -41,7 +73,7 @@ def book(payload: BookingIn,
          client: Client = Depends(current_client),
          db: Session = Depends(get_db)):
     try:
-        appointment = BookingService(db).book(
+        appointment = BookingService(db, _shop(db, client, payload.shop)).book(
             client, payload.at, payload.license_plate,
             payload.wheels_assembled, payload.comment,
             storage_ids=payload.storage_ids)

@@ -692,7 +692,7 @@ function loadMasters() {
     if (!rows.length) return show('<div class="empty">За этот период начислений не было</div>');
 
     show('<div class="card"><h2>Мастера</h2>' + rows.map(function (row) {
-      return '<button class="row" type="button" data-master="' + row.employee_shop_id + '">'
+      return '<button class="row" type="button" data-master="' + row.employee_local_id + '">'
         + '<div class="main"><b>' + escape(row.title) + '</b><span>'
         + row.orders + ' ' + plural(row.orders, 'наряд', 'наряда', 'нарядов')
         + ' · выработка ' + money(row.revenue)
@@ -710,7 +710,7 @@ function loadMasters() {
 
 function loadOrders(masterId) {
   var path = '/dashboard/orders';
-  if (masterId) path += '?employee_shop_id=' + masterId;
+  if (masterId) path += '?employee_local_id=' + masterId;
 
   api(query(path)).then(function (rows) {
     if (!rows.length) return show('<div class="empty">За этот период нарядов нет</div>');
@@ -721,9 +721,9 @@ function loadOrders(masterId) {
         if (row.is_warranty) tags += '<span class="tag warn">гарантия</span>';
         if (row.refunded_amount) tags += '<span class="tag bad">возврат</span>';
 
-        return '<button class="row" type="button" data-order="' + row.shop_id + '">'
+        return '<button class="row" type="button" data-order="' + row.local_id + '">'
           + '<div class="main"><b>' + escape(row.license_plate || '—') + tags + '</b>'
-          + '<span>№' + row.shop_id + ' · ' + timeText(row.visited_at)
+          + '<span>№' + row.local_id + ' · ' + timeText(row.visited_at)
           + (row.masters.length ? ' · ' + escape(row.masters.join(', ')) : '')
           + '</span></div>'
           + '<div class="money">' + money(row.total_amount)
@@ -745,7 +745,7 @@ function loadShifts() {
 
     show('<div class="card"><h2>Смены</h2>' + rows.map(function (row) {
       var open = row.status !== 'closed';
-      return '<button class="row" type="button" data-shift="' + row.shop_id + '">'
+      return '<button class="row" type="button" data-shift="' + row.local_id + '">'
         + '<div class="main"><b>' + timeText(row.started_at)
         + (open ? '<span class="tag ok">идёт</span>' : '') + '</b>'
         + '<span>' + row.open_posts + ' '
@@ -783,7 +783,7 @@ function loadSalary() {
         : '';
 
       return '<button class="row" type="button" data-pay="'
-        + person.employee_shop_id + '"'
+        + person.employee_local_id + '"'
         + (data.can_pay ? '' : ' disabled style="opacity:1"') + '>'
         + '<div class="main"><b>' + escape(person.title) + waiting + '</b>'
         + '<span>начислено ' + money(person.accrued)
@@ -821,7 +821,7 @@ function loadSalary() {
 
     var people = {};
     data.people.forEach(function (person) {
-      people[person.employee_shop_id] = person;
+      people[person.employee_local_id] = person;
     });
 
     if (data.can_pay) {
@@ -873,7 +873,7 @@ function openPayout(person) {
     }
 
     api('/dashboard/salary/pay', { method: 'POST', body: {
-      employee_shop_id: person.employee_shop_id,
+      employee_local_id: person.employee_local_id,
       amount: amount,
       comment: $('pComment').value
     } }).then(function () {
@@ -1093,7 +1093,7 @@ $('sheet').addEventListener('click', function (event) {
 function openOrder(id) {
   api('/dashboard/orders/' + id).then(function (card) {
     var html = '<h2>' + escape(card.license_plate || '—') + '</h2>'
-      + '<div class="when">Наряд №' + card.shop_id + ' · ' + timeText(card.visited_at)
+      + '<div class="when">Наряд №' + card.local_id + ' · ' + timeText(card.visited_at)
       + (card.is_deleted ? ' · <span class="tag bad">удалён</span>' : '') + '</div>';
 
     html += '<div class="block-title">Работы</div>';

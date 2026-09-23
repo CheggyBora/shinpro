@@ -2,7 +2,7 @@
 Клиент, его машины, устройства и коды входа.
 
 Клиент на сервере — это тот же человек, что в базе цеха, но со своим
-номером строки. Связь держим через shop_id: цех остаётся главным,
+номером строки. Связь держим через local_id: цех остаётся главным,
 сервер только знает, кому что показывать.
 
 Про два поля сразу, чтобы не путаться:
@@ -20,6 +20,8 @@ from sqlalchemy import (Column, Integer, String, Boolean, DateTime,
                         ForeignKey, Index)
 from sqlalchemy.orm import relationship
 
+from sqlalchemy import UniqueConstraint
+
 from app.database import Base
 from app.utils import now as shop_now
 
@@ -31,17 +33,22 @@ class Client(Base):
 
     # Номер строки этого же клиента в базе цеха. Пусто — значит клиент
     # завёлся в приложении и цех о нём ещё не знает.
-    shop_id = Column(Integer, nullable=True, unique=True, index=True)
+    local_id = Column(Integer, nullable=True, index=True)
+
+    account_id = Column(Integer, ForeignKey('accounts.id'), nullable=True,
+                        index=True)
 
     # Телефон — то, чем человек входит, и по нему же он находится
     # в базе цеха. Одно поле на обе роли: заводить второе означало бы
     # рано или поздно их разъехать
-    phone = Column(String(20), nullable=False, unique=True, index=True)
+    # Телефон уникален внутри аккаунта, а не вообще: один и тот же
+    # человек может обслуживаться в двух не связанных шиномонтажах
+    phone = Column(String(20), nullable=False, index=True)
     phone_verified_at = Column(DateTime, nullable=True)
 
     # Почта — запасной канал для кода подтверждения, если шиномонтаж
     # не хочет платить за SMS. Для входа не нужна
-    email = Column(String(255), nullable=True, unique=True, index=True)
+    email = Column(String(255), nullable=True, index=True)
 
     name = Column(String(200), nullable=True)
 
@@ -71,7 +78,10 @@ class Car(Base):
     __tablename__ = 'cars'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    shop_id = Column(Integer, nullable=True, unique=True, index=True)
+    local_id = Column(Integer, nullable=True, index=True)
+
+    account_id = Column(Integer, ForeignKey('accounts.id'), nullable=True,
+                        index=True)
 
     client_id = Column(Integer, ForeignKey('clients.id'), nullable=True, index=True)
 
@@ -82,6 +92,12 @@ class Car(Base):
     wheels_assembled = Column(Boolean, nullable=True)
 
     client = relationship('Client', back_populates='cars')
+
+
+UniqueConstraint(Client.account_id, Client.phone,
+                 name='uq_clients_account_phone')
+UniqueConstraint(Client.account_id, Client.local_id,
+                 name='uq_clients_account_local')
 
 
 class Device(Base):
@@ -135,6 +151,9 @@ class LoginCode(Base):
     __tablename__ = 'login_codes'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+
+    account_id = Column(Integer, ForeignKey('accounts.id'), nullable=True,
+                        index=True)
 
     # Кому ушёл код: телефон в нормализованном виде или почтовый ящик
     login = Column(String(255), nullable=False, index=True)

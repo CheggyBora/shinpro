@@ -119,6 +119,8 @@ class DayOut(BaseModel):
 
 
 class BookingIn(BaseModel):
+    # Куда записываться. Пусто — когда точка одна
+    shop: Optional[str] = None
     at: datetime
     license_plate: str
     wheels_assembled: Optional[bool] = None

@@ -202,19 +202,41 @@ def require(permission):
     return check
 
 
-def require_sync_key(x_sync_key: str = Header(default='')):
+def require_sync_key(x_sync_key: str = Header(default=''),
+                     db: Session = Depends(get_db)):
     """
-    Пропустить только программу из цеха.
+    Пропустить программу из цеха и сказать, какая это точка.
 
-    Пока ключ не задан в настройках, обмен закрыт совсем: сервер,
-    поднятый «на посмотреть», не должен по умолчанию отдавать всю базу
-    клиентов тому, кто угадал адрес.
+    Ключ и есть удостоверение: по нему сервер понимает, чей цех вышел
+    на связь. Никакой другой признак — ни адрес, ни номер в теле
+    запроса — на это не влияет, иначе чужую точку можно было бы указать
+    самому.
+
+    Пока ни одной точки не заведено и ключ не задан в настройках, обмен
+    закрыт совсем: сервер, поднятый «на посмотреть», не должен отдавать
+    базу клиентов тому, кто угадал адрес.
     """
-    if not settings.SYNC_KEY:
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE,
-                            detail='Обмен не настроен: не задан SERVER_SYNC_KEY')
+    from app.services import tenancy
 
-    if not hmac.compare_digest(x_sync_key or '', settings.SYNC_KEY):
+    shop = tenancy.shop_by_sync_key(db, x_sync_key)
+    if shop is not None:
+        shop.last_sync_at = shop_now()
+        db.commit()
+        return shop
+
+    from app.models import Shop
+
+    # Точки уже есть — значит обмен настроен, и дело в ключе. Говорить
+    # «не настроено» здесь означало бы посылать искать несуществующую
+    # причину
+    if db.query(Shop).count():
         raise HTTPException(status.HTTP_401_UNAUTHORIZED,
                             detail='Неверный ключ обмена')
-    return True
+
+    if not settings.SYNC_KEY:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE,
+                            detail='Обмен не настроен: не заведено ни одной '
+                                   'точки и не задан SERVER_SYNC_KEY')
+
+    raise HTTPException(status.HTTP_401_UNAUTHORIZED,
+                        detail='Неверный ключ обмена')

@@ -9,10 +9,11 @@
 Одинаково и в приложении, и на странице записи в браузере: кабинет
 у клиента один, и заводить его дважды он не должен.
 """
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.services import tenancy
 from app.models import Client
 from app.schemas import (StartIn, StartOut, CodeRequestIn, CodeSentOut,
                          VerifyIn, PinLoginIn, PinIn, TokenOut, DeviceIn,
@@ -23,6 +24,23 @@ from app.services.auth_service import (AuthService, AuthError, NeedEmail,
 from app.utils import format_phone
 
 router = APIRouter(prefix='/auth', tags=['Вход'])
+
+def account_of(x_shop: str = Header(default=''),
+               db: Session = Depends(get_db)):
+    """
+    Чей это шиномонтаж.
+
+    Приложение и страница записи передают короткое имя точки или сети
+    заголовком X-Shop. Когда на сервере один аккаунт, заголовок не
+    нужен — незачем заставлять единственный шиномонтаж писать своё имя
+    в каждом запросе.
+    """
+    try:
+        return tenancy.account_for(db, x_shop)
+    except tenancy.ShopNeeded as e:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=str(e))
+
+
 
 
 def _token_answer(client):
@@ -43,7 +61,8 @@ def _profile(client):
 
 @router.post('/start', response_model=StartOut,
              summary='Что спросить у человека, который ввёл телефон')
-def start(payload: StartIn, db: Session = Depends(get_db)):
+def start(payload: StartIn, db: Session = Depends(get_db),
+          account_id: int = Depends(account_of)):
     """
     Первый шаг входа.
 
@@ -51,7 +70,7 @@ def start(payload: StartIn, db: Session = Depends(get_db)):
     человека подтверждать номер. Спрашивать его самого «вы у нас
     впервые?» незачем — программа это знает.
     """
-    service = AuthService(db)
+    service = AuthService(db, account_id)
     try:
         step, known, blocked = service.start(payload.phone)
     except AuthError as e:
@@ -63,9 +82,10 @@ def start(payload: StartIn, db: Session = Depends(get_db)):
 
 @router.post('/code', response_model=CodeSentOut,
              summary='Выслать код подтверждения')
-def request_code(payload: CodeRequestIn, db: Session = Depends(get_db)):
+def request_code(payload: CodeRequestIn, db: Session = Depends(get_db),
+                 account_id: int = Depends(account_of)):
     try:
-        seconds, channel = AuthService(db).request_code(
+        seconds, channel = AuthService(db, account_id).request_code(
             payload.phone, payload.email)
     except NeedEmail as e:
         # Не ошибка, а вопрос: страница должна показать поле почты
@@ -80,14 +100,15 @@ def request_code(payload: CodeRequestIn, db: Session = Depends(get_db)):
 
 @router.post('/verify', response_model=TokenOut,
              summary='Проверить код и войти')
-def verify(payload: VerifyIn, db: Session = Depends(get_db)):
+def verify(payload: VerifyIn, db: Session = Depends(get_db),
+           account_id: int = Depends(account_of)):
     """
     Проверить код.
 
     Токен выдаём сразу: человек уже доказал, что номер его. ПИН он
     задаст следующим шагом — по полю pin_is_set видно, что пора.
     """
-    service = AuthService(db)
+    service = AuthService(db, account_id)
     try:
         client = service.verify_code(payload.phone, payload.code)
     except AuthError as e:
@@ -101,9 +122,10 @@ def verify(payload: VerifyIn, db: Session = Depends(get_db)):
 
 @router.post('/login', response_model=TokenOut,
              summary='Обычный вход: телефон и ПИН')
-def login(payload: PinLoginIn, db: Session = Depends(get_db)):
+def login(payload: PinLoginIn, db: Session = Depends(get_db),
+          account_id: int = Depends(account_of)):
     try:
-        client = AuthService(db).login_by_pin(payload.phone, payload.pin)
+        client = AuthService(db, account_id).login_by_pin(payload.phone, payload.pin)
     except AuthError as e:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail=str(e))
 
@@ -115,7 +137,7 @@ def set_pin(payload: PinIn,
             client: Client = Depends(current_client),
             db: Session = Depends(get_db)):
     try:
-        AuthService(db).set_pin(client, payload.pin)
+        AuthService(db, client.account_id).set_pin(client, payload.pin)
     except AuthError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(e))
 
@@ -125,7 +147,7 @@ def set_pin(payload: PinIn,
 @router.delete('/pin', response_model=ProfileOut, summary='Убрать ПИН')
 def forget_pin(client: Client = Depends(current_client),
                db: Session = Depends(get_db)):
-    AuthService(db).forget_pin(client)
+    AuthService(db, client.account_id).forget_pin(client)
     return _profile(client)
 
 
@@ -133,7 +155,7 @@ def forget_pin(client: Client = Depends(current_client),
 def register_device(payload: DeviceIn,
                     client: Client = Depends(current_client),
                     db: Session = Depends(get_db)):
-    AuthService(db).register_push_token(
+    AuthService(db, client.account_id).register_push_token(
         client, payload.device_id, payload.push_token,
         payload.platform, payload.app_version)
     return {'ok': True}

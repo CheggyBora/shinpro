@@ -8,7 +8,7 @@
 from datetime import datetime
 
 from sqlalchemy import (Column, Integer, String, Boolean, DateTime, Date,
-                        Float, Text, ForeignKey, Index)
+                        Float, Text, ForeignKey, Index, UniqueConstraint)
 from sqlalchemy.orm import relationship
 
 from app.database import Base
@@ -32,10 +32,18 @@ class ShopSetting(Base):
     """
     __tablename__ = 'shop_settings'
 
-    key = Column(String(64), primary_key=True)
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    shop_id = Column(Integer, ForeignKey('shops.id'), nullable=True,
+                     index=True)
+
+    key = Column(String(64), nullable=False, index=True)
     value = Column(String(255), nullable=True)
     updated_at = Column(DateTime, default=shop_now,
                         onupdate=shop_now, nullable=False)
+
+
+UniqueConstraint(ShopSetting.shop_id, ShopSetting.key,
+                 name='uq_shop_settings_shop_key')
 
 
 class Appointment(Base):
@@ -44,12 +52,14 @@ class Appointment(Base):
 
     Приходит двумя путями: из цеха (записали по телефону) или из
     приложения (клиент записался сам). Второй случай отличается тем,
-    что shop_id пока пуст, а sync_state — «ждёт цеха».
+    что local_id пока пуст, а sync_state — «ждёт цеха».
     """
     __tablename__ = 'appointments'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    shop_id = Column(Integer, nullable=True, unique=True, index=True)
+    local_id = Column(Integer, nullable=True, index=True)
+    shop_id = Column(Integer, ForeignKey('shops.id'), nullable=True,
+                     index=True)
 
     client_id = Column(Integer, ForeignKey('clients.id'), nullable=True, index=True)
     car_id = Column(Integer, ForeignKey('cars.id'), nullable=True)
@@ -90,7 +100,9 @@ class BookingDay(Base):
     __tablename__ = 'booking_days'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    day = Column(Date, nullable=False, unique=True, index=True)
+    day = Column(Date, nullable=False, index=True)
+    shop_id = Column(Integer, ForeignKey('shops.id'), nullable=True,
+                     index=True)
     posts = Column(Integer, default=1, nullable=False)
 
     # Рабочие часы этого дня. Пусто — берём общие часы шиномонтажа
@@ -107,7 +119,9 @@ class StoredSet(Base):
     __tablename__ = 'stored_sets'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    shop_id = Column(Integer, nullable=True, unique=True, index=True)
+    local_id = Column(Integer, nullable=True, index=True)
+    shop_id = Column(Integer, ForeignKey('shops.id'), nullable=True,
+                     index=True)
 
     client_id = Column(Integer, ForeignKey('clients.id'), nullable=True, index=True)
     license_plate = Column(String(20), nullable=True, index=True)
@@ -149,7 +163,9 @@ class Visit(Base):
     __tablename__ = 'visits'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    shop_id = Column(Integer, nullable=True, unique=True, index=True)
+    local_id = Column(Integer, nullable=True, index=True)
+    shop_id = Column(Integer, ForeignKey('shops.id'), nullable=True,
+                     index=True)
 
     client_id = Column(Integer, ForeignKey('clients.id'), nullable=True, index=True)
     license_plate = Column(String(20), nullable=True, index=True)
@@ -166,7 +182,7 @@ class Visit(Base):
     # десять минут
     changed_at = Column(DateTime, nullable=True, index=True)
 
-    shift_shop_id = Column(Integer, nullable=True, index=True)
+    shift_local_id = Column(Integer, nullable=True, index=True)
     vehicle_type = Column(String(50), nullable=True)
     wheel_diameter = Column(String(10), nullable=True)
 
@@ -217,7 +233,7 @@ class VisitItem(Base):
     visit_id = Column(Integer, ForeignKey('visits.id'), nullable=False, index=True)
 
     # Номер строки в базе цеха: по нему позиция обновляется, а не двоится
-    shop_id = Column(Integer, nullable=True, index=True)
+    local_id = Column(Integer, nullable=True, index=True)
 
     service_name = Column(String(200), nullable=False)
     quantity = Column(Integer, default=1, nullable=False)
@@ -243,7 +259,7 @@ class SalaryAccrual(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     visit_id = Column(Integer, ForeignKey('visits.id'), nullable=False, index=True)
 
-    employee_shop_id = Column(Integer, nullable=False, index=True)
+    employee_local_id = Column(Integer, nullable=False, index=True)
     amount = Column(Float, default=0.0, nullable=False)
     accrued_at = Column(DateTime, nullable=True, index=True)
 
@@ -263,9 +279,11 @@ class SalaryPayout(Base):
     __tablename__ = 'salary_payouts'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    shop_id = Column(Integer, nullable=True, unique=True, index=True)
+    local_id = Column(Integer, nullable=True, index=True)
+    shop_id = Column(Integer, ForeignKey('shops.id'), nullable=True,
+                     index=True)
 
-    employee_shop_id = Column(Integer, nullable=False, index=True)
+    employee_local_id = Column(Integer, nullable=False, index=True)
     amount = Column(Float, default=0.0, nullable=False)
     method = Column(String(20), default='cash', nullable=False)
     paid_at = Column(DateTime, nullable=True, index=True)
@@ -294,7 +312,9 @@ class ShopEmployee(Base):
     __tablename__ = 'shop_employees'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    shop_id = Column(Integer, nullable=False, unique=True, index=True)
+    local_id = Column(Integer, nullable=False, index=True)
+    shop_id = Column(Integer, ForeignKey('shops.id'), nullable=True,
+                     index=True)
 
     name = Column(String(100), nullable=True)
     salary_percent = Column(Float, default=40.0, nullable=False)
@@ -303,8 +323,8 @@ class ShopEmployee(Base):
     @property
     def title(self):
         if not self.name:
-            return f"№{self.shop_id}"
-        return f"{self.name} (№{self.shop_id})"
+            return f"№{self.local_id}"
+        return f"{self.name} (№{self.local_id})"
 
 
 class ShopShift(Base):
@@ -312,7 +332,9 @@ class ShopShift(Base):
     __tablename__ = 'shop_shifts'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    shop_id = Column(Integer, nullable=False, unique=True, index=True)
+    local_id = Column(Integer, nullable=False, index=True)
+    shop_id = Column(Integer, ForeignKey('shops.id'), nullable=True,
+                     index=True)
 
     started_at = Column(DateTime, nullable=True, index=True)
     ended_at = Column(DateTime, nullable=True)
@@ -334,6 +356,8 @@ class QueueSnapshot(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
 
+    shop_id = Column(Integer, ForeignKey('shops.id'), nullable=True,
+                     index=True)
     taken_at = Column(DateTime, default=shop_now, nullable=False, index=True)
 
     cars_in_work = Column(Integer, default=0, nullable=False)
@@ -344,3 +368,27 @@ class QueueSnapshot(Base):
     free_in_minutes = Column(Integer, nullable=True)
 
     shift_is_open = Column(Boolean, default=False, nullable=False)
+
+
+# ----------------------------------------------------------------------
+# Что уникально внутри точки, а что — вообще
+# ----------------------------------------------------------------------
+#
+# Номер наряда уникален в своём цеху, а не на всём сервере: у второй
+# точки тоже есть наряд №412, и это другой наряд. Поэтому уникальность
+# везде парная — точка плюс номер в её базе.
+
+UniqueConstraint(Appointment.shop_id, Appointment.local_id,
+                 name='uq_appointments_shop_local')
+UniqueConstraint(BookingDay.shop_id, BookingDay.day,
+                 name='uq_booking_days_shop_day')
+UniqueConstraint(StoredSet.shop_id, StoredSet.local_id,
+                 name='uq_stored_sets_shop_local')
+UniqueConstraint(Visit.shop_id, Visit.local_id,
+                 name='uq_visits_shop_local')
+UniqueConstraint(SalaryPayout.shop_id, SalaryPayout.local_id,
+                 name='uq_salary_payouts_shop_local')
+UniqueConstraint(ShopEmployee.shop_id, ShopEmployee.local_id,
+                 name='uq_shop_employees_shop_local')
+UniqueConstraint(ShopShift.shop_id, ShopShift.local_id,
+                 name='uq_shop_shifts_shop_local')

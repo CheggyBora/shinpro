@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import Appointment, Car, Client, StoredSet, PENDING
 from app.schemas import DayOut, SlotOut
-from app.services import shop_settings, notify
+from app.services import shop_settings, notify, tenancy
 from app.services.booking_service import BookingService, BookingError
 from app.utils import normalize_plate, normalize_phone, format_phone, now as shop_now
 
@@ -59,6 +59,7 @@ def _too_often(address):
 
 
 class PublicInfoOut(BaseModel):
+    shop: Optional[str] = None
     shop_name: str
     shop_phone: Optional[str] = None
     shop_address: Optional[str] = None
@@ -67,6 +68,8 @@ class PublicInfoOut(BaseModel):
 
 
 class PublicBookingIn(BaseModel):
+    # Куда записываться. Пусто — когда точка на сервере одна
+    shop: Optional[str] = None
     at: datetime
     license_plate: str
     client_phone: str
@@ -83,20 +86,43 @@ class PublicBookingOut(BaseModel):
     message: str
 
 
+def _shop(db, wanted=None):
+    """
+    Точка, о которой эта страница.
+
+    Имя точки берётся из адреса: /z/shinomontazh-rif. Когда точка на
+    сервере одна, имя можно не писать — но как только их становится
+    больше, угадывать нельзя: человек записался бы не туда, куда думал.
+    """
+    shop = tenancy.shop_by_slug(db, wanted) if wanted else tenancy.only_shop(db)
+
+    if shop is None:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
+            detail='Шиномонтаж не найден. Проверьте ссылку')
+
+    return shop
+
+
 @router.get('/info', response_model=PublicInfoOut, summary='О шиномонтаже')
-def info(db: Session = Depends(get_db)):
+def info(shop: Optional[str] = Query(None, description='Короткое имя точки'),
+         db: Session = Depends(get_db)):
+    row = _shop(db, shop)
     return PublicInfoOut(
-        shop_name=shop_settings.get(db, 'shop_name') or 'Шиномонтаж',
-        shop_phone=shop_settings.get(db, 'shop_phone'),
-        shop_address=shop_settings.get(db, 'shop_address'),
-        minutes_assembled=shop_settings.get_int(db, 'booking_minutes_assembled'),
-        minutes_tires=shop_settings.get_int(db, 'booking_minutes_tires'))
+        shop=row.slug,
+        shop_name=shop_settings.get(db, 'shop_name', shop=row) or row.name,
+        shop_phone=shop_settings.get(db, 'shop_phone', shop=row) or row.phone,
+        shop_address=shop_settings.get(db, 'shop_address', shop=row) or row.address,
+        minutes_assembled=shop_settings.get_int(db, 'booking_minutes_assembled',
+                                                shop=row),
+        minutes_tires=shop_settings.get_int(db, 'booking_minutes_tires', shop=row))
 
 
 @router.get('/days', response_model=List[DayOut], summary='Свободные окна')
 def days(wheels_assembled: Optional[bool] = Query(None),
+         shop: Optional[str] = Query(None, description='Короткое имя точки'),
          db: Session = Depends(get_db)):
-    calendar = BookingService(db).calendar(wheels_assembled)
+    calendar = BookingService(db, _shop(db, shop)).calendar(wheels_assembled)
     return [
         DayOut(day=day['day'], is_closed=day['is_closed'],
                opens_at=day['opens_at'], closes_at=day['closes_at'],
@@ -149,7 +175,8 @@ def book(payload: PublicBookingIn, request: Request,
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
                             detail='Укажите номер телефона полностью')
 
-    service = BookingService(db)
+    shop = _shop(db, payload.shop)
+    service = BookingService(db, shop)
     now = shop_now()
 
     if payload.at <= now:
@@ -169,7 +196,9 @@ def book(payload: PublicBookingIn, request: Request,
             detail='На этот телефон уже есть незакрытые записи. '
                    'Позвоните в шиномонтаж, если нужна ещё одна')
 
-    car = db.query(Car).filter(Car.license_plate == plate).first()
+    car = db.query(Car).filter(
+        Car.license_plate == plate,
+        Car.account_id == shop.account_id).first()
 
     wheels = payload.wheels_assembled
     if wheels is None and car is not None:
@@ -189,16 +218,19 @@ def book(payload: PublicBookingIn, request: Request,
 
     # Клиента заводим: он уже назвал телефон, и цеху он понадобится.
     # Машину тоже — иначе при следующем визите заведётся вторая
-    client = db.query(Client).filter(Client.phone == phone).first()
+    client = db.query(Client).filter(
+        Client.phone == phone,
+        Client.account_id == shop.account_id).first()
     if client is None:
-        client = Client(phone=phone, name=name)
+        client = Client(phone=phone, name=name, account_id=shop.account_id)
         db.add(client)
         db.flush()
     elif name and not client.name:
         client.name = name
 
     if car is None:
-        car = Car(license_plate=plate, client_id=client.id)
+        car = Car(license_plate=plate, client_id=client.id,
+                  account_id=shop.account_id)
         db.add(car)
         db.flush()
     elif car.client_id is None:
@@ -208,6 +240,7 @@ def book(payload: PublicBookingIn, request: Request,
         car.wheels_assembled = wheels
 
     appointment = Appointment(
+        shop_id=shop.id,
         client_id=client.id,
         car_id=car.id,
         scheduled_at=payload.at,
@@ -222,7 +255,7 @@ def book(payload: PublicBookingIn, request: Request,
     db.add(appointment)
     db.commit()
 
-    shop_phone = shop_settings.get(db, 'shop_phone')
+    shop_phone = shop_settings.get(db, 'shop_phone', shop=shop) or shop.phone
     return PublicBookingOut(
         at=payload.at,
         duration_minutes=duration,

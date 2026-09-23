@@ -1,4 +1,5 @@
 """Таблицы сервера."""
+from app.models.account import Account, Shop
 from app.models.client import Client, Car, Device, LoginCode
 from app.models.shop import (Appointment, BookingDay, StoredSet, Visit,
                              VisitItem, SalaryAccrual, SalaryPayout,
@@ -13,6 +14,7 @@ from app.models.staff import (StaffUser, StaffAction, ROLE_OWNER, ROLE_ADMIN,
                               PERM_STAFF)
 
 __all__ = [
+    'Account', 'Shop',
     'Client', 'Car', 'Device', 'LoginCode',
     'Appointment', 'BookingDay', 'StoredSet', 'Visit', 'VisitItem',
     'SalaryAccrual', 'SalaryPayout', 'ShopEmployee', 'ShopShift',

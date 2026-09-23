@@ -31,19 +31,47 @@ def day_bounds(day_from, day_to):
 
 
 class DashboardService:
-    def __init__(self, db):
+    def __init__(self, db, account_id=None, shop_ids=None):
+        """
+        account_id — чей дашборд. shop_ids — какие точки показывать.
+
+        Пусто и то и другое — считаем по всему, что есть: так работает
+        сервер с единственным шиномонтажом, где выбирать не из чего.
+        """
         self.db = db
+        self.account_id = account_id
+        self.shop_ids = list(shop_ids) if shop_ids else None
+
+    def _only_mine(self, query, model=None):
+        """Сузить выборку до выбранных точек."""
+        model = model or Visit
+        if self.shop_ids:
+            return query.filter(model.shop_id.in_(self.shop_ids))
+        return query
+
+    def _shop_titles(self):
+        """Названия точек — чтобы к сотруднику приписать, где он работает."""
+        rows = self.db.query(ShopEmployee.shop_id).distinct().all()
+        del rows
+
+        from app.models import Shop
+
+        query = self.db.query(Shop)
+        if self.account_id is not None:
+            query = query.filter(Shop.account_id == self.account_id)
+
+        return {shop.id: shop.name for shop in query.all()}
 
     # ------------------------------------------------------------------
     # Общее
     # ------------------------------------------------------------------
 
     def _orders_query(self, start, end):
-        """Наряды периода: оплаченные, не удалённые."""
-        return self.db.query(Visit).filter(
+        """Наряды периода: оплаченные, не удалённые, из выбранных точек."""
+        return self._only_mine(self.db.query(Visit).filter(
             Visit.is_deleted.is_(False),
             Visit.visited_at >= start,
-            Visit.visited_at <= end)
+            Visit.visited_at <= end))
 
     def _refunds_in(self, start, end):
         """
@@ -52,12 +80,12 @@ class DashboardService:
         Отдельным запросом: сам наряд мог быть месяц назад, а деньги
         вернули сегодня — и вычесть их надо из сегодняшнего дня.
         """
-        return self.db.query(Visit).filter(
+        return self._only_mine(self.db.query(Visit).filter(
             Visit.is_deleted.is_(False),
             Visit.refunded_amount > 0,
             Visit.refunded_at.isnot(None),
             Visit.refunded_at >= start,
-            Visit.refunded_at <= end)
+            Visit.refunded_at <= end))
 
     # ------------------------------------------------------------------
     # Сводка
@@ -79,11 +107,12 @@ class DashboardService:
         consumables = sum(order.consumables_amount or 0.0 for order in orders)
         warranty = [order for order in orders if order.is_warranty]
 
-        salary = self.db.query(func.sum(SalaryAccrual.amount)).join(
-            Visit, SalaryAccrual.visit_id == Visit.id).filter(
-            Visit.is_deleted.is_(False),
-            Visit.visited_at >= start,
-            Visit.visited_at <= end).scalar() or 0.0
+        salary = self._only_mine(
+            self.db.query(func.sum(SalaryAccrual.amount)).join(
+                Visit, SalaryAccrual.visit_id == Visit.id).filter(
+                Visit.is_deleted.is_(False),
+                Visit.visited_at >= start,
+                Visit.visited_at <= end)).scalar() or 0.0
 
         paid_orders = [order for order in orders if (order.total_amount or 0) > 0]
         average = round(revenue / len(paid_orders), 2) if paid_orders else 0.0
@@ -159,7 +188,8 @@ class DashboardService:
             Visit.is_deleted.is_(False),
             Visit.visited_at >= start,
             Visit.visited_at <= end,
-        ).group_by(VisitItem.service_name).all()
+        )
+        rows = self._only_mine(rows).group_by(VisitItem.service_name).all()
 
         total = sum(float(row[2] or 0) for row in rows) or 1.0
 
@@ -182,8 +212,9 @@ class DashboardService:
         """Выработка и начисления по мастерам за период."""
         start, end = day_bounds(day_from, day_to)
 
-        rows = self.db.query(
-            SalaryAccrual.employee_shop_id,
+        rows = self._only_mine(self.db.query(
+            Visit.shop_id,
+            SalaryAccrual.employee_local_id,
             func.count(SalaryAccrual.id),
             func.sum(SalaryAccrual.amount),
             func.sum(Visit.salary_base),
@@ -192,17 +223,19 @@ class DashboardService:
             Visit.is_deleted.is_(False),
             Visit.visited_at >= start,
             Visit.visited_at <= end,
-        ).group_by(SalaryAccrual.employee_shop_id).all()
+        )).group_by(Visit.shop_id, SalaryAccrual.employee_local_id).all()
 
-        people = {row.shop_id: row
-                  for row in self.db.query(ShopEmployee).all()}
+        people = self._people()
+        titles = self._shop_titles()
 
         result = []
-        for shop_id, orders, salary, base, revenue in rows:
-            person = people.get(shop_id)
+        for shop_id, local_id, orders, salary, base, revenue in rows:
+            person = people.get((shop_id, local_id))
             result.append({
-                'employee_shop_id': shop_id,
-                'title': person.title if person else f'№{shop_id}',
+                'shop_id': shop_id,
+                'shop_name': titles.get(shop_id),
+                'employee_local_id': local_id,
+                'title': person.title if person else f'№{local_id}',
                 'name': person.name if person else None,
                 'salary_percent': person.salary_percent if person else None,
                 'orders': int(orders or 0),
@@ -216,6 +249,19 @@ class DashboardService:
 
         result.sort(key=lambda item: item['salary'], reverse=True)
         return result
+
+    def _people(self):
+        """
+        Сотрудники по паре «точка и номер».
+
+        Именно паре: номер сотрудника уникален в своём цеху, и мастер
+        №1 из соседней точки — другой человек.
+        """
+        query = self.db.query(ShopEmployee)
+        if self.shop_ids:
+            query = query.filter(ShopEmployee.shop_id.in_(self.shop_ids))
+
+        return {(row.shop_id, row.local_id): row for row in query.all()}
 
     # ------------------------------------------------------------------
     # Зарплата: сколько начислено, сколько выдано, сколько осталось
@@ -232,56 +278,79 @@ class DashboardService:
         остаток уже входят — иначе владелец, отметив перевод, увидит
         прежний долг и переведёт второй раз.
         """
-        accrued = dict(self.db.query(
-            SalaryAccrual.employee_shop_id,
-            func.sum(SalaryAccrual.amount),
-        ).join(Visit, SalaryAccrual.visit_id == Visit.id).filter(
-            Visit.is_deleted.is_(False),
-        ).group_by(SalaryAccrual.employee_shop_id).all())
+        accrued = dict(((shop_id, local_id), total) for shop_id, local_id, total
+                       in self._only_mine(self.db.query(
+                           Visit.shop_id,
+                           SalaryAccrual.employee_local_id,
+                           func.sum(SalaryAccrual.amount),
+                       ).join(Visit, SalaryAccrual.visit_id == Visit.id).filter(
+                           Visit.is_deleted.is_(False),
+                       )).group_by(Visit.shop_id,
+                                   SalaryAccrual.employee_local_id).all())
 
-        paid = dict(self.db.query(
-            SalaryPayout.employee_shop_id,
-            func.sum(SalaryPayout.amount),
-        ).group_by(SalaryPayout.employee_shop_id).all())
+        paid = dict(((shop_id, local_id), total) for shop_id, local_id, total
+                    in self._only_mine(self.db.query(
+                        SalaryPayout.shop_id,
+                        SalaryPayout.employee_local_id,
+                        func.sum(SalaryPayout.amount),
+                    ), SalaryPayout).group_by(
+                        SalaryPayout.shop_id,
+                        SalaryPayout.employee_local_id).all())
 
-        waiting = dict(self.db.query(
-            SalaryPayout.employee_shop_id,
-            func.sum(SalaryPayout.amount),
-        ).filter(SalaryPayout.sync_state == PENDING,
-                 ).group_by(SalaryPayout.employee_shop_id).all())
+        waiting = dict(((shop_id, local_id), total) for shop_id, local_id, total
+                       in self._only_mine(self.db.query(
+                           SalaryPayout.shop_id,
+                           SalaryPayout.employee_local_id,
+                           func.sum(SalaryPayout.amount),
+                       ).filter(SalaryPayout.sync_state == PENDING),
+                           SalaryPayout).group_by(
+                           SalaryPayout.shop_id,
+                           SalaryPayout.employee_local_id).all())
+
+        titles = self._shop_titles()
+
+        query = self.db.query(ShopEmployee).filter(
+            ShopEmployee.is_active.is_(True))
+        if self.shop_ids:
+            query = query.filter(ShopEmployee.shop_id.in_(self.shop_ids))
 
         rows = []
-        for person in self.db.query(ShopEmployee).filter(
-                ShopEmployee.is_active.is_(True)).order_by(
-                ShopEmployee.shop_id).all():
-            earned = round(float(accrued.get(person.shop_id, 0) or 0), 2)
-            given = round(float(paid.get(person.shop_id, 0) or 0), 2)
+        for person in query.order_by(ShopEmployee.shop_id,
+                                     ShopEmployee.local_id).all():
+            key = (person.shop_id, person.local_id)
+            earned = round(float(accrued.get(key, 0) or 0), 2)
+            given = round(float(paid.get(key, 0) or 0), 2)
 
             rows.append({
-                'employee_shop_id': person.shop_id,
+                'shop_id': person.shop_id,
+                'shop_name': titles.get(person.shop_id),
+                'employee_local_id': person.local_id,
                 'title': person.title,
                 'accrued': earned,
                 'paid': given,
                 'balance': round(earned - given, 2),
                 # Отмечено владельцем, но цех ещё не забрал
-                'waiting': round(float(waiting.get(person.shop_id, 0) or 0), 2),
+                'waiting': round(float(waiting.get(key, 0) or 0), 2),
             })
 
         return rows
 
     def payout_history(self, limit=100):
-        rows = self.db.query(SalaryPayout).order_by(
+        rows = self._only_mine(
+            self.db.query(SalaryPayout), SalaryPayout).order_by(
             SalaryPayout.paid_at.desc().nullslast(),
             SalaryPayout.id.desc()).limit(limit).all()
 
-        people = {person.shop_id: person
-                  for person in self.db.query(ShopEmployee).all()}
+        people = self._people()
+        titles = self._shop_titles()
 
         return [{
-            'employee_shop_id': row.employee_shop_id,
-            'title': (people[row.employee_shop_id].title
-                      if row.employee_shop_id in people
-                      else f'№{row.employee_shop_id}'),
+            'shop_id': row.shop_id,
+            'shop_name': titles.get(row.shop_id),
+            'employee_local_id': row.employee_local_id,
+            'title': (people[(row.shop_id, row.employee_local_id)].title
+                      if (row.shop_id, row.employee_local_id) in people
+                      else f'№{row.employee_local_id}'),
             'amount': round(row.amount or 0.0, 2),
             'method': row.method,
             'paid_at': row.paid_at,
@@ -292,8 +361,8 @@ class DashboardService:
             'waiting': row.sync_state == PENDING,
         } for row in rows]
 
-    def pay_to_card(self, employee_shop_id, amount, comment=None,
-                    author_id=None):
+    def pay_to_card(self, employee_local_id, amount, comment=None,
+                    author_id=None, shop_id=None):
         """
         Отметить перевод зарплаты на карту.
 
@@ -301,10 +370,24 @@ class DashboardService:
         шиномонтажа ещё прежний. Показываем это честно, отметкой «ждёт
         цеха», а не делаем вид, что деньги уже учтены везде.
         """
-        person = self.db.query(ShopEmployee).filter(
-            ShopEmployee.shop_id == employee_shop_id).first()
-        if person is None:
+        query = self.db.query(ShopEmployee).filter(
+            ShopEmployee.local_id == employee_local_id)
+
+        if shop_id is not None:
+            query = query.filter(ShopEmployee.shop_id == shop_id)
+        elif self.shop_ids:
+            query = query.filter(ShopEmployee.shop_id.in_(self.shop_ids))
+
+        people = query.all()
+        if not people:
             raise ValueError('Такого сотрудника нет')
+        if len(people) > 1:
+            # Номер сотрудника уникален только внутри своей точки:
+            # выдать деньги «мастеру №1» вообще — значит выдать наугад
+            raise ValueError('Укажите точку: сотрудник с таким номером '
+                             'есть не в одной')
+
+        person = people[0]
 
         try:
             amount = round(float(amount), 2)
@@ -315,7 +398,8 @@ class DashboardService:
             raise ValueError('Сумма должна быть больше нуля')
 
         payout = SalaryPayout(
-            employee_shop_id=employee_shop_id,
+            shop_id=person.shop_id,
+            employee_local_id=employee_local_id,
             amount=amount,
             method='card',
             paid_at=shop_now(),
@@ -333,7 +417,7 @@ class DashboardService:
     # Наряды
     # ------------------------------------------------------------------
 
-    def orders(self, day_from, day_to, employee_shop_id=None,
+    def orders(self, day_from, day_to, employee_local_id=None,
                payment_method=None, limit=500):
         start, end = day_bounds(day_from, day_to)
         query = self._orders_query(start, end)
@@ -341,17 +425,17 @@ class DashboardService:
         if payment_method:
             query = query.filter(Visit.payment_method == payment_method)
 
-        if employee_shop_id is not None:
+        if employee_local_id is not None:
             query = query.join(
                 SalaryAccrual, SalaryAccrual.visit_id == Visit.id).filter(
-                SalaryAccrual.employee_shop_id == employee_shop_id)
+                SalaryAccrual.employee_local_id == employee_local_id)
 
         rows = query.order_by(Visit.visited_at.desc()).limit(limit).all()
         return [self._order_row(order) for order in rows]
 
     def _order_row(self, order):
         return {
-            'shop_id': order.shop_id,
+            'local_id': order.local_id,
             'visited_at': order.visited_at,
             'license_plate': order.license_plate,
             'total_amount': round(order.total_amount or 0.0, 2),
@@ -362,19 +446,26 @@ class DashboardService:
             # можно: «почему выручка меньше, чем я помню» разбирается
             # именно по таким
             'is_deleted': order.is_deleted,
-            'masters': [self._master_title(row.employee_shop_id)
+            'masters': [self._master_title(row.employee_local_id, order.shop_id)
                         for row in order.accruals],
             'services': order.services,
         }
 
-    def _master_title(self, shop_id):
-        person = self.db.query(ShopEmployee).filter(
-            ShopEmployee.shop_id == shop_id).first()
-        return person.title if person else f'№{shop_id}'
+    def _master_title(self, local_id, shop_id=None):
+        query = self.db.query(ShopEmployee).filter(
+            ShopEmployee.local_id == local_id)
+        if shop_id is not None:
+            query = query.filter(ShopEmployee.shop_id == shop_id)
+        elif self.shop_ids:
+            query = query.filter(ShopEmployee.shop_id.in_(self.shop_ids))
 
-    def order_card(self, shop_id):
+        person = query.first()
+        return person.title if person else f'№{local_id}'
+
+    def order_card(self, local_id):
         """Наряд целиком: позиции, расходники, время, начисления."""
-        order = self.db.query(Visit).filter(Visit.shop_id == shop_id).first()
+        order = self._only_mine(self.db.query(Visit).filter(
+            Visit.local_id == local_id)).first()
         if order is None:
             return None
 
@@ -398,7 +489,7 @@ class DashboardService:
             'recommendations': order.recommendations,
             'planned_minutes': order.planned_minutes,
             'actual_minutes': minutes,
-            'shift_shop_id': order.shift_shop_id,
+            'shift_local_id': order.shift_local_id,
             'items': [{
                 'service_name': item.service_name,
                 'quantity': item.quantity,
@@ -409,8 +500,9 @@ class DashboardService:
                 'comment': item.comment,
             } for item in order.items],
             'accruals': [{
-                'employee_shop_id': row.employee_shop_id,
-                'title': self._master_title(row.employee_shop_id),
+                'employee_local_id': row.employee_local_id,
+                'title': self._master_title(row.employee_local_id,
+                                            order.shop_id),
                 'amount': round(row.amount or 0.0, 2),
             } for row in accruals],
         })
@@ -422,13 +514,17 @@ class DashboardService:
 
     def shifts(self, day_from, day_to):
         start, end = day_bounds(day_from, day_to)
-        rows = self.db.query(ShopShift).filter(
+        rows = self._only_mine(self.db.query(ShopShift).filter(
             ShopShift.started_at >= start,
             ShopShift.started_at <= end,
-        ).order_by(ShopShift.started_at.desc()).all()
+        ), ShopShift).order_by(ShopShift.started_at.desc()).all()
+
+        titles = self._shop_titles()
 
         return [{
+            'local_id': row.local_id,
             'shop_id': row.shop_id,
+            'shop_name': titles.get(row.shop_id),
             'started_at': row.started_at,
             'ended_at': row.ended_at,
             'status': row.status,
@@ -436,7 +532,7 @@ class DashboardService:
             'total_salary': round(row.total_salary or 0.0, 2),
         } for row in rows]
 
-    def shift_salary(self, shift_shop_id):
+    def shift_salary(self, shift_local_id, shop_id=None):
         """
         Начисления за смену — то, что открывается кнопкой.
 
@@ -444,28 +540,41 @@ class DashboardService:
         номер наряда, машина и сумма: этого хватает, чтобы мастер узнал
         свою работу, а разбираться в составе наряда надо не здесь.
         """
-        shift = self.db.query(ShopShift).filter(
-            ShopShift.shop_id == shift_shop_id).first()
+        query = self.db.query(ShopShift).filter(
+            ShopShift.local_id == shift_local_id)
+        if shop_id is not None:
+            query = query.filter(ShopShift.shop_id == shop_id)
+        else:
+            query = self._only_mine(query, ShopShift)
+        shift = query.first()
 
-        rows = self.db.query(SalaryAccrual, Visit).join(
+        # Номер смены тоже свой у каждой точки: без сужения сюда попадут
+        # чужие наряды с тем же номером смены
+        orders = self.db.query(SalaryAccrual, Visit).join(
             Visit, SalaryAccrual.visit_id == Visit.id).filter(
-            Visit.shift_shop_id == shift_shop_id,
+            Visit.shift_local_id == shift_local_id,
             Visit.is_deleted.is_(False),
-        ).order_by(Visit.shop_id).all()
+        )
+        if shift is not None:
+            orders = orders.filter(Visit.shop_id == shift.shop_id)
+        else:
+            orders = self._only_mine(orders)
+
+        rows = orders.order_by(Visit.local_id).all()
 
         people = {}
         for accrual, order in rows:
-            emp_id = accrual.employee_shop_id
+            emp_id = accrual.employee_local_id
             if emp_id not in people:
                 people[emp_id] = {
-                    'employee_shop_id': emp_id,
-                    'title': self._master_title(emp_id),
+                    'employee_local_id': emp_id,
+                    'title': self._master_title(emp_id, order.shop_id),
                     'salary': 0.0,
                     'orders': [],
                 }
             people[emp_id]['salary'] += accrual.amount or 0.0
             people[emp_id]['orders'].append({
-                'order_id': order.shop_id,
+                'order_id': order.local_id,
                 'license_plate': order.license_plate,
                 'amount': round(accrual.amount or 0.0, 2),
             })
@@ -475,7 +584,8 @@ class DashboardService:
 
         return {
             'shift': {
-                'shop_id': shift_shop_id,
+                'local_id': shift_local_id,
+                'shop_id': shift.shop_id if shift else None,
                 'started_at': shift.started_at if shift else None,
                 'ended_at': shift.ended_at if shift else None,
                 'status': shift.status if shift else None,
@@ -490,6 +600,6 @@ class DashboardService:
         }
 
     def current_shift(self):
-        return self.db.query(ShopShift).filter(
-            ShopShift.status == 'open').order_by(
+        return self._only_mine(self.db.query(ShopShift).filter(
+            ShopShift.status == 'open'), ShopShift).order_by(
             ShopShift.started_at.desc()).first()

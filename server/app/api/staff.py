@@ -12,11 +12,12 @@
 """
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.services import tenancy
 from app.models import (StaffUser, ALL_PERMISSIONS, PERMISSION_TITLES,
                         ROLE_TITLES, ROLE_PERMISSIONS, PERM_STAFF)
 from app.security import create_staff_token, current_staff, require
@@ -25,6 +26,23 @@ from app.services.staff_service import StaffService, StaffError
 from app.utils import format_phone
 
 router = APIRouter(prefix='/staff', tags=['Дашборд: вход и доступ'])
+
+def account_of(x_shop: str = Header(default=''),
+               db: Session = Depends(get_db)):
+    """
+    Чей это шиномонтаж.
+
+    Приложение и страница записи передают короткое имя точки или сети
+    заголовком X-Shop. Когда на сервере один аккаунт, заголовок не
+    нужен — незачем заставлять единственный шиномонтаж писать своё имя
+    в каждом запросе.
+    """
+    try:
+        return tenancy.account_for(db, x_shop)
+    except tenancy.ShopNeeded as e:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=str(e))
+
+
 
 
 # ----------------------------------------------------------------------
@@ -108,7 +126,8 @@ def _out(staff):
 
 @router.post('/start', response_model=StartOut,
              summary='Что спросить у сотрудника, который ввёл телефон')
-def start(payload: PhoneIn, db: Session = Depends(get_db)):
+def start(payload: PhoneIn, db: Session = Depends(get_db),
+          account_id: int = Depends(account_of)):
     """
     Первый шаг входа.
 
@@ -116,7 +135,7 @@ def start(payload: PhoneIn, db: Session = Depends(get_db)):
     иначе по форме входа можно перебрать номера и узнать, кто работает
     в шиномонтаже.
     """
-    service = StaffService(db)
+    service = StaffService(db, account_id)
     try:
         step, _ = service.start(payload.phone)
     except AuthError as e:
@@ -126,9 +145,10 @@ def start(payload: PhoneIn, db: Session = Depends(get_db)):
 
 
 @router.post('/code', summary='Выслать код сотруднику')
-def request_code(payload: CodeRequestIn, db: Session = Depends(get_db)):
+def request_code(payload: CodeRequestIn, db: Session = Depends(get_db),
+                 account_id: int = Depends(account_of)):
     try:
-        seconds, channel = StaffService(db).request_code(
+        seconds, channel = StaffService(db, account_id).request_code(
             payload.phone, payload.email)
     except NeedEmail as e:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -140,9 +160,10 @@ def request_code(payload: CodeRequestIn, db: Session = Depends(get_db)):
 
 
 @router.post('/verify', response_model=TokenOut, summary='Проверить код и войти')
-def verify(payload: VerifyIn, db: Session = Depends(get_db)):
+def verify(payload: VerifyIn, db: Session = Depends(get_db),
+           account_id: int = Depends(account_of)):
     try:
-        staff = StaffService(db).verify_code(payload.phone, payload.code)
+        staff = StaffService(db, account_id).verify_code(payload.phone, payload.code)
     except AuthError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(e))
 
@@ -151,9 +172,10 @@ def verify(payload: VerifyIn, db: Session = Depends(get_db)):
 
 @router.post('/login', response_model=TokenOut,
              summary='Обычный вход: телефон и ПИН')
-def login(payload: PinLoginIn, db: Session = Depends(get_db)):
+def login(payload: PinLoginIn, db: Session = Depends(get_db),
+          account_id: int = Depends(account_of)):
     try:
-        staff = StaffService(db).login_by_pin(payload.phone, payload.pin)
+        staff = StaffService(db, account_id).login_by_pin(payload.phone, payload.pin)
     except AuthError as e:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail=str(e))
 
@@ -164,7 +186,7 @@ def login(payload: PinLoginIn, db: Session = Depends(get_db)):
 def set_pin(payload: PinIn, staff: StaffUser = Depends(current_staff),
             db: Session = Depends(get_db)):
     try:
-        StaffService(db).set_pin(staff, payload.pin)
+        StaffService(db, staff.account_id).set_pin(staff, payload.pin)
     except AuthError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(e))
 
@@ -194,7 +216,7 @@ def roles(staff: StaffUser = Depends(require(PERM_STAFF))):
 @router.get('/people', response_model=List[StaffOut], summary='Кто имеет доступ')
 def people(staff: StaffUser = Depends(require(PERM_STAFF)),
            db: Session = Depends(get_db)):
-    return [_out(row) for row in StaffService(db).people()]
+    return [_out(row) for row in StaffService(db, staff.account_id).people()]
 
 
 @router.post('/people', response_model=StaffOut, summary='Завести сотрудника')
@@ -202,7 +224,7 @@ def add_person(payload: StaffIn,
                staff: StaffUser = Depends(require(PERM_STAFF)),
                db: Session = Depends(get_db)):
     try:
-        row = StaffService(db).add(
+        row = StaffService(db, staff.account_id).add(
             staff, payload.phone, payload.name, payload.role,
             payload.permissions)
     except StaffError as e:
@@ -217,7 +239,7 @@ def update_person(staff_id: int, payload: StaffPatchIn,
                   staff: StaffUser = Depends(require(PERM_STAFF)),
                   db: Session = Depends(get_db)):
     try:
-        row = StaffService(db).update(
+        row = StaffService(db, staff.account_id).update(
             staff, staff_id, name=payload.name, role=payload.role,
             permissions=payload.permissions,
             is_active=payload.is_active)
@@ -232,4 +254,4 @@ def log(limit: int = 100, staff: StaffUser = Depends(require(PERM_STAFF)),
         db: Session = Depends(get_db)):
     return [{'happened_at': row.happened_at, 'action': row.action,
              'detail': row.detail, 'phone': format_phone(row.phone or '')}
-            for row in StaffService(db).actions(limit)]
+            for row in StaffService(db, staff.account_id).actions(limit)]

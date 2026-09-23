@@ -69,11 +69,19 @@ def relax():
 
 with TestClient(app) as client:
     db = SessionLocal()
-    shop_settings.set_value(db, 'shop_name', 'Шиномонтаж «РИФ»', commit=False)
-    shop_settings.set_value(db, 'shop_phone', '+7 909 901-89-31')
-    db.add(BookingDay(day=TOMORROW, posts=1,
+
+    # Настройки и дни записи принадлежат точке — той, что завелась
+    # при запуске сервера
+    from app.models import Shop
+    shop = db.query(Shop).first()
+
+    shop_settings.set_value(db, 'shop_name', 'Шиномонтаж «РИФ»', commit=False,
+                            shop=shop)
+    shop_settings.set_value(db, 'shop_phone', '+7 909 901-89-31', shop=shop)
+    db.add(BookingDay(shop_id=shop.id, day=TOMORROW, posts=1,
                       opens_at='09:00', closes_at='18:00'))
-    db.add(BookingDay(day=TOMORROW + timedelta(days=1), posts=1, is_closed=True))
+    db.add(BookingDay(shop_id=shop.id, day=TOMORROW + timedelta(days=1),
+                      posts=1, is_closed=True))
     db.commit()
     db.close()
 

@@ -29,8 +29,17 @@ class BookingError(Exception):
 
 
 class BookingService:
-    def __init__(self, db):
+    def __init__(self, db, shop=None):
+        """
+        shop — точка, о которой идёт речь.
+
+        Без неё считать нечего: посты, часы работы и занятость у каждой
+        точки свои. Когда точка одна, её подставляет вызывающий —
+        сервер не угадывает.
+        """
         self.db = db
+        self.shop = shop
+        self.shop_id = getattr(shop, 'id', shop)
 
     # ------------------------------------------------------------------
     # Расчёт окон
@@ -38,14 +47,16 @@ class BookingService:
 
     def duration_for(self, wheels_assembled):
         if wheels_assembled is True:
-            return shop_settings.get_int(self.db, 'booking_minutes_assembled')
+            return shop_settings.get_int(self.db, 'booking_minutes_assembled', shop=self.shop)
         if wheels_assembled is False:
-            return shop_settings.get_int(self.db, 'booking_minutes_tires')
-        return shop_settings.get_int(self.db, 'booking_minutes_unknown')
+            return shop_settings.get_int(self.db, 'booking_minutes_tires', shop=self.shop)
+        return shop_settings.get_int(self.db, 'booking_minutes_unknown', shop=self.shop)
 
     def day_settings(self, day):
         """Посты и рабочие часы дня. Чего цех не прислал — то по умолчанию."""
-        row = self.db.query(BookingDay).filter(BookingDay.day == day).first()
+        row = self.db.query(BookingDay).filter(
+            BookingDay.day == day,
+            BookingDay.shop_id == self.shop_id).first()
         if row is None:
             # День, о котором цех не сказал ничего, считаем однопостовым —
             # так же, как это делает сама программа шиномонтажа
@@ -57,10 +68,10 @@ class BookingService:
                 'is_closed': row.is_closed}
 
     def _default_opens(self):
-        return shop_settings.get(self.db, 'booking_opens_at')
+        return shop_settings.get(self.db, 'booking_opens_at', shop=self.shop)
 
     def _default_closes(self):
-        return shop_settings.get(self.db, 'booking_closes_at')
+        return shop_settings.get(self.db, 'booking_closes_at', shop=self.shop)
 
     def _busy_at(self, day):
         """Записи дня, занимающие посты, отрезками времени."""
@@ -68,6 +79,7 @@ class BookingService:
         end = start + timedelta(days=1)
 
         rows = self.db.query(Appointment).filter(
+            Appointment.shop_id == self.shop_id,
             Appointment.scheduled_at >= start,
             Appointment.scheduled_at < end,
             Appointment.status.in_(BUSY_STATUSES),
@@ -113,7 +125,7 @@ class BookingService:
             minutes=self._minutes_of(settings['opens_at'], 7 * 60))
         closes = midnight + timedelta(
             minutes=self._minutes_of(settings['closes_at'], 24 * 60))
-        step = timedelta(minutes=shop_settings.get_int(self.db, 'booking_slot_step'))
+        step = timedelta(minutes=shop_settings.get_int(self.db, 'booking_slot_step', shop=self.shop))
         busy = self._busy_at(day)
         posts = settings['posts']
 
@@ -135,7 +147,7 @@ class BookingService:
         return slots
 
     def days_ahead(self):
-        return max(1, shop_settings.get_int(self.db, 'booking_days_ahead'))
+        return max(1, shop_settings.get_int(self.db, 'booking_days_ahead', shop=self.shop))
 
     def calendar(self, wheels_assembled=None, now=None):
         """Ближайшие дни со свободными окнами — то, что рисует приложение."""
@@ -234,6 +246,7 @@ class BookingService:
             raise BookingError('У вас уже есть запись на это время')
 
         appointment = Appointment(
+            shop_id=self.shop_id,
             client_id=client.id,
             car_id=car.id,
             scheduled_at=at,
@@ -295,9 +308,14 @@ class BookingService:
             f'{sets}')
 
     def _ensure_car(self, client, plate, wheels_assembled):
-        car = self.db.query(Car).filter(Car.license_plate == plate).first()
+        # Машина принадлежит аккаунту: в сети из трёх точек это одна и
+        # та же машина, а у чужого шиномонтажа — своя
+        car = self.db.query(Car).filter(
+            Car.license_plate == plate,
+            Car.account_id == client.account_id).first()
         if car is None:
-            car = Car(license_plate=plate, client_id=client.id)
+            car = Car(license_plate=plate, client_id=client.id,
+                      account_id=client.account_id)
             self.db.add(car)
             self.db.flush()
 
@@ -328,6 +346,7 @@ class BookingService:
         window_end = at + timedelta(hours=1)
         return self.db.query(Appointment).filter(
             Appointment.client_id == client.id,
+            Appointment.shop_id == self.shop_id,
             Appointment.status == 'scheduled',
             Appointment.scheduled_at >= window_start,
             Appointment.scheduled_at <= window_end,
@@ -337,6 +356,8 @@ class BookingService:
 
     def my_appointments(self, client, include_past=False, now=None):
         now = now or shop_now()
+        # Здесь точку не сужаем намеренно: человек записался в одну
+        # точку сети, а смотрит в приложении все свои записи сразу
         query = self.db.query(Appointment).filter(
             Appointment.client_id == client.id)
 
@@ -366,7 +387,7 @@ class BookingService:
         if appointment.status != 'scheduled':
             raise BookingError('Эту запись уже нельзя отменить')
 
-        hours = shop_settings.get_int(self.db, 'booking_cancel_hours')
+        hours = shop_settings.get_int(self.db, 'booking_cancel_hours', shop=self.shop)
         if appointment.scheduled_at - now < timedelta(hours=hours):
             raise BookingError(
                 f'До записи меньше {hours} ч. Позвоните в шиномонтаж, '

@@ -37,7 +37,7 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.database import SessionLocal
 from app.models import (Visit, VisitItem, SalaryAccrual, ShopEmployee,
-                        ShopShift, QueueSnapshot)
+                        ShopShift, QueueSnapshot, Shop)
 
 _failures = []
 
@@ -94,22 +94,28 @@ def at(day, hour=12, minute=0):
 def seed():
     db = SessionLocal()
 
-    db.add(ShopEmployee(shop_id=1, name='Игорь', salary_percent=40.0))
-    db.add(ShopEmployee(shop_id=2, name='Пётр', salary_percent=50.0))
+    # Всё принадлежит точке, заведённой при запуске сервера
+    shop = db.query(Shop).first()
 
-    db.add(ShopShift(shop_id=10, started_at=at(YESTERDAY, 9), status='closed',
-                     ended_at=at(YESTERDAY, 21), open_posts=2,
+    db.add(ShopEmployee(shop_id=shop.id, local_id=1, name='Игорь',
+                        salary_percent=40.0))
+    db.add(ShopEmployee(shop_id=shop.id, local_id=2, name='Пётр',
+                        salary_percent=50.0))
+
+    db.add(ShopShift(shop_id=shop.id, local_id=10, started_at=at(YESTERDAY, 9),
+                     status='closed', ended_at=at(YESTERDAY, 21), open_posts=2,
                      total_salary=1000.0))
-    db.add(ShopShift(shop_id=11, started_at=at(TODAY, 9), status='open',
-                     open_posts=2, total_salary=0.0))
+    db.add(ShopShift(shop_id=shop.id, local_id=11, started_at=at(TODAY, 9),
+                     status='open', open_posts=2, total_salary=0.0))
     db.flush()
 
-    def order(shop_id, day, hour, plate, total, base, consumables, payment,
+    def order(local_id, day, hour, plate, total, base, consumables, payment,
               shift, accruals, items, **extra):
-        visit = Visit(shop_id=shop_id, visited_at=at(day, hour),
+        visit = Visit(shop_id=shop.id, local_id=local_id,
+                      visited_at=at(day, hour),
                       license_plate=plate, total_amount=total,
                       salary_base=base, consumables_amount=consumables,
-                      payment_method=payment, shift_shop_id=shift,
+                      payment_method=payment, shift_local_id=shift,
                       changed_at=at(day, hour), **extra)
         db.add(visit)
         db.flush()
@@ -119,7 +125,7 @@ def seed():
                              total=line_total))
         for employee_id, amount in accruals:
             db.add(SalaryAccrual(visit_id=visit.id,
-                                 employee_shop_id=employee_id, amount=amount,
+                                 employee_local_id=employee_id, amount=amount,
                                  accrued_at=at(day, hour)))
         return visit
 
@@ -141,11 +147,11 @@ def seed():
           is_deleted=True)
 
     # Возврат по вчерашнему наряду, оформленный сегодня
-    db.query(Visit).filter(Visit.shop_id == 101).update(
+    db.query(Visit).filter(Visit.local_id == 101).update(
         {'refunded_amount': 300.0, 'refunded_at': at(TODAY, 14),
          'refund_type': 'refund', 'refund_reason': 'Клиент вернул колесо'})
 
-    db.add(QueueSnapshot(taken_at=at(TODAY, 14), cars_in_work=2,
+    db.add(QueueSnapshot(shop_id=shop.id, taken_at=at(TODAY, 14), cars_in_work=2,
                          cars_waiting=1, open_posts=2, shift_is_open=True))
 
     db.commit()
@@ -226,8 +232,8 @@ with TestClient(app) as client:
     print('\n=== Мастера ===')
     masters = client.get('/dashboard/masters', params=PERIOD,
                          headers=owner).json()
-    by_id = {row['employee_shop_id']: row for row in masters}
-    check('Пётр заработал больше', masters[0]['employee_shop_id'] == 2,
+    by_id = {row['employee_local_id']: row for row in masters}
+    check('Пётр заработал больше', masters[0]['employee_local_id'] == 2,
           str(masters[0]))
     check('имя показано', by_id[1]['title'] == 'Игорь (№1)', by_id[1]['title'])
     check('у Игоря два наряда', by_id[1]['orders'] == 2, str(by_id[1]))
@@ -238,7 +244,7 @@ with TestClient(app) as client:
 
     print('\n=== Наряды ===')
     orders = client.get('/dashboard/orders', params=PERIOD, headers=owner).json()
-    ids = [row['shop_id'] for row in orders]
+    ids = [row['local_id'] for row in orders]
     check('удалённого наряда в списке нет', 105 not in ids, str(ids))
     check('остальные на месте', set(ids) == {101, 102, 103, 104}, str(ids))
     check('свежие сверху', ids[0] == 104 or ids[0] == 103, str(ids))
@@ -246,15 +252,15 @@ with TestClient(app) as client:
     only_card = client.get('/dashboard/orders',
                            params=dict(PERIOD, payment_method='card'),
                            headers=owner).json()
-    check('фильтр по оплате картой', [row['shop_id'] for row in only_card] == [102],
-          str([row['shop_id'] for row in only_card]))
+    check('фильтр по оплате картой', [row['local_id'] for row in only_card] == [102],
+          str([row['local_id'] for row in only_card]))
 
     by_master = client.get('/dashboard/orders',
-                           params=dict(PERIOD, employee_shop_id=2),
+                           params=dict(PERIOD, employee_local_id=2),
                            headers=owner).json()
     check('фильтр по мастеру',
-          set(row['shop_id'] for row in by_master) == {102, 103},
-          str([row['shop_id'] for row in by_master]))
+          set(row['local_id'] for row in by_master) == {102, 103},
+          str([row['local_id'] for row in by_master]))
 
     print('\n=== Карточка наряда ===')
     card = client.get('/dashboard/orders/102', headers=owner).json()
@@ -287,7 +293,7 @@ with TestClient(app) as client:
           str(len(salary['employees'])))
 
     igor = [row for row in salary['employees']
-            if row['employee_shop_id'] == 1][0]
+            if row['employee_local_id'] == 1][0]
     check('у Игоря два наряда в смене', len(igor['orders']) == 2,
           str(igor['orders']))
     check('в строке номер наряда и машина',
@@ -308,7 +314,7 @@ with TestClient(app) as client:
 
     print('\n=== Текущая смена и очередь ===')
     now = client.get('/dashboard/shifts/current', headers=owner).json()
-    check('открытая смена найдена', now['shift']['shop_id'] == 11, str(now))
+    check('открытая смена найдена', now['shift']['local_id'] == 11, str(now))
     check('очередь с отметкой времени', now['queue']['taken_at'] is not None,
           str(now['queue']))
     check('в работе две машины', now['queue']['cars_in_work'] == 2)

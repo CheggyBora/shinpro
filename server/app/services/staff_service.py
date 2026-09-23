@@ -37,8 +37,15 @@ class StaffError(Exception):
 
 
 class StaffService:
-    def __init__(self, db):
+    def __init__(self, db, account_id=None):
         self.db = db
+        self.account_id = account_id
+
+    def _staff(self, phone):
+        """Сотрудник этого аккаунта с таким телефоном."""
+        return self.db.query(StaffUser).filter(
+            StaffUser.phone == phone,
+            StaffUser.account_id == self.account_id).first()
 
     # ------------------------------------------------------------------
     # Вход
@@ -48,7 +55,7 @@ class StaffService:
         phone = normalize_phone(phone)
         if not is_valid_phone(phone):
             raise AuthError('Номер телефона выглядит неправильно')
-        return self.db.query(StaffUser).filter(StaffUser.phone == phone).first()
+        return self._staff(phone)
 
     def start(self, phone):
         """
@@ -72,7 +79,18 @@ class StaffService:
         return STEP_PIN, True
 
     def channel(self):
-        value = (shop_settings.get(self.db, 'verify_channel') or CHANNEL_SMS).lower()
+        """
+        Чем подтверждать номер: SMS или письмом.
+
+        Настройка приходит из цеха, поэтому берём её у первой точки
+        аккаунта: для сети это общее решение, а не свойство точки.
+        """
+        from app.services import tenancy
+
+        shops = tenancy.shops_of(self.db, self.account_id)
+        value = (shop_settings.get(self.db, 'verify_channel',
+                                   shop=shops[0] if shops else None)
+                 or CHANNEL_SMS).lower()
         return CHANNEL_EMAIL if value == CHANNEL_EMAIL else CHANNEL_SMS
 
     def request_code(self, phone, email=None):
@@ -87,8 +105,7 @@ class StaffService:
         if not is_valid_phone(phone):
             raise AuthError('Номер телефона выглядит неправильно')
 
-        staff = self.db.query(StaffUser).filter(
-            StaffUser.phone == phone).first()
+        staff = self._staff(phone)
 
         seconds = settings.CODE_TTL_MINUTES * 60
         channel = self.channel()
@@ -107,6 +124,7 @@ class StaffService:
         code = generate_code()
         record = LoginCode(
             login=phone,
+            account_id=self.account_id,
             channel=channel,
             code_hash=hash_secret(phone, code),
             purpose=PURPOSE_STAFF,
@@ -128,13 +146,16 @@ class StaffService:
         return seconds, channel
 
     def _known_email(self, phone):
-        client = self.db.query(Client).filter(Client.phone == phone).first()
+        client = self.db.query(Client).filter(
+            Client.phone == phone,
+            Client.account_id == self.account_id).first()
         return client.email if client else None
 
     def _check_rate_limit(self, phone):
         hour_ago = shop_now() - timedelta(hours=1)
         recent = self.db.query(LoginCode).filter(
             LoginCode.login == phone,
+            LoginCode.account_id == self.account_id,
             LoginCode.purpose == PURPOSE_STAFF,
             LoginCode.created_at >= hour_ago).count()
 
@@ -144,8 +165,7 @@ class StaffService:
     def verify_code(self, phone, code):
         """Проверить код и пустить сотрудника."""
         phone = normalize_phone(phone)
-        staff = self.db.query(StaffUser).filter(
-            StaffUser.phone == phone).first()
+        staff = self._staff(phone)
 
         record = self._take_code(phone, code)
 
@@ -168,6 +188,7 @@ class StaffService:
     def _take_code(self, phone, code):
         record = self.db.query(LoginCode).filter(
             LoginCode.login == phone,
+            LoginCode.account_id == self.account_id,
             LoginCode.purpose == PURPOSE_STAFF,
             LoginCode.used_at.is_(None),
         ).order_by(LoginCode.created_at.desc()).first()
@@ -209,8 +230,7 @@ class StaffService:
 
     def login_by_pin(self, phone, pin):
         phone = normalize_phone(phone)
-        staff = self.db.query(StaffUser).filter(
-            StaffUser.phone == phone).first()
+        staff = self._staff(phone)
 
         if staff is None or not staff.pin_hash:
             raise AuthError('Сначала подтвердите номер и придумайте ПИН')
@@ -246,7 +266,9 @@ class StaffService:
     # ------------------------------------------------------------------
 
     def people(self):
-        return self.db.query(StaffUser).order_by(StaffUser.id).all()
+        return self.db.query(StaffUser).filter(
+            StaffUser.account_id == self.account_id).order_by(
+            StaffUser.id).all()
 
     def add(self, author, phone, name=None, role=None, permissions=None):
         """Завести сотрудника. Возвращает его учётку."""
@@ -258,13 +280,13 @@ class StaffService:
         if role not in ROLE_TITLES:
             raise StaffError(f'Неизвестная роль: {role}')
 
-        existing = self.db.query(StaffUser).filter(
-            StaffUser.phone == phone).first()
+        existing = self._staff(phone)
         if existing is not None:
             raise StaffError(f'{phone} уже заведён: {existing.role_title}')
 
         staff = StaffUser(
             phone=phone,
+            account_id=self.account_id,
             name=(name or '').strip() or None,
             role=role,
             created_by_id=author.id if author else None)
@@ -281,7 +303,8 @@ class StaffService:
     def update(self, author, staff_id, name=None, role=None, permissions=None,
                is_active=None):
         staff = self.db.query(StaffUser).filter(
-            StaffUser.id == staff_id).first()
+            StaffUser.id == staff_id,
+            StaffUser.account_id == self.account_id).first()
         if staff is None:
             raise StaffError('Сотрудник не найден')
 
@@ -329,6 +352,7 @@ class StaffService:
         а войти под ним уже некому.
         """
         others = self.db.query(StaffUser).filter(
+            StaffUser.account_id == self.account_id,
             StaffUser.role == ROLE_OWNER,
             StaffUser.is_active.is_(True),
             StaffUser.id != staff.id).count()
@@ -348,13 +372,12 @@ class StaffService:
         if not is_valid_phone(phone):
             return None
 
-        staff = self.db.query(StaffUser).filter(
-            StaffUser.phone == phone).first()
+        staff = self._staff(phone)
         if staff is not None:
             return staff
 
         staff = StaffUser(phone=phone, name=(name or '').strip() or None,
-                          role=ROLE_OWNER)
+                          role=ROLE_OWNER, account_id=self.account_id)
         self.db.add(staff)
         self.db.commit()
         self.db.refresh(staff)
@@ -366,6 +389,7 @@ class StaffService:
 
     def log(self, staff, action, detail=None):
         self.db.add(StaffAction(
+            account_id=self.account_id,
             staff_id=staff.id if staff else None,
             phone=staff.phone if staff else None,
             action=action,
@@ -373,7 +397,8 @@ class StaffService:
         self.db.commit()
 
     def actions(self, limit=100):
-        return self.db.query(StaffAction).order_by(
+        return self.db.query(StaffAction).filter(
+            StaffAction.account_id == self.account_id).order_by(
             StaffAction.happened_at.desc()).limit(limit).all()
 
 

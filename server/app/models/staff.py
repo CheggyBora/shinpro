@@ -13,7 +13,7 @@
 from datetime import datetime
 
 from sqlalchemy import (Column, Integer, String, Boolean, DateTime, Text,
-                        ForeignKey)
+                        ForeignKey, UniqueConstraint)
 from sqlalchemy.orm import relationship
 
 from app.database import Base
@@ -80,7 +80,12 @@ class StaffUser(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
 
-    phone = Column(String(20), nullable=False, unique=True, index=True)
+    account_id = Column(Integer, ForeignKey('accounts.id'), nullable=True,
+                        index=True)
+
+    # Телефон уникален внутри аккаунта: один и тот же человек может
+    # вести учёт в двух не связанных между собой шиномонтажах
+    phone = Column(String(20), nullable=False, index=True)
     name = Column(String(200), nullable=True)
     role = Column(String(20), default=ROLE_ADMIN, nullable=False)
 
@@ -130,6 +135,10 @@ class StaffUser(Base):
         return permission in self.allowed()
 
 
+UniqueConstraint(StaffUser.account_id, StaffUser.phone,
+                 name='uq_staff_users_account_phone')
+
+
 class StaffAction(Base):
     """
     Журнал: кто, когда и что смотрел или менял.
@@ -141,6 +150,8 @@ class StaffAction(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
 
+    account_id = Column(Integer, ForeignKey('accounts.id'), nullable=True,
+                        index=True)
     staff_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True,
                       index=True)
     happened_at = Column(DateTime, default=shop_now, nullable=False,

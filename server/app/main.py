@@ -32,6 +32,20 @@ async def lifespan(app: FastAPI):
     # О недостающих настройках говорим сразу и громко: сервер,
     # поднятый наполовину, хуже не поднятого — он делает вид,
     # что работает
+    # Первая точка: аккаунт и ключ обмена из настроек
+    from app.database import SessionLocal as _Session
+    from app.services import tenancy
+
+    session = _Session()
+    try:
+        shop = tenancy.bootstrap(session)
+        if shop is not None:
+            log.info('Заведена первая точка: %s (%s)', shop.name, shop.slug)
+    except Exception as e:
+        log.error('Не удалось завести первую точку: %s', e)
+    finally:
+        session.close()
+
     # Первый владелец дашборда. Завести его из самого дашборда нельзя:
     # заводить людей имеет право только владелец, а его ещё нет
     if settings.OWNER_PHONE:
@@ -40,7 +54,12 @@ async def lifespan(app: FastAPI):
 
         session = SessionLocal()
         try:
-            owner = StaffService(session).ensure_owner(
+            # Владелец заводится в том аккаунте, который создан выше:
+            # без аккаунта учётка повиснет ни на чём
+            from app.services import tenancy as _tenancy
+
+            account_id = _tenancy.account_for(session)
+            owner = StaffService(session, account_id).ensure_owner(
                 settings.OWNER_PHONE, settings.OWNER_NAME)
             if owner is None:
                 log.warning('SERVER_OWNER_PHONE не похож на номер телефона')
@@ -101,17 +120,6 @@ from fastapi.responses import FileResponse, HTMLResponse  # noqa: E402
 WEB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'web')
 
 
-@app.get('/z', response_class=HTMLResponse, include_in_schema=False)
-def booking_page():
-    """
-    Страница записи. Короткий адрес — её отправляют в переписке,
-    и «/z» помещается даже в SMS.
-    """
-    path = os.path.join(WEB_DIR, 'booking.html')
-    with open(path, encoding='utf-8') as page:
-        return HTMLResponse(page.read())
-
-
 @app.get('/z/logo.jpg', include_in_schema=False)
 def booking_logo():
     """Логотип шиномонтажа. Нет файла — страница просто обойдётся без него."""
@@ -131,6 +139,29 @@ def dashboard_page():
     и сервер отказывает в запросе, а не полагается на спрятанную кнопку.
     """
     path = os.path.join(WEB_DIR, 'dashboard.html')
+    with open(path, encoding='utf-8') as page:
+        return HTMLResponse(page.read())
+
+
+@app.get('/z/{slug}', response_class=HTMLResponse, include_in_schema=False)
+def booking_page_of(slug: str):
+    """
+    Страница записи конкретной точки: /z/shinomontazh-rif.
+
+    Сама страница одна и та же — какая это точка, она узнаёт из адреса
+    и спрашивает у сервера. Так одну ссылку можно дать каждой точке
+    сети, и клиент попадёт именно туда, куда собирался.
+    """
+    return booking_page()
+
+
+@app.get('/z', response_class=HTMLResponse, include_in_schema=False)
+def booking_page():
+    """
+    Страница записи. Короткий адрес — её отправляют в переписке,
+    и «/z» помещается даже в SMS.
+    """
+    path = os.path.join(WEB_DIR, 'booking.html')
     with open(path, encoding='utf-8') as page:
         return HTMLResponse(page.read())
 

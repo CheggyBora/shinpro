@@ -54,15 +54,33 @@ class NeedEmail(AuthError):
 
 
 class AuthService:
-    def __init__(self, db):
+    def __init__(self, db, account_id=None):
         self.db = db
+        self.account_id = account_id
+
+    def _client(self, phone):
+        """Клиент этого аккаунта с таким телефоном."""
+        return self.db.query(Client).filter(
+            Client.phone == phone,
+            Client.account_id == self.account_id).first()
 
     # ------------------------------------------------------------------
     # Куда слать код
     # ------------------------------------------------------------------
 
     def channel(self):
-        value = (shop_settings.get(self.db, 'verify_channel') or CHANNEL_SMS).lower()
+        """
+        Чем подтверждать номер: SMS или письмом.
+
+        Настройка приходит из цеха, поэтому берём её у первой точки
+        аккаунта: для сети это общее решение, а не свойство точки.
+        """
+        from app.services import tenancy
+
+        shops = tenancy.shops_of(self.db, self.account_id)
+        value = (shop_settings.get(self.db, 'verify_channel',
+                                   shop=shops[0] if shops else None)
+                 or CHANNEL_SMS).lower()
         return CHANNEL_EMAIL if value == CHANNEL_EMAIL else CHANNEL_SMS
 
     # ------------------------------------------------------------------
@@ -79,7 +97,7 @@ class AuthService:
         if not is_valid_phone(phone):
             raise AuthError('Номер телефона выглядит неправильно')
 
-        client = self.db.query(Client).filter(Client.phone == phone).first()
+        client = self._client(phone)
 
         # Клиент может быть заведён цехом при обычном визите — но
         # кабинет он ещё не открывал, значит подтверждение нужно
@@ -119,6 +137,7 @@ class AuthService:
         code = generate_code()
         record = LoginCode(
             login=phone,
+            account_id=self.account_id,
             channel=channel,
             code_hash=hash_secret(phone, code),
             purpose=purpose,
@@ -143,11 +162,11 @@ class AuthService:
         return settings.CODE_TTL_MINUTES * 60, channel
 
     def _known_email(self, phone):
-        client = self.db.query(Client).filter(Client.phone == phone).first()
+        client = self._client(phone)
         return client.email if client else None
 
     def _remember_email(self, phone, email):
-        client = self.db.query(Client).filter(Client.phone == phone).first()
+        client = self._client(phone)
         if client is not None and not client.email:
             client.email = email
             self.db.commit()
@@ -157,6 +176,7 @@ class AuthService:
         hour_ago = shop_now() - timedelta(hours=1)
         recent = self.db.query(LoginCode).filter(
             LoginCode.login == phone,
+            LoginCode.account_id == self.account_id,
             LoginCode.created_at >= hour_ago).count()
 
         if recent >= settings.CODE_REQUESTS_PER_HOUR:
@@ -182,9 +202,9 @@ class AuthService:
 
         record = self._take_code(phone, code)
 
-        client = self.db.query(Client).filter(Client.phone == phone).first()
+        client = self._client(phone)
         if client is None:
-            client = Client(phone=phone)
+            client = Client(phone=phone, account_id=self.account_id)
             self.db.add(client)
 
         record.used_at = shop_now()
@@ -202,6 +222,7 @@ class AuthService:
     def _take_code(self, phone, code):
         record = self.db.query(LoginCode).filter(
             LoginCode.login == phone,
+            LoginCode.account_id == self.account_id,
             LoginCode.used_at.is_(None),
         ).order_by(LoginCode.created_at.desc()).first()
 
@@ -253,7 +274,7 @@ class AuthService:
         иначе перебираются за минуту с любого телефона.
         """
         phone = normalize_phone(phone)
-        client = self.db.query(Client).filter(Client.phone == phone).first()
+        client = self._client(phone)
 
         if client is None or not client.pin_hash:
             raise AuthError('Сначала подтвердите номер и придумайте ПИН')

@@ -19,6 +19,7 @@ from app.models import (StaffUser, PERM_REVENUE, PERM_ORDERS,
                         PERM_SALARY_ALL, PERM_SALARY_PAY, QueueSnapshot)
 from app.security import current_staff, require
 from app.services.dashboard_service import DashboardService
+from app.services import tenancy
 
 router = APIRouter(prefix='/dashboard', tags=['Дашборд: цифры'])
 
@@ -40,37 +41,77 @@ def _period(day_from: Optional[date], day_to: Optional[date]):
     return day_from, day_to
 
 
+def _service(db, staff, shop=None):
+    """
+    Считалка, настроенная на точки этого аккаунта.
+
+    shop — выбранная точка: её имя или номер. Пусто — считаем по всем
+    точкам аккаунта сразу: для владельца сети это и есть главная цифра.
+
+    Чужую точку подставить нельзя: список берётся из аккаунта, к
+    которому относится сам сотрудник.
+    """
+    shops = tenancy.shops_of(db, staff.account_id)
+    ids = [row.id for row in shops]
+
+    if shop:
+        chosen = [row.id for row in shops
+                  if str(row.id) == str(shop) or row.slug == str(shop)]
+        if not chosen:
+            raise HTTPException(status.HTTP_404_NOT_FOUND,
+                                detail='Такой точки нет')
+        ids = chosen
+
+    return DashboardService(db, staff.account_id, ids)
+
+
+@router.get('/shops', summary='Точки аккаунта — для выбора на дашборде')
+def shops(staff: StaffUser = Depends(current_staff),
+          db: Session = Depends(get_db)):
+    return [{'id': row.id, 'slug': row.slug, 'name': row.name,
+             'address': row.address, 'last_sync_at': row.last_sync_at}
+            for row in tenancy.shops_of(db, staff.account_id)]
+
+
 @router.get('/summary', summary='Сводка за период')
 def summary(day_from: Optional[date] = Query(None, alias='from'),
             day_to: Optional[date] = Query(None, alias='to'),
+           shop: Optional[str] = Query(
+               None, description='Точка. Пусто — все точки сети'),
             staff: StaffUser = Depends(require(PERM_REVENUE)),
             db: Session = Depends(get_db)):
     day_from, day_to = _period(day_from, day_to)
-    return DashboardService(db).summary(day_from, day_to)
+    return _service(db, staff, shop).summary(day_from, day_to)
 
 
 @router.get('/services', summary='Выручка по услугам')
 def services(day_from: Optional[date] = Query(None, alias='from'),
              day_to: Optional[date] = Query(None, alias='to'),
+           shop: Optional[str] = Query(
+               None, description='Точка. Пусто — все точки сети'),
              staff: StaffUser = Depends(require(PERM_REVENUE)),
              db: Session = Depends(get_db)):
     day_from, day_to = _period(day_from, day_to)
-    return DashboardService(db).services(day_from, day_to)
+    return _service(db, staff, shop).services(day_from, day_to)
 
 
 @router.get('/masters', summary='Мастера и начисления')
 def masters(day_from: Optional[date] = Query(None, alias='from'),
             day_to: Optional[date] = Query(None, alias='to'),
+           shop: Optional[str] = Query(
+               None, description='Точка. Пусто — все точки сети'),
             staff: StaffUser = Depends(require(PERM_SALARY_ALL)),
             db: Session = Depends(get_db)):
     day_from, day_to = _period(day_from, day_to)
-    return DashboardService(db).masters(day_from, day_to)
+    return _service(db, staff, shop).masters(day_from, day_to)
 
 
 @router.get('/orders', summary='Наряды за период')
 def orders(day_from: Optional[date] = Query(None, alias='from'),
            day_to: Optional[date] = Query(None, alias='to'),
-           employee_shop_id: Optional[int] = None,
+           shop: Optional[str] = Query(
+               None, description='Точка. Пусто — все точки сети'),
+           employee_local_id: Optional[int] = None,
            payment_method: Optional[str] = None,
            limit: int = Query(500, le=2000),
            staff: StaffUser = Depends(current_staff),
@@ -86,18 +127,19 @@ def orders(day_from: Optional[date] = Query(None, alias='from'),
                             detail='Нет доступа к этому разделу')
 
     day_from, day_to = _period(day_from, day_to)
-    return DashboardService(db).orders(day_from, day_to, employee_shop_id,
+    return _service(db, staff, shop).orders(day_from, day_to, employee_local_id,
                                        payment_method, limit)
 
 
-@router.get('/orders/{shop_id}', summary='Наряд целиком')
-def order_card(shop_id: int, staff: StaffUser = Depends(current_staff),
+@router.get('/orders/{local_id}', summary='Наряд целиком')
+def order_card(local_id: int, shop: Optional[str] = None,
+               staff: StaffUser = Depends(current_staff),
                db: Session = Depends(get_db)):
     if not staff.can(PERM_ORDERS):
         raise HTTPException(status.HTTP_403_FORBIDDEN,
                             detail='Нет доступа к этому разделу')
 
-    card = DashboardService(db).order_card(shop_id)
+    card = _service(db, staff, shop).order_card(local_id)
     if card is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail='Наряд не найден')
 
@@ -107,6 +149,8 @@ def order_card(shop_id: int, staff: StaffUser = Depends(current_staff),
 @router.get('/shifts', summary='Смены за период')
 def shifts(day_from: Optional[date] = Query(None, alias='from'),
            day_to: Optional[date] = Query(None, alias='to'),
+           shop: Optional[str] = Query(
+               None, description='Точка. Пусто — все точки сети'),
            staff: StaffUser = Depends(current_staff),
            db: Session = Depends(get_db)):
     if not staff.can(PERM_SALARY_ALL):
@@ -114,11 +158,12 @@ def shifts(day_from: Optional[date] = Query(None, alias='from'),
                             detail='Нет доступа к этому разделу')
 
     day_from, day_to = _period(day_from, day_to)
-    return DashboardService(db).shifts(day_from, day_to)
+    return _service(db, staff, shop).shifts(day_from, day_to)
 
 
 @router.get('/shifts/current', summary='Текущая смена')
-def current_shift(staff: StaffUser = Depends(current_staff),
+def current_shift(shop: Optional[str] = None,
+                  staff: StaffUser = Depends(current_staff),
                   db: Session = Depends(get_db)):
     """
     Открытая сейчас смена и загрузка цеха.
@@ -127,15 +172,18 @@ def current_shift(staff: StaffUser = Depends(current_staff),
     его временем: если цех давно не выходил на связь, дашборд покажет
     «данные от 10:42», а не соврёт свежими цифрами.
     """
-    service = DashboardService(db)
+    service = _service(db, staff, shop)
     shift = service.current_shift()
 
-    last = db.query(QueueSnapshot).order_by(
-        QueueSnapshot.taken_at.desc()).first()
+    ids = service.shop_ids
+    snapshots = db.query(QueueSnapshot)
+    if ids:
+        snapshots = snapshots.filter(QueueSnapshot.shop_id.in_(ids))
+    last = snapshots.order_by(QueueSnapshot.taken_at.desc()).first()
 
     return {
         'shift': {
-            'shop_id': shift.shop_id,
+            'local_id': shift.local_id,
             'started_at': shift.started_at,
             'open_posts': shift.open_posts,
         } if shift else None,
@@ -150,8 +198,8 @@ def current_shift(staff: StaffUser = Depends(current_staff),
     }
 
 
-@router.get('/shifts/{shift_shop_id}/salary', summary='Начисления за смену')
-def shift_salary(shift_shop_id: int,
+@router.get('/shifts/{shift_local_id}/salary', summary='Начисления за смену')
+def shift_salary(shift_local_id: int, shop: Optional[str] = None,
                  staff: StaffUser = Depends(current_staff),
                  db: Session = Depends(get_db)):
     """
@@ -164,7 +212,7 @@ def shift_salary(shift_shop_id: int,
         raise HTTPException(status.HTTP_403_FORBIDDEN,
                             detail='Нет доступа к зарплатам')
 
-    return DashboardService(db).shift_salary(shift_shop_id)
+    return _service(db, staff, shop).shift_salary(shift_local_id)
 
 
 # ----------------------------------------------------------------------
@@ -172,13 +220,17 @@ def shift_salary(shift_shop_id: int,
 # ----------------------------------------------------------------------
 
 class PayoutIn(BaseModel):
-    employee_shop_id: int
+    # Точка, где работает сотрудник. Нужна, когда их несколько:
+    # «мастер №1» без точки — это не человек, а совпадение номеров
+    shop_id: Optional[int] = None
+    employee_local_id: int
     amount: float
     comment: Optional[str] = None
 
 
 @router.get('/salary', summary='Остатки по зарплате')
-def salary(staff: StaffUser = Depends(require(PERM_SALARY_ALL)),
+def salary(shop: Optional[str] = None,
+           staff: StaffUser = Depends(require(PERM_SALARY_ALL)),
            db: Session = Depends(get_db)):
     """
     Кому сколько начислено, выдано и осталось — за всё время.
@@ -186,7 +238,7 @@ def salary(staff: StaffUser = Depends(require(PERM_SALARY_ALL)),
     В ответе видно, может ли этот человек выдавать: прятать кнопку по
     роли на стороне страницы нельзя, решает сервер.
     """
-    service = DashboardService(db)
+    service = _service(db, staff, shop)
     return {
         'can_pay': staff.can(PERM_SALARY_PAY),
         'people': service.salary_balances(),
@@ -195,7 +247,7 @@ def salary(staff: StaffUser = Depends(require(PERM_SALARY_ALL)),
 
 
 @router.post('/salary/pay', summary='Отметить перевод зарплаты на карту')
-def pay_salary(payload: PayoutIn,
+def pay_salary(payload: PayoutIn, shop: Optional[str] = None,
                staff: StaffUser = Depends(require(PERM_SALARY_PAY)),
                db: Session = Depends(get_db)):
     """
@@ -206,9 +258,9 @@ def pay_salary(payload: PayoutIn,
     программе цеха.
     """
     try:
-        payout = DashboardService(db).pay_to_card(
-            payload.employee_shop_id, payload.amount, payload.comment,
-            author_id=staff.id)
+        payout = _service(db, staff, shop).pay_to_card(
+            payload.employee_local_id, payload.amount, payload.comment,
+            author_id=staff.id, shop_id=payload.shop_id)
     except ValueError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(e))
 

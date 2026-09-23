@@ -167,7 +167,13 @@ from app.database import SessionLocal as ServerSession
 from app.models import Appointment as SrvAppointment
 
 srv = ServerSession()
-srv.add(SrvAppointment(scheduled_at=at(15), duration_minutes=40,
+
+# Запись принадлежит точке — той, что завелась при запуске сервера
+from app.models import Shop as SrvShop
+srv_shop = srv.query(SrvShop).first()
+
+srv.add(SrvAppointment(shop_id=srv_shop.id,
+                       scheduled_at=at(15), duration_minutes=40,
                        license_plate='Х555ХХ99', client_name='Из приложения',
                        client_phone='79995554433', status='scheduled',
                        source='app'))

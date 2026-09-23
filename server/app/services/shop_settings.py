@@ -48,8 +48,26 @@ DEFAULTS = {
 }
 
 
-def get(db, key, default=None):
-    row = db.query(ShopSetting).filter(ShopSetting.key == key).first()
+def _shop_id(shop):
+    """Точка может прийти объектом или номером — принимаем оба."""
+    if shop is None:
+        return None
+    return getattr(shop, 'id', shop)
+
+
+def get(db, key, default=None, shop=None):
+    """
+    Настройка точки.
+
+    Настройки присылает цех, и у каждой точки они свои: разные часы
+    работы, разное время на колесо, разное название в чеке. Без точки
+    берём значение по умолчанию — выдумывать, чьи настройки подойдут,
+    нельзя.
+    """
+    row = db.query(ShopSetting).filter(
+        ShopSetting.key == key,
+        ShopSetting.shop_id == _shop_id(shop)).first()
+
     if row is not None and row.value is not None:
         return row.value
     if default is not None:
@@ -57,28 +75,36 @@ def get(db, key, default=None):
     return DEFAULTS.get(key)
 
 
-def get_int(db, key, default=None):
+def get_int(db, key, default=None, shop=None):
     try:
-        return int(float(get(db, key, default)))
+        return int(float(get(db, key, default, shop)))
     except (TypeError, ValueError):
         return int(float(DEFAULTS.get(key, 0)))
 
 
-def set_value(db, key, value, commit=True):
-    row = db.query(ShopSetting).filter(ShopSetting.key == key).first()
+def set_value(db, key, value, commit=True, shop=None):
+    shop_id = _shop_id(shop)
+    row = db.query(ShopSetting).filter(
+        ShopSetting.key == key,
+        ShopSetting.shop_id == shop_id).first()
+
     if row is None:
-        row = ShopSetting(key=key)
+        row = ShopSetting(key=key, shop_id=shop_id)
         db.add(row)
+
     row.value = None if value is None else str(value)
     if commit:
         db.commit()
     return row
 
 
-def all_values(db):
-    """Все настройки с подставленными значениями по умолчанию."""
+def all_values(db, shop=None):
+    """Все настройки точки с подставленными значениями по умолчанию."""
     values = dict(DEFAULTS)
-    for row in db.query(ShopSetting).all():
+    rows = db.query(ShopSetting).filter(
+        ShopSetting.shop_id == _shop_id(shop)).all()
+
+    for row in rows:
         if row.value is not None:
             values[row.key] = row.value
     return values
