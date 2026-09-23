@@ -78,7 +78,7 @@ if settings.CORS_ORIGINS:
     )
 
 from app.api import (auth, booking, storage, history, queue, sync, public,  # noqa: E402
-                     staff)
+                     staff, dashboard)
 
 app.include_router(auth.router)
 app.include_router(booking.router)
@@ -87,6 +87,7 @@ app.include_router(history.router)
 app.include_router(queue.router)
 app.include_router(sync.router)
 app.include_router(staff.router)
+app.include_router(dashboard.router)
 app.include_router(public.router)
 
 
@@ -119,6 +120,19 @@ def booking_logo():
         return HTMLResponse(status_code=404, content='')
     return FileResponse(path, media_type='image/jpeg',
                         headers={'Cache-Control': 'public, max-age=86400'})
+
+
+@app.get('/d', response_class=HTMLResponse, include_in_schema=False)
+def dashboard_page():
+    """
+    Дашборд. Адрес короткий: его набирают с телефона, стоя в цеху.
+
+    Сама страница ничего не решает: что показать, определяют права,
+    и сервер отказывает в запросе, а не полагается на спрятанную кнопку.
+    """
+    path = os.path.join(WEB_DIR, 'dashboard.html')
+    with open(path, encoding='utf-8') as page:
+        return HTMLResponse(page.read())
 
 
 @app.get('/health', tags=['Служебное'], summary='Жив ли сервер')
