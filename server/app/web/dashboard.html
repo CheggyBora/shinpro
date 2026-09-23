@@ -251,6 +251,7 @@ input.code { letter-spacing: 8px; text-align: center; font-size: 22px; font-weig
   </div>
 
   <div class="wrap">
+    <div class="period" id="shops" hidden></div>
     <div class="period" id="period"></div>
     <div class="dates" id="dates">
       <input id="dFrom" type="date"><input id="dTo" type="date">
@@ -271,6 +272,8 @@ var $ = function (id) { return document.getElementById(id); };
 var token = null;
 var me = null;
 var period = { key: '30', from: null, to: null };
+var shops = [];          // точки этого аккаунта
+var currentShop = '';    // пусто — считаем по всем сразу
 var section = null;
 
 // ------------------------------------------------------------------
@@ -583,7 +586,38 @@ function applyPeriod() {
 
 function query(path) {
   var join = path.indexOf('?') >= 0 ? '&' : '?';
-  return path + join + 'from=' + period.from + '&to=' + period.to;
+  var full = path + join + 'from=' + period.from + '&to=' + period.to;
+  return currentShop ? full + '&shop=' + encodeURIComponent(currentShop) : full;
+}
+
+function withShop(path) {
+  // Адрес без периода, но с выбранной точкой
+  if (!currentShop) return path;
+  var join = path.indexOf('?') >= 0 ? '&' : '?';
+  return path + join + 'shop=' + encodeURIComponent(currentShop);
+}
+
+function drawShops() {
+  // Одна точка — выбирать не из чего, полосу не показываем
+  if (shops.length < 2) { $('shops').hidden = true; return; }
+
+  $('shops').hidden = false;
+  var all = '<button class="chip" type="button" data-shop="" aria-pressed="'
+    + (currentShop === '') + '">Все точки</button>';
+
+  $('shops').innerHTML = all + shops.map(function (shop) {
+    return '<button class="chip" type="button" data-shop="' + shop.id
+      + '" aria-pressed="' + (String(currentShop) === String(shop.id)) + '">'
+      + escape(shop.name) + '</button>';
+  }).join('');
+
+  [].slice.call($('shops').querySelectorAll('button')).forEach(function (button) {
+    button.addEventListener('click', function () {
+      currentShop = button.getAttribute('data-shop');
+      drawShops();
+      load();
+    });
+  });
 }
 
 // ------------------------------------------------------------------
@@ -618,7 +652,7 @@ function load() {
 function loadSummary() {
   Promise.all([
     api(query('/dashboard/summary')),
-    api('/dashboard/shifts/current')
+    api(withShop('/dashboard/shifts/current'))
   ]).then(function (answers) {
     var data = answers[0], now = answers[1];
     var html = '';
@@ -694,6 +728,7 @@ function loadMasters() {
     show('<div class="card"><h2>Мастера</h2>' + rows.map(function (row) {
       return '<button class="row" type="button" data-master="' + row.employee_local_id + '">'
         + '<div class="main"><b>' + escape(row.title) + '</b><span>'
+        + (!currentShop && row.shop_name ? escape(row.shop_name) + ' · ' : '')
         + row.orders + ' ' + plural(row.orders, 'наряд', 'наряда', 'нарядов')
         + ' · выработка ' + money(row.revenue)
         + (row.salary_percent ? ' · ' + row.salary_percent + '%' : '') + '</span></div>'
@@ -768,7 +803,7 @@ function loadShifts() {
 // ------------------------------------------------------------------
 
 function loadSalary() {
-  api('/dashboard/salary').then(function (data) {
+  api(withShop('/dashboard/salary')).then(function (data) {
     var html = '<div class="card"><h2>Кому сколько должны</h2>';
 
     if (!data.people.length) {
@@ -782,11 +817,16 @@ function loadSalary() {
         ? '<span class="tag warn">ждёт цеха ' + money(person.waiting) + '</span>'
         : '';
 
+      // Ключ — точка и номер: «Игорь (№1)» есть в каждой точке, и без
+      // названия эти строки неразличимы
       return '<button class="row" type="button" data-pay="'
-        + person.employee_local_id + '"'
+        + person.shop_id + ':' + person.employee_local_id + '"'
         + (data.can_pay ? '' : ' disabled style="opacity:1"') + '>'
         + '<div class="main"><b>' + escape(person.title) + waiting + '</b>'
-        + '<span>начислено ' + money(person.accrued)
+        + '<span>'
+        + (!currentShop && person.shop_name
+           ? escape(person.shop_name) + ' · ' : '')
+        + 'начислено ' + money(person.accrued)
         + ' · выдано ' + money(person.paid) + '</span></div>'
         + '<div class="money' + (person.balance < 0 ? '' : '') + '">'
         + money(person.balance)
@@ -821,7 +861,7 @@ function loadSalary() {
 
     var people = {};
     data.people.forEach(function (person) {
-      people[person.employee_local_id] = person;
+      people[person.shop_id + ':' + person.employee_local_id] = person;
     });
 
     if (data.can_pay) {
@@ -836,7 +876,8 @@ function loadSalary() {
 
 function openPayout(person) {
   var html = '<h2>' + escape(person.title) + '</h2>'
-    + '<div class="when">Перевод на карту</div>'
+    + '<div class="when">Перевод на карту'
+    + (person.shop_name ? ' · ' + escape(person.shop_name) : '') + '</div>'
     + '<div class="line"><span>Начислено за всё время</span><b>'
     + money(person.accrued) + '</b></div>'
     + '<div class="line"><span>Уже выдано</span><b>'
@@ -873,6 +914,7 @@ function openPayout(person) {
     }
 
     api('/dashboard/salary/pay', { method: 'POST', body: {
+      shop_id: person.shop_id,
       employee_local_id: person.employee_local_id,
       amount: amount,
       comment: $('pComment').value
@@ -1091,7 +1133,7 @@ $('sheet').addEventListener('click', function (event) {
 });
 
 function openOrder(id) {
-  api('/dashboard/orders/' + id).then(function (card) {
+  api(withShop('/dashboard/orders/' + id)).then(function (card) {
     var html = '<h2>' + escape(card.license_plate || '—') + '</h2>'
       + '<div class="when">Наряд №' + card.local_id + ' · ' + timeText(card.visited_at)
       + (card.is_deleted ? ' · <span class="tag bad">удалён</span>' : '') + '</div>';
@@ -1145,7 +1187,7 @@ function openOrder(id) {
 }
 
 function openShift(id) {
-  api('/dashboard/shifts/' + id + '/salary').then(function (data) {
+  api(withShop('/dashboard/shifts/' + id + '/salary')).then(function (data) {
     var html = '<h2>Начисления за смену</h2><div class="when">'
       + (data.shift.started_at ? timeText(data.shift.started_at) : '')
       + (data.is_final ? '' : ' · смена идёт, сумма ещё вырастет') + '</div>';
@@ -1204,7 +1246,13 @@ function start() {
   applyPeriod();
   drawPeriod();
   drawTabs();
-  load();
+
+  // Точки узнаём один раз: их немного, и меняются они редко
+  api('/dashboard/shops').then(function (rows) {
+    shops = rows || [];
+    drawShops();
+    load();
+  }).catch(function () { load(); });
 }
 
 fetch('/public/info').then(function (answer) { return answer.json(); })
