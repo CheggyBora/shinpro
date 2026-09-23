@@ -27,11 +27,13 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import (Client, Car, Appointment, BookingDay, StoredSet,
-                        Visit, QueueSnapshot, PENDING, TAKEN, REJECTED)
+                        Visit, VisitItem, SalaryAccrual, ShopEmployee,
+                        ShopShift, QueueSnapshot, PENDING, TAKEN, REJECTED)
 from app.security import require_sync_key
 from app.services import shop_settings
 from app.services.booking_service import BookingService
@@ -74,6 +76,23 @@ class AppointmentIn(BaseModel):
     comment: Optional[str] = None
 
 
+class VisitItemIn(BaseModel):
+    shop_id: Optional[int] = None
+    service_name: str
+    quantity: int = 1
+    unit_price: float = 0.0
+    discount_percent: int = 0
+    total: float = 0.0
+    consumable_cost: float = 0.0
+    comment: Optional[str] = None
+
+
+class AccrualIn(BaseModel):
+    employee_shop_id: int
+    amount: float = 0.0
+    accrued_at: Optional[datetime] = None
+
+
 class VisitIn(BaseModel):
     shop_id: int
     client_shop_id: Optional[int] = None
@@ -83,6 +102,45 @@ class VisitIn(BaseModel):
     services: Optional[str] = None
     recommendations: Optional[str] = None
     is_warranty: bool = False
+
+    # Деньги и работа — для дашборда. Приложению клиента это не отдаётся
+    changed_at: Optional[datetime] = None
+    shift_shop_id: Optional[int] = None
+    vehicle_type: Optional[str] = None
+    wheel_diameter: Optional[str] = None
+    payment_method: Optional[str] = None
+    consumables_amount: float = 0.0
+    salary_base: float = 0.0
+    general_discount: int = 0
+    rim_discount: int = 0
+    auto_discount: bool = False
+    refunded_amount: float = 0.0
+    refunded_at: Optional[datetime] = None
+    refund_type: Optional[str] = None
+    refund_reason: Optional[str] = None
+    is_deleted: bool = False
+    planned_minutes: int = 0
+    started_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None
+
+    items: List[VisitItemIn] = []
+    accruals: List[AccrualIn] = []
+
+
+class EmployeeIn(BaseModel):
+    shop_id: int
+    name: Optional[str] = None
+    salary_percent: float = 40.0
+    is_active: bool = True
+
+
+class ShiftIn(BaseModel):
+    shop_id: int
+    started_at: Optional[datetime] = None
+    ended_at: Optional[datetime] = None
+    status: str = 'open'
+    open_posts: int = 1
+    total_salary: float = 0.0
 
 
 class StorageIn(BaseModel):
@@ -118,6 +176,8 @@ class PushIn(BaseModel):
     clients: List[ClientIn] = []
     cars: List[CarIn] = []
     visits: List[VisitIn] = []
+    employees: List[EmployeeIn] = []
+    shifts: List[ShiftIn] = []
     storage: List[StorageIn] = []
     queue: Optional[QueueIn] = None
     settings: dict = {}
@@ -127,6 +187,8 @@ class PushOut(BaseModel):
     clients: int = 0
     cars: int = 0
     visits: int = 0
+    employees: int = 0
+    shifts: int = 0
     storage: int = 0
     queue: bool = False
     settings: int = 0
@@ -276,8 +338,89 @@ def push(payload: PushIn, db: Session = Depends(get_db)):
         row.is_warranty = item.is_warranty
         if owner is not None:
             row.client_id = owner.id
+
+        row.changed_at = item.changed_at or item.visited_at
+        row.shift_shop_id = item.shift_shop_id
+        row.vehicle_type = item.vehicle_type
+        row.wheel_diameter = item.wheel_diameter
+        row.payment_method = item.payment_method
+        row.consumables_amount = item.consumables_amount
+        row.salary_base = item.salary_base
+        row.general_discount = item.general_discount
+        row.rim_discount = item.rim_discount
+        row.auto_discount = item.auto_discount
+        row.refunded_amount = item.refunded_amount
+        row.refunded_at = item.refunded_at
+        row.refund_type = item.refund_type
+        row.refund_reason = item.refund_reason
+        row.is_deleted = item.is_deleted
+        row.planned_minutes = item.planned_minutes
+        row.started_at = item.started_at
+        row.finished_at = item.finished_at
+        db.flush()
+
+        # Позиции и начисления кладём заново. Наряд мог измениться как
+        # угодно — позицию убрали, скидку поправили, — и сверять построчно
+        # дороже, чем переписать: строк в наряде единицы
+        if item.items:
+            for old in list(row.items):
+                db.delete(old)
+            db.flush()
+            for line in item.items:
+                db.add(VisitItem(
+                    visit_id=row.id,
+                    shop_id=line.shop_id,
+                    service_name=line.service_name,
+                    quantity=line.quantity,
+                    unit_price=line.unit_price,
+                    discount_percent=line.discount_percent,
+                    total=line.total,
+                    consumable_cost=line.consumable_cost,
+                    comment=line.comment))
+
+        if item.accruals:
+            for old in list(row.accruals):
+                db.delete(old)
+            db.flush()
+            for accrual in item.accruals:
+                db.add(SalaryAccrual(
+                    visit_id=row.id,
+                    employee_shop_id=accrual.employee_shop_id,
+                    amount=accrual.amount,
+                    accrued_at=accrual.accrued_at or item.visited_at))
+
         db.flush()
         result.visits += 1
+
+    # --- Сотрудники ---------------------------------------------------
+    for item in payload.employees:
+        row = db.query(ShopEmployee).filter(
+            ShopEmployee.shop_id == item.shop_id).first()
+        if row is None:
+            row = ShopEmployee(shop_id=item.shop_id)
+            db.add(row)
+
+        row.name = item.name
+        row.salary_percent = item.salary_percent
+        row.is_active = item.is_active
+        db.flush()
+        result.employees += 1
+
+    # --- Смены ----------------------------------------------------------
+    for item in payload.shifts:
+        row = db.query(ShopShift).filter(
+            ShopShift.shop_id == item.shop_id).first()
+        if row is None:
+            row = ShopShift(shop_id=item.shop_id)
+            db.add(row)
+
+        row.started_at = item.started_at
+        row.ended_at = item.ended_at
+        row.status = item.status
+        row.open_posts = item.open_posts
+        row.total_salary = item.total_salary
+        db.flush()
+        result.shifts += 1
 
     # --- Хранение -----------------------------------------------------
     for item in payload.storage:
@@ -624,11 +767,22 @@ def ack_storage(payload: AckIn, db: Session = Depends(get_db)):
 
 @router.get('/state', summary='Что сейчас на сервере')
 def state(db: Session = Depends(get_db)):
-    """Короткая сводка — по ней программа показывает состояние связи."""
+    """
+    Короткая сводка — по ней программа показывает состояние связи.
+
+    Здесь же отметка visits_changed_until: до какого момента сервер знает
+    наряды. Цех смотрит на неё и досылает только то, что изменилось
+    после. Хранить эту отметку у себя цех не может: сервер могли поднять
+    заново из пустой базы, и тогда местная отметка врала бы, а история
+    на сервере так и осталась бы дырявой.
+    """
     last = db.query(QueueSnapshot).order_by(
         QueueSnapshot.taken_at.desc()).first()
 
+    changed_until = db.query(func.max(Visit.changed_at)).scalar()
+
     return {
+        'visits_changed_until': changed_until,
         'clients': db.query(Client).count(),
         'appointments': db.query(Appointment).count(),
         'visits': db.query(Visit).count(),

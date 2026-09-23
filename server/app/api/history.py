@@ -35,7 +35,10 @@ def visits(license_plate: Optional[str] = Query(
            limit: int = Query(50, le=200),
            client: Client = Depends(current_client),
            db: Session = Depends(get_db)):
-    query = db.query(Visit).filter(Visit.client_id == client.id)
+    # Удалённый наряд клиенту не показываем: в цеху его вычеркнули,
+    # и в кабинете он не должен висеть как состоявшийся визит
+    query = db.query(Visit).filter(Visit.client_id == client.id,
+                                   Visit.is_deleted.is_(False))
 
     plate = normalize_plate(license_plate)
     if plate:
@@ -59,6 +62,7 @@ def recommendations(limit: int = Query(20, le=100),
     """
     rows = db.query(Visit).filter(
         Visit.client_id == client.id,
+        Visit.is_deleted.is_(False),
         Visit.recommendations.isnot(None),
         Visit.recommendations != '',
     ).order_by(Visit.visited_at.desc()).limit(limit).all()

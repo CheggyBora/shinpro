@@ -129,9 +129,15 @@ class SyncService:
     # Наверх
     # ------------------------------------------------------------------
 
-    def collect_push(self):
-        """Собрать копию того, что клиент видит в приложении."""
-        from models import Client, Car
+    def collect_push(self, changed_since=None):
+        """
+        Собрать то, что уходит наверх.
+
+        changed_since — отметка сервера: наряды до неё у него уже есть.
+        Без неё отдаём всю историю: сервер либо новый, либо его подняли
+        заново из пустой базы.
+        """
+        from models import Client, Car, Employee, Shift
 
         clients = [{'shop_id': row.id, 'phone': row.phone, 'name': row.name}
                    for row in self.db.query(Client).all()]
@@ -144,38 +150,102 @@ class SyncService:
                  'wheels_assembled': row.wheels_assembled}
                 for row in self.db.query(Car).all()]
 
+        employees = [{'shop_id': row.id,
+                      'name': row.name,
+                      'salary_percent': row.salary_percent,
+                      'is_active': bool(row.is_active)}
+                     for row in self.db.query(Employee).all()]
+
+        shifts = [{'shop_id': row.id,
+                   'started_at': as_naive(row.start_time),
+                   'ended_at': as_naive(row.end_time),
+                   'status': row.status,
+                   'open_posts': row.open_posts,
+                   'total_salary': row.total_salary or 0.0}
+                  for row in self._recent_shifts(changed_since)]
+
         return {
             'clients': clients,
             'cars': cars,
-            'visits': self._collect_visits(),
+            'visits': self._collect_visits(changed_since),
+            'employees': employees,
+            'shifts': shifts,
             'storage': self._collect_storage(),
             'queue': self._collect_queue(),
             'settings': self._collect_settings(),
         }
 
-    def _collect_visits(self):
-        """Оплаченные наряды как история визитов — без денежной кухни."""
-        from models import WorkOrder
+    def _recent_shifts(self, changed_since):
+        """Смены, которые могли измениться: открытые и свежезакрытые."""
+        from models import Shift
+
+        query = self.db.query(Shift)
+        if changed_since is not None:
+            # Открытую смену шлём всегда: её итог растёт с каждой оплатой
+            query = query.filter(
+                (Shift.status == 'open') |
+                (Shift.start_time >= changed_since - timedelta(days=2)))
+        return query.all()
+
+    def _collect_visits(self, changed_since=None):
+        """
+        Оплаченные наряды: для кабинета клиента и для дашборда владельца.
+
+        Клиенту из этого покажут дату, услуги и рекомендации. Владельцу —
+        ещё и деньги, расходники и начисления. Наряд один, поэтому и
+        строка одна: две — «для клиента» и «для владельца» — разошлись бы
+        после первого возврата.
+
+        Уходят только наряды, изменившиеся после changed_since. Менять
+        оплаченный наряд можно ровно тремя способами — возврат, сторно,
+        удаление, — и каждый оставляет свою отметку времени.
+        """
+        from models import WorkOrder, SalaryTransaction
         from services.order_service import OrderService
 
         since = get_moscow_time() - timedelta(days=HISTORY_DAYS)
-        orders = self.db.query(WorkOrder).filter(
+        query = self.db.query(WorkOrder).filter(
             WorkOrder.status == 'paid',
             WorkOrder.paid_at.isnot(None),
-            WorkOrder.paid_at >= since).all()
+            WorkOrder.paid_at >= since)
+
+        orders = query.all()
 
         service = OrderService(self.db)
         visits = []
         for order in orders:
+            changed_at = _changed_at(order)
+
+            if changed_since is not None and changed_at is not None \
+                    and changed_at < changed_since:
+                continue
+
             try:
                 items = service.get_order_items(order.id)
                 services = '\n'.join(
                     f"{item.service.name}"
                     + (f" x{item.quantity}" if item.quantity > 1 else '')
                     for item in items if item.service)
+                lines = [{
+                    'shop_id': item.id,
+                    'service_name': item.service.name if item.service else '—',
+                    'quantity': item.quantity or 1,
+                    'unit_price': service.item_unit_price(item),
+                    'discount_percent': item.discount_percent or 0,
+                    'total': service.item_total(item),
+                    'consumable_cost': service.item_consumables(item),
+                    'comment': item.comment,
+                } for item in items]
             except Exception as e:
                 log.warning(f"Наряд №{order.id} не попал в обмен: {e}")
                 continue
+
+            accruals = [{
+                'employee_shop_id': row.employee_id,
+                'amount': row.amount or 0.0,
+                'accrued_at': as_naive(row.transaction_date),
+            } for row in self.db.query(SalaryTransaction).filter(
+                SalaryTransaction.work_order_id == order.id).all()]
 
             visits.append({
                 'shop_id': order.id,
@@ -186,6 +256,28 @@ class SyncService:
                 'services': services or None,
                 'recommendations': order.recommendations,
                 'is_warranty': bool(getattr(order, 'is_warranty', False)),
+
+                'changed_at': as_naive(changed_at),
+                'shift_shop_id': order.shift_id,
+                'vehicle_type': order.vehicle_type,
+                'wheel_diameter': order.wheel_diameter,
+                'payment_method': order.payment_method,
+                'consumables_amount': order.consumables_amount or 0.0,
+                'salary_base': order.salary_base or 0.0,
+                'general_discount': order.general_discount or 0,
+                'rim_discount': order.rim_discount or 0,
+                'auto_discount': bool(order.auto_discount),
+                'refunded_amount': order.refunded_amount or 0.0,
+                'refunded_at': as_naive(order.refunded_at),
+                'refund_type': order.refund_type,
+                'refund_reason': order.refund_reason,
+                'is_deleted': bool(order.is_deleted),
+                'planned_minutes': order.planned_minutes or 0,
+                'started_at': as_naive(order.started_at),
+                'finished_at': as_naive(order.finished_at),
+
+                'items': lines,
+                'accruals': accruals,
             })
         return visits
 
@@ -380,7 +472,23 @@ class SyncService:
         if not self.is_enabled():
             raise SyncError('Обмен выключен в настройках')
 
-        pushed = self._call('POST', '/sync/push', self.collect_push())
+        # Спрашиваем сервер, что у него уже есть. Отметку держит он, а не
+        # цех: сервер могли поднять заново из пустой базы, и своя отметка
+        # врала бы, а история так и осталась бы с дырой
+        changed_since = None
+        try:
+            state = self._call('GET', '/sync/state')
+            changed_since = _decode_time(state.get('visits_changed_until'))
+            if changed_since is not None:
+                # Небольшой нахлёст: наряд могли оплатить ровно в тот миг,
+                # когда прошлый обмен уже собрал данные
+                changed_since -= timedelta(hours=1)
+        except SyncError:
+            # Не спросили — отдадим всё. Лишний трафик лучше пропажи
+            pass
+
+        pushed = self._call('POST', '/sync/push',
+                            self.collect_push(changed_since))
 
         requests = self._call('GET', '/sync/storage-requests')
         acks = self.apply_pull(requests)
@@ -414,6 +522,20 @@ class SyncService:
         thread = threading.Thread(target=worker, daemon=True)
         thread.start()
         return thread
+
+
+def _changed_at(order):
+    """
+    Когда наряд последний раз менялся.
+
+    Оплата, возврат, удаление — три события, после которых наряд
+    выглядит иначе. Берём последнее из них: по нему сервер понимает,
+    что строку надо обновить, а цех — что её пора дослать.
+    """
+    stamps = [as_naive(order.paid_at), as_naive(order.refunded_at),
+              as_naive(order.deleted_at)]
+    stamps = [item for item in stamps if item is not None]
+    return max(stamps) if stamps else None
 
 
 def _encode(value):
