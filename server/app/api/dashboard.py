@@ -11,11 +11,12 @@ from datetime import date, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import (StaffUser, PERM_REVENUE, PERM_ORDERS,
-                        PERM_SALARY_ALL, QueueSnapshot)
+                        PERM_SALARY_ALL, PERM_SALARY_PAY, QueueSnapshot)
 from app.security import current_staff, require
 from app.services.dashboard_service import DashboardService
 
@@ -164,3 +165,52 @@ def shift_salary(shift_shop_id: int,
                             detail='Нет доступа к зарплатам')
 
     return DashboardService(db).shift_salary(shift_shop_id)
+
+
+# ----------------------------------------------------------------------
+# Зарплата: остатки и выдача
+# ----------------------------------------------------------------------
+
+class PayoutIn(BaseModel):
+    employee_shop_id: int
+    amount: float
+    comment: Optional[str] = None
+
+
+@router.get('/salary', summary='Остатки по зарплате')
+def salary(staff: StaffUser = Depends(require(PERM_SALARY_ALL)),
+           db: Session = Depends(get_db)):
+    """
+    Кому сколько начислено, выдано и осталось — за всё время.
+
+    В ответе видно, может ли этот человек выдавать: прятать кнопку по
+    роли на стороне страницы нельзя, решает сервер.
+    """
+    service = DashboardService(db)
+    return {
+        'can_pay': staff.can(PERM_SALARY_PAY),
+        'people': service.salary_balances(),
+        'payouts': service.payout_history(),
+    }
+
+
+@router.post('/salary/pay', summary='Отметить перевод зарплаты на карту')
+def pay_salary(payload: PayoutIn,
+               staff: StaffUser = Depends(require(PERM_SALARY_PAY)),
+               db: Session = Depends(get_db)):
+    """
+    Владелец перевёл деньги на карту и отмечает это здесь.
+
+    Наличными отсюда не выдают: деньги в кассе, и подтвердить выдачу
+    может только тот, кто стоит рядом с ней, — под админским ПИНом в
+    программе цеха.
+    """
+    try:
+        payout = DashboardService(db).pay_to_card(
+            payload.employee_shop_id, payload.amount, payload.comment,
+            author_id=staff.id)
+    except ValueError as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+    return {'id': payout.id, 'amount': payout.amount,
+            'waiting_for_shop': True}

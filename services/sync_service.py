@@ -3,8 +3,8 @@
 
 Наверх уходит копия того, что клиент видит в приложении: клиенты,
 машины, история визитов, шины на хранении и загрузка цеха. Вниз
-спускаются заявки «привезите мой комплект к дате» — комплект лежит
-на складе в цеху, и сервер про него ничего решить не может.
+спускаются заявки «привезите мой комплект к дате» и выплаты зарплаты,
+которые владелец отметил переводом на карту.
 
 Записи здесь нет намеренно: она живёт на сервере в одном экземпляре,
 и программа обращается к ней напрямую — см. services/booking_api.py.
@@ -170,10 +170,34 @@ class SyncService:
             'visits': self._collect_visits(changed_since),
             'employees': employees,
             'shifts': shifts,
+            'payouts': self._collect_payouts(changed_since),
             'storage': self._collect_storage(),
             'queue': self._collect_queue(),
             'settings': self._collect_settings(),
         }
+
+    def _collect_payouts(self, changed_since):
+        """
+        Выданная зарплата.
+
+        Отдаём и те выплаты, что пришли из дашборда: сервер по shop_id
+        поймёт, что его же запись доехала до цеха и учтена.
+        """
+        from models import SalaryPayout
+
+        query = self.db.query(SalaryPayout)
+        if changed_since is not None:
+            query = query.filter(SalaryPayout.paid_at >= changed_since)
+
+        return [{'shop_id': row.id,
+                 'employee_shop_id': row.employee_id,
+                 'amount': row.amount or 0.0,
+                 'method': row.method,
+                 'paid_at': as_naive(row.paid_at),
+                 'comment': row.comment,
+                 'is_advance': bool(row.is_advance),
+                 'source': row.source}
+                for row in query.all()]
 
     def _recent_shifts(self, changed_since):
         """Смены, которые могли измениться: открытые и свежезакрытые."""
@@ -405,6 +429,49 @@ class SyncService:
     # Вниз
     # ------------------------------------------------------------------
 
+    def apply_payouts(self, payouts):
+        """
+        Принять выплаты, отмеченные владельцем в дашборде.
+
+        Возвращает подтверждения. Пока цех не подтвердил, выплата
+        остаётся на сервере и придёт снова: потерянная выплата — это
+        деньги, которые человек получил, а программа об этом не знает.
+        """
+        from services.payout_service import PayoutService, PayoutError
+        from models import SalaryPayout
+
+        service = PayoutService(self.db)
+        acks = {'payouts': []}
+
+        for item in payouts:
+            server_id = item.get('server_id')
+            try:
+                # Та же выплата могла прийти дважды — второй раз деньги
+                # не выдаём, просто подтверждаем снова
+                already = self.db.query(SalaryPayout).filter(
+                    SalaryPayout.server_id == server_id).first()
+
+                if already is None:
+                    already = service.pay(
+                        item['employee_shop_id'], item['amount'],
+                        item.get('method', 'card'),
+                        comment=item.get('comment'),
+                        allow_advance=True,
+                        source='dashboard',
+                        server_id=server_id)
+
+                acks['payouts'].append({'server_id': server_id,
+                                        'shop_id': already.id,
+                                        'accepted': True})
+            except (PayoutError, KeyError, TypeError) as e:
+                self.db.rollback()
+                log.error(f"Выплата с сервера не принята: {e}")
+                acks['payouts'].append({'server_id': server_id,
+                                        'accepted': False,
+                                        'reason': str(e)[:200]})
+
+        return acks
+
     def apply_pull(self, requests):
         """
         Принять заявки на комплекты. Возвращает подтверждения для сервера.
@@ -496,11 +563,19 @@ class SyncService:
         if acks['storage_requests']:
             self._call('POST', '/sync/storage-requests/ack', acks)
 
+        # Выплаты, отмеченные владельцем на карту
+        payouts = self._call('GET', '/sync/payouts')
+        payout_acks = self.apply_payouts(payouts)
+
+        if payout_acks['payouts']:
+            self._call('POST', '/sync/payouts/ack', payout_acks)
+
         self._settings().set(LAST_OK_KEY, get_moscow_time().isoformat())
 
         return {
             'sent': pushed,
             'new_storage_requests': len(requests),
+            'new_payouts': len(payouts),
         }
 
     def run_in_background(self, on_done=None):

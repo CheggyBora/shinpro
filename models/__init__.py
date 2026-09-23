@@ -6,6 +6,7 @@ from .service import Service
 from .work_order import WorkOrder
 from .work_order_item import WorkOrderItem
 from .salary_transaction import SalaryTransaction
+from .salary_payout import SalaryPayout, METHOD_CASH, METHOD_CARD, METHOD_TITLES
 from .settings import Settings
 from .tire_storage import TireStorage
 from .shift import Shift
@@ -22,6 +23,10 @@ __all__ = [
     'WorkOrder',
     'WorkOrderItem',
     'SalaryTransaction',
+    'SalaryPayout',
+    'METHOD_CASH',
+    'METHOD_CARD',
+    'METHOD_TITLES',
     'Settings',
     'TireStorage',
     'Shift',

@@ -32,8 +32,9 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import (Client, Car, Appointment, BookingDay, StoredSet,
-                        Visit, VisitItem, SalaryAccrual, ShopEmployee,
-                        ShopShift, QueueSnapshot, PENDING, TAKEN, REJECTED)
+                        Visit, VisitItem, SalaryAccrual, SalaryPayout,
+                        ShopEmployee, ShopShift, QueueSnapshot,
+                        PENDING, TAKEN, REJECTED)
 from app.security import require_sync_key
 from app.services import shop_settings
 from app.services.booking_service import BookingService
@@ -134,6 +135,17 @@ class EmployeeIn(BaseModel):
     is_active: bool = True
 
 
+class PayoutIn(BaseModel):
+    shop_id: int
+    employee_shop_id: int
+    amount: float = 0.0
+    method: str = 'cash'
+    paid_at: Optional[datetime] = None
+    comment: Optional[str] = None
+    is_advance: bool = False
+    source: str = 'shop'
+
+
 class ShiftIn(BaseModel):
     shop_id: int
     started_at: Optional[datetime] = None
@@ -178,6 +190,7 @@ class PushIn(BaseModel):
     visits: List[VisitIn] = []
     employees: List[EmployeeIn] = []
     shifts: List[ShiftIn] = []
+    payouts: List[PayoutIn] = []
     storage: List[StorageIn] = []
     queue: Optional[QueueIn] = None
     settings: dict = {}
@@ -189,6 +202,7 @@ class PushOut(BaseModel):
     visits: int = 0
     employees: int = 0
     shifts: int = 0
+    payouts: int = 0
     storage: int = 0
     queue: bool = False
     settings: int = 0
@@ -391,6 +405,24 @@ def push(payload: PushIn, db: Session = Depends(get_db)):
 
         db.flush()
         result.visits += 1
+
+    # --- Выплаты ---------------------------------------------------
+    for item in payload.payouts:
+        row = db.query(SalaryPayout).filter(
+            SalaryPayout.shop_id == item.shop_id).first()
+        if row is None:
+            row = SalaryPayout(shop_id=item.shop_id)
+            db.add(row)
+
+        row.employee_shop_id = item.employee_shop_id
+        row.amount = item.amount
+        row.method = item.method
+        row.paid_at = item.paid_at
+        row.comment = item.comment
+        row.is_advance = item.is_advance
+        row.source = item.source
+        db.flush()
+        result.payouts += 1
 
     # --- Сотрудники ---------------------------------------------------
     for item in payload.employees:
@@ -765,6 +797,69 @@ def ack_storage(payload: AckIn, db: Session = Depends(get_db)):
     return {'ok': True, 'taken': taken}
 
 
+class PayoutOut(BaseModel):
+    """Выплата, отмеченная владельцем и ещё не учтённая цехом."""
+    server_id: int
+    employee_shop_id: int
+    amount: float
+    method: str
+    comment: Optional[str] = None
+    paid_at: Optional[datetime] = None
+
+
+class AckPayout(BaseModel):
+    server_id: int
+    shop_id: Optional[int] = None
+    accepted: bool = True
+    reason: Optional[str] = None
+
+
+class AckPayoutsIn(BaseModel):
+    payouts: List[AckPayout] = []
+
+
+@router.get('/payouts', response_model=List[PayoutOut],
+            summary='Выплаты, которые цех ещё не забрал')
+def pending_payouts(db: Session = Depends(get_db)):
+    rows = db.query(SalaryPayout).filter(
+        SalaryPayout.sync_state == PENDING).order_by(SalaryPayout.id).all()
+
+    return [PayoutOut(
+        server_id=row.id,
+        employee_shop_id=row.employee_shop_id,
+        amount=row.amount,
+        method=row.method,
+        comment=row.comment,
+        paid_at=row.paid_at) for row in rows]
+
+
+@router.post('/payouts/ack', summary='Цех подтверждает, что выплату учёл')
+def ack_payouts(payload: AckPayoutsIn, db: Session = Depends(get_db)):
+    """
+    Пока цех не подтвердил, выплата остаётся в очереди и придёт снова.
+
+    Лучше повторить дважды, чем потерять один раз: потерянная выплата —
+    это деньги, которые человек получил, а программа об этом не знает.
+    """
+    taken = 0
+    for item in payload.payouts:
+        row = db.query(SalaryPayout).filter(
+            SalaryPayout.id == item.server_id).first()
+        if row is None:
+            continue
+
+        if item.accepted:
+            row.sync_state = TAKEN
+            row.shop_id = item.shop_id
+            taken += 1
+        else:
+            row.sync_state = REJECTED
+            row.reject_reason = (item.reason or '')[:255]
+
+    db.commit()
+    return {'taken': taken}
+
+
 @router.get('/state', summary='Что сейчас на сервере')
 def state(db: Session = Depends(get_db)):
     """
@@ -791,5 +886,7 @@ def state(db: Session = Depends(get_db)):
             Appointment.sync_state == PENDING).count(),
         'pending_storage_requests': db.query(StoredSet).filter(
             StoredSet.request_state == PENDING).count(),
+        'pending_payouts': db.query(SalaryPayout).filter(
+            SalaryPayout.sync_state == PENDING).count(),
         'queue_taken_at': last.taken_at if last else None,
     }

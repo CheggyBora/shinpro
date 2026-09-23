@@ -84,8 +84,8 @@ def get_db():
 
 def init_db():
     from models import (Employee, WorkShift, Client, Car, Service, WorkOrder,
-                        WorkOrderItem, SalaryTransaction, Settings, TireStorage,
-                        Shift, AuditLog, Appointment,
+                        WorkOrderItem, SalaryTransaction, SalaryPayout,
+                        Settings, TireStorage, Shift, AuditLog, Appointment,
                         BookingPosts)
     Base.metadata.create_all(bind=engine)
     add_missing_columns()

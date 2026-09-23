@@ -250,6 +250,39 @@ class SalaryAccrual(Base):
     visit = relationship('Visit', back_populates='accruals')
 
 
+class SalaryPayout(Base):
+    """
+    Выдача зарплаты: кому, сколько, чем.
+
+    Две дороги ведут сюда. Выдали в цеху наличными — запись приезжает
+    копией при обмене. Отметил владелец перевод на карту — запись
+    рождается здесь и ждёт, пока цех её заберёт: до этого остаток в
+    цеху ещё не уменьшился, и честнее показать «ждёт цеха», чем делать
+    вид, что деньги уже учтены.
+    """
+    __tablename__ = 'salary_payouts'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    shop_id = Column(Integer, nullable=True, unique=True, index=True)
+
+    employee_shop_id = Column(Integer, nullable=False, index=True)
+    amount = Column(Float, default=0.0, nullable=False)
+    method = Column(String(20), default='cash', nullable=False)
+    paid_at = Column(DateTime, nullable=True, index=True)
+    comment = Column(String(500), nullable=True)
+    is_advance = Column(Boolean, default=False, nullable=False)
+
+    # shop — выдали в цеху, dashboard — отметил владелец
+    source = Column(String(20), default='shop', nullable=False)
+
+    # Для выплат, рождённых здесь: ждёт цеха, забрана, отклонена
+    sync_state = Column(String(20), nullable=True, index=True)
+    reject_reason = Column(String(255), nullable=True)
+
+    created_by_id = Column(Integer, nullable=True)
+    created_at = Column(DateTime, default=shop_now, nullable=False)
+
+
 class ShopEmployee(Base):
     """
     Сотрудник цеха.

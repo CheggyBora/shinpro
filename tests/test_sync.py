@@ -369,6 +369,74 @@ check('на сервере наряд помечен удалённым', delete
 check('а сам не пропал — след остался', deleted.total_amount > 0)
 srv.close()
 
+# --------------------------------------------------------------------
+print('\n=== Выплата зарплаты: из цеха наверх ===')
+from services import PayoutService
+from models import METHOD_CASH, METHOD_CARD, SalaryPayout
+
+payouts = PayoutService(db)
+paid = payouts.pay(1, 100, METHOD_CASH, pin='0000', allow_advance=True)
+sync.run_once()
+
+srv = ServerSession()
+from app.models import SalaryPayout as SrvPayout, PENDING as SRV_PENDING
+
+up = srv.query(SrvPayout).filter(SrvPayout.shop_id == paid.id).first()
+check('выплата уехала на сервер', up is not None)
+check('сумма совпала', up and up.amount == 100.0, str(up.amount if up else None))
+check('способ — наличные', up and up.method == 'cash')
+check('видно, что выдали в цеху', up and up.source == 'shop')
+srv.close()
+
+print('\n=== Владелец отметил перевод на карту ===')
+srv = ServerSession()
+from app.services.dashboard_service import DashboardService
+from app.models import ShopEmployee as SrvEmployee
+
+# Сотрудник на сервере появляется при обмене — он уже там
+check('сотрудник известен серверу',
+      srv.query(SrvEmployee).filter(SrvEmployee.shop_id == 1).first() is not None)
+
+card = DashboardService(srv).pay_to_card(1, 250, 'за сентябрь')
+check('выплата создана на сервере', card.id is not None)
+check('помечена как ждущая цеха', card.sync_state == SRV_PENDING)
+check('способ — карта', card.method == 'card')
+
+balances = {row['employee_shop_id']: row
+            for row in DashboardService(srv).salary_balances()}
+check('в остатке на сервере перевод уже учтён',
+      balances[1]['waiting'] == 250.0, str(balances[1]))
+srv.close()
+
+print('\n=== Цех забирает перевод при обмене ===')
+result = sync.run_once()
+check('выплата спустилась', result['new_payouts'] == 1,
+      str(result['new_payouts']))
+
+local = db.query(SalaryPayout).filter(
+    SalaryPayout.server_id == card.id).first()
+check('в базе цеха появилась запись', local is not None)
+check('сумма та же', local and local.amount == 250.0,
+      str(local.amount if local else None))
+check('способ — карта', local and local.method == METHOD_CARD)
+check('видно, что отметил владелец', local and local.source == 'dashboard')
+
+print('\n=== Повторно та же выплата не придёт ===')
+result = sync.run_once()
+check('второй раз не спустилась', result['new_payouts'] == 0,
+      str(result['new_payouts']))
+check('и второй записи не появилось',
+      db.query(SalaryPayout).filter(
+          SalaryPayout.server_id == card.id).count() == 1)
+
+srv = ServerSession()
+taken = srv.query(SrvPayout).filter(SrvPayout.id == card.id).first()
+check('сервер знает, что цех её забрал', taken.sync_state == 'taken',
+      str(taken.sync_state))
+check('и знает её номер в цеху', taken.shop_id == local.id,
+      f'{taken.shop_id} против {local.id}')
+srv.close()
+
 print('\n=== Отметка времени последнего обмена ===')
 last = sync.last_success()
 check('время обмена записано', last is not None, str(last))

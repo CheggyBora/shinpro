@@ -484,7 +484,9 @@ var ICONS = {
   orders: '<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/>',
   shifts: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
   staff: '<circle cx="9" cy="8" r="3"/><path d="M3 20c0-3 3-5 6-5s6 2 6 5"/>'
-       + '<path d="M16 5l2 2 4-4"/>'
+       + '<path d="M16 5l2 2 4-4"/>',
+  salary: '<rect x="2" y="6" width="20" height="12" rx="2"/>'
+        + '<circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/>'
 };
 
 function sections() {
@@ -498,6 +500,7 @@ function sections() {
   if (can('salary_all')) list.push({ key: 'masters', title: 'Мастера' });
   if (can('orders')) list.push({ key: 'orders', title: 'Наряды' });
   if (can('salary_all')) list.push({ key: 'shifts', title: 'Смены' });
+  if (can('salary_all')) list.push({ key: 'salary', title: 'Зарплата' });
   if (can('staff')) list.push({ key: 'staff', title: 'Доступ' });
 
   return list;
@@ -599,11 +602,12 @@ function load() {
   show('<div class="empty">Загружаем…</div>');
 
   // На экране доступа период ни при чём: люди не относятся к месяцу
-  var aboutPeople = section === 'staff';
+  var aboutPeople = section === 'staff' || section === 'salary';
   $('period').style.display = aboutPeople ? 'none' : '';
   $('dates').style.display = aboutPeople ? 'none' : '';
 
   if (section === 'staff') return loadStaff();
+  if (section === 'salary') return loadSalary();
   if (section === 'summary') return loadSummary();
   if (section === 'services') return loadServices();
   if (section === 'masters') return loadMasters();
@@ -757,6 +761,126 @@ function loadShifts() {
       });
     });
   }).catch(function (e) { show(''); fail(e.message); });
+}
+
+// ------------------------------------------------------------------
+// Зарплата: остатки и выдача на карту
+// ------------------------------------------------------------------
+
+function loadSalary() {
+  api('/dashboard/salary').then(function (data) {
+    var html = '<div class="card"><h2>Кому сколько должны</h2>';
+
+    if (!data.people.length) {
+      html += '<div class="empty">Сотрудников пока нет</div>';
+    }
+
+    html += data.people.map(function (person) {
+      // Отмеченный перевод уже вычтен из остатка. Говорим об этом
+      // прямо: иначе владелец решит, что перевод не прошёл, и повторит
+      var waiting = person.waiting
+        ? '<span class="tag warn">ждёт цеха ' + money(person.waiting) + '</span>'
+        : '';
+
+      return '<button class="row" type="button" data-pay="'
+        + person.employee_shop_id + '"'
+        + (data.can_pay ? '' : ' disabled style="opacity:1"') + '>'
+        + '<div class="main"><b>' + escape(person.title) + waiting + '</b>'
+        + '<span>начислено ' + money(person.accrued)
+        + ' · выдано ' + money(person.paid) + '</span></div>'
+        + '<div class="money' + (person.balance < 0 ? '' : '') + '">'
+        + money(person.balance)
+        + '<small>' + (person.balance < 0 ? 'переплата' : 'к выдаче')
+        + '</small></div></button>';
+    }).join('') + '</div>';
+
+    if (data.can_pay) {
+      html += '<p class="empty" style="padding:4px 10px 14px">'
+        + 'Наличные выдают в программе цеха, под ПИНом. Отсюда — только '
+        + 'перевод на карту.</p>';
+    }
+
+    if (data.payouts.length) {
+      html += '<div class="card"><h2>Последние выплаты</h2>'
+        + data.payouts.map(function (row) {
+            var marks = '';
+            if (row.is_advance) marks += '<span class="tag warn">аванс</span>';
+            if (row.waiting) marks += '<span class="tag warn">ждёт цеха</span>';
+
+            return '<div class="row"><div class="main"><b>'
+              + escape(row.title) + marks + '</b><span>'
+              + (row.paid_at ? timeText(row.paid_at) : '')
+              + ' · ' + (row.method === 'card' ? 'на карту' : 'наличными')
+              + (row.source === 'dashboard' ? ' · отметил владелец' : '')
+              + '</span></div>'
+              + '<div class="money">' + money(row.amount) + '</div></div>';
+          }).join('') + '</div>';
+    }
+
+    show(html);
+
+    var people = {};
+    data.people.forEach(function (person) {
+      people[person.employee_shop_id] = person;
+    });
+
+    if (data.can_pay) {
+      [].slice.call($('view').querySelectorAll('[data-pay]')).forEach(function (button) {
+        button.addEventListener('click', function () {
+          openPayout(people[button.getAttribute('data-pay')]);
+        });
+      });
+    }
+  }).catch(function (e) { show(''); fail(e.message); });
+}
+
+function openPayout(person) {
+  var html = '<h2>' + escape(person.title) + '</h2>'
+    + '<div class="when">Перевод на карту</div>'
+    + '<div class="line"><span>Начислено за всё время</span><b>'
+    + money(person.accrued) + '</b></div>'
+    + '<div class="line"><span>Уже выдано</span><b>'
+    + money(person.paid) + '</b></div>'
+    + '<div class="line total"><span>К выдаче</span><b>'
+    + money(person.balance) + '</b></div>';
+
+  html += '<div class="form">'
+    + '<label for="pAmount">Сумма перевода</label>'
+    + '<input id="pAmount" type="number" inputmode="decimal" value="'
+    + (person.balance > 0 ? Math.round(person.balance) : '') + '">'
+    + '<label for="pComment">Комментарий</label>'
+    + '<input id="pComment" type="text" placeholder="за сентябрь">'
+    + '<p class="note">Деньги переводите сами, из своего банка. Здесь '
+    + 'вы отмечаете, что перевод сделан: программа цеха учтёт его при '
+    + 'ближайшем обмене, и остаток уменьшится.</p></div>';
+
+  html += '<button class="go" type="button" id="doPay" style="margin-top:16px">'
+    + 'Отметить перевод</button>'
+    + '<div class="error" id="formError" hidden></div>';
+
+  sheet(html);
+
+  $('doPay').addEventListener('click', function () {
+    var amount = parseFloat($('pAmount').value);
+    if (!amount || amount <= 0) {
+      formError('Укажите сумму перевода');
+      return;
+    }
+
+    if (amount > person.balance + 0.01) {
+      if (!confirm('Это больше, чем начислено (' + money(person.balance)
+                   + '). Выдать авансом?')) return;
+    }
+
+    api('/dashboard/salary/pay', { method: 'POST', body: {
+      employee_shop_id: person.employee_shop_id,
+      amount: amount,
+      comment: $('pComment').value
+    } }).then(function () {
+      closeSheet();
+      loadSalary();
+    }).catch(function (e) { formError(e.message); });
+  });
 }
 
 // ------------------------------------------------------------------

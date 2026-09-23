@@ -160,7 +160,15 @@ class EmployeesTab:
         self.date_to_entry.insert(0, get_moscow_time().strftime('%d.%m.%Y'))
         self.date_to_entry.pack(side='left')
         
-        styles.create_button(salary_inner, "Показать зарплату", self.show_salary, 'Primary.TButton').pack(pady=(0, 15))
+        salary_buttons = ttk.Frame(salary_inner, style='White.TFrame')
+        salary_buttons.pack(fill='x', pady=(0, 15))
+        styles.create_button(salary_buttons, "Показать зарплату", self.show_salary,
+                             'Primary.TButton').pack(side='left', padx=(0, 8))
+        styles.create_button(salary_buttons, "Выдать зарплату", self.open_payout,
+                             'Success.TButton').pack(side='left', padx=(0, 8))
+        styles.create_button(salary_buttons, "Ведомость за период",
+                             self.export_statement,
+                             'Secondary.TButton').pack(side='left')
         
         salary_tree_frame = ttk.Frame(salary_inner, style='White.TFrame')
         salary_tree_frame.pack(fill='both', expand=True, pady=(0, 10))
@@ -196,6 +204,290 @@ class EmployeesTab:
             self.refresh_employees()
         except ValueError as e:
             messagebox.showerror("Ошибка", str(e))
+
+    # ------------------------------------------------------------------
+    # Выдача зарплаты
+    # ------------------------------------------------------------------
+
+    def open_payout(self):
+        """
+        Экран выдачи: у кого сколько осталось и кому сколько отдаём.
+
+        Остаток показываем по всем сразу: выдавать начинают с вопроса
+        «кому сколько», а не «сколько у Игоря».
+        """
+        from services import PayoutService
+
+        rows = PayoutService(self.db).everyone()
+        if not rows:
+            messagebox.showinfo("Выдача зарплаты", "Нет ни одного сотрудника")
+            return
+
+        dialog = tk.Toplevel(self.frame)
+        dialog.title("Выдача зарплаты")
+        dialog.geometry("560x560")
+        dialog.configure(bg=styles.COLORS['bg'])
+        styles.center_window(dialog, self.frame.winfo_toplevel())
+        dialog.transient(self.frame.winfo_toplevel())
+        dialog.grab_set()
+
+        body = tk.Frame(dialog, bg='white', padx=26, pady=22)
+        body.pack(fill='both', expand=True, padx=2, pady=2)
+
+        tk.Label(body, text="Кому и сколько", bg='white', fg='#1e293b',
+                 font=(styles.DEFAULT_FONT, 14, 'bold')).pack(anchor='w',
+                                                              pady=(0, 14))
+
+        tree = ttk.Treeview(body, columns=('Сотрудник', 'Начислено', 'Выдано',
+                                           'К выдаче'),
+                            show='headings', height=7)
+        for column, width in (('Сотрудник', 180), ('Начислено', 110),
+                              ('Выдано', 110), ('К выдаче', 110)):
+            tree.heading(column, text=column)
+            tree.column(column, width=width,
+                        anchor='w' if column == 'Сотрудник' else 'e')
+        tree.pack(fill='both', expand=True)
+
+        by_row = {}
+        for row in rows:
+            item = tree.insert('', 'end', values=(
+                row['title'],
+                f"{row['accrued']:,.0f}".replace(',', ' '),
+                f"{row['paid']:,.0f}".replace(',', ' '),
+                f"{row['balance']:,.0f}".replace(',', ' ')))
+            by_row[item] = row
+
+        ttk.Separator(body, orient='horizontal').pack(fill='x', pady=14)
+
+        form = tk.Frame(body, bg='white')
+        form.pack(fill='x')
+
+        tk.Label(form, text="Сумма:", bg='white', fg='#1e293b',
+                 font=(styles.DEFAULT_FONT, 11)).grid(row=0, column=0,
+                                                      sticky='w', pady=4)
+        amount_entry = styles.create_entry(form, width=14)
+        amount_entry.grid(row=0, column=1, sticky='w', padx=(10, 20), pady=4)
+
+        tk.Label(form, text="Чем:", bg='white', fg='#1e293b',
+                 font=(styles.DEFAULT_FONT, 11)).grid(row=0, column=2,
+                                                      sticky='w', pady=4)
+        method = tk.StringVar(value='cash')
+        tk.Radiobutton(form, text="Наличные", variable=method, value='cash',
+                       bg='white', activebackground='white',
+                       font=(styles.DEFAULT_FONT, 11)).grid(row=0, column=3,
+                                                            sticky='w')
+        tk.Radiobutton(form, text="На карту", variable=method, value='card',
+                       bg='white', activebackground='white',
+                       font=(styles.DEFAULT_FONT, 11)).grid(row=0, column=4,
+                                                            sticky='w')
+
+        tk.Label(form, text="PIN:", bg='white', fg='#1e293b',
+                 font=(styles.DEFAULT_FONT, 11)).grid(row=1, column=0,
+                                                      sticky='w', pady=4)
+        pin_entry = styles.create_entry(form, width=14)
+        pin_entry.configure(show='*')
+        pin_entry.grid(row=1, column=1, sticky='w', padx=(10, 20), pady=4)
+
+        tk.Label(form, text="Комментарий:", bg='white', fg='#1e293b',
+                 font=(styles.DEFAULT_FONT, 11)).grid(row=2, column=0,
+                                                      sticky='w', pady=4)
+        comment_entry = styles.create_entry(form, width=36)
+        comment_entry.grid(row=2, column=1, columnspan=4, sticky='we',
+                           padx=(10, 0), pady=4)
+
+        hint = tk.Label(body, text="Выберите сотрудника в списке",
+                        bg='white', fg='#64748b',
+                        font=(styles.DEFAULT_FONT, 10))
+        hint.pack(anchor='w', pady=(12, 0))
+
+        def on_pick(_event=None):
+            selected = tree.selection()
+            if not selected:
+                return
+            row = by_row[selected[0]]
+            amount_entry.delete(0, tk.END)
+            # Подставляем остаток: чаще всего выдают его целиком
+            if row['balance'] > 0:
+                amount_entry.insert(0, f"{row['balance']:.0f}")
+            hint.configure(text=f"{row['title']}: к выдаче "
+                                f"{row['balance']:,.0f} руб.".replace(',', ' '))
+
+        tree.bind('<<TreeviewSelect>>', on_pick)
+
+        def give():
+            from services import PayoutError
+
+            selected = tree.selection()
+            if not selected:
+                messagebox.showwarning("Выдача", "Выберите сотрудника",
+                                       parent=dialog)
+                return
+
+            row = by_row[selected[0]]
+            service = PayoutService(self.db)
+
+            try:
+                service.pay(row['employee_id'], amount_entry.get(),
+                            method.get(), pin=pin_entry.get(),
+                            comment=comment_entry.get())
+            except PayoutError as e:
+                # Аванс — не ошибка, а решение: спрашиваем и повторяем
+                if 'аванс' in str(e).lower():
+                    if not messagebox.askyesno("Это аванс", f"{e}\n\nВыдать?",
+                                               parent=dialog):
+                        return
+                    try:
+                        service.pay(row['employee_id'], amount_entry.get(),
+                                    method.get(), pin=pin_entry.get(),
+                                    comment=comment_entry.get(),
+                                    allow_advance=True)
+                    except PayoutError as second:
+                        messagebox.showerror("Выдача", str(second), parent=dialog)
+                        return
+                else:
+                    messagebox.showerror("Выдача", str(e), parent=dialog)
+                    return
+
+            messagebox.showinfo("Выдача", "Зарплата выдана", parent=dialog)
+            dialog.destroy()
+            self.open_payout()
+
+        buttons = tk.Frame(body, bg='white')
+        buttons.pack(fill='x', pady=(18, 0))
+        styles.create_button(buttons, "Выдать", give,
+                             'Success.TButton').pack(side='left')
+        styles.create_button(buttons, "История выплат", self.show_payout_history,
+                             'Secondary.TButton').pack(side='left', padx=8)
+        styles.create_button(buttons, "Закрыть", dialog.destroy,
+                             'Secondary.TButton').pack(side='right')
+
+    def show_payout_history(self):
+        """Последние выдачи — чтобы найти и отменить ошибочную."""
+        from services import PayoutService, PayoutError
+        from models import METHOD_TITLES
+
+        service = PayoutService(self.db)
+        rows = service.history(limit=100)
+
+        dialog = tk.Toplevel(self.frame)
+        dialog.title("История выплат")
+        dialog.geometry("620x460")
+        dialog.configure(bg=styles.COLORS['bg'])
+        styles.center_window(dialog, self.frame.winfo_toplevel())
+        dialog.transient(self.frame.winfo_toplevel())
+        dialog.grab_set()
+
+        body = tk.Frame(dialog, bg='white', padx=24, pady=20)
+        body.pack(fill='both', expand=True, padx=2, pady=2)
+
+        tree = ttk.Treeview(body, columns=('Когда', 'Кому', 'Сумма', 'Чем',
+                                           'Откуда'),
+                            show='headings', height=14)
+        for column, width in (('Когда', 130), ('Кому', 150), ('Сумма', 90),
+                              ('Чем', 90), ('Откуда', 110)):
+            tree.heading(column, text=column)
+            tree.column(column, width=width)
+        tree.pack(fill='both', expand=True)
+
+        from models import Employee
+
+        by_row = {}
+        for row in rows:
+            employee = self.db.query(Employee).filter(
+                Employee.id == row.employee_id).first()
+            item = tree.insert('', 'end', values=(
+                as_naive(row.paid_at).strftime('%d.%m.%Y %H:%M'),
+                employee.title if employee else f'№{row.employee_id}',
+                f"{row.amount:,.0f}".replace(',', ' '),
+                METHOD_TITLES.get(row.method, row.method),
+                'дашборд' if row.source == 'dashboard' else 'цех'))
+            by_row[item] = row
+
+        def cancel():
+            selected = tree.selection()
+            if not selected:
+                messagebox.showwarning("Отмена", "Выберите выплату",
+                                       parent=dialog)
+                return
+
+            row = by_row[selected[0]]
+            if not messagebox.askyesno(
+                    "Отмена выплаты",
+                    f"Отменить выдачу {row.amount:.0f} руб.?\n\n"
+                    f"Запись будет удалена, остаток вернётся.",
+                    parent=dialog):
+                return
+
+            pin = simpledialog.askstring("PIN-код", "Введите админский PIN:",
+                                         show='*', parent=dialog)
+            if not pin:
+                return
+
+            try:
+                PayoutService(self.db).cancel(row.id, pin)
+            except PayoutError as e:
+                messagebox.showerror("Отмена", str(e), parent=dialog)
+                return
+
+            dialog.destroy()
+            self.show_payout_history()
+
+        buttons = tk.Frame(body, bg='white')
+        buttons.pack(fill='x', pady=(14, 0))
+        styles.create_button(buttons, "Отменить выплату", cancel,
+                             'Danger.TButton').pack(side='left')
+        styles.create_button(buttons, "Закрыть", dialog.destroy,
+                             'Secondary.TButton').pack(side='right')
+
+    def export_statement(self):
+        """Ведомость за период: начислено, выдано, остаток — в таблицу."""
+        from services import PayoutService, export_rows, open_file
+        from models import METHOD_TITLES
+
+        try:
+            since = datetime.strptime(self.date_from_entry.get(), '%d.%m.%Y')
+            until = datetime.strptime(self.date_to_entry.get(), '%d.%m.%Y')
+        except ValueError:
+            messagebox.showerror("Ведомость",
+                                 "Даты задаются как 01.03.2026")
+            return
+
+        until = until.replace(hour=23, minute=59, second=59)
+
+        rows = PayoutService(self.db).statement(since, until)
+        if not rows:
+            messagebox.showinfo("Ведомость",
+                                "За этот период ни начислений, ни выплат")
+            return
+
+        table = []
+        for row in rows:
+            table.append([row['title'], row['accrued'], row['cash'],
+                          row['card'], row['paid'], row['balance']])
+
+        table.append(['ИТОГО',
+                      sum(row['accrued'] for row in rows),
+                      sum(row['cash'] for row in rows),
+                      sum(row['card'] for row in rows),
+                      sum(row['paid'] for row in rows),
+                      sum(row['balance'] for row in rows)])
+
+        title = (f"Ведомость по зарплате "
+                 f"с {since.strftime('%d.%m.%Y')} по {until.strftime('%d.%m.%Y')}")
+
+        try:
+            path = export_rows(
+                'vedomost',
+                ['Сотрудник', 'Начислено', 'Выдано наличными', 'Выдано на карту',
+                 'Выдано всего', 'Остаток к выдаче'],
+                table, title=title, db=self.db)
+        except Exception as e:
+            messagebox.showerror("Ведомость", f"Не удалось сохранить: {e}")
+            return
+
+        if messagebox.askyesno("Ведомость",
+                               f"Сохранено:\n{path}\n\nОткрыть?"):
+            open_file(path)
 
     def change_name(self):
         """Задать или поправить имя выбранного сотрудника."""

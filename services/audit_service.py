@@ -16,6 +16,8 @@ class AuditService:
     STORAGE_PRICE_CHANGE = 'price.storage_change'
     SALARY_PERCENT_CHANGE = 'employee.salary_percent'
     STORAGE_RELEASE = 'storage.release'
+    SALARY_PAYOUT = 'salary.payout'
+    SALARY_PAYOUT_CANCEL = 'salary.payout_cancel'
     PIN_FAILED = 'auth.pin_failed'
     PIN_CHANGED = 'auth.pin_changed'
 
@@ -27,6 +29,8 @@ class AuditService:
         STORAGE_PRICE_CHANGE: 'Изменение цены хранения',
         SALARY_PERCENT_CHANGE: 'Изменение ставки ЗП',
         STORAGE_RELEASE: 'Выдача шин',
+        SALARY_PAYOUT: 'Выдача зарплаты',
+        SALARY_PAYOUT_CANCEL: 'Отмена выдачи зарплаты',
         PIN_FAILED: 'Неверный PIN-код',
         PIN_CHANGED: 'Смена PIN-кода',
     }

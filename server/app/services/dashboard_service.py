@@ -18,8 +18,9 @@ from datetime import datetime, time, timedelta
 
 from sqlalchemy import func
 
-from app.models import (Visit, VisitItem, SalaryAccrual, ShopEmployee,
-                        ShopShift)
+from app.models import (Visit, VisitItem, SalaryAccrual, SalaryPayout,
+                        ShopEmployee, ShopShift, PENDING)
+from app.utils import now as shop_now
 
 
 def day_bounds(day_from, day_to):
@@ -215,6 +216,118 @@ class DashboardService:
 
         result.sort(key=lambda item: item['salary'], reverse=True)
         return result
+
+    # ------------------------------------------------------------------
+    # Зарплата: сколько начислено, сколько выдано, сколько осталось
+    # ------------------------------------------------------------------
+
+    def salary_balances(self):
+        """
+        Остатки по всем сотрудникам за всё время.
+
+        Считается от начала работы, а не за период: невыданный хвост
+        прошлого месяца — такой же долг, как и сегодняшний.
+
+        Выплаты, отмеченные владельцем и ещё не забранные цехом, в
+        остаток уже входят — иначе владелец, отметив перевод, увидит
+        прежний долг и переведёт второй раз.
+        """
+        accrued = dict(self.db.query(
+            SalaryAccrual.employee_shop_id,
+            func.sum(SalaryAccrual.amount),
+        ).join(Visit, SalaryAccrual.visit_id == Visit.id).filter(
+            Visit.is_deleted.is_(False),
+        ).group_by(SalaryAccrual.employee_shop_id).all())
+
+        paid = dict(self.db.query(
+            SalaryPayout.employee_shop_id,
+            func.sum(SalaryPayout.amount),
+        ).group_by(SalaryPayout.employee_shop_id).all())
+
+        waiting = dict(self.db.query(
+            SalaryPayout.employee_shop_id,
+            func.sum(SalaryPayout.amount),
+        ).filter(SalaryPayout.sync_state == PENDING,
+                 ).group_by(SalaryPayout.employee_shop_id).all())
+
+        rows = []
+        for person in self.db.query(ShopEmployee).filter(
+                ShopEmployee.is_active.is_(True)).order_by(
+                ShopEmployee.shop_id).all():
+            earned = round(float(accrued.get(person.shop_id, 0) or 0), 2)
+            given = round(float(paid.get(person.shop_id, 0) or 0), 2)
+
+            rows.append({
+                'employee_shop_id': person.shop_id,
+                'title': person.title,
+                'accrued': earned,
+                'paid': given,
+                'balance': round(earned - given, 2),
+                # Отмечено владельцем, но цех ещё не забрал
+                'waiting': round(float(waiting.get(person.shop_id, 0) or 0), 2),
+            })
+
+        return rows
+
+    def payout_history(self, limit=100):
+        rows = self.db.query(SalaryPayout).order_by(
+            SalaryPayout.paid_at.desc().nullslast(),
+            SalaryPayout.id.desc()).limit(limit).all()
+
+        people = {person.shop_id: person
+                  for person in self.db.query(ShopEmployee).all()}
+
+        return [{
+            'employee_shop_id': row.employee_shop_id,
+            'title': (people[row.employee_shop_id].title
+                      if row.employee_shop_id in people
+                      else f'№{row.employee_shop_id}'),
+            'amount': round(row.amount or 0.0, 2),
+            'method': row.method,
+            'paid_at': row.paid_at,
+            'comment': row.comment,
+            'is_advance': row.is_advance,
+            'source': row.source,
+            # Выплата из дашборда живёт с отметкой, пока цех её не забрал
+            'waiting': row.sync_state == PENDING,
+        } for row in rows]
+
+    def pay_to_card(self, employee_shop_id, amount, comment=None,
+                    author_id=None):
+        """
+        Отметить перевод зарплаты на карту.
+
+        Запись рождается здесь и ждёт цеха: до обмена остаток в базе
+        шиномонтажа ещё прежний. Показываем это честно, отметкой «ждёт
+        цеха», а не делаем вид, что деньги уже учтены везде.
+        """
+        person = self.db.query(ShopEmployee).filter(
+            ShopEmployee.shop_id == employee_shop_id).first()
+        if person is None:
+            raise ValueError('Такого сотрудника нет')
+
+        try:
+            amount = round(float(amount), 2)
+        except (TypeError, ValueError):
+            raise ValueError('Сумма должна быть числом')
+
+        if amount <= 0:
+            raise ValueError('Сумма должна быть больше нуля')
+
+        payout = SalaryPayout(
+            employee_shop_id=employee_shop_id,
+            amount=amount,
+            method='card',
+            paid_at=shop_now(),
+            comment=(comment or '').strip() or None,
+            source='dashboard',
+            sync_state=PENDING,
+            created_by_id=author_id)
+
+        self.db.add(payout)
+        self.db.commit()
+        self.db.refresh(payout)
+        return payout
 
     # ------------------------------------------------------------------
     # Наряды
