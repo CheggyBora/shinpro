@@ -5,8 +5,9 @@
 что и отчёты в программе цеха: удалённые наряды не в счёт, возврат
 вычитается из дня возврата, гарантия прибавляет машину, но не деньги.
 
-И второе: кто что видит. Мастер, спросивший чужой наряд напрямую,
-получает отказ, а не чужие деньги.
+И второе: кто что видит. Дашборд смотрят владелец и админ, и админ
+без права на зарплаты получает отказ на прямой запрос, а не только
+пустое место в меню.
 """
 import os
 import sys
@@ -73,11 +74,9 @@ class CodeCatcher(logging.Handler):
 catcher = CodeCatcher()
 logging.getLogger('tire_server').addHandler(catcher)
 
-MASTER_PHONE = '+7 916 000-11-22'
-MANAGER_PHONE = '+7 916 222-33-44'
+ADMIN_PHONE = '+7 916 222-33-44'
 OWNER_PIN = '4831'
-MASTER_PIN = '9274'
-MANAGER_PIN = '5927'
+ADMIN_PIN = '5927'
 
 TODAY = date.today()
 YESTERDAY = TODAY - timedelta(days=1)
@@ -169,14 +168,10 @@ with TestClient(app) as client:
 
     owner = enter(client, OWNER_PHONE, OWNER_PIN)
 
-    client.post('/staff/people', headers=owner, json={
-        'phone': MASTER_PHONE, 'name': 'Игорь', 'role': 'master',
-        'employee_shop_id': 1})
-    client.post('/staff/people', headers=owner, json={
-        'phone': MANAGER_PHONE, 'name': 'Ольга', 'role': 'manager'})
+    admin = client.post('/staff/people', headers=owner, json={
+        'phone': ADMIN_PHONE, 'name': 'Ольга', 'role': 'admin'}).json()
 
-    master = enter(client, MASTER_PHONE, MASTER_PIN)
-    manager = enter(client, MANAGER_PHONE, MANAGER_PIN)
+    admin_headers = enter(client, ADMIN_PHONE, ADMIN_PIN)
 
     print('=== Сводка за период ===')
     summary = client.get('/dashboard/summary', params=PERIOD,
@@ -318,53 +313,35 @@ with TestClient(app) as client:
           str(now['queue']))
     check('в работе две машины', now['queue']['cars_in_work'] == 2)
 
-    print('\n=== Мастер видит только своё ===')
-    mine = client.get('/dashboard/orders', params=PERIOD, headers=master).json()
-    check('только наряды Игоря',
-          set(row['shop_id'] for row in mine) == {101, 102},
-          str([row['shop_id'] for row in mine]))
-
-    sneaky = client.get('/dashboard/orders',
-                        params=dict(PERIOD, employee_shop_id=2),
-                        headers=master).json()
-    check('подменить мастера в запросе не выйдет',
-          set(row['shop_id'] for row in sneaky) == {101, 102},
-          str([row['shop_id'] for row in sneaky]))
-
-    check('чужой наряд не открыть',
-          client.get('/dashboard/orders/103', headers=master).status_code == 404)
-
-    own_card = client.get('/dashboard/orders/102', headers=master).json()
-    check('в своём наряде видно только своё начисление',
-          len(own_card['accruals']) == 1
-          and own_card['accruals'][0]['employee_shop_id'] == 1,
-          str(own_card['accruals']))
-
-    own_shift = client.get('/dashboard/shifts/10/salary', headers=master).json()
-    check('в смене мастер видит только себя',
-          [row['employee_shop_id'] for row in own_shift['employees']] == [1],
-          str(own_shift['employees']))
-
-    check('выручка мастеру закрыта',
-          client.get('/dashboard/summary', params=PERIOD,
-                     headers=master).status_code == 403)
-    check('чужие зарплаты закрыты',
-          client.get('/dashboard/masters', params=PERIOD,
-                     headers=master).status_code == 403)
-
-    print('\n=== Управляющий без права на зарплаты ===')
+    print('\n=== Админ видит всё, что ему открыли ===')
     check('выручку видит',
           client.get('/dashboard/summary', params=PERIOD,
-                     headers=manager).status_code == 200)
+                     headers=admin_headers).status_code == 200)
     check('наряды видит',
           client.get('/dashboard/orders', params=PERIOD,
-                     headers=manager).status_code == 200)
-    check('зарплаты закрыты',
+                     headers=admin_headers).status_code == 200)
+    check('зарплаты видит',
           client.get('/dashboard/masters', params=PERIOD,
-                     headers=manager).status_code == 403)
-    check('начисления за смену тоже закрыты',
+                     headers=admin_headers).status_code == 200)
+
+    print('\n=== Владелец закрыл админу зарплаты ===')
+    client.patch(f"/staff/people/{admin['id']}", headers=owner,
+                 json={'permissions': ['revenue', 'orders', 'booking',
+                                       'storage', 'clients']})
+    admin_headers = enter(client, ADMIN_PHONE, ADMIN_PIN)
+
+    check('зарплаты закрылись',
+          client.get('/dashboard/masters', params=PERIOD,
+                     headers=admin_headers).status_code == 403)
+    check('начисления за смену тоже',
           client.get('/dashboard/shifts/10/salary',
-                     headers=manager).status_code == 403)
+                     headers=admin_headers).status_code == 403)
+    check('смены закрылись',
+          client.get('/dashboard/shifts', params=PERIOD,
+                     headers=admin_headers).status_code == 403)
+    check('а выручка осталась',
+          client.get('/dashboard/summary', params=PERIOD,
+                     headers=admin_headers).status_code == 200)
 
     print('\n=== Период по умолчанию и перевёрнутые даты ===')
     default = client.get('/dashboard/summary', headers=owner).json()
@@ -379,20 +356,5 @@ with TestClient(app) as client:
                          headers=owner).json()
     check('перевёрнутые даты поменялись местами',
           flipped['revenue'] == 6000.0, str(flipped['revenue']))
-
-    print('\n=== Мастер без номера сотрудника ===')
-    db = SessionLocal()
-    from app.models import StaffUser
-    db.query(StaffUser).filter(StaffUser.phone == '79160001122').update(
-        {'employee_shop_id': None})
-    db.commit()
-    db.close()
-
-    master = enter(client, MASTER_PHONE, MASTER_PIN)
-    lost = client.get('/dashboard/orders', params=PERIOD, headers=master)
-    check('сказано, что номер не привязан', lost.status_code == 409,
-          str(lost.status_code))
-    check('объяснено, к кому идти',
-          'владельц' in lost.json()['detail'].lower(), lost.json()['detail'])
 
 finish()

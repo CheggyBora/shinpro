@@ -496,8 +496,8 @@ function sections() {
     list.push({ key: 'services', title: 'Услуги' });
   }
   if (can('salary_all')) list.push({ key: 'masters', title: 'Мастера' });
-  if (can('orders') || can('salary_own')) list.push({ key: 'orders', title: 'Наряды' });
-  if (can('salary_all') || can('salary_own')) list.push({ key: 'shifts', title: 'Смены' });
+  if (can('orders')) list.push({ key: 'orders', title: 'Наряды' });
+  if (can('salary_all')) list.push({ key: 'shifts', title: 'Смены' });
   if (can('staff')) list.push({ key: 'staff', title: 'Доступ' });
 
   return list;
@@ -781,7 +781,6 @@ function loadStaff() {
         return '<button class="row" type="button" data-person="' + person.id + '">'
           + '<div class="main"><b>' + escape(person.name || person.phone) + tags + '</b>'
           + '<span>' + escape(person.role_title) + ' · ' + escape(person.phone)
-          + (person.employee_shop_id ? ' · сотрудник №' + person.employee_shop_id : '')
           + '</span></div>'
           + '<div class="money" style="font-weight:400;color:var(--muted)">›</div>'
           + '</button>';
@@ -820,7 +819,7 @@ function rolePermissions(key) {
 
 function openPerson(person) {
   var adding = !person;
-  var current = person ? person.permissions : rolePermissions('manager');
+  var current = person ? person.permissions : rolePermissions('admin');
 
   var html = '<h2>' + (adding ? 'Новый сотрудник'
                               : escape(person.name || person.phone)) + '</h2>';
@@ -840,13 +839,7 @@ function openPerson(person) {
     + '" placeholder="Игорь">';
 
   html += '<label for="fRole">Роль</label><select id="fRole">'
-    + roleOptions(person ? person.role : 'manager') + '</select>';
-
-  html += '<label for="fEmployee">Номер сотрудника в программе цеха</label>'
-    + '<input id="fEmployee" type="number" inputmode="numeric" value="'
-    + (person && person.employee_shop_id ? person.employee_shop_id : '') + '">'
-    + '<p class="note">Нужен мастеру: по этому номеру находятся его наряды '
-    + 'и начисления. Без него мастер не увидит ничего своего.</p>';
+    + roleOptions(person ? person.role : 'admin') + '</select>';
 
   html += '<label>Что доступно</label><div id="fPerms">'
     + roles.permissions.map(function (item) {
@@ -894,7 +887,6 @@ function openPerson(person) {
     var body = {
       name: $('fName').value,
       role: $('fRole').value,
-      employee_shop_id: parseInt($('fEmployee').value, 10) || null,
       permissions: chosen
     };
 

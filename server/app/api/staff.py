@@ -65,7 +65,6 @@ class StaffOut(BaseModel):
     name: Optional[str] = None
     role: str
     role_title: str
-    employee_shop_id: Optional[int] = None
     permissions: List[str] = []
     is_active: bool = True
     pin_is_set: bool = False
@@ -79,8 +78,7 @@ class TokenOut(BaseModel):
 class StaffIn(BaseModel):
     phone: str
     name: Optional[str] = None
-    role: str = 'manager'
-    employee_shop_id: Optional[int] = None
+    role: str = 'admin'
     # None — права как у роли. Список — свой набор
     permissions: Optional[List[str]] = None
 
@@ -88,7 +86,6 @@ class StaffIn(BaseModel):
 class StaffPatchIn(BaseModel):
     name: Optional[str] = None
     role: Optional[str] = None
-    employee_shop_id: Optional[int] = None
     permissions: Optional[List[str]] = None
     is_active: Optional[bool] = None
 
@@ -100,7 +97,6 @@ def _out(staff):
         name=staff.name,
         role=staff.role,
         role_title=staff.role_title,
-        employee_shop_id=staff.employee_shop_id,
         permissions=staff.allowed(),
         is_active=staff.is_active,
         pin_is_set=bool(staff.pin_hash))
@@ -208,7 +204,7 @@ def add_person(payload: StaffIn,
     try:
         row = StaffService(db).add(
             staff, payload.phone, payload.name, payload.role,
-            payload.permissions, payload.employee_shop_id)
+            payload.permissions)
     except StaffError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(e))
 
@@ -224,7 +220,6 @@ def update_person(staff_id: int, payload: StaffPatchIn,
         row = StaffService(db).update(
             staff, staff_id, name=payload.name, role=payload.role,
             permissions=payload.permissions,
-            employee_shop_id=payload.employee_shop_id,
             is_active=payload.is_active)
     except StaffError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(e))

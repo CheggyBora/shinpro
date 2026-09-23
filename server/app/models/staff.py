@@ -20,39 +20,36 @@ from app.database import Base
 from app.utils import now as shop_now
 
 # --- Роли -------------------------------------------------------------
-# Роль — это заготовка прав, а не жёсткая рамка: любую галочку у
+# Дашборд смотрят двое: владелец и админ. Мастера сюда не заходят —
+# свою зарплату они видят в программе цеха, у приёмщика на экране.
+#
+# Роль — заготовка прав, а не жёсткая рамка: любую галочку у
 # конкретного человека можно снять или добавить отдельно.
 ROLE_OWNER = 'owner'
-ROLE_MANAGER = 'manager'
-ROLE_MASTER = 'master'
-ROLE_RECEPTIONIST = 'receptionist'
+ROLE_ADMIN = 'admin'
 
 ROLE_TITLES = {
     ROLE_OWNER: 'Владелец',
-    ROLE_MANAGER: 'Управляющий',
-    ROLE_MASTER: 'Мастер',
-    ROLE_RECEPTIONIST: 'Приёмщик',
+    ROLE_ADMIN: 'Админ',
 }
 
 # --- Права ------------------------------------------------------------
 # Каждое право — про один вопрос: «что этот человек видит на экране».
 PERM_REVENUE = 'revenue'            # выручка, средний чек, отчёты
-PERM_ORDERS = 'orders'              # наряды всех мастеров
-PERM_SALARY_ALL = 'salary_all'      # зарплаты всех
-PERM_SALARY_OWN = 'salary_own'      # только своя зарплата и свои наряды
+PERM_ORDERS = 'orders'              # наряды
+PERM_SALARY_ALL = 'salary_all'      # зарплаты и начисления за смену
 PERM_BOOKING = 'booking'            # записи на обслуживание
 PERM_STORAGE = 'storage'            # хранение шин и заявки клиентов
 PERM_CLIENTS = 'clients'            # клиенты и их история
 PERM_STAFF = 'staff'                # заводить людей и раздавать права
 
-ALL_PERMISSIONS = (PERM_REVENUE, PERM_ORDERS, PERM_SALARY_ALL, PERM_SALARY_OWN,
+ALL_PERMISSIONS = (PERM_REVENUE, PERM_ORDERS, PERM_SALARY_ALL,
                    PERM_BOOKING, PERM_STORAGE, PERM_CLIENTS, PERM_STAFF)
 
 PERMISSION_TITLES = {
     PERM_REVENUE: 'Выручка и отчёты',
-    PERM_ORDERS: 'Наряды всех мастеров',
-    PERM_SALARY_ALL: 'Зарплаты всех сотрудников',
-    PERM_SALARY_OWN: 'Своя зарплата и свои наряды',
+    PERM_ORDERS: 'Наряды',
+    PERM_SALARY_ALL: 'Зарплаты сотрудников',
     PERM_BOOKING: 'Записи на обслуживание',
     PERM_STORAGE: 'Хранение шин',
     PERM_CLIENTS: 'Клиенты и история',
@@ -61,23 +58,21 @@ PERMISSION_TITLES = {
 
 ROLE_PERMISSIONS = {
     ROLE_OWNER: list(ALL_PERMISSIONS),
-    # Управляющему зарплаты по умолчанию не открываем: это решение
-    # владельца, а не наше. Галочку он поставит сам, если считает нужным
-    ROLE_MANAGER: [PERM_REVENUE, PERM_ORDERS, PERM_BOOKING, PERM_STORAGE,
-                   PERM_CLIENTS],
-    ROLE_MASTER: [PERM_SALARY_OWN],
-    ROLE_RECEPTIONIST: [PERM_BOOKING, PERM_STORAGE, PERM_CLIENTS],
+    # Админу открыто всё, кроме раздачи доступа: заводить людей и менять
+    # права — дело владельца, иначе admin заведёт себе второго админа,
+    # и следов, кто кому что открыл, не останется. Любую галочку
+    # владелец может снять отдельно — например, зарплаты
+    ROLE_ADMIN: [PERM_REVENUE, PERM_ORDERS, PERM_SALARY_ALL, PERM_BOOKING,
+                 PERM_STORAGE, PERM_CLIENTS],
 }
 
 
 class StaffUser(Base):
     """
-    Человек, имеющий доступ к дашборду.
+    Человек, имеющий доступ к дашборду: владелец или админ.
 
-    Телефон — и логин, и способ найти его в базе цеха. Номер сотрудника
-    (employee_shop_id) нужен мастеру: по нему ищутся его наряды и его
-    начисления. Без номера мастер не увидит ничего своего — поэтому
-    владелец указывает его при заведении.
+    Телефон — и логин, и способ узнать человека: тем же номером он
+    записан в базе цеха, если когда-нибудь обслуживался.
     """
     __tablename__ = 'staff_users'
 
@@ -85,13 +80,11 @@ class StaffUser(Base):
 
     phone = Column(String(20), nullable=False, unique=True, index=True)
     name = Column(String(200), nullable=True)
-    role = Column(String(20), default=ROLE_MANAGER, nullable=False)
+    role = Column(String(20), default=ROLE_ADMIN, nullable=False)
 
     # Права через запятую. Пусто — значит берём права роли: у большинства
     # людей они не отличаются, и хранить копию списка незачем
     permissions = Column(Text, nullable=True)
-
-    employee_shop_id = Column(Integer, nullable=True, index=True)
 
     pin_hash = Column(String(255), nullable=True)
     pin_updated_at = Column(DateTime, nullable=True)

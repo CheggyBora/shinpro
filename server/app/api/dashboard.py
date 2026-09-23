@@ -1,9 +1,11 @@
 """
 Данные дашборда: выручка, услуги, мастера, наряды, смены.
 
-Кто что видит, решают права, а не экран. Мастер, открывший чужой
-наряд по номеру, получит отказ, а не чужие деньги: прятать кнопку
-в интерфейсе — не защита.
+Смотрят двое: владелец и админ. Мастера сюда не заходят — свою
+зарплату они видят в программе цеха.
+
+Кто что видит, решают права, а не экран: админ без права на зарплаты
+получит отказ и на запрос напрямую, а не только пустое место в меню.
 """
 from datetime import date, timedelta
 from typing import Optional
@@ -12,8 +14,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import (StaffUser, PERM_REVENUE, PERM_ORDERS, PERM_SALARY_ALL,
-                        PERM_SALARY_OWN, QueueSnapshot)
+from app.models import (StaffUser, PERM_REVENUE, PERM_ORDERS,
+                        PERM_SALARY_ALL, QueueSnapshot)
 from app.security import current_staff, require
 from app.services.dashboard_service import DashboardService
 
@@ -35,25 +37,6 @@ def _period(day_from: Optional[date], day_to: Optional[date]):
         day_from, day_to = day_to, day_from
 
     return day_from, day_to
-
-
-def _own_master_id(staff: StaffUser):
-    """
-    Номер сотрудника для того, кто видит только своё.
-
-    Без номера мастеру показывать нечего: связать его с нарядами не по
-    чему. Об этом честно говорим, а не отдаём пустой экран.
-    """
-    if staff.can(PERM_SALARY_ALL) or staff.can(PERM_ORDERS):
-        return None
-
-    if not staff.employee_shop_id:
-        raise HTTPException(
-            status.HTTP_409_CONFLICT,
-            detail='К вашей учётной записи не привязан номер сотрудника. '
-                   'Попросите владельца указать его')
-
-    return staff.employee_shop_id
 
 
 @router.get('/summary', summary='Сводка за период')
@@ -92,18 +75,14 @@ def orders(day_from: Optional[date] = Query(None, alias='from'),
            staff: StaffUser = Depends(current_staff),
            db: Session = Depends(get_db)):
     """
-    Наряды. Мастеру — только его собственные.
+    Наряды за период. Можно сузить до одного мастера.
 
-    Он может спросить и чужого мастера — ответим его же нарядами:
-    подменить номер в запросе проще всего, и проверять надо здесь.
+    Сужение — для разбора: владелец открыл мастера и смотрит, из чего
+    сложилась его выработка.
     """
-    if not staff.can(PERM_ORDERS) and not staff.can(PERM_SALARY_OWN):
+    if not staff.can(PERM_ORDERS):
         raise HTTPException(status.HTTP_403_FORBIDDEN,
                             detail='Нет доступа к этому разделу')
-
-    own = _own_master_id(staff)
-    if own is not None:
-        employee_shop_id = own
 
     day_from, day_to = _period(day_from, day_to)
     return DashboardService(db).orders(day_from, day_to, employee_shop_id,
@@ -113,11 +92,11 @@ def orders(day_from: Optional[date] = Query(None, alias='from'),
 @router.get('/orders/{shop_id}', summary='Наряд целиком')
 def order_card(shop_id: int, staff: StaffUser = Depends(current_staff),
                db: Session = Depends(get_db)):
-    if not staff.can(PERM_ORDERS) and not staff.can(PERM_SALARY_OWN):
+    if not staff.can(PERM_ORDERS):
         raise HTTPException(status.HTTP_403_FORBIDDEN,
                             detail='Нет доступа к этому разделу')
 
-    card = DashboardService(db).order_card(shop_id, _own_master_id(staff))
+    card = DashboardService(db).order_card(shop_id)
     if card is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail='Наряд не найден')
 
@@ -129,7 +108,7 @@ def shifts(day_from: Optional[date] = Query(None, alias='from'),
            day_to: Optional[date] = Query(None, alias='to'),
            staff: StaffUser = Depends(current_staff),
            db: Session = Depends(get_db)):
-    if not staff.can(PERM_SALARY_ALL) and not staff.can(PERM_SALARY_OWN):
+    if not staff.can(PERM_SALARY_ALL):
         raise HTTPException(status.HTTP_403_FORBIDDEN,
                             detail='Нет доступа к этому разделу')
 
@@ -177,15 +156,11 @@ def shift_salary(shift_shop_id: int,
     """
     Кнопка «Начисления за смену».
 
-    Владелец и управляющий с правом на зарплаты видят всех, мастер —
-    только себя. Тот же расчёт, что и в программе цеха.
+    Тот же расчёт, что и в программе цеха: по каждому сотруднику итог
+    и строки нарядов, из которых он сложился.
     """
-    if staff.can(PERM_SALARY_ALL):
-        only = None
-    elif staff.can(PERM_SALARY_OWN):
-        only = _own_master_id(staff)
-    else:
+    if not staff.can(PERM_SALARY_ALL):
         raise HTTPException(status.HTTP_403_FORBIDDEN,
                             detail='Нет доступа к зарплатам')
 
-    return DashboardService(db).shift_salary(shift_shop_id, only)
+    return DashboardService(db).shift_salary(shift_shop_id)

@@ -7,17 +7,20 @@
 
 Кто кого заводит:
 
-    владелец  →  управляющий, мастер, приёмщик
+    владелец  →  админ
     владелец  →  ещё один владелец (и это стоит делать осознанно)
 
+Мастера в дашборд не ходят: свою зарплату они смотрят в программе
+цеха, на экране приёмщика.
+
 Отключение действует сразу. Не «до следующего обмена» и не «когда
-истечёт токен»: уволенный мастер теряет доступ в ту же минуту.
+истечёт токен»: человек теряет доступ в ту же минуту.
 """
 from datetime import datetime, timedelta
 
 from app.config import settings
 from app.models import (Client, LoginCode, StaffUser, StaffAction,
-                        ALL_PERMISSIONS, ROLE_OWNER, ROLE_MANAGER,
+                        ALL_PERMISSIONS, ROLE_OWNER, ROLE_ADMIN,
                         ROLE_TITLES)
 from app.security import (generate_code, hash_secret, secrets_match,
                           is_valid_pin)
@@ -245,14 +248,13 @@ class StaffService:
     def people(self):
         return self.db.query(StaffUser).order_by(StaffUser.id).all()
 
-    def add(self, author, phone, name=None, role=None, permissions=None,
-            employee_shop_id=None):
+    def add(self, author, phone, name=None, role=None, permissions=None):
         """Завести сотрудника. Возвращает его учётку."""
         phone = normalize_phone(phone)
         if not is_valid_phone(phone):
             raise StaffError('Номер телефона выглядит неправильно')
 
-        role = role or ROLE_MANAGER
+        role = role or ROLE_ADMIN
         if role not in ROLE_TITLES:
             raise StaffError(f'Неизвестная роль: {role}')
 
@@ -265,7 +267,6 @@ class StaffService:
             phone=phone,
             name=(name or '').strip() or None,
             role=role,
-            employee_shop_id=employee_shop_id,
             created_by_id=author.id if author else None)
         staff.permissions = _pack(permissions)
 
@@ -278,7 +279,7 @@ class StaffService:
         return staff
 
     def update(self, author, staff_id, name=None, role=None, permissions=None,
-               employee_shop_id=None, is_active=None):
+               is_active=None):
         staff = self.db.query(StaffUser).filter(
             StaffUser.id == staff_id).first()
         if staff is None:
@@ -301,10 +302,6 @@ class StaffService:
         if permissions is not None:
             staff.permissions = _pack(permissions)
             changes.append('права')
-
-        if employee_shop_id is not None:
-            staff.employee_shop_id = employee_shop_id or None
-            changes.append('номер сотрудника')
 
         if is_active is not None:
             if not is_active and staff.role == ROLE_OWNER:

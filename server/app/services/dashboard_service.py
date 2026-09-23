@@ -259,24 +259,13 @@ class DashboardService:
             ShopEmployee.shop_id == shop_id).first()
         return person.title if person else f'№{shop_id}'
 
-    def order_card(self, shop_id, employee_shop_id=None):
-        """
-        Наряд целиком: позиции, расходники, время, начисления.
-
-        employee_shop_id — если смотрит мастер. Тогда отдаём только его
-        наряд и только его начисление: чужие деньги он видеть не должен.
-        """
+    def order_card(self, shop_id):
+        """Наряд целиком: позиции, расходники, время, начисления."""
         order = self.db.query(Visit).filter(Visit.shop_id == shop_id).first()
         if order is None:
             return None
 
         accruals = list(order.accruals)
-        if employee_shop_id is not None:
-            if not any(row.employee_shop_id == employee_shop_id
-                       for row in accruals):
-                return None
-            accruals = [row for row in accruals
-                        if row.employee_shop_id == employee_shop_id]
 
         minutes = None
         if order.started_at and order.finished_at:
@@ -334,7 +323,7 @@ class DashboardService:
             'total_salary': round(row.total_salary or 0.0, 2),
         } for row in rows]
 
-    def shift_salary(self, shift_shop_id, employee_shop_id=None):
+    def shift_salary(self, shift_shop_id):
         """
         Начисления за смену — то, что открывается кнопкой.
 
@@ -350,10 +339,6 @@ class DashboardService:
             Visit.shift_shop_id == shift_shop_id,
             Visit.is_deleted.is_(False),
         ).order_by(Visit.shop_id).all()
-
-        if employee_shop_id is not None:
-            rows = [pair for pair in rows
-                    if pair[0].employee_shop_id == employee_shop_id]
 
         people = {}
         for accrual, order in rows:
