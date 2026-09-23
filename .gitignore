@@ -58,3 +58,6 @@ server/.env
 
 # Навыки Claude Code, к проекту не относятся
 .local/
+
+# Временная база для проверки миграций
+alembic_check.db

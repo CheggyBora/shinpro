@@ -38,7 +38,33 @@ def get_db():
 
 
 def init_db():
-    """Создать недостающие таблицы."""
+    """
+    Привести базу к текущей схеме — миграциями alembic.
+
+    Раньше здесь был create_all: он создаёт недостающие таблицы, но не
+    трогает существующие. На боевом сервере это означало бы, что новая
+    колонка просто не появится, а запросы начнут падать после первого
+    же обновления.
+
+    Миграции решают это иначе: каждая правка схемы записана шагом, и
+    база проходит их по порядку до текущего состояния. На пустой базе
+    шаги создают её целиком — отдельный путь для разработки не нужен.
+    """
+    import os
+
+    from alembic import command
+    from alembic.config import Config
+
     from app import models  # noqa: F401 — регистрирует таблицы в Base
 
-    Base.metadata.create_all(bind=engine)
+    server_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    config = Config(os.path.join(server_dir, 'alembic.ini'))
+    config.set_main_option('script_location',
+                           os.path.join(server_dir, 'migrations'))
+    config.set_main_option('sqlalchemy.url', settings.DATABASE_URL)
+
+    # Тихо: при каждом запуске сервера и каждом тесте нам не нужен
+    # вывод alembic, а о беде скажет исключение
+    config.attributes['configure_logger'] = False
+
+    command.upgrade(config, 'head')
