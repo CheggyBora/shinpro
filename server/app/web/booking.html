@@ -5,6 +5,16 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0f172a">
 <title>Запись на шиномонтаж</title>
+
+<!-- Чтобы телефон предложил «Добавить на экран»: ярлык, свой значок
+     и открытие без адресной строки -->
+<link rel="manifest" href="/z/manifest.webmanifest">
+<link rel="icon" href="/z/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/z/icon.svg">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Шиномонтаж">
+<meta name="robots" content="noindex, nofollow">
 <style>
 /*
   Страница открывается с телефона у обочины, часто на слабой связи.
@@ -72,6 +82,28 @@ body {
   display: inline-flex; align-items: center; justify-content: center;
 }
 .hint { margin: 0 0 14px; font-size: 13px; color: var(--ink-soft); }
+
+/* --- История визитов --- */
+.visit { padding: 11px 0; border-bottom: 1px solid var(--line); }
+.visit:last-child { border-bottom: 0; }
+.visit .top { display: flex; justify-content: space-between; gap: 10px;
+  align-items: baseline; }
+.visit .when { font-weight: 600; font-size: 14.5px; }
+.visit .sum { font-weight: 700; white-space: nowrap; }
+.visit .what { font-size: 13px; color: var(--ink-soft); margin-top: 3px;
+  white-space: pre-line; }
+.visit .advice { margin-top: 7px; padding: 9px 11px; border-radius: 10px;
+  background: #fffbeb; color: #92400e; font-size: 13.5px; }
+.visit .advice b { display: block; font-size: 12px; text-transform: uppercase;
+  letter-spacing: .04em; opacity: .75; margin-bottom: 2px; }
+
+/* --- Очередь --- */
+.queue { display: flex; gap: 10px; }
+.queue div { flex: 1; text-align: center; background: var(--bg);
+  border-radius: 12px; padding: 12px 6px; }
+.queue b { display: block; font-size: 22px; font-weight: 700; }
+.queue span { font-size: 12px; color: var(--ink-soft); }
+.stale { font-size: 12.5px; color: var(--muted); margin-top: 8px; }
 
 /* --- Развилка на входе --- */
 .pick {
@@ -388,6 +420,12 @@ input.code {
       <div id="mineList"></div>
     </div>
 
+    <!-- что сейчас в цеху: видно и без записи -->
+    <div class="card" id="queueCard" hidden>
+      <h2>Сейчас в шиномонтаже</h2>
+      <div id="queueBody"></div>
+    </div>
+
     <!-- машина: список для вошедших, поле для остальных -->
     <div class="card">
       <h2><span class="num">1</span> Автомобиль</h2>
@@ -460,6 +498,13 @@ input.code {
   </form>
 
   <!-- ================================================ готово -->
+  <!-- прошлые визиты и советы мастера -->
+  <div class="card" id="historyCard" hidden>
+    <h2>Вы у нас были</h2>
+    <p class="hint">Что делали и что советовал мастер.</p>
+    <div id="historyList"></div>
+  </div>
+
   <div class="card done" id="screenDone" hidden>
     <svg class="big-ok" viewBox="0 0 68 68" fill="none" aria-hidden="true">
       <circle cx="34" cy="34" r="31" fill="#dcfce7"/>
@@ -501,6 +546,11 @@ var $ = function (id) { return document.getElementById(id); };
 
 // ------------------------------------------------------------------ экраны
 function show(name) {
+  if (name !== 'screenBook') {
+    $('historyCard').hidden = true;
+    $('queueCard').hidden = true;
+  }
+
   ['screenPick', 'screenLogin', 'screenBook', 'screenDone'].forEach(function (id) {
     $(id).hidden = (id !== name);
   });
@@ -563,6 +613,20 @@ function digitsOf(value) { return (value || '').replace(/\D/g, ''); }
 });
 
 // ------------------------------------------------------------------- сеть
+// Вход помним между запусками: ярлык на экране, который каждый раз
+// спрашивает телефон и ПИН, никому не нужен
+try {
+  var saved = localStorage.getItem('clientToken');
+  if (saved) { state.token = saved; state.mode = 'cabinet'; }
+} catch (e) {}
+
+function remember(token) {
+  try {
+    if (token) localStorage.setItem('clientToken', token);
+    else localStorage.removeItem('clientToken');
+  } catch (e) {}
+}
+
 function api(path, options) {
   options = options || {};
   options.headers = options.headers || {};
@@ -723,6 +787,8 @@ $('lNewPinGo').addEventListener('click', function () {
 });
 
 function afterLogin() {
+  remember(state.token);
+
   api('/auth/me').then(function (result) {
     if (!result.ok) { loginError(reason(result)); return; }
     state.profile = result.data;
@@ -730,15 +796,113 @@ function afterLogin() {
       state.storage = answer.ok ? answer.data : [];
       prepareBooking();
       show('screenBook');
+      loadHistory();
     });
   });
 }
 
+// ============================================================ ИСТОРИЯ
+function loadHistory() {
+  api('/history?limit=20').then(function (answer) {
+    if (!answer.ok) { $('historyCard').hidden = true; return; }
+    drawHistory(answer.data || []);
+  });
+}
+
+function drawHistory(rows) {
+  if (!rows.length) { $('historyCard').hidden = true; return; }
+
+  $('historyList').innerHTML = rows.map(function (visit) {
+    // Сервер отдаёт дату полем at, а услуги — списком строк
+    var when = new Date(visit.at).toLocaleDateString('ru-RU',
+      {day: '2-digit', month: 'long', year: 'numeric'});
+
+    // Рекомендация — то, ради чего кабинет открывают спустя месяцы:
+    // «мне что-то говорили про колодки, а что именно»
+    var advice = visit.recommendations
+      ? '<div class="advice"><b>Мастер советовал</b>'
+        + escapeHtml(visit.recommendations) + '</div>'
+      : '';
+
+    var sum = visit.is_warranty
+      ? '<span class="sum">по гарантии</span>'
+      : '<span class="sum">' + money(visit.total_amount) + '</span>';
+
+    return '<div class="visit"><div class="top"><span class="when">'
+      + when + '</span>' + sum + '</div>'
+      + (visit.license_plate
+         ? '<div class="what">' + escapeHtml(visit.license_plate) + '</div>'
+         : '')
+      + ((visit.services && visit.services.length)
+         ? '<div class="what">'
+           + visit.services.map(escapeHtml).join('\n') + '</div>' : '')
+      + advice + '</div>';
+  }).join('');
+
+  $('historyCard').hidden = false;
+}
+
+// ============================================================ ОЧЕРЕДЬ
+function loadQueue() {
+  api('/queue').then(function (answer) {
+    if (!answer.ok || !answer.data) { $('queueCard').hidden = true; return; }
+    drawQueue(answer.data);
+  });
+}
+
+function drawQueue(queue) {
+  if (!queue.shift_is_open) {
+    // Смена закрыта — показывать нули незачем, это не «пусто», а
+    // «закрыто», и путать одно с другим не надо
+    $('queueCard').hidden = true;
+    return;
+  }
+
+  var html = '<div class="queue">'
+    + '<div><b>' + queue.cars_in_work + '</b><span>в работе</span></div>'
+    + '<div><b>' + queue.cars_waiting + '</b><span>ждут</span></div>'
+    + '<div><b>' + queue.open_posts + '</b><span>'
+    + plural(queue.open_posts, 'пост', 'поста', 'постов') + '</span></div>'
+    + '</div>';
+
+  if (queue.free_in_minutes != null) {
+    html += '<p class="hint" style="margin:10px 0 0">Ближайший пост '
+      + 'освободится примерно через ' + queue.free_in_minutes + ' мин.</p>';
+  }
+
+  if (queue.is_stale) {
+    html += '<p class="stale">' + escapeHtml(queue.note || '') + '</p>';
+  }
+
+  $('queueBody').innerHTML = html;
+  $('queueCard').hidden = false;
+}
+
+function money(value) {
+  return Math.round(Number(value) || 0).toLocaleString('ru-RU') + ' ₽';
+}
+
+function plural(count, one, few, many) {
+  var n = Math.abs(count) % 100, n1 = n % 10;
+  if (n > 10 && n < 20) return many;
+  if (n1 > 1 && n1 < 5) return few;
+  if (n1 === 1) return one;
+  return many;
+}
+
+function escapeHtml(text) {
+  return String(text == null ? '' : text)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
 $('logout').addEventListener('click', function () {
+  remember(null);
   state.token = null;
   state.profile = null;
   state.storage = [];
   state.picked = [];
+  $('historyCard').hidden = true;
+  $('queueCard').hidden = true;
   show('screenPick');
 });
 
@@ -758,8 +922,10 @@ function prepareBooking() {
     drawCars();
     drawStorage();
     loadMine();
+    loadQueue();
   } else {
     $('mineCard').hidden = true;
+    $('historyCard').hidden = true;
     $('carList').hidden = true;
     $('plateField').hidden = false;
     $('wheelsField').hidden = false;
@@ -1132,6 +1298,31 @@ api('/public/info').then(function (result) {
       + info.shop_phone.replace(/[^\d+]/g, '') + '">' + info.shop_phone + '</a>';
   }
 });
+
+// Ярлык должен называться той точкой, ссылку на которую человек
+// открыл, а не сетью вообще
+(function () {
+  var slug = (location.pathname.match(/^\/z\/([^\/]+)/) || [])[1];
+  var link = document.querySelector('link[rel="manifest"]');
+  if (slug && link) link.href = '/z/manifest.webmanifest?shop=' + slug;
+})();
+
+// Вход с прошлого раза: открываем кабинет сразу. Ярлык на экране,
+// который каждый раз спрашивает телефон и ПИН, никому не нужен.
+// Токен мог протухнуть — тогда молча возвращаемся к развилке
+if (state.token) {
+  api('/auth/me').then(function (result) {
+    if (!result.ok) { remember(null); state.token = null; return; }
+
+    state.profile = result.data;
+    return api('/storage').then(function (answer) {
+      state.storage = answer.ok ? answer.data : [];
+      prepareBooking();
+      show('screenBook');
+      loadHistory();
+    });
+  });
+}
 </script>
 </body>
 </html>

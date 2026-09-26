@@ -1,0 +1,39 @@
+[Unit]
+Description=Сервер шиномонтажа: кабинет клиента и дашборд
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=tire
+Group=tire
+WorkingDirectory=/opt/tire-server
+EnvironmentFile=/opt/tire-server/.env
+
+# Два рабочих процесса: одного хватает на десяток точек, второй нужен,
+# чтобы сервер отвечал, пока первый занят долгим запросом
+ExecStart=/opt/tire-server/venv/bin/uvicorn app.main:app \
+    --host 127.0.0.1 --port 8000 --workers 2 --proxy-headers \
+    --forwarded-allow-ips=127.0.0.1
+
+Restart=always
+RestartSec=3
+
+# Сервер падал — перезапускаем, но не бесконечно: если он падает
+# по кругу, пусть остановится и это будет видно, а не тонет в журнале
+StartLimitBurst=5
+StartLimitIntervalSec=120
+
+# Чужого на диске серверу трогать нечего
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/tire-server /var/backups/tire
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=tire-server
+
+[Install]
+WantedBy=multi-user.target

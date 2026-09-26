@@ -115,7 +115,8 @@ app.include_router(public.router)
 # ----------------------------------------------------------------------
 import os  # noqa: E402
 
-from fastapi.responses import FileResponse, HTMLResponse  # noqa: E402
+from fastapi.responses import (FileResponse, HTMLResponse,  # noqa: E402
+                               JSONResponse)
 
 WEB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'web')
 
@@ -141,6 +142,75 @@ def dashboard_page():
     path = os.path.join(WEB_DIR, 'dashboard.html')
     with open(path, encoding='utf-8') as page:
         return HTMLResponse(page.read())
+
+
+def _short_name(name, limit=14):
+    """Короткое имя под значком: целое слово, без хвостов и кавычек."""
+    clean = (name or 'Шиномонтаж').replace('«', '').replace('»', '').strip()
+    if len(clean) <= limit:
+        return clean
+
+    cut = clean[:limit].rstrip()
+    if ' ' in cut:
+        cut = cut[:cut.rfind(' ')].rstrip()
+
+    return cut or 'Шиномонтаж'
+
+
+@app.get('/z/manifest.webmanifest', include_in_schema=False)
+def booking_manifest(shop: str = ''):
+    """
+    Описание для телефона: имя, значок, цвета.
+
+    Благодаря ему телефон предлагает «Добавить на экран», и кабинет
+    открывается ярлыком, без адресной строки. Магазины приложений для
+    этого не нужны, как и 99 долларов в год.
+
+    Имя берём у точки, а не из настроек сервера: у сети их несколько,
+    и ярлык должен называться той, ссылку на которую человек открыл.
+    """
+    from app.database import SessionLocal
+    from app.services import shop_settings, tenancy
+
+    name = settings.SHOP_NAME
+    start = '/z'
+
+    session = SessionLocal()
+    try:
+        row = (tenancy.shop_by_slug(session, shop) if shop
+               else tenancy.only_shop(session))
+        if row is not None:
+            name = shop_settings.get(session, 'shop_name', shop=row) or row.name
+            start = f'/z/{row.slug}'
+    finally:
+        session.close()
+
+    return JSONResponse({
+        'name': f'{name}: запись и кабинет',
+        # Под значком помещается немного, и обрезать надо по слову:
+        # «Шиномонтаж «» на экране телефона выглядит поломкой
+        'short_name': _short_name(name),
+        'description': 'Запись на шиномонтаж, свои шины на хранении '
+                       'и история обслуживания',
+        'start_url': start,
+        'scope': '/z',
+        'display': 'standalone',
+        'orientation': 'portrait',
+        'background_color': '#f1f5f9',
+        'theme_color': '#0f172a',
+        'lang': 'ru',
+        'icons': [
+            {'src': '/z/icon.svg', 'sizes': 'any', 'type': 'image/svg+xml',
+             'purpose': 'any maskable'},
+        ],
+    }, headers={'Cache-Control': 'public, max-age=3600'})
+
+
+@app.get('/z/icon.svg', include_in_schema=False)
+def booking_icon():
+    path = os.path.join(WEB_DIR, 'icon.svg')
+    return FileResponse(path, media_type='image/svg+xml',
+                        headers={'Cache-Control': 'public, max-age=86400'})
 
 
 @app.get('/z/{slug}', response_class=HTMLResponse, include_in_schema=False)

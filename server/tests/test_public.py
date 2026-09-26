@@ -265,4 +265,30 @@ with TestClient(app) as client:
               'позвоните' in blocked.json()['detail'].lower(),
               blocked.json()['detail'])
 
+print('\n=== Кабинет ставится на телефон как приложение ===')
+manifest = client.get('/z/manifest.webmanifest')
+check('описание отдаётся', manifest.status_code == 200,
+      str(manifest.status_code))
+
+data = manifest.json()
+check('имя шиномонтажа в названии', 'РИФ' in data['name'], data['name'])
+check('короткое имя не обрезано посреди слова',
+      not data['short_name'].endswith(('«', ' ')), data['short_name'])
+check('открывается без адресной строки',
+      data['display'] == 'standalone', data['display'])
+check('начинает со страницы этой точки',
+      data['start_url'].startswith('/z'), data['start_url'])
+check('значок указан', data['icons'] and data['icons'][0]['src'] == '/z/icon.svg',
+      str(data['icons']))
+
+icon = client.get('/z/icon.svg')
+check('значок отдаётся', icon.status_code == 200, str(icon.status_code))
+check('это картинка', icon.headers['content-type'].startswith('image/'),
+      icon.headers['content-type'])
+
+page = client.get('/z').text
+check('страница объявляет себя приложением',
+      'manifest.webmanifest' in page)
+check('и не просится в поиск', 'noindex' in page)
+
 finish()

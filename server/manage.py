@@ -14,6 +14,7 @@
     python manage.py block rif --reason "по просьбе"    закрыть доступ
     python manage.py unblock rif                        открыть обратно
     python manage.py new-key rif-na-yuzhnoy             сменить ключ обмена
+    python manage.py check                             всё ли готово
 
 Ключ обмена показывается один раз — при создании точки или смене
 ключа. В базе от него остаётся только отпечаток, и подсмотреть его
@@ -161,6 +162,116 @@ def cmd_overdue(db, args):
               f"{day(account.paid_until)}")
 
 
+def cmd_check(db, args):
+    """
+    Что готово к работе, а что ещё нет.
+
+    Смысл команды — отвечать на вопрос «почему не работает» до того,
+    как он задан. Каждая строка либо в порядке, либо говорит, что
+    именно сделать.
+    """
+    from app.config import settings
+    from app.models import Account, Shop, StaffUser
+    from app.services import billing
+
+    good, bad, warn = [], [], []
+
+    # --- База ---------------------------------------------------------
+    try:
+        db.query(Account).count()
+        if settings.DATABASE_URL.startswith('sqlite'):
+            warn.append('База SQLite. Для боевого сервера нужен PostgreSQL: '
+                        'пропишите SERVER_DATABASE_URL')
+        else:
+            good.append('База PostgreSQL отвечает')
+    except Exception as e:
+        bad.append(f'База недоступна: {e}')
+        print_report(good, warn, bad)
+        return
+
+    # --- Ключи --------------------------------------------------------
+    if settings.SECRET_KEY_FROM_ENV:
+        good.append('Ключ подписи задан')
+    else:
+        bad.append('SERVER_SECRET_KEY не задан: после перезапуска сервера '
+                   'всех разлогинит')
+
+    # --- Заказчики и точки --------------------------------------------
+    accounts = db.query(Account).all()
+    shops = db.query(Shop).all()
+
+    if not accounts:
+        bad.append('Ни одного заказчика. Заведите: '
+                   'manage.py add-account "Название"')
+    else:
+        good.append(f'Заказчиков: {len(accounts)}, точек: {len(shops)}')
+
+    without_key = [shop for shop in shops if not shop.sync_key_hash]
+    if without_key:
+        names = ', '.join(shop.name for shop in without_key)
+        bad.append(f'Без ключа обмена: {names}. Выдайте: manage.py new-key имя')
+
+    never = [shop for shop in shops if shop.sync_key_hash and not shop.last_sync_at]
+    if never:
+        names = ', '.join(shop.name for shop in never)
+        warn.append(f'Ещё ни разу не выходили на связь: {names}. '
+                    f'Впишите ключ в программе цеха: Настройки → Обмен')
+
+    silent = [shop for shop in shops if shop.last_sync_at
+              and (shop_now() - shop.last_sync_at).total_seconds() > 3600]
+    if silent:
+        names = ', '.join(f'{shop.name} ({day(shop.last_sync_at)})'
+                          for shop in silent)
+        warn.append(f'Давно не выходили на связь: {names}')
+
+    # --- Дашборд ------------------------------------------------------
+    owners = db.query(StaffUser).filter(
+        StaffUser.role == 'owner', StaffUser.is_active.is_(True)).count()
+    if owners:
+        good.append(f'Владельцев дашборда: {owners}')
+    elif settings.OWNER_PHONE:
+        warn.append('Владелец заведётся при следующем запуске сервера')
+    else:
+        bad.append('В дашборд войти некому. Впишите SERVER_OWNER_PHONE '
+                   'в .env и перезапустите службу')
+
+    # --- Коды входа ---------------------------------------------------
+    if settings.SMS_PROVIDER == 'log' and settings.MAIL_PROVIDER == 'log':
+        bad.append('Коды входа пишутся в журнал, а не уходят человеку. '
+                   'Задайте SERVER_SMS_PROVIDER и SERVER_SMS_API_KEY')
+    else:
+        good.append(f'Коды входа: {settings.SMS_PROVIDER}')
+
+    # --- Оплата -------------------------------------------------------
+    if settings.BILLING_ENFORCE:
+        overdue = billing.overdue(db)
+        if overdue:
+            names = ', '.join(row.name for row in overdue)
+            warn.append(f'Не оплачено: {names}')
+        else:
+            good.append('Проверка оплаты включена, должников нет')
+
+    print_report(good, warn, bad)
+
+
+def print_report(good, warn, bad):
+    for line in good:
+        print(f'  [ок]   {line}')
+    for line in warn:
+        print(f'  [!]    {line}')
+    for line in bad:
+        print(f'  [нет]  {line}')
+
+    print()
+    if bad:
+        print(f'Не готово: {len(bad)}. Сервер работает, но не так, '
+              f'как должен.')
+        sys.exit(1)
+
+    print('Всё, что нужно для работы, настроено'
+          + (', но есть замечания выше' if warn else ''))
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='Аккаунты, точки и оплата',
@@ -200,6 +311,7 @@ def main():
     unblock.add_argument('account')
 
     commands.add_parser('overdue', help='кто не заплатил')
+    commands.add_parser('check', help='всё ли готово к работе')
 
     args = parser.parse_args()
 
@@ -216,6 +328,7 @@ def main():
             'block': cmd_block,
             'unblock': cmd_unblock,
             'overdue': cmd_overdue,
+            'check': cmd_check,
         }[args.command]
         handler(db, args)
     finally:

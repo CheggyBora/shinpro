@@ -1,0 +1,11 @@
+[Unit]
+Description=Ежедневная копия базы сервера шиномонтажа
+
+[Timer]
+# Ночью, когда цех закрыт и обмен не идёт
+OnCalendar=*-*-* 04:30:00
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target
