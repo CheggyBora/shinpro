@@ -272,6 +272,22 @@ class BookingService:
         self.db.commit()
         self.db.refresh(appointment)
 
+        # Подтверждение сейчас, напоминание накануне. Кладём в очередь,
+        # а не шлём здесь: человек должен увидеть «записали» сразу, не
+        # дожидаясь, пока ответит телеграм
+        try:
+            from app.services import telegram, shop_settings
+
+            name = (shop_settings.get(self.db, 'shop_name', shop=self.shop)
+                    or (self.shop.name if self.shop else 'Шиномонтаж'))
+            telegram.plan_for_appointment(self.db, client, name, appointment)
+        except Exception as e:
+            # Не сумели запланировать напоминание — запись всё равно
+            # состоялась, и терять её из-за этого нельзя
+            import logging
+            logging.getLogger('tire_server').warning(
+                'Напоминание не запланировано: %s', e)
+
         if stored:
             self._tell_the_shop(appointment, stored, client)
 
@@ -394,6 +410,16 @@ class BookingService:
                 f'чтобы отменить')
 
         appointment.status = 'cancelled'
+
+        # Напоминание «завтра приезжать» теперь ни к чему. Отменил сам
+        # человек — и сообщать ему об этом не надо: он только что нажал
+        # кнопку и видел ответ
+        try:
+            from app.services import telegram
+
+            telegram.cancel_about(self.db, 'appointment', appointment.id)
+        except Exception:
+            pass
         # Цех должен узнать об отмене так же, как узнаёт о записи
         appointment.sync_state = PENDING
         self.db.commit()

@@ -29,9 +29,6 @@ log = logging.getLogger('tire_server')
 async def lifespan(app: FastAPI):
     init_db()
 
-    # О недостающих настройках говорим сразу и громко: сервер,
-    # поднятый наполовину, хуже не поднятого — он делает вид,
-    # что работает
     # Первая точка: аккаунт и ключ обмена из настроек
     from app.database import SessionLocal as _Session
     from app.services import tenancy
@@ -68,6 +65,9 @@ async def lifespan(app: FastAPI):
         finally:
             session.close()
 
+    # О недостающих настройках говорим сразу и громко: сервер,
+    # поднятый наполовину, хуже не поднятого — он делает вид,
+    # что работает
     problems = settings.warnings()
     if problems:
         log.warning('Сервер запущен с ограничениями:')
@@ -97,7 +97,7 @@ if settings.CORS_ORIGINS:
     )
 
 from app.api import (auth, booking, storage, history, queue, sync, public,  # noqa: E402
-                     staff, dashboard)
+                     staff, dashboard, telegram)
 
 app.include_router(auth.router)
 app.include_router(booking.router)
@@ -107,6 +107,7 @@ app.include_router(queue.router)
 app.include_router(sync.router)
 app.include_router(staff.router)
 app.include_router(dashboard.router)
+app.include_router(telegram.router)
 app.include_router(public.router)
 
 

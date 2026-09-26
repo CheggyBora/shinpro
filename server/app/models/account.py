@@ -64,6 +64,18 @@ class Account(Base):
 
     note = Column(Text, nullable=True)
 
+    # --- Бот для напоминаний клиентам ------------------------------------
+    #
+    # Свой у каждого заказчика: клиент «Колеса» не должен получать
+    # сообщения от бота «РИФа», даже если они стоят на одном сервере.
+    telegram_bot_token = Column(String(255), nullable=True)
+    telegram_bot_username = Column(String(64), nullable=True)
+
+    # Телеграм присылает обновления на адрес с этой строкой внутри.
+    # Без неё любой, кто узнал адрес сервера, мог бы слать боту всё что
+    # угодно от имени телеграма
+    telegram_secret = Column(String(64), nullable=True, index=True)
+
     shops = relationship('Shop', back_populates='account',
                          cascade='all, delete-orphan')
     payments = relationship('AccountPayment', back_populates='account',

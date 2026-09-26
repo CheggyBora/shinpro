@@ -52,6 +52,18 @@ class Client(Base):
 
     name = Column(String(200), nullable=True)
 
+    # --- Напоминания в Telegram ------------------------------------------
+    #
+    # chat_id — куда писать. Пусто — человек не подключал бота, и
+    # напоминания ему не идут: писать без спроса нельзя
+    telegram_chat_id = Column(String(32), nullable=True, index=True)
+    telegram_linked_at = Column(DateTime, nullable=True)
+
+    # Одноразовый код привязки: кабинет отдаёт ссылку на бота с ним,
+    # бот присылает его обратно, и по нему находится этот человек
+    telegram_code = Column(String(32), nullable=True, index=True)
+    telegram_code_until = Column(DateTime, nullable=True)
+
     # ПИН-код. Хранится отпечатком: украдут базу — войти по ней нельзя
     pin_hash = Column(String(128), nullable=True)
     pin_updated_at = Column(DateTime, nullable=True)

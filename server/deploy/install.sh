@@ -137,6 +137,12 @@ chown "$APP_USER:$APP_USER" /var/backups/tire
 systemctl daemon-reload
 systemctl enable --now tire-backup.timer
 
+say "Напоминания клиентам"
+install -m 644 "$APP_DIR/deploy/tire-notify.service" /etc/systemd/system/tire-notify.service
+install -m 644 "$APP_DIR/deploy/tire-notify.timer" /etc/systemd/system/tire-notify.timer
+systemctl daemon-reload
+systemctl enable --now tire-notify.timer
+
 say "Сеть"
 ufw allow OpenSSH >/dev/null 2>&1 || true
 ufw allow 'Nginx Full' >/dev/null 2>&1 || true
@@ -160,7 +166,13 @@ cat <<DONE
    Ключ показывается один раз — впишите его в программе цеха:
    Настройки → Обмен с сервером.
 
-3. Проверьте готовность:
+3. Подключите бота для напоминаний клиентам (токен у @BotFather):
+       cd $APP_DIR && sudo -u $APP_USER ./venv/bin/python manage.py \\
+           bot ИМЯ-ЗАКАЗЧИКА ТОКЕН --url https://$DOMAIN
+
+   Без бота всё работает, просто клиентам не уходят напоминания.
+
+4. Проверьте готовность:
        cd $APP_DIR && sudo -u $APP_USER ./venv/bin/python manage.py check
 
 Полезное:

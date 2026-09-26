@@ -420,6 +420,16 @@ input.code {
       <div id="mineList"></div>
     </div>
 
+    <!-- напоминания: предлагаем только тем, кто вошёл -->
+    <div class="card" id="tgCard" hidden>
+      <h2>Напоминать о записи</h2>
+      <p class="hint" id="tgHint">Пришлём сообщение накануне приезда и
+        предупредим, когда закончится срок хранения шин.</p>
+      <a class="go" id="tgConnect" href="#" target="_blank" rel="noopener"
+         hidden>Подключить Telegram</a>
+      <button class="link" id="tgOff" type="button" hidden>Отключить</button>
+    </div>
+
     <!-- что сейчас в цеху: видно и без записи -->
     <div class="card" id="queueCard" hidden>
       <h2>Сейчас в шиномонтаже</h2>
@@ -549,6 +559,7 @@ function show(name) {
   if (name !== 'screenBook') {
     $('historyCard').hidden = true;
     $('queueCard').hidden = true;
+    $('tgCard').hidden = true;
   }
 
   ['screenPick', 'screenLogin', 'screenBook', 'screenDone'].forEach(function (id) {
@@ -797,6 +808,7 @@ function afterLogin() {
       prepareBooking();
       show('screenBook');
       loadHistory();
+      loadTelegram();
     });
   });
 }
@@ -841,6 +853,50 @@ function drawHistory(rows) {
 
   $('historyCard').hidden = false;
 }
+
+// ======================================================= НАПОМИНАНИЯ
+function loadTelegram() {
+  api('/me/telegram').then(function (answer) {
+    if (!answer.ok || !answer.data || !answer.data.available) {
+      // Бот у этого шиномонтажа не подключён — предлагать нечего
+      $('tgCard').hidden = true;
+      return;
+    }
+
+    drawTelegram(answer.data);
+  });
+}
+
+function drawTelegram(info) {
+  $('tgCard').hidden = false;
+
+  if (info.connected) {
+    $('tgHint').textContent = 'Напоминания включены: сообщим накануне '
+      + 'приезда и когда закончится срок хранения шин.';
+    $('tgConnect').hidden = true;
+    $('tgOff').hidden = false;
+  } else {
+    $('tgHint').textContent = 'Пришлём сообщение накануне приезда и '
+      + 'предупредим, когда закончится срок хранения шин.';
+    $('tgConnect').href = info.url || '#';
+    $('tgConnect').hidden = !info.url;
+    $('tgOff').hidden = true;
+  }
+}
+
+$('tgOff').addEventListener('click', function () {
+  api('/me/telegram', {method: 'DELETE'}).then(function () {
+    loadTelegram();
+  });
+});
+
+// Человек ушёл в телеграм и вернулся — проверяем, подключилось ли.
+// Сам он обновлять страницу не обязан
+document.addEventListener('visibilitychange', function () {
+  if (!document.hidden && state.token && !$('tgCard').hidden) {
+    loadTelegram();
+  }
+});
 
 // ============================================================ ОЧЕРЕДЬ
 function loadQueue() {
@@ -903,6 +959,7 @@ $('logout').addEventListener('click', function () {
   state.picked = [];
   $('historyCard').hidden = true;
   $('queueCard').hidden = true;
+  $('tgCard').hidden = true;
   show('screenPick');
 });
 
@@ -926,6 +983,7 @@ function prepareBooking() {
   } else {
     $('mineCard').hidden = true;
     $('historyCard').hidden = true;
+    $('tgCard').hidden = true;
     $('carList').hidden = true;
     $('plateField').hidden = false;
     $('wheelsField').hidden = false;
@@ -1320,6 +1378,7 @@ if (state.token) {
       prepareBooking();
       show('screenBook');
       loadHistory();
+      loadTelegram();
     });
   });
 }

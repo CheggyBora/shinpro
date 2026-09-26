@@ -15,6 +15,8 @@
     python manage.py unblock rif                        открыть обратно
     python manage.py new-key rif-na-yuzhnoy             сменить ключ обмена
     python manage.py check                             всё ли готово
+    python manage.py bot rif ТОКЕН --url https://домен   подключить бота
+    python manage.py notify                            разослать созревшее
 
 Ключ обмена показывается один раз — при создании точки или смене
 ключа. В базе от него остаётся только отпечаток, и подсмотреть его
@@ -171,7 +173,7 @@ def cmd_check(db, args):
     именно сделать.
     """
     from app.config import settings
-    from app.models import Account, Shop, StaffUser
+    from app.models import Account, Notice, Shop, StaffUser
     from app.services import billing
 
     good, bad, warn = [], [], []
@@ -242,6 +244,29 @@ def cmd_check(db, args):
     else:
         good.append(f'Коды входа: {settings.SMS_PROVIDER}')
 
+    # --- Напоминания клиентам -----------------------------------------
+    if accounts:
+        with_bot = [row for row in accounts if row.telegram_bot_token]
+        if not with_bot:
+            warn.append('Бот для напоминаний не подключён ни у кого: клиенты '
+                        'не узнают о записи. Токен у @BotFather, потом '
+                        'manage.py bot имя-заказчика ТОКЕН --url https://домен')
+        else:
+            stale = [row.name for row in with_bot if not row.telegram_secret]
+            if stale:
+                bad.append('Бот есть, а адрес для приёма сообщений не задан: '
+                           + ', '.join(stale) + '. Повторите manage.py bot '
+                           'с --url')
+            else:
+                names = ', '.join(f'@{row.telegram_bot_username}'
+                                  for row in with_bot)
+                good.append(f'Напоминания в Telegram: {names}')
+
+        waiting = db.query(Notice).filter(Notice.state == 'failed').count()
+        if waiting:
+            warn.append(f'Не доставлено сообщений: {waiting}. Обычно это те, '
+                        f'кто заблокировал бота')
+
     # --- Оплата -------------------------------------------------------
     if settings.BILLING_ENFORCE:
         overdue = billing.overdue(db)
@@ -270,6 +295,55 @@ def print_report(good, warn, bad):
 
     print('Всё, что нужно для работы, настроено'
           + (', но есть замечания выше' if warn else ''))
+
+
+def cmd_bot(db, args):
+    """
+    Подключить бота заказчику и сказать телеграму, куда слать сообщения.
+
+    Токен берётся у @BotFather: /newbot, имя, готово. Свой бот у
+    каждого заказчика — клиент «Колеса» не должен получать сообщения
+    от бота «РИФа».
+    """
+    from app.services import telegram
+
+    account = find_account(db, args.account)
+
+    try:
+        telegram.connect_bot(db, account, args.token)
+    except telegram.TelegramError as e:
+        sys.exit(f'Телеграм не принял токен: {e}')
+
+    print(f'Бот подключён: @{account.telegram_bot_username}')
+
+    if args.url:
+        try:
+            telegram.set_webhook(account, args.url)
+            print(f'Сообщения от людей пойдут на {args.url}/telegram/…')
+        except telegram.TelegramError as e:
+            sys.exit(f'Не удалось настроить приём сообщений: {e}\n'
+                     f'Адрес должен быть с https и смотреть на этот сервер')
+    else:
+        print()
+        print('Приём сообщений не настроен. Когда домен будет готов:')
+        print(f'    manage.py bot {account.slug} ТОКЕН --url https://домен.ру')
+
+
+def cmd_notify(db, args):
+    """
+    Разослать созревшие напоминания.
+
+    Запускается таймером раз в несколько минут. Напоминание о записи
+    лежит в очереди с того момента, как человек записался, и уходит
+    накануне приезда.
+    """
+    from app.services import telegram
+
+    result = telegram.send_due(db, limit=args.limit)
+
+    print(f"Отправлено: {result['sent']}, "
+          f"не дошло: {result['failed']}, "
+          f"пропущено: {result['skipped']}")
 
 
 def main():
@@ -313,6 +387,14 @@ def main():
     commands.add_parser('overdue', help='кто не заплатил')
     commands.add_parser('check', help='всё ли готово к работе')
 
+    bot = commands.add_parser('bot', help='подключить бота для напоминаний')
+    bot.add_argument('account', help='короткое имя заказчика')
+    bot.add_argument('token', help='токен от @BotFather')
+    bot.add_argument('--url', help='адрес сервера, например https://домен.ру')
+
+    notify = commands.add_parser('notify', help='разослать созревшие напоминания')
+    notify.add_argument('--limit', type=int, default=100)
+
     args = parser.parse_args()
 
     init_db()
@@ -329,6 +411,8 @@ def main():
             'unblock': cmd_unblock,
             'overdue': cmd_overdue,
             'check': cmd_check,
+            'bot': cmd_bot,
+            'notify': cmd_notify,
         }[args.command]
         handler(db, args)
     finally:

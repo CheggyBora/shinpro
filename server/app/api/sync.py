@@ -727,6 +727,8 @@ def patch_appointment(appointment_id: int, payload: AppointmentPatchIn,
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail='Запись не найдена')
 
+    was_time, was_status = row.scheduled_at, row.status
+
     if payload.scheduled_at is not None:
         row.scheduled_at = payload.scheduled_at
     if payload.duration_minutes is not None:
@@ -743,7 +745,55 @@ def patch_appointment(appointment_id: int, payload: AppointmentPatchIn,
         row.comment = payload.comment.strip() or None
 
     db.commit()
+
+    # Приёмщик перенёс или отменил запись — человек должен узнать об
+    # этом от нас, а не обнаружить у закрытых ворот
+    _tell_client(db, row, was_time, was_status)
     return {'ok': True, 'id': row.id, 'status': row.status}
+
+
+def _tell_client(db, appointment, was_time, was_status):
+    """
+    Сказать клиенту, что его запись изменилась.
+
+    Только тем, кто подключил напоминания: остальным сообщать нечем,
+    и это не повод заводить рассылку по SMS без спроса.
+    """
+    from app.services import shop_settings, telegram
+
+    client = appointment.client
+    if client is None or not client.telegram_chat_id:
+        return
+
+    shop = appointment.shop_id
+    name = shop_settings.get(db, 'shop_name',
+                             shop=shop) or 'Шиномонтаж'
+
+    if appointment.status in ('cancelled', 'no_show') and was_status != appointment.status:
+        telegram.cancel_about(db, 'appointment', appointment.id)
+        telegram.add(db, client, telegram.KIND_CANCELLED,
+                     telegram.cancelled_text(name, appointment),
+                     about='appointment', about_id=appointment.id)
+        return
+
+    if appointment.scheduled_at != was_time:
+        # Старое напоминание указывало на прежнее время — снимаем и
+        # ставим новое, иначе человек получит два разных
+        telegram.cancel_about(db, 'appointment', appointment.id,
+                              kinds=[telegram.KIND_REMINDER])
+        telegram.add(db, client, telegram.KIND_MOVED,
+                     telegram.moved_text(name, appointment),
+                     about='appointment', about_id=appointment.id)
+
+        from datetime import timedelta
+
+        remind_at = appointment.scheduled_at - timedelta(
+            hours=telegram.REMIND_HOURS)
+        if remind_at > shop_now():
+            telegram.add(db, client, telegram.KIND_REMINDER,
+                         telegram.reminder_text(name, appointment),
+                         send_at=remind_at,
+                         about='appointment', about_id=appointment.id)
 
 
 @router.get('/posts', summary='Постов под запись по дням')
