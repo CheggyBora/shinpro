@@ -759,7 +759,7 @@ def _tell_client(db, appointment, was_time, was_status):
     Только тем, кто подключил напоминания: остальным сообщать нечем,
     и это не повод заводить рассылку по SMS без спроса.
     """
-    from app.services import shop_settings, telegram
+    from app.services import notices, shop_settings
 
     client = appointment.client
     if client is None or not client.telegram_chat_id:
@@ -770,28 +770,28 @@ def _tell_client(db, appointment, was_time, was_status):
                              shop=shop) or 'Шиномонтаж'
 
     if appointment.status in ('cancelled', 'no_show') and was_status != appointment.status:
-        telegram.cancel_about(db, 'appointment', appointment.id)
-        telegram.add(db, client, telegram.KIND_CANCELLED,
-                     telegram.cancelled_text(name, appointment),
+        notices.cancel_about(db, 'appointment', appointment.id)
+        notices.add(db, client, notices.KIND_CANCELLED,
+                     notices.cancelled_text(name, appointment),
                      about='appointment', about_id=appointment.id)
         return
 
     if appointment.scheduled_at != was_time:
         # Старое напоминание указывало на прежнее время — снимаем и
         # ставим новое, иначе человек получит два разных
-        telegram.cancel_about(db, 'appointment', appointment.id,
-                              kinds=[telegram.KIND_REMINDER])
-        telegram.add(db, client, telegram.KIND_MOVED,
-                     telegram.moved_text(name, appointment),
+        notices.cancel_about(db, 'appointment', appointment.id,
+                              kinds=[notices.KIND_REMINDER])
+        notices.add(db, client, notices.KIND_MOVED,
+                     notices.moved_text(name, appointment),
                      about='appointment', about_id=appointment.id)
 
         from datetime import timedelta
 
         remind_at = appointment.scheduled_at - timedelta(
-            hours=telegram.REMIND_HOURS)
+            hours=notices.REMIND_HOURS)
         if remind_at > shop_now():
-            telegram.add(db, client, telegram.KIND_REMINDER,
-                         telegram.reminder_text(name, appointment),
+            notices.add(db, client, notices.KIND_REMINDER,
+                         notices.reminder_text(name, appointment),
                          send_at=remind_at,
                          about='appointment', about_id=appointment.id)
 

@@ -253,6 +253,20 @@ input.code {
   font-size: 14px; padding: 10px 0; cursor: pointer; text-decoration: underline;
 }
 .note { margin-top: 12px; font-size: 12.5px; color: var(--muted); text-align: center; }
+/* Способ напоминания: описание слева, кнопка справа */
+.way {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 0; border-top: 1px solid var(--line);
+}
+.way-text { flex: 1; min-width: 0; }
+.way-text b { display: block; font-size: 14.5px; }
+.way-text span { font-size: 12.5px; color: var(--ink-soft); }
+.way .link { padding: 6px 0; font-size: 13px; }
+.go.small {
+  width: auto; flex: none; padding: 10px 16px; font-size: 14px;
+  margin: 0; text-align: center; text-decoration: none; white-space: nowrap;
+  display: inline-block; box-shadow: none;
+}
 .error {
   margin-top: 12px; padding: 12px 14px; border-radius: 12px;
   background: #fef2f2; color: #991b1b; font-size: 14px; border: 1px solid #fecaca;
@@ -420,14 +434,33 @@ input.code {
       <div id="mineList"></div>
     </div>
 
-    <!-- напоминания: предлагаем только тем, кто вошёл -->
+    <!-- напоминания: предлагаем только тем, кто вошёл. Каналов два, и
+         человек выбирает сам — телеграмом пользуются не все, а
+         уведомления в браузере на айфоне включаются не везде -->
     <div class="card" id="tgCard" hidden>
       <h2>Напоминать о записи</h2>
-      <p class="hint" id="tgHint">Пришлём сообщение накануне приезда и
-        предупредим, когда закончится срок хранения шин.</p>
-      <a class="go" id="tgConnect" href="#" target="_blank" rel="noopener"
-         hidden>Подключить Telegram</a>
-      <button class="link" id="tgOff" type="button" hidden>Отключить</button>
+      <p class="hint">Напомним накануне приезда и предупредим, когда
+        закончится срок хранения шин.</p>
+
+      <div class="way" id="tgRow" hidden>
+        <div class="way-text">
+          <b>Telegram</b>
+          <span id="tgHint">Сообщением от бота шиномонтажа.</span>
+        </div>
+        <a class="go small" id="tgConnect" href="#" target="_blank"
+           rel="noopener" hidden>Подключить</a>
+        <button class="link" id="tgOff" type="button" hidden>Отключить</button>
+      </div>
+
+      <div class="way" id="pushRow" hidden>
+        <div class="way-text">
+          <b>В этом браузере</b>
+          <span id="pushHint">Уведомлением на телефоне или компьютере.</span>
+        </div>
+        <button class="go small" id="pushOn" type="button"
+                hidden>Включить</button>
+        <button class="link" id="pushOff" type="button" hidden>Отключить</button>
+      </div>
     </div>
 
     <!-- что сейчас в цеху: видно и без записи -->
@@ -549,7 +582,8 @@ var state = {
   picked: [],
   mine: [],
   loginPhone: '',
-  channel: 'sms'
+  channel: 'sms',
+  pushKey: null      // открытый ключ сервера для подписки браузера
 };
 
 var $ = function (id) { return document.getElementById(id); };
@@ -808,7 +842,7 @@ function afterLogin() {
       prepareBooking();
       show('screenBook');
       loadHistory();
-      loadTelegram();
+      loadReminders();
     });
   });
 }
@@ -855,46 +889,246 @@ function drawHistory(rows) {
 }
 
 // ======================================================= НАПОМИНАНИЯ
-function loadTelegram() {
+// Каналов два: бот в телеграме и уведомления в этом браузере. Карточка
+// показывается, если работает хотя бы один — иначе обещать нечего
+function loadReminders() {
   api('/me/telegram').then(function (answer) {
-    if (!answer.ok || !answer.data || !answer.data.available) {
-      // Бот у этого шиномонтажа не подключён — предлагать нечего
-      $('tgCard').hidden = true;
-      return;
-    }
-
-    drawTelegram(answer.data);
+    drawTelegram(answer.ok && answer.data ? answer.data : {available: false});
+    return api('/me/push');
+  }).then(function (answer) {
+    drawPush(answer && answer.ok && answer.data
+             ? answer.data : {available: false});
   });
 }
 
+function showRemindCard() {
+  $('tgCard').hidden = $('tgRow').hidden && $('pushRow').hidden;
+}
+
 function drawTelegram(info) {
-  $('tgCard').hidden = false;
+  if (!info.available) {
+    // Бот у этого шиномонтажа не подключён — предлагать нечего
+    $('tgRow').hidden = true;
+    showRemindCard();
+    return;
+  }
+
+  $('tgRow').hidden = false;
 
   if (info.connected) {
-    $('tgHint').textContent = 'Напоминания включены: сообщим накануне '
-      + 'приезда и когда закончится срок хранения шин.';
+    $('tgHint').textContent = 'Включено, сообщения приходят от бота.';
     $('tgConnect').hidden = true;
     $('tgOff').hidden = false;
   } else {
-    $('tgHint').textContent = 'Пришлём сообщение накануне приезда и '
-      + 'предупредим, когда закончится срок хранения шин.';
+    $('tgHint').textContent = 'Сообщением от бота шиномонтажа.';
     $('tgConnect').href = info.url || '#';
     $('tgConnect').hidden = !info.url;
     $('tgOff').hidden = true;
   }
+
+  showRemindCard();
 }
 
 $('tgOff').addEventListener('click', function () {
   api('/me/telegram', {method: 'DELETE'}).then(function () {
-    loadTelegram();
+    loadReminders();
   });
 });
+
+// ------------------------------------------- уведомления в браузере
+// Браузер должен уметь три вещи сразу: service worker, подписку на пуш
+// и сами уведомления. Старый браузер или открытая в приватном окне
+// страница часть из них не умеют — там предлагать нечего
+function pushPossible() {
+  return 'serviceWorker' in navigator && 'PushManager' in window
+    && 'Notification' in window;
+}
+
+// Подписан ли именно этот браузер. Сервер этого не знает: он видит
+// только, что у человека есть N устройств, и какое из них перед нами —
+// вопрос к самому браузеру. null — спросить не удалось
+function hereSubscribed() {
+  if (!pushPossible() || !navigator.serviceWorker.getRegistration) {
+    return Promise.resolve(null);
+  }
+
+  return localSubscription().then(function (row) { return !!row; });
+}
+
+function drawPush(info) {
+  if (!info.available || !pushPossible()) {
+    $('pushRow').hidden = true;
+    showRemindCard();
+    return;
+  }
+
+  state.pushKey = info.public_key;
+  $('pushRow').hidden = false;
+
+  // Кнопка одна и всегда про этот браузер: включить здесь или
+  // отключить здесь. Двумя кнопками в строке человек путается — а
+  // выключить чужой телефон отсюда он всё равно не должен
+  hereSubscribed().then(function (here) {
+    var on = here === null ? info.connected : here;
+    var elsewhere = info.devices - (here === true ? 1 : 0);
+
+    $('pushOn').hidden = on;
+    $('pushOff').hidden = !on;
+
+    if (on) {
+      $('pushHint').textContent = 'Включено'
+        + (elsewhere > 0
+           ? ' здесь и ещё на ' + elsewhere + ' '
+             + (elsewhere === 1 ? 'устройстве' : 'устройствах') + '.'
+           : ' на этом устройстве.');
+    } else if (info.connected) {
+      $('pushHint').textContent = 'Включено на другом устройстве. '
+        + 'Здесь пока нет.';
+    } else {
+      $('pushHint').textContent = standalone()
+        ? 'Уведомлением на этом устройстве.'
+        : 'Уведомлением на телефоне или компьютере.';
+    }
+
+    showRemindCard();
+  });
+}
+
+// Кабинет открыт ярлыком с домашнего экрана, а не во вкладке. На
+// айфоне уведомления работают только так, и это надо сказать заранее,
+// а не после отказа браузера
+function standalone() {
+  return window.navigator.standalone === true
+    || (window.matchMedia
+        && window.matchMedia('(display-mode: standalone)').matches);
+}
+
+function isApple() {
+  return /iPhone|iPad|iPod/.test(navigator.userAgent)
+    || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
+
+// Открытый ключ приходит строкой, а браузеру нужен массив байтов
+function keyBytes(text) {
+  var padded = (text + '===').slice(0, text.length + (4 - text.length % 4) % 4);
+  var plain = window.atob(padded.replace(/-/g, '+').replace(/_/g, '/'));
+  var bytes = new Uint8Array(plain.length);
+
+  for (var i = 0; i < plain.length; i++) { bytes[i] = plain.charCodeAt(i); }
+  return bytes;
+}
+
+function subscribeHere() {
+  if (!state.pushKey) { return Promise.reject(new Error('Нет ключа')); }
+
+  return navigator.serviceWorker.register('/sw.js', {scope: '/z'})
+    .then(function () { return navigator.serviceWorker.ready; })
+    .then(function (worker) {
+      return worker.pushManager.getSubscription().then(function (existing) {
+        if (existing) { return existing; }
+
+        return worker.pushManager.subscribe({
+          // Без этого браузеры не подписывают: молчаливая рассылка
+          // без видимого уведомления запрещена, и правильно
+          userVisibleOnly: true,
+          applicationServerKey: keyBytes(state.pushKey)
+        });
+      });
+    })
+    .then(function (subscription) {
+      var body = subscription.toJSON();
+
+      return api('/me/push', {
+        method: 'POST',
+        body: {endpoint: body.endpoint, keys: body.keys}
+      });
+    });
+}
+
+$('pushOn').addEventListener('click', function () {
+  var button = $('pushOn');
+
+  if (isApple() && !standalone()) {
+    $('pushHint').textContent = 'На iPhone сначала добавьте кабинет на '
+      + 'экран: «Поделиться» → «На экран «Домой»». Потом откройте ярлык '
+      + 'и включите здесь.';
+    return;
+  }
+
+  button.disabled = true;
+
+  Notification.requestPermission().then(function (answer) {
+    if (answer !== 'granted') {
+      button.disabled = false;
+      $('pushHint').textContent = answer === 'denied'
+        ? 'Браузер запретил уведомления. Разрешить можно в его настройках '
+          + 'для этого сайта.'
+        : 'Уведомления не разрешены.';
+      return;
+    }
+
+    return subscribeHere().then(function (answer) {
+      button.disabled = false;
+      if (answer && answer.ok && answer.data) {
+        drawPush(answer.data);
+      } else {
+        $('pushHint').textContent = 'Не получилось подписаться. '
+          + 'Попробуйте ещё раз.';
+      }
+    });
+  }).catch(function () {
+    button.disabled = false;
+    $('pushHint').textContent = 'Браузер не дал подписаться на уведомления.';
+  });
+});
+
+// Отключаем только этот браузер: чужой телефон человек выключит с
+// него самого. И гасим с обеих сторон — одного мало: оставшаяся
+// подписка в браузере будет тихо принимать уведомления, а оставшаяся
+// на сервере — годами получать отказы
+$('pushOff').addEventListener('click', function () {
+  localSubscription().then(function (subscription) {
+    var where = subscription
+      ? '/me/push?endpoint=' + encodeURIComponent(subscription.endpoint)
+      : '/me/push';
+
+    return api(where, {method: 'DELETE'}).then(function (answer) {
+      if (subscription) { subscription.unsubscribe(); }
+      drawPush(answer && answer.data ? answer.data
+               : {available: true, connected: false});
+    });
+  });
+});
+
+function localSubscription() {
+  if (!pushPossible() || !navigator.serviceWorker.getRegistration) {
+    return Promise.resolve(null);
+  }
+
+  return navigator.serviceWorker.getRegistration('/z')
+    .then(function (worker) {
+      return worker ? worker.pushManager.getSubscription() : null;
+    })
+    .catch(function () { return null; });
+}
+
+// Браузер перевыдал подписку — старый адрес больше не работает.
+// Подписываемся заново молча: человек уже дал разрешение
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.addEventListener('message', function (event) {
+    if (event.data && event.data.kind === 'push-resubscribe' && state.token) {
+      subscribeHere().then(function (answer) {
+        if (answer && answer.data) { drawPush(answer.data); }
+      }).catch(function () {});
+    }
+  });
+}
 
 // Человек ушёл в телеграм и вернулся — проверяем, подключилось ли.
 // Сам он обновлять страницу не обязан
 document.addEventListener('visibilitychange', function () {
   if (!document.hidden && state.token && !$('tgCard').hidden) {
-    loadTelegram();
+    loadReminders();
   }
 });
 
@@ -1378,7 +1612,7 @@ if (state.token) {
       prepareBooking();
       show('screenBook');
       loadHistory();
-      loadTelegram();
+      loadReminders();
     });
   });
 }

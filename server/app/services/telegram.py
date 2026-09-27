@@ -1,10 +1,10 @@
 """
 Напоминания клиенту в Telegram.
 
-Почему Telegram, а не push из приложения. Пуш на айфоне работает
-только после «Добавить на экран», и часть людей туда не дойдёт. SMS
-стоят от восьми рублей за штуку. Telegram бесплатен, доходит до всех,
-и человеку не нужно ничего устанавливать — он и так им пользуется.
+Главный канал из двух. Пуш в браузере на айфоне работает только после
+«Добавить на экран», и часть людей туда не дойдёт; SMS стоят от восьми
+рублей за штуку. Телеграм бесплатен, доходит до всех и ничего не требует
+устанавливать — человек и так им пользуется.
 
 **Бот принадлежит заказчику.** У каждого шиномонтажа своё название,
 и писать клиентам «Колеса» от имени бота «РИФа» нельзя. Токен лежит
@@ -14,9 +14,9 @@
 нажимает кнопку, открывается бот с одноразовым кодом, он жмёт «Старт».
 Без этого шага писать ему нельзя — и технически, и по-человечески.
 
-**Уведомление сначала кладётся в очередь.** Telegram может не
-ответить, напоминание уходит не сейчас, а накануне, и одно и то же
-сообщение не должно уйти дважды.
+Здесь только бот: подключить, привязать человека, отправить сообщение.
+Что и когда отправлять, решает `notices` — он же выбирает между
+телеграмом и уведомлением в браузере.
 """
 import json
 import logging
@@ -26,9 +26,7 @@ import urllib.parse
 import urllib.request
 from datetime import timedelta
 
-from app.models import (Account, Client, Notice, KIND_BOOKED, KIND_REMINDER,
-                        KIND_CANCELLED, KIND_MOVED, KIND_STORAGE,
-                        WAITING, SENT, FAILED, SKIPPED)
+from app.models import Client
 from app.utils import now as shop_now
 
 log = logging.getLogger('tire_server')
@@ -40,12 +38,6 @@ TIMEOUT_SECONDS = 15
 # переходит в бот — десяти минут с запасом хватает, а валяться в базе
 # неделю коду незачем
 CODE_MINUTES = 10
-
-# За сколько часов до приезда напоминаем
-REMIND_HOURS = 20
-
-# Сколько раз пробуем отправить, прежде чем сдаться
-MAX_ATTEMPTS = 3
 
 
 class TelegramError(Exception):
@@ -247,175 +239,3 @@ def handle_update(db, account, update):
                  'Я умею только напоминать о записи. По всем вопросам '
                  'лучше позвонить в шиномонтаж.')
     return None
-
-
-# ----------------------------------------------------------------------
-# Очередь: положить и отправить
-# ----------------------------------------------------------------------
-
-def add(db, client, kind, text, send_at=None, about=None, about_id=None):
-    """
-    Положить уведомление в очередь.
-
-    Человеку без подключённого бота кладём сразу помеченным как
-    пропущенное: строка остаётся — по ней видно, что напомнить было
-    нечем, — но отправлять нечего.
-    """
-    notice = Notice(
-        account_id=client.account_id,
-        client_id=client.id,
-        kind=kind,
-        text=text,
-        about=about,
-        about_id=about_id,
-        send_at=send_at or shop_now(),
-        state=WAITING if client.telegram_chat_id else SKIPPED)
-
-    db.add(notice)
-    db.commit()
-    db.refresh(notice)
-    return notice
-
-
-def cancel_about(db, about, about_id, kinds=None):
-    """
-    Отменить неотправленные уведомления о чём-то.
-
-    Запись отменили — напоминание «завтра приезжать» уходить не должно.
-    Уже отправленные не трогаем: сказанного не воротишь.
-    """
-    query = db.query(Notice).filter(
-        Notice.about == about,
-        Notice.about_id == about_id,
-        Notice.state == WAITING)
-
-    if kinds:
-        query = query.filter(Notice.kind.in_(kinds))
-
-    count = 0
-    for notice in query.all():
-        notice.state = SKIPPED
-        count += 1
-
-    db.commit()
-    return count
-
-
-def due(db, limit=100):
-    """Что пора отправлять."""
-    return db.query(Notice).filter(
-        Notice.state == WAITING,
-        Notice.send_at <= shop_now()).order_by(
-        Notice.send_at).limit(limit).all()
-
-
-def send_due(db, limit=100):
-    """
-    Отправить созревшие. Возвращает сводку.
-
-    Заблокировавший бота человек не должен срывать рассылку остальным,
-    поэтому каждое сообщение отправляется само по себе, а сбой пишется
-    в строку.
-    """
-    accounts = {}
-    result = {'sent': 0, 'failed': 0, 'skipped': 0}
-
-    for notice in due(db, limit):
-        client = notice.client
-
-        if client is None or not client.telegram_chat_id:
-            notice.state = SKIPPED
-            result['skipped'] += 1
-            continue
-
-        account = accounts.get(notice.account_id)
-        if account is None:
-            account = db.query(Account).filter(
-                Account.id == notice.account_id).first()
-            accounts[notice.account_id] = account
-
-        if account is None or not account.telegram_bot_token:
-            notice.state = SKIPPED
-            result['skipped'] += 1
-            continue
-
-        notice.attempts += 1
-        try:
-            send_message(account, client.telegram_chat_id, notice.text)
-            notice.state = SENT
-            notice.sent_at = shop_now()
-            notice.last_error = None
-            result['sent'] += 1
-        except TelegramError as e:
-            notice.last_error = str(e)[:255]
-            # Сдаёмся после третьей попытки: если человек заблокировал
-            # бота, сообщение не дойдёт и на сотой
-            if notice.attempts >= MAX_ATTEMPTS:
-                notice.state = FAILED
-                result['failed'] += 1
-            log.warning('Уведомление №%s не ушло: %s', notice.id, e)
-
-    db.commit()
-    return result
-
-
-# ----------------------------------------------------------------------
-# Тексты
-# ----------------------------------------------------------------------
-
-def when_text(moment):
-    return moment.strftime('%d.%m в %H:%M')
-
-
-def booked_text(shop_name, appointment):
-    return (f'<b>{shop_name}</b>\n'
-            f'Записали вас на {when_text(appointment.scheduled_at)}.\n'
-            f'Работы займут около {appointment.duration_minutes or 60} мин.'
-            + (f'\nМашина: {appointment.license_plate}'
-               if appointment.license_plate else ''))
-
-
-def reminder_text(shop_name, appointment):
-    return (f'<b>{shop_name}</b>\n'
-            f'Напоминаем: вы записаны на '
-            f'{when_text(appointment.scheduled_at)}.'
-            + (f'\nМашина: {appointment.license_plate}'
-               if appointment.license_plate else '')
-            + '\n\nНе получается — отмените в кабинете, окно достанется '
-              'другому.')
-
-
-def cancelled_text(shop_name, appointment):
-    return (f'<b>{shop_name}</b>\n'
-            f'Запись на {when_text(appointment.scheduled_at)} отменена.')
-
-
-def moved_text(shop_name, appointment):
-    return (f'<b>{shop_name}</b>\n'
-            f'Ваша запись перенесена на '
-            f'{when_text(appointment.scheduled_at)}.')
-
-
-def plan_for_appointment(db, client, shop_name, appointment):
-    """
-    Разложить уведомления по записи: подтверждение сейчас, напоминание
-    накануне.
-
-    Напоминание не ставим, если до приезда меньше, чем срок напоминания:
-    сообщение «напоминаем, вы записаны» через минуту после записи —
-    издевательство.
-    """
-    made = []
-
-    made.append(add(db, client, KIND_BOOKED,
-                    booked_text(shop_name, appointment),
-                    about='appointment', about_id=appointment.id))
-
-    remind_at = appointment.scheduled_at - timedelta(hours=REMIND_HOURS)
-    if remind_at > shop_now():
-        made.append(add(db, client, KIND_REMINDER,
-                        reminder_text(shop_name, appointment),
-                        send_at=remind_at,
-                        about='appointment', about_id=appointment.id))
-
-    return made

@@ -276,11 +276,11 @@ class BookingService:
         # а не шлём здесь: человек должен увидеть «записали» сразу, не
         # дожидаясь, пока ответит телеграм
         try:
-            from app.services import telegram, shop_settings
+            from app.services import notices, shop_settings
 
             name = (shop_settings.get(self.db, 'shop_name', shop=self.shop)
                     or (self.shop.name if self.shop else 'Шиномонтаж'))
-            telegram.plan_for_appointment(self.db, client, name, appointment)
+            notices.plan_for_appointment(self.db, client, name, appointment)
         except Exception as e:
             # Не сумели запланировать напоминание — запись всё равно
             # состоялась, и терять её из-за этого нельзя
@@ -415,9 +415,9 @@ class BookingService:
         # человек — и сообщать ему об этом не надо: он только что нажал
         # кнопку и видел ответ
         try:
-            from app.services import telegram
+            from app.services import notices
 
-            telegram.cancel_about(self.db, 'appointment', appointment.id)
+            notices.cancel_about(self.db, 'appointment', appointment.id)
         except Exception:
             pass
         # Цех должен узнать об отмене так же, как узнаёт о записи

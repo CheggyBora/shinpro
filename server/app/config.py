@@ -100,6 +100,20 @@ class Settings:
     SMS_API_KEY = os.environ.get('SERVER_SMS_API_KEY', '')
     SMS_SENDER = os.environ.get('SERVER_SMS_SENDER', '')
 
+    # --- Уведомления в браузере ---------------------------------------
+    # Пара ключей VAPID: ими сервер подписывает уведомления, чтобы
+    # Google и Apple знали, от кого они. Пара одна на весь сервер —
+    # она про сервер, а не про заказчика. Нет ключей — кнопка
+    # «Уведомлять в браузере» в кабинете не показывается.
+    #
+    # Сгенерировать: python manage.py push-keys
+    PUSH_PUBLIC_KEY = os.environ.get('SERVER_PUSH_PUBLIC_KEY', '')
+    PUSH_PRIVATE_KEY = os.environ.get('SERVER_PUSH_PRIVATE_KEY', '')
+
+    # Адрес, по которому Google напишет, если с нашими уведомлениями
+    # что-то не так. Без него часть серверов пуша отвечает отказом
+    PUSH_CONTACT = os.environ.get('SERVER_PUSH_CONTACT', '')
+
     # --- Шиномонтаж ---------------------------------------------------
     SHOP_NAME = os.environ.get('SERVER_SHOP_NAME', 'Шиномонтаж')
 

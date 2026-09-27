@@ -1,9 +1,11 @@
 """Таблицы сервера."""
 from app.models.account import Account, AccountPayment, Shop
 from app.models.client import Client, Car, Device, LoginCode
-from app.models.notice import (Notice, KIND_BOOKED, KIND_REMINDER,
+from app.models.notice import (Notice, TITLES, KIND_BOOKED, KIND_REMINDER,
                                KIND_CANCELLED, KIND_MOVED, KIND_STORAGE,
-                               WAITING, SENT, FAILED, SKIPPED)
+                               WAITING, SENT, FAILED, SKIPPED,
+                               BY_TELEGRAM, BY_PUSH)
+from app.models.push import PushSubscription
 from app.models.shop import (Appointment, BookingDay, StoredSet, Visit,
                              VisitItem, SalaryAccrual, SalaryPayout,
                              ShopEmployee, ShopShift, QueueSnapshot, ShopSetting,
@@ -19,8 +21,9 @@ from app.models.staff import (StaffUser, StaffAction, ROLE_OWNER, ROLE_ADMIN,
 __all__ = [
     'Account', 'AccountPayment', 'Shop',
     'Client', 'Car', 'Device', 'LoginCode',
-    'Notice', 'KIND_BOOKED', 'KIND_REMINDER', 'KIND_CANCELLED', 'KIND_MOVED',
+    'Notice', 'TITLES', 'BY_TELEGRAM', 'BY_PUSH', 'KIND_BOOKED', 'KIND_REMINDER', 'KIND_CANCELLED', 'KIND_MOVED',
     'KIND_STORAGE', 'WAITING', 'SENT', 'FAILED', 'SKIPPED',
+    'PushSubscription',
     'Appointment', 'BookingDay', 'StoredSet', 'Visit', 'VisitItem',
     'SalaryAccrual', 'SalaryPayout', 'ShopEmployee', 'ShopShift',
     'QueueSnapshot',

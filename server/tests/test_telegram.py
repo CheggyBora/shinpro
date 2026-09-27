@@ -43,7 +43,7 @@ from app.database import SessionLocal
 from app.models import (Account, Client, Appointment, Notice, KIND_BOOKED,
                         KIND_REMINDER, WAITING, SENT, FAILED, SKIPPED)
 from app.security import hash_secret, create_token
-from app.services import telegram, tenancy
+from app.services import notices, telegram, tenancy
 from app.utils import now as shop_now
 
 _failures = []
@@ -179,7 +179,7 @@ with TestClient(app) as client:
     db.add(appointment)
     db.commit()
 
-    made = telegram.plan_for_appointment(db, person, 'Шиномонтаж «РИФ»',
+    made = notices.plan_for_appointment(db, person, 'Шиномонтаж «РИФ»',
                                          appointment)
     check('сделано два уведомления', len(made) == 2, str(len(made)))
 
@@ -194,14 +194,14 @@ with TestClient(app) as client:
           kinds[KIND_BOOKED].text)
 
     print('\n=== Отправляем созревшее ===')
-    result = telegram.send_due(db)
+    result = notices.send_due(db)
     check('ушло одно', result['sent'] == 1, str(result))
     check('напоминание осталось ждать',
           db.query(Notice).filter(Notice.state == WAITING).count() == 1)
 
     print('\n=== Повторный запуск не шлёт то же самое дважды ===')
     before_count = len(sent)
-    telegram.send_due(db)
+    notices.send_due(db)
     check('ничего не отправлено', len(sent) == before_count,
           f'{len(sent)} против {before_count}')
 
@@ -210,14 +210,14 @@ with TestClient(app) as client:
     db.add(silent)
     db.commit()
 
-    notice = telegram.add(db, silent, KIND_BOOKED, 'Записали вас на завтра')
+    notice = notices.add(db, silent, KIND_BOOKED, 'Записали вас на завтра')
     check('уведомление помечено пропущенным', notice.state == SKIPPED,
           notice.state)
     check('и в отправку не попадёт',
-          notice not in telegram.due(db))
+          notice not in notices.due(db))
 
     print('\n=== Запись отменили — напоминание не уйдёт ===')
-    cancelled = telegram.cancel_about(db, 'appointment', appointment.id,
+    cancelled = notices.cancel_about(db, 'appointment', appointment.id,
                                       kinds=[KIND_REMINDER])
     check('снято одно', cancelled == 1, str(cancelled))
     check('в очереди пусто',
@@ -233,8 +233,8 @@ with TestClient(app) as client:
                         status='scheduled')
     db.add(moved)
     db.commit()
-    telegram.plan_for_appointment(db, person, 'Шиномонтаж «РИФ»', moved)
-    telegram.send_due(db)
+    notices.plan_for_appointment(db, person, 'Шиномонтаж «РИФ»', moved)
+    notices.send_due(db)
 
     from app.api.sync import _tell_client
 
@@ -256,7 +256,7 @@ with TestClient(app) as client:
           str(len(waiting)))
 
     print('\n=== Цех отменил запись ===')
-    telegram.send_due(db)
+    notices.send_due(db)
     moved.status = 'cancelled'
     db.commit()
     _tell_client(db, moved, moved.scheduled_at, 'scheduled')
@@ -267,17 +267,17 @@ with TestClient(app) as client:
           [notice.kind for notice in left] == ['cancelled'],
           str([notice.kind for notice in left]))
 
-    telegram.send_due(db)
+    notices.send_due(db)
     check('оно ушло человеку',
           any('отменена' in text for chat, text in sent[-2:]),
           str(sent[-1:]))
 
     print('\n=== Человек заблокировал бота ===')
-    blocked = telegram.add(db, person, KIND_BOOKED, 'Проверка')
+    blocked = notices.add(db, person, KIND_BOOKED, 'Проверка')
     fail_next['count'] = 5
 
     for _ in range(3):
-        telegram.send_due(db)
+        notices.send_due(db)
 
     db.expire_all()
     blocked = db.query(Notice).get(blocked.id)

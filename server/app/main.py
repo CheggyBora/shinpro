@@ -97,7 +97,7 @@ if settings.CORS_ORIGINS:
     )
 
 from app.api import (auth, booking, storage, history, queue, sync, public,  # noqa: E402
-                     staff, dashboard, telegram)
+                     staff, dashboard, telegram, push)
 
 app.include_router(auth.router)
 app.include_router(booking.router)
@@ -108,6 +108,7 @@ app.include_router(sync.router)
 app.include_router(staff.router)
 app.include_router(dashboard.router)
 app.include_router(telegram.router)
+app.include_router(push.router)
 app.include_router(public.router)
 
 
@@ -205,6 +206,24 @@ def booking_manifest(shop: str = ''):
              'purpose': 'any maskable'},
         ],
     }, headers={'Cache-Control': 'public, max-age=3600'})
+
+
+@app.get('/sw.js', include_in_schema=False)
+def service_worker():
+    """
+    Файл, который показывает уведомления, когда кабинет закрыт.
+
+    Лежит в корне, а не в `/z`, намеренно: браузер разрешает воркеру
+    следить только за адресами внутри своей папки, и из `/z/sw.js` он
+    не увидел бы саму страницу `/z` — она на уровень выше. Из корня
+    можно ограничиться `/z` при подписке, а вот наоборот нельзя.
+
+    Не кэшируем: иначе исправление в уведомлениях дойдёт до людей
+    через сутки, а то и никогда.
+    """
+    path = os.path.join(WEB_DIR, 'sw.js')
+    return FileResponse(path, media_type='application/javascript',
+                        headers={'Cache-Control': 'no-cache'})
 
 
 @app.get('/z/icon.svg', include_in_schema=False)

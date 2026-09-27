@@ -79,6 +79,22 @@ else
 
     SECRET_KEY="$(python3 -c 'import secrets; print(secrets.token_urlsafe(48))')"
 
+    # Ключи для уведомлений в браузере. Генерируются один раз: смена
+    # ключей отпишет всех, кто успел подписаться на старые
+    PUSH_PUBLIC=""
+    PUSH_PRIVATE=""
+    if PUSH_KEYS="$(cd "$APP_DIR" && ./venv/bin/python -c \
+        'from app.services.webpush import generate_keys
+public, private = generate_keys()
+print(public)
+print(private)' 2>/dev/null)"; then
+        PUSH_PUBLIC="$(echo "$PUSH_KEYS" | sed -n 1p)"
+        PUSH_PRIVATE="$(echo "$PUSH_KEYS" | sed -n 2p)"
+    else
+        echo "Ключи для уведомлений в браузере не вышли — допишите потом:"
+        echo "    manage.py push-keys"
+    fi
+
     cat > "$APP_DIR/.env" <<ENV
 # Создано deploy/install.sh $(date '+%d.%m.%Y %H:%M')
 SERVER_DATABASE_URL=postgresql+psycopg2://$DB_USER:$DB_PASSWORD@localhost:5432/$DB_NAME
@@ -92,6 +108,12 @@ SERVER_OWNER_NAME=
 SERVER_SMS_PROVIDER=log
 SERVER_SMS_API_KEY=
 SERVER_SMS_SENDER=
+
+# Уведомления в браузере: ключи этого сервера. Не меняйте — смена
+# отпишет всех, кто уже подписался
+SERVER_PUSH_PUBLIC_KEY=$PUSH_PUBLIC
+SERVER_PUSH_PRIVATE_KEY=$PUSH_PRIVATE
+SERVER_PUSH_CONTACT=mailto:${EMAIL:-admin@$DOMAIN}
 
 SERVER_SHOP_NAME=Шиномонтаж
 SERVER_CORS_ORIGINS=https://$DOMAIN

@@ -267,6 +267,15 @@ def cmd_check(db, args):
             warn.append(f'Не доставлено сообщений: {waiting}. Обычно это те, '
                         f'кто заблокировал бота')
 
+    # --- Уведомления в браузере ---------------------------------------
+    from app.services import webpush
+
+    if webpush.available():
+        good.append('Уведомления в браузере настроены')
+    else:
+        warn.append('Уведомления в браузере выключены: в кабинете нет '
+                    'кнопки «Включить». Выдать ключи: manage.py push-keys')
+
     # --- Оплата -------------------------------------------------------
     if settings.BILLING_ENFORCE:
         overdue = billing.overdue(db)
@@ -337,13 +346,41 @@ def cmd_notify(db, args):
     лежит в очереди с того момента, как человек записался, и уходит
     накануне приезда.
     """
-    from app.services import telegram
+    from app.models import BY_PUSH, BY_TELEGRAM
+    from app.services import notices
 
-    result = telegram.send_due(db, limit=args.limit)
+    result = notices.send_due(db, limit=args.limit)
 
-    print(f"Отправлено: {result['sent']}, "
+    print(f"Отправлено: {result['sent']} "
+          f"(телеграм: {result[BY_TELEGRAM]}, браузер: {result[BY_PUSH]}), "
           f"не дошло: {result['failed']}, "
           f"пропущено: {result['skipped']}")
+
+
+def cmd_push_keys(db, args):
+    """
+    Пара ключей для уведомлений в браузере.
+
+    Печатаем строки для .env, а не вписываем их сами: файл принадлежит
+    серверу, и молча менять его из команды — плохая привычка. К тому же
+    смена ключей отписывает всех, кто подписался на старые, поэтому шаг
+    должен быть осознанным.
+    """
+    from app.services import webpush
+
+    if webpush.available() and not args.force:
+        print('Ключи уже заданы. Новые отпишут всех, кто подписался на '
+              'старые.')
+        print('Если это правда нужно: manage.py push-keys --force')
+        return
+
+    public, private = webpush.generate_keys()
+
+    print('Впишите в .env и перезапустите службу:')
+    print()
+    print(f'SERVER_PUSH_PUBLIC_KEY={public}')
+    print(f'SERVER_PUSH_PRIVATE_KEY={private}')
+    print('SERVER_PUSH_CONTACT=mailto:вашапочта@пример.ру')
 
 
 def main():
@@ -395,6 +432,11 @@ def main():
     notify = commands.add_parser('notify', help='разослать созревшие напоминания')
     notify.add_argument('--limit', type=int, default=100)
 
+    keys = commands.add_parser('push-keys',
+                               help='ключи для уведомлений в браузере')
+    keys.add_argument('--force', action='store_true',
+                      help='выдать новые, даже если ключи уже есть')
+
     args = parser.parse_args()
 
     init_db()
@@ -413,6 +455,7 @@ def main():
             'check': cmd_check,
             'bot': cmd_bot,
             'notify': cmd_notify,
+            'push-keys': cmd_push_keys,
         }[args.command]
         handler(db, args)
     finally:
