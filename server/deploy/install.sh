@@ -136,10 +136,32 @@ sleep 2
 systemctl is-active --quiet tire-server || fail "Служба не поднялась: journalctl -u tire-server -n 50"
 
 say "nginx и сертификат"
+
+# На сервере может уже работать чужой сайт. Свой добавляем, чужие не
+# трогаем: уронить работающий сайт ради установки — худшее, что может
+# сделать скрипт установки
+OTHERS="$(find /etc/nginx/sites-enabled -mindepth 1 -not -name tire-server -not -name default 2>/dev/null | wc -l)"
+
+if [ "$OTHERS" -gt 0 ]; then
+    echo "На сервере уже есть сайты ($OTHERS шт.) — их не трогаем"
+fi
+
 sed "s/ДОМЕН/$DOMAIN/g" "$APP_DIR/deploy/nginx.conf" > /etc/nginx/sites-available/tire-server
 ln -sf /etc/nginx/sites-available/tire-server /etc/nginx/sites-enabled/tire-server
-rm -f /etc/nginx/sites-enabled/default
-nginx -t
+
+# Заглушку nginx убираем, только если кроме нас сайтов нет. Там, где
+# есть, она может оказаться не заглушкой, а чьим-то рабочим сайтом
+if [ "$OTHERS" -eq 0 ]; then
+    rm -f /etc/nginx/sites-enabled/default
+fi
+
+# Если наш файл ломает разбор, снимаем его и останавливаемся, а не
+# оставляем сервер в состоянии, когда nginx больше не перезапустится
+if ! nginx -t; then
+    rm -f /etc/nginx/sites-enabled/tire-server
+    fail "Настройка nginx не прошла проверку. Наш файл убран, остальное не тронуто"
+fi
+
 systemctl reload nginx
 
 if [ -n "$EMAIL" ]; then
@@ -148,6 +170,13 @@ if [ -n "$EMAIL" ]; then
 else
     echo "Почта не указана — сертификат выпустите сами:"
     echo "    certbot --nginx -d $DOMAIN"
+fi
+
+# Кабинет открывается с телефона и просит разрешение на уведомления.
+# Без HTTPS браузер не даст ни того, ни другого, поэтому про отсутствие
+# сертификата надо сказать громко, а не строкой в середине вывода
+if [ ! -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
+    NO_TLS=1
 fi
 
 say "Копии базы"
@@ -168,9 +197,26 @@ systemctl enable --now tire-notify.timer
 say "Сеть"
 ufw allow OpenSSH >/dev/null 2>&1 || true
 ufw allow 'Nginx Full' >/dev/null 2>&1 || true
-ufw --force enable >/dev/null 2>&1 || true
+
+# Включаем межсетевой экран только там, где он и так включён. Включить
+# его самим на чужом работающем сервере — верный способ отрезать
+# администратора от SSH, если тот сидит на нестандартном порту
+if ufw status 2>/dev/null | grep -q 'Status: active'; then
+    echo "Правила добавлены"
+else
+    echo "Межсетевой экран выключен — не трогаем. Включите, когда убедитесь,"
+    echo "что SSH в правилах есть:  ufw enable"
+fi
 
 say "Готово"
+
+if [ -n "${NO_TLS:-}" ]; then
+    printf '\n\033[31m%s\033[0m\n' "ВНИМАНИЕ: сертификата нет, сайт работает по http."
+    echo "Кабинет без HTTPS работать не будет: браузер не даст ни уведомлений,"
+    echo "ни установки на экран. Выпустите сертификат:"
+    echo "    certbot --nginx -d $DOMAIN"
+fi
+
 cat <<DONE
 
 Сервер поднят: https://$DOMAIN
