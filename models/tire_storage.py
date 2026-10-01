@@ -20,6 +20,13 @@ class TireStorage(Base):
     status = Column(String(20), default='stored', nullable=False)
     work_order_id = Column(Integer, ForeignKey('work_orders.id'), nullable=True)
     accepted_date = Column(DateTime(timezone=True), default=get_moscow_time)
+
+    # До какого числа комплект лежит по оплаченному сроку. Считается при
+    # приёмке от срока из настроек, но правится руками: с человеком
+    # можно договориться на другой срок, и тогда в базе должно стоять
+    # то, о чём договорились, а не то, что посчиталось
+    expires_at = Column(DateTime(timezone=True), nullable=True)
+
     released_date = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), default=get_moscow_time)
     

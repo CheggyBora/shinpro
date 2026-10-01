@@ -209,13 +209,19 @@ class TireStorageTab:
                              self.print_label_for_selected,
                              'Secondary.TButton').pack(side='left', padx=(10, 0))
 
+        # Кому звонить. Напоминание владельцу уходит само, но звонок
+        # приёмщика работает лучше — а для звонка нужен список
+        styles.create_button(search_frame, "Истекает хранение",
+                             self.show_expiring,
+                             'Secondary.TButton').pack(side='left', padx=(10, 0))
+
         styles.create_label(card_inner, "Все комплекты (на хранении и выданные):", 'Card.TLabel').pack(anchor='w', pady=(15, 5))
         
         tree_frame = ttk.Frame(card_inner, style='White.TFrame')
         tree_frame.pack(fill='both', expand=True, pady=5)
         
         self.storage_tree = ttk.Treeview(tree_frame, 
-                                         columns=('ID', 'Номер авто', 'Тип', 'Диаметр', 'Марка', 'Цена', 'Дата приёма', 'Статус', 'Дата выдачи'), 
+                                         columns=('ID', 'Номер авто', 'Тип', 'Диаметр', 'Марка', 'Цена', 'Дата приёма', 'Лежит до', 'Статус', 'Дата выдачи'), 
                                          show='headings', height=10)
         self.storage_tree.heading('ID', text='№')
         self.storage_tree.heading('Номер авто', text='Номер авто')
@@ -224,6 +230,7 @@ class TireStorageTab:
         self.storage_tree.heading('Марка', text='Марка')
         self.storage_tree.heading('Цена', text='Цена')
         self.storage_tree.heading('Дата приёма', text='Дата приёма')
+        self.storage_tree.heading('Лежит до', text='Лежит до')
         self.storage_tree.heading('Статус', text='Статус')
         self.storage_tree.heading('Дата выдачи', text='Дата выдачи')
         
@@ -234,6 +241,7 @@ class TireStorageTab:
         self.storage_tree.column('Марка', width=120)
         self.storage_tree.column('Цена', width=80)
         self.storage_tree.column('Дата приёма', width=130)
+        self.storage_tree.column('Лежит до', width=100)
         self.storage_tree.column('Статус', width=90)
         self.storage_tree.column('Дата выдачи', width=130)
         
@@ -244,6 +252,12 @@ class TireStorageTab:
         
         # Настройка цветовой схемы для выданных комплектов
         self.storage_tree.tag_configure('released', foreground='#94a3b8')
+
+        # Срок на исходе — жёлтым, вышел — красным. Владельцу уходит
+        # напоминание, но звонок от приёмщика работает лучше, и для
+        # этого надо видеть, кому звонить, не открывая каждый комплект
+        self.storage_tree.tag_configure('expiring', foreground='#b45309')
+        self.storage_tree.tag_configure('overdue', foreground='#b91c1c')
         
         btn_frame = ttk.Frame(card_inner, style='White.TFrame')
         btn_frame.pack(fill='x', pady=10)
@@ -566,6 +580,18 @@ class TireStorageTab:
 
         self.print_storage_label(storage)
 
+    def show_expiring(self, days=30):
+        """Комплекты, у которых срок на исходе или уже вышел."""
+        rows = self.service.expiring(days=days)
+
+        self.search_car_entry.delete(0, 'end')
+        self._fill_tree(rows)
+
+        if not rows:
+            messagebox.showinfo(
+                "Хранение",
+                f"В ближайшие {days} дней срок ни у кого не кончается.")
+
     def search_storage(self):
         # Номер нормализуем, чтобы комплект нашёлся при любом написании
         car_number = normalize_plate(self.search_car_entry.get())
@@ -574,7 +600,11 @@ class TireStorageTab:
             storages = self.service.get_all_stored()
         else:
             storages = self.service.search_by_car_number(car_number)
-        
+
+        self._fill_tree(storages)
+
+    def _fill_tree(self, storages):
+        """Показать в списке именно эти комплекты, и ничего больше."""
         for item in self.storage_tree.get_children():
             self.storage_tree.delete(item)
         
@@ -583,6 +613,7 @@ class TireStorageTab:
             status_text = "На хранении" if storage.status == 'stored' else "Выдан"
 
             release_date = storage.released_date.strftime('%d.%m.%Y %H:%M') if storage.released_date else '-'
+            deadline = storage.expires_at.strftime('%d.%m.%Y') if storage.expires_at else '-'
             
             # Вставляем строку с тегом для хранения статуса
             item_id = self.storage_tree.insert('', 'end', 
@@ -594,6 +625,7 @@ class TireStorageTab:
                     storage.brand or '-',
                     f"{int(storage.price)} ₽",
                     storage.accepted_date.strftime('%d.%m.%Y %H:%M'),
+                    deadline,
                     status_text,
                     release_date
                 ),
@@ -603,6 +635,12 @@ class TireStorageTab:
             # Выделяем выданные комплекты серым цветом
             if storage.status == 'released':
                 self.storage_tree.item(item_id, tags=('released',))
+            elif storage.expires_at:
+                left = (storage.expires_at - get_moscow_time()).days
+                if left < 0:
+                    self.storage_tree.item(item_id, tags=('overdue',))
+                elif left <= 14:
+                    self.storage_tree.item(item_id, tags=('expiring',))
     
     def release_storage(self):
         import platform

@@ -42,6 +42,13 @@ DEFAULTS = {
     'telegram_token': '',
     'telegram_chats': '',
 
+    # Хранение и сезон. Значения те же, что в программе цеха: пока цех
+    # не прислал свои, приложение должно считать так же, как он
+    'storage_warn_days': '7',
+    'season_autumn_at': '01.10',
+    'season_spring_at': '10.04',
+    'season_reminders_enabled': '1',
+
     'shop_name': 'Шиномонтаж',
     'shop_phone': '',
     'shop_address': '',

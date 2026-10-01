@@ -24,6 +24,7 @@ TESTS = [
     ('Время шиномонтажа, а не машины', 'test_time.py'),
     ('Напоминания клиенту в Telegram', 'test_telegram.py'),
     ('Уведомления в браузере', 'test_webpush.py'),
+    ('Хранение и сезонная перекидка', 'test_campaigns.py'),
 ]
 
 

@@ -32,6 +32,28 @@ def _looks_like_time(value):
     return 0 <= hours <= 23 and 0 <= minutes <= 59
 
 
+def _looks_like_day_month(value):
+    """
+    «01.10» — день и месяц без года.
+
+    Год не спрашиваем: напоминание о перекидке повторяется каждый год, и
+    заставлять приёмщика раз в год лезть в настройки — верный способ
+    получить сезон без напоминаний.
+    """
+    try:
+        day, month = [int(part) for part in str(value).split('.')]
+    except (ValueError, AttributeError):
+        return False
+
+    if not 1 <= month <= 12:
+        return False
+
+    # 31 число есть не в каждом месяце, но тридцатое — везде, кроме
+    # февраля. Для напоминания о сезоне такая точность излишня:
+    # проверяем грубо, а невозможную дату просто пропустим при рассылке
+    return 1 <= day <= 31
+
+
 def open_settings(parent, db):
     """Открыть окно настроек. Возвращает окно."""
     return SettingsDialog(parent, db).dialog
@@ -68,6 +90,7 @@ class SettingsDialog:
         self._build_printing(content)
         self._build_service_buttons(content)
         self._build_orders(content)
+        self._build_storage(content)
 
         # --- Кнопки: закреплены снизу, не уезжают вместе с содержимым ---
         buttons = ttk.Frame(outer, style='White.TFrame')
@@ -380,6 +403,47 @@ class SettingsDialog:
             entry.grid(row=row, column=1, sticky='w', padx=(14, 0), pady=3)
             self.numeric_fields[key] = entry
 
+    def _build_storage(self, content):
+        self._section(content, "Хранение и сезон")
+        self._hint(content,
+                   "По этим числам приложение само пишет владельцам: что "
+                   "заканчивается хранение и что пора переобуваться. Пишет "
+                   "только тем, кто подключил напоминания в кабинете.")
+
+        grid = ttk.Frame(content, style='White.TFrame')
+        grid.pack(fill='x', pady=(0, 10))
+
+        for row, (key, title) in enumerate([
+            ('storage_months', 'Срок хранения, месяцев (0 — без срока)'),
+            ('storage_warn_days', 'Предупредить за, дней'),
+        ]):
+            styles.create_label(grid, title, 'Card.TLabel').grid(
+                row=row, column=0, sticky='w', pady=3)
+            entry = styles.create_entry(grid, width=8)
+            entry.insert(0, str(self.settings.get_int(key)))
+            entry.grid(row=row, column=1, sticky='w', padx=(14, 0), pady=3)
+            self.numeric_fields[key] = entry
+
+        self.season_var = tk.BooleanVar(
+            value=self.settings.get('season_reminders_enabled', '1') == '1')
+        ttk.Checkbutton(content, text="Звать на сезонную перекидку",
+                        variable=self.season_var).pack(anchor='w', pady=(6, 6))
+
+        # Осенью зовём заранее, весной позже — и это не прихоть:
+        # осенью снег ложится внезапно и запись забивается на неделю,
+        # а весной переобувшийся в марте попадёт под заморозки
+        self.season_fields = {}
+        for key, title in (('season_autumn_at', 'Осенью напомнить (дд.мм)'),
+                           ('season_spring_at', 'Весной напомнить (дд.мм)')):
+            row = ttk.Frame(content, style='White.TFrame')
+            row.pack(fill='x', pady=(0, 6))
+            styles.create_label(row, title, 'Card.TLabel').pack(
+                side='left', padx=(0, 10))
+            entry = styles.create_entry(row, width=8)
+            entry.insert(0, self.settings.get(key, ''))
+            entry.pack(side='left')
+            self.season_fields[key] = entry
+
     # ------------------------------------------------------------------
     # Получатели Telegram
     # ------------------------------------------------------------------
@@ -629,6 +693,20 @@ class SettingsDialog:
                         parent=self.dialog)
                     return
                 self.settings.set(key, value, commit=False)
+
+            for key, entry in self.season_fields.items():
+                value = entry.get().strip()
+                if not _looks_like_day_month(value):
+                    messagebox.showerror(
+                        "Ошибка",
+                        f"Дату «{value}» не разобрать, нужно как 01.10",
+                        parent=self.dialog)
+                    return
+                self.settings.set(key, value, commit=False)
+
+            self.settings.set('season_reminders_enabled',
+                              '1' if self.season_var.get() else '0',
+                              commit=False)
 
             for key, entry in self.company_fields.items():
                 self.settings.set(key, entry.get().strip(), commit=False)

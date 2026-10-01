@@ -89,6 +89,31 @@ def init_db():
                         BookingPosts)
     Base.metadata.create_all(bind=engine)
     add_missing_columns()
+    fill_storage_deadlines()
+
+
+def fill_storage_deadlines():
+    """
+    Проставить срок комплектам, принятым до того, как срок появился.
+
+    Колонку add_missing_columns() добавит, но пустую, и у всего, что
+    уже лежит на складе, срока не будет — значит владельцам никто не
+    напомнит. Заполняем один раз, только пустые поля.
+
+    Падать здесь нельзя: не посчитался срок — программа всё равно
+    должна открыться, остальное от этого не зависит.
+    """
+    from sqlalchemy.orm import Session
+
+    try:
+        from services.tire_storage_service import TireStorageService
+
+        with Session(engine) as session:
+            filled = TireStorageService(session).fill_missing_deadlines()
+            if filled:
+                print(f'Проставлен срок хранения: комплектов {filled}')
+    except Exception as e:
+        print(f'Не удалось проставить сроки хранения: {e}')
 
 
 def add_missing_columns():

@@ -342,12 +342,18 @@ def cmd_notify(db, args):
     """
     Разослать созревшие напоминания.
 
-    Запускается таймером раз в несколько минут. Напоминание о записи
-    лежит в очереди с того момента, как человек записался, и уходит
-    накануне приезда.
+    Запускается таймером раз в несколько минут. Сначала раскладываем по
+    очереди то, о чём никто не просил, но сказать надо: заканчивается
+    хранение, пора переобуваться. Потом отправляем всё созревшее —
+    и это, и напоминания о записи, которые лежат с момента записи.
     """
     from app.models import BY_PUSH, BY_TELEGRAM
-    from app.services import notices
+    from app.services import campaigns, notices
+
+    planned = campaigns.plan_all(db)
+    if planned['storage'] or planned['season']:
+        print(f"Поставлено в очередь: хранение {planned['storage']}, "
+              f"сезон {planned['season']}")
 
     result = notices.send_due(db, limit=args.limit)
 

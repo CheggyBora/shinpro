@@ -325,7 +325,7 @@ class SyncService:
                 'diameter': row.diameter,
                 'brand': row.brand,
                 'accepted_at': as_naive(row.accepted_date),
-                'expires_at': None,
+                'expires_at': as_naive(row.expires_at),
                 'status': row.status,
             })
         return storage
@@ -414,6 +414,15 @@ class SyncService:
             'booking_slot_step': settings.get('booking_slot_step'),
             'booking_opens_at': settings.get('booking_opens_at'),
             'booking_closes_at': settings.get('booking_closes_at'),
+
+            # По этим числам сервер сам предупреждает владельцев: что
+            # заканчивается хранение и что пора переобуваться. Считать
+            # их должен цех — сроки и сезон у каждого свои
+            'storage_warn_days': settings.get('storage_warn_days'),
+            'season_autumn_at': settings.get('season_autumn_at'),
+            'season_spring_at': settings.get('season_spring_at'),
+            'season_reminders_enabled': settings.get('season_reminders_enabled'),
+
             'shop_name': company.name,
             'shop_phone': company.phone,
             'shop_address': company.address,
