@@ -13,8 +13,11 @@
 # всех и оборвал обмен с цехом.
 set -euo pipefail
 
+# Два адреса: кабинет клиента и дашборд. Второй можно не указывать —
+# тогда дашборд живёт на том же адресе, по пути /d
 DOMAIN="${1:-}"
-EMAIL="${2:-}"
+ADMIN_DOMAIN="${2:-}"
+EMAIL="${3:-}"
 
 APP_USER="tire"
 APP_DIR="/opt/tire-server"
@@ -24,8 +27,17 @@ DB_USER="tire"
 say() { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
 fail() { printf '\n\033[31mОшибка: %s\033[0m\n' "$*" >&2; exit 1; }
 
-[ "$(id -u)" -eq 0 ] || fail "Запускать от root: sudo bash deploy/install.sh домен.ру"
-[ -n "$DOMAIN" ] || fail "Не указан домен: sudo bash deploy/install.sh домен.ру [почта]"
+USAGE="sudo bash deploy/install.sh lk.домен.ру admin.домен.ру почта@домен.ру"
+
+[ "$(id -u)" -eq 0 ] || fail "Запускать от root: $USAGE"
+[ -n "$DOMAIN" ] || fail "Не указан адрес кабинета: $USAGE"
+
+# Один адрес на двоих — разрешаем, но говорим вслух: ссылку на дашборд
+# тогда видно оттуда же, откуда записываются клиенты
+if [ -z "$ADMIN_DOMAIN" ]; then
+    ADMIN_DOMAIN="$DOMAIN"
+    echo "Адрес дашборда не указан — он будет на $DOMAIN/d"
+fi
 
 SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
@@ -116,7 +128,7 @@ SERVER_PUSH_PRIVATE_KEY=$PUSH_PRIVATE
 SERVER_PUSH_CONTACT=mailto:${EMAIL:-admin@$DOMAIN}
 
 SERVER_SHOP_NAME=Шиномонтаж
-SERVER_CORS_ORIGINS=https://$DOMAIN
+SERVER_CORS_ORIGINS=https://$DOMAIN,https://$ADMIN_DOMAIN
 
 # Оплата пользования: выключена, пока заказчик один
 SERVER_BILLING_ENFORCE=0
@@ -146,7 +158,7 @@ if [ "$OTHERS" -gt 0 ]; then
     echo "На сервере уже есть сайты ($OTHERS шт.) — их не трогаем"
 fi
 
-sed "s/ДОМЕН/$DOMAIN/g" "$APP_DIR/deploy/nginx.conf" > /etc/nginx/sites-available/tire-server
+sed -e "s/ДОМЕН_ЛК/$DOMAIN/g" -e "s/ДОМЕН_АДМИН/$ADMIN_DOMAIN/g" "$APP_DIR/deploy/nginx.conf" > /etc/nginx/sites-available/tire-server
 ln -sf /etc/nginx/sites-available/tire-server /etc/nginx/sites-enabled/tire-server
 
 # Заглушку nginx убираем, только если кроме нас сайтов нет. Там, где
@@ -164,12 +176,19 @@ fi
 
 systemctl reload nginx
 
+# Сертификат один на оба имени: certbot допишет блоки для 443 порта и
+# перенаправление с http в обоих местах
+CERT_NAMES="-d $DOMAIN"
+if [ "$ADMIN_DOMAIN" != "$DOMAIN" ]; then
+    CERT_NAMES="$CERT_NAMES -d $ADMIN_DOMAIN"
+fi
+
 if [ -n "$EMAIL" ]; then
-    certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos -m "$EMAIL" --redirect || \
-        echo "Сертификат не выпустился — проверьте, что домен смотрит на этот сервер, и запустите certbot вручную"
+    certbot --nginx $CERT_NAMES --non-interactive --agree-tos -m "$EMAIL" --redirect || \
+        echo "Сертификат не выпустился — проверьте, что оба имени смотрят на этот сервер, и запустите certbot вручную"
 else
     echo "Почта не указана — сертификат выпустите сами:"
-    echo "    certbot --nginx -d $DOMAIN"
+    echo "    certbot --nginx $CERT_NAMES"
 fi
 
 # Кабинет открывается с телефона и просит разрешение на уведомления.
@@ -214,12 +233,16 @@ if [ -n "${NO_TLS:-}" ]; then
     printf '\n\033[31m%s\033[0m\n' "ВНИМАНИЕ: сертификата нет, сайт работает по http."
     echo "Кабинет без HTTPS работать не будет: браузер не даст ни уведомлений,"
     echo "ни установки на экран. Выпустите сертификат:"
-    echo "    certbot --nginx -d $DOMAIN"
+    echo "    certbot --nginx $CERT_NAMES"
 fi
 
 cat <<DONE
 
-Сервер поднят: https://$DOMAIN
+Кабинет клиента:  https://$DOMAIN
+Дашборд:          https://$ADMIN_DOMAIN
+
+Ссылку на кабинет ставьте кнопкой «Записаться» на сайте. Адрес дашборда
+клиентам не нужен — с кабинета он не виден.
 
 Что осталось сделать руками:
 
@@ -232,7 +255,7 @@ cat <<DONE
            add-account "Шиномонтаж «РИФ»"
 
    Ключ показывается один раз — впишите его в программе цеха:
-   Настройки → Обмен с сервером.
+   Настройки → Обмен с сервером. Адрес там — https://$ADMIN_DOMAIN
 
 3. Подключите бота для напоминаний клиентам (токен у @BotFather):
        cd $APP_DIR && sudo -u $APP_USER ./venv/bin/python manage.py \\

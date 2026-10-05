@@ -1021,7 +1021,13 @@ function keyBytes(text) {
 function subscribeHere() {
   if (!state.pushKey) { return Promise.reject(new Error('Нет ключа')); }
 
-  return navigator.serviceWorker.register('/sw.js', {scope: '/z'})
+  // Область — весь адрес, а не /z. Кабинет открывается и по /z/имя, и
+  // с корня поддомена, а воркер с областью /z корневую страницу не
+  // накрывает: navigator.serviceWorker.ready на ней никогда не
+  // дождётся ответа, и подписка повиснет молча. Вреда от широкой
+  // области нет — воркер не перехватывает запросы, он только
+  // показывает уведомления
+  return navigator.serviceWorker.register('/sw.js', {scope: '/'})
     .then(function () { return navigator.serviceWorker.ready; })
     .then(function (worker) {
       return worker.pushManager.getSubscription().then(function (existing) {
@@ -1105,7 +1111,7 @@ function localSubscription() {
     return Promise.resolve(null);
   }
 
-  return navigator.serviceWorker.getRegistration('/z')
+  return navigator.serviceWorker.getRegistration('/')
     .then(function (worker) {
       return worker ? worker.pushManager.getSubscription() : null;
     })
