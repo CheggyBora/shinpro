@@ -38,10 +38,22 @@ check('повторный запуск ничего не добавляет',
 
 by_name = {row.name: row for row in options}
 turning = by_name['Алмазная проточка']
-calipers = by_name['Покраска суппортов']
 
 check('проточка считается за колесо', turning.per_wheel is True)
-check('суппорты — за заказ', calipers.per_wheel is False)
+check('по умолчанию всё про сам диск',
+      all(row.per_wheel for row in options),
+      str([row.name for row in options if not row.per_wheel]))
+check('чужих работ в списке нет',
+      not [row for row in options
+           if 'суппорт' in row.name.lower() or 'дворник' in row.name.lower()],
+      str([row.name for row in options]))
+
+# Счёт «за заказ» всё равно нужен: шиномонтаж может добавить доставку
+# или срочность, и умножать такое на число колёс нельзя
+calipers = service.save_option(name='Доставка дисков', price=2000.0,
+                               per_wheel=False, note='Туда и обратно')
+check('заказное дополнение завелось', calipers.id is not None)
+check('и считается за заказ', calipers.per_wheel is False)
 
 print('\n=== Базовая цена зависит от размера ===')
 small = service.base_price(13)
