@@ -86,10 +86,12 @@ def init_db():
     from models import (Employee, WorkShift, Client, Car, Service, WorkOrder,
                         WorkOrderItem, SalaryTransaction, SalaryPayout,
                         Settings, TireStorage, Shift, AuditLog, Appointment,
-                        BookingPosts)
+                        BookingPosts, PaintOption)
     Base.metadata.create_all(bind=engine)
     add_missing_columns()
     fill_storage_deadlines()
+    classify_services()
+    seed_paint_options()
 
 
 def fill_storage_deadlines():
@@ -114,6 +116,78 @@ def fill_storage_deadlines():
                 print(f'Проставлен срок хранения: комплектов {filled}')
     except Exception as e:
         print(f'Не удалось проставить сроки хранения: {e}')
+
+
+def seed_paint_options():
+    """
+    Завести дополнения к покраске, если их ещё нет.
+
+    Калькулятор должен считать с первого запуска, а не показывать
+    пустой список. Цены там условные — шиномонтаж заменит своими.
+
+    Падать нельзя: без калькулятора программа работает.
+    """
+    from sqlalchemy.orm import Session
+
+    try:
+        from services.paint_service import PaintService
+
+        with Session(engine) as session:
+            added = PaintService(session).ensure_defaults()
+            if added:
+                print(f'Калькулятор покраски: заведено дополнений {added}')
+    except Exception as e:
+        print(f'Не удалось завести дополнения к покраске: {e}')
+
+
+def classify_services():
+    """
+    Разделить прайс на основные услуги и допродажи — один раз.
+
+    До этой версии деления не было, и всё лежало вперемешку. Правило
+    простое: съём, шиномонтаж, балансировка, мойка — основное, остальное
+    предложил мастер. Разметка нужна дашборду: по доле допов видно,
+    работает приёмка или просто крутит колёса.
+
+    Делается однократно, как и сроки хранения: дальше вид правится
+    руками в прайс-листе, и перебивать правку списком слов нельзя.
+
+    Падать здесь нельзя: не разметился прайс — программа всё равно
+    должна открыться, на работу цеха это не влияет.
+    """
+    from sqlalchemy.orm import Session
+
+    try:
+        from models import Settings
+        from services.service_kind import looks_main
+
+        marker = 'services_classified'
+
+        with Session(engine) as session:
+            done = session.query(Settings).filter(
+                Settings.key == marker).first()
+            if done is not None and done.value == '1':
+                return
+
+            from models import Service
+
+            changed = 0
+            for row in session.query(Service).all():
+                extra = not looks_main(row.name)
+                if bool(row.is_extra) != extra:
+                    row.is_extra = extra
+                    changed += 1
+
+            if done is None:
+                session.add(Settings(key=marker, value='1'))
+            else:
+                done.value = '1'
+
+            session.commit()
+            if changed:
+                print(f'Прайс размечен: услуг помечено допродажами {changed}')
+    except Exception as e:
+        print(f'Не удалось разметить прайс: {e}')
 
 
 def add_missing_columns():

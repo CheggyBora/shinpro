@@ -133,6 +133,7 @@ body {
 .big.main { border-color: var(--brand); box-shadow: 0 6px 18px rgba(37,99,235,.13); }
 .big.main .ic { background: #eff6ff; }
 .big.store .ic { background: #f0fdf4; }
+.big.paint .ic { background: #fffbeb; }
 
 /* --- Поля --- */
 label { display: block; font-size: 13px; color: var(--ink-soft); margin: 0 0 5px; }
@@ -298,6 +299,42 @@ input.code {
 }
 .foot { text-align: center; font-size: 12.5px; color: var(--muted); padding: 4px 0 10px; }
 .foot a { color: var(--ink-soft); }
+/* --- Калькулятор покраски --- */
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip {
+  border: 1.5px solid var(--line); background: var(--card); color: var(--ink);
+  border-radius: 12px; padding: 10px 14px; font-size: 15px; font-family: inherit;
+  cursor: pointer; min-width: 56px; text-align: center;
+}
+.chip.on { border-color: var(--brand); background: var(--brand); color: #fff;
+  font-weight: 600; }
+
+/* Дополнение: галочка, название, цена справа. Пояснение под названием —
+   человек должен понимать, за что платит, а не гадать по названию */
+.extra {
+  display: flex; gap: 10px; align-items: flex-start;
+  padding: 11px 0; border-top: 1px solid var(--line); cursor: pointer;
+}
+.extra input { margin: 2px 0 0; width: 20px; height: 20px; flex: none; }
+.extra .body { flex: 1; min-width: 0; }
+.extra b { display: block; font-size: 14.5px; font-weight: 600; }
+.extra span { font-size: 12.5px; color: var(--ink-soft); }
+.extra .cost { font-size: 14px; font-weight: 600; white-space: nowrap; }
+
+.bill { margin-top: 14px; }
+.bill .row {
+  display: flex; justify-content: space-between; gap: 12px;
+  font-size: 14px; padding: 6px 0; color: var(--ink-soft);
+}
+.bill .row b { color: var(--ink); font-weight: 600; white-space: nowrap; }
+
+.total {
+  display: flex; justify-content: space-between; align-items: baseline;
+  border-top: 1.5px solid var(--line); margin-top: 8px; padding-top: 12px;
+}
+.total span { font-size: 15px; font-weight: 700; }
+.total b { font-size: 26px; font-weight: 800; color: var(--brand); }
+
 [hidden] { display: none !important; }
 </style>
 </head>
@@ -356,6 +393,56 @@ input.code {
         <span>Достанем ваш комплект к приезду. Нужен вход в кабинет</span>
       </span>
     </button>
+
+    <!-- покраска считается отдельно от записи: это не «приехал и уехал»,
+         а работа на несколько дней, и цену человек хочет знать заранее -->
+    <button class="big paint" id="goPaint" type="button" hidden>
+      <span class="ic">
+        <svg viewBox="0 0 26 26" fill="none" aria-hidden="true">
+          <circle cx="13" cy="13" r="10.5" stroke="#d97706" stroke-width="2"/>
+          <path d="M13 2.5a10.5 10.5 0 0 1 0 21" fill="#fde68a"/>
+          <circle cx="13" cy="13" r="3.5" stroke="#d97706" stroke-width="2"/>
+        </svg>
+      </span>
+      <span>
+        <b>Посчитать покраску дисков</b>
+        <span>Выберите размер и что нужно — увидите цену сразу</span>
+      </span>
+    </button>
+  </div>
+
+  <!-- ================================================ покраска -->
+  <div class="card" id="screenPaint" hidden>
+    <button class="back" data-back type="button">← Назад</button>
+
+    <h2>Покраска дисков</h2>
+    <p class="hint">Цена посчитается сама. Записываться для этого не нужно —
+      позвоните, когда решите.</p>
+
+    <div class="field">
+      <label>Размер диска</label>
+      <div class="chips" id="paintSizes"></div>
+    </div>
+
+    <div class="field">
+      <label>Сколько колёс</label>
+      <div class="chips" id="paintWheels"></div>
+    </div>
+
+    <div class="field">
+      <label>Что нужно сделать</label>
+      <div id="paintOptions"></div>
+    </div>
+
+    <div class="bill" id="paintBill"></div>
+
+    <div class="total" id="paintTotal"></div>
+
+    <p class="note">Это предварительный расчёт. Точную цену назовёт мастер,
+      когда увидит диски: глубокие задиры и повреждённая кромка считаются
+      отдельно.</p>
+
+    <a class="go" id="paintCall" href="#">Позвонить и записаться</a>
   </div>
 
   <!-- ================================================ вход -->
@@ -583,7 +670,11 @@ var state = {
   mine: [],
   loginPhone: '',
   channel: 'sms',
-  pushKey: null      // открытый ключ сервера для подписки браузера
+  pushKey: null,     // открытый ключ сервера для подписки браузера
+  paint: null,       // цены на покраску, присланные цехом
+  paintSize: null,
+  paintWheels: 4,
+  paintPicked: {}
 };
 
 var $ = function (id) { return document.getElementById(id); };
@@ -596,7 +687,8 @@ function show(name) {
     $('tgCard').hidden = true;
   }
 
-  ['screenPick', 'screenLogin', 'screenBook', 'screenDone'].forEach(function (id) {
+  ['screenPick', 'screenLogin', 'screenBook', 'screenDone',
+   'screenPaint'].forEach(function (id) {
     $(id).hidden = (id !== name);
   });
   window.scrollTo(0, 0);
@@ -1138,6 +1230,131 @@ document.addEventListener('visibilitychange', function () {
   }
 });
 
+// ========================================================== ПОКРАСКА
+// Считаем у себя, по ценам, присланным цехом. Отдельного расчёта на
+// сервере нет намеренно: два места расчёта однажды назовут человеку
+// разные суммы, и объясняться будет мастер
+function loadPaint() {
+  api('/public/paint').then(function (answer) {
+    var data = answer.ok ? answer.data : null;
+
+    if (!data || !data.available) {
+      // Цех не прислал цены — предлагать расчёт нечем. Выдумать цены
+      // на покраску нельзя, а показать нули хуже, чем промолчать
+      $('goPaint').hidden = true;
+      return;
+    }
+
+    state.paint = data;
+    state.paintWheels = data.wheels_default || 4;
+    state.paintPicked = {};
+
+    // Семнадцатый — самый ходовой размер, с него и начинаем
+    var sizes = data.sizes.map(function (row) { return row.diameter; });
+    state.paintSize = sizes.indexOf(17) >= 0 ? 17 : sizes[0];
+
+    $('goPaint').hidden = false;
+    drawPaint();
+  });
+}
+
+function drawPaint() {
+  var data = state.paint;
+  if (!data) { return; }
+
+  $('paintSizes').innerHTML = data.sizes.map(function (row) {
+    return '<button type="button" class="chip'
+      + (row.diameter === state.paintSize ? ' on' : '')
+      + '" data-size="' + row.diameter + '">R' + row.diameter + '</button>';
+  }).join('');
+
+  $('paintWheels').innerHTML = [1, 2, 3, 4].map(function (count) {
+    return '<button type="button" class="chip'
+      + (count === state.paintWheels ? ' on' : '')
+      + '" data-wheels="' + count + '">' + count
+      + (count === 4 ? ' (комплект)' : '') + '</button>';
+  }).join('');
+
+  $('paintOptions').innerHTML = data.options.map(function (row) {
+    var cost = money(row.price) + (row.per_wheel ? ' / колесо' : ' / заказ');
+    return '<label class="extra">'
+      + '<input type="checkbox" data-option="' + row.id + '"'
+      + (state.paintPicked[row.id] ? ' checked' : '') + '>'
+      + '<span class="body"><b>' + escapeHtml(row.name) + '</b>'
+      + (row.note ? '<span>' + escapeHtml(row.note) + '</span>' : '')
+      + '</span><span class="cost">' + cost + '</span></label>';
+  }).join('');
+
+  drawPaintBill();
+}
+
+// Тот же порядок, что в программе цеха: база за колесо умножается на
+// число колёс, дополнение «за заказ» берётся один раз
+function paintQuote() {
+  var data = state.paint;
+  var wheels = Math.max(1, state.paintWheels);
+
+  var size = data.sizes.filter(function (row) {
+    return row.diameter === state.paintSize;
+  })[0] || {price: 0};
+
+  var lines = [{
+    name: 'Базовая покраска, R' + state.paintSize,
+    quantity: wheels,
+    total: size.price * wheels
+  }];
+
+  data.options.forEach(function (row) {
+    if (!state.paintPicked[row.id]) { return; }
+    var quantity = row.per_wheel ? wheels : 1;
+    lines.push({name: row.name, quantity: quantity,
+                total: row.price * quantity});
+  });
+
+  var total = lines.reduce(function (sum, row) { return sum + row.total; }, 0);
+  return {lines: lines, total: total};
+}
+
+function drawPaintBill() {
+  var quote = paintQuote();
+
+  $('paintBill').innerHTML = quote.lines.map(function (row) {
+    return '<div class="row"><span>' + escapeHtml(row.name)
+      + (row.quantity > 1 ? ' × ' + row.quantity : '')
+      + '</span><b>' + money(row.total) + '</b></div>';
+  }).join('');
+
+  $('paintTotal').innerHTML = '<span>Итого</span><b>'
+    + money(quote.total) + '</b>';
+}
+
+$('goPaint').addEventListener('click', function () {
+  show('screenPaint');
+});
+
+// Один обработчик на весь экран: кнопки размеров и колёс рисуются
+// заново при каждом пересчёте, и вешать события на каждую — верный
+// способ однажды забыть
+$('screenPaint').addEventListener('click', function (event) {
+  var chip = event.target.closest ? event.target.closest('.chip') : null;
+  if (!chip) { return; }
+
+  if (chip.dataset.size) { state.paintSize = parseInt(chip.dataset.size, 10); }
+  if (chip.dataset.wheels) {
+    state.paintWheels = parseInt(chip.dataset.wheels, 10);
+  }
+
+  drawPaint();
+});
+
+$('screenPaint').addEventListener('change', function (event) {
+  var box = event.target;
+  if (!box.dataset || !box.dataset.option) { return; }
+
+  state.paintPicked[box.dataset.option] = box.checked;
+  drawPaintBill();
+});
+
 // ============================================================ ОЧЕРЕДЬ
 function loadQueue() {
   api('/queue').then(function (answer) {
@@ -1592,10 +1809,19 @@ api('/public/info').then(function (result) {
   $('tTires').textContent = '≈ ' + info.minutes_tires + ' мин';
 
   if (info.shop_phone) {
+    var clean = info.shop_phone.replace(/[^\d+]/g, '');
     $('footPhone').innerHTML = 'Вопросы по телефону: <a href="tel:'
-      + info.shop_phone.replace(/[^\d+]/g, '') + '">' + info.shop_phone + '</a>';
+      + clean + '">' + info.shop_phone + '</a>';
+
+    // Покраску не записывают окном в сетке: мастер сначала смотрит
+    // диски. Поэтому с калькулятора ведём на звонок, а не на запись
+    $('paintCall').href = 'tel:' + clean;
+    $('paintCall').textContent = 'Позвонить ' + info.shop_phone;
   }
 });
+
+// Калькулятор покраски: показываем кнопку, только если цех прислал цены
+loadPaint();
 
 // Ярлык должен называться той точкой, ссылку на которую человек
 // открыл, а не сетью вообще

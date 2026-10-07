@@ -121,6 +121,37 @@ def info(shop: Optional[str] = Query(None, description='Короткое имя 
         minutes_tires=shop_settings.get_int(db, 'booking_minutes_tires', shop=row))
 
 
+@router.get('/paint', summary='Калькулятор покраски дисков')
+def paint(shop: Optional[str] = Query(None, description='Короткое имя точки'),
+          db: Session = Depends(get_db)):
+    """
+    Размеры, цены и дополнения для калькулятора покраски.
+
+    Считает кабинет у себя, по этим числам — тем же составом, каким
+    считает приёмщик в цеху. Отдельного расчёта на сервере нет
+    намеренно: два места расчёта однажды назовут человеку разные суммы.
+
+    Пока цех ничего не прислал, возвращаем выключенный калькулятор:
+    выдумать цены на покраску нельзя, а показать нули — хуже, чем не
+    показать ничего.
+    """
+    import json
+
+    raw = shop_settings.get(db, 'paint_config', shop=_shop(db, shop))
+    if not raw:
+        return {'available': False, 'sizes': [], 'options': [],
+                'wheels_default': 4}
+
+    try:
+        config = json.loads(raw)
+    except ValueError:
+        return {'available': False, 'sizes': [], 'options': [],
+                'wheels_default': 4}
+
+    config['available'] = bool(config.get('sizes'))
+    return config
+
+
 @router.get('/days', response_model=List[DayOut], summary='Свободные окна')
 def days(wheels_assembled: Optional[bool] = Query(None),
          shop: Optional[str] = Query(None, description='Короткое имя точки'),

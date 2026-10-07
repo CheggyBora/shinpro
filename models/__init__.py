@@ -13,8 +13,10 @@ from .shift import Shift
 from .audit_log import AuditLog
 from .appointment import Appointment
 from .booking_posts import BookingPosts
+from .paint import PaintOption
 
 __all__ = [
+    'PaintOption',
     'Employee',
     'WorkShift',
     'Client',

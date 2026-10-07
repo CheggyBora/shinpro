@@ -5,6 +5,7 @@ from ui.orders_tab import OrdersTab
 from ui.clients_tab import ClientsTab
 from ui.appointments_tab import AppointmentsTab
 from ui.tire_storage_tab import TireStorageTab
+from ui.paint_tab import PaintTab
 from ui.price_list_tab import PriceListTab
 from ui.statistics_tab import StatisticsTab
 from config import get_db
@@ -51,6 +52,7 @@ class MainWindow:
         # История нарядов теперь подраздел внутри «Клиентов»
         self.history_tab = self.clients_tab.history_tab
         self.tire_storage_tab = TireStorageTab(self.content, self.db)
+        self.paint_tab = PaintTab(self.content, self.db)
         self.statistics_tab = StatisticsTab(self.content, self.db)
         self.price_list_tab = PriceListTab(self.content, self.db)
 
@@ -59,6 +61,7 @@ class MainWindow:
         self.nav.add('Запись', self.appointments_tab.frame)
         self.nav.add('Клиенты', self.clients_tab.frame)
         self.nav.add('Хранение шин', self.tire_storage_tab.frame)
+        self.nav.add('Покраска', self.paint_tab.frame)
         self.nav.add('Отчёты', self.statistics_tab.frame)
         self.nav.add('Прайс-лист', self.price_list_tab.frame)
 

@@ -39,6 +39,7 @@ TESTS = [
     ('PIN-код и журнал действий', 'test_auth_and_audit.py'),
     ('Хранение шин', 'test_tire_storage.py'),
     ('Срок хранения и напоминание о нём', 'test_storage_term.py'),
+    ('Калькулятор покраски дисков', 'test_paint.py'),
     ('Резервное копирование базы', 'test_backup.py'),
     ('Запуск программы при открытой смене', 'test_app_starts.py'),
     ('Экран администратора', 'test_admin_ui.py'),

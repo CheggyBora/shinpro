@@ -291,4 +291,63 @@ check('страница объявляет себя приложением',
       'manifest.webmanifest' in page)
 check('и не просится в поиск', 'noindex' in page)
 
+# ----------------------------------------------------------------------
+# Калькулятор покраски дисков
+# ----------------------------------------------------------------------
+print()
+print('=== Покраска: пока цех не прислал цены, калькулятора нет ===')
+answer = client.get('/public/paint').json()
+check('калькулятор выключен', answer['available'] is False, str(answer))
+check('и цены не выдуманы', answer['sizes'] == [], str(answer['sizes']))
+
+print()
+print('=== Цех прислал цены ===')
+import json as _json
+
+db = SessionLocal()
+shop = db.query(Shop).first()
+shop_id = shop.id
+shop_settings.set_value(db, 'paint_config', _json.dumps({
+    'sizes': [{'diameter': 17, 'price': 3500.0},
+              {'diameter': 20, 'price': 4000.0}],
+    'wheels_default': 4,
+    'options': [
+        {'id': 1, 'name': 'Алмазная проточка', 'price': 2500.0,
+         'per_wheel': True, 'note': 'На станке'},
+        {'id': 2, 'name': 'Покраска суппортов', 'price': 6000.0,
+         'per_wheel': False, 'note': None},
+    ],
+}, ensure_ascii=False), shop=shop)
+db.commit()
+db.close()
+
+answer = client.get('/public/paint').json()
+check('калькулятор включился', answer['available'] is True, str(answer))
+check('размеры доехали', len(answer['sizes']) == 2, str(answer['sizes']))
+check('цена размера на месте',
+      answer['sizes'][0]['price'] == 3500.0, str(answer['sizes'][0]))
+check('дополнения доехали', len(answer['options']) == 2,
+      str(len(answer['options'])))
+check('сказано, что считается за колесо',
+      answer['options'][0]['per_wheel'] is True
+      and answer['options'][1]['per_wheel'] is False,
+      str([row['per_wheel'] for row in answer['options']]))
+check('пояснение доехало',
+      answer['options'][0]['note'] == 'На станке',
+      str(answer['options'][0]['note']))
+
+print()
+print('=== Испорченная настройка не роняет страницу ===')
+db = SessionLocal()
+shop_settings.set_value(db, 'paint_config', 'это не json',
+                        shop=db.query(Shop).get(shop_id))
+db.commit()
+db.close()
+
+answer = client.get('/public/paint')
+check('ответ по-прежнему двести', answer.status_code == 200,
+      str(answer.status_code))
+check('калькулятор просто выключен',
+      answer.json()['available'] is False, str(answer.json()))
+
 finish()

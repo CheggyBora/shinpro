@@ -436,7 +436,23 @@ class SyncService:
             # сервере, и они бы разъехались
             'telegram_token': telegram.get_token(),
             'telegram_chats': chats,
+
+            # Калькулятор покраски: кабинет должен считать ровно так же,
+            # как приёмщик. Строкой, а не отдельным запросом — состав
+            # меняется редко, а лишний путь обмена это лишнее место,
+            # где цены могут разъехаться
+            'paint_config': self._paint_config(),
         }
+
+    def _paint_config(self):
+        from services.paint_service import PaintService
+
+        try:
+            return json.dumps(PaintService(self.db).config(),
+                              ensure_ascii=False)
+        except Exception as e:
+            log.warning(f"Цены на покраску не ушли в обмен: {e}")
+            return ''
 
     # ------------------------------------------------------------------
     # Вниз
