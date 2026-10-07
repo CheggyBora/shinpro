@@ -333,6 +333,46 @@ with TestClient(app) as client:
           ordered.json()['request_state'] == 'pending',
           str(ordered.json()['request_state']))
 
+    print()
+    print('=== Запись с выдачей со склада: ближайшие дни закрыты ===')
+    plain = client.get('/booking/days', headers=headers).json()
+    with_set = client.get('/booking/days?with_storage=true',
+                          headers=headers).json()
+
+    check('дней столько же', len(plain) == len(with_set),
+          f'{len(plain)} против {len(with_set)}')
+    check('без комплекта ближайший день открыт',
+          plain[0]['storage_too_soon'] is False, str(plain[0]))
+    check('с комплектом — закрыт', with_set[0]['storage_too_soon'] is True,
+          str(with_set[0]))
+    check('и окон в нём нет', with_set[0]['slots'] == [],
+          str(len(with_set[0]['slots'])))
+    check('сказано, что день закрыт', with_set[0]['is_closed'] is True)
+
+    closed = [day for day in with_set if day['storage_too_soon']]
+    check('закрыто ровно два дня', len(closed) == 2, str(len(closed)))
+    check('третий уже открыт', with_set[2]['storage_too_soon'] is False,
+          str(with_set[2]['day']))
+
+    print()
+    print('=== Через голову приложения записаться тоже нельзя ===')
+    soon = client.post('/booking', headers=headers, json={
+        'at': (shop_now() + timedelta(days=1)).replace(
+            hour=12, minute=0, second=0, microsecond=0).isoformat(),
+        'license_plate': 'А123ВВ777',
+        'storage_ids': [stored_id]})
+    check('запись отклонена', soon.status_code == 400, str(soon.json()))
+    check('объяснено про склад',
+          'склад' in soon.json()['detail'].lower(), soon.json()['detail'])
+
+    print()
+    print('=== Без комплекта в тот же день записаться можно ===')
+    same = client.post('/booking', headers=headers, json={
+        'at': (shop_now() + timedelta(days=1)).replace(
+            hour=13, minute=0, second=0, microsecond=0).isoformat(),
+        'license_plate': 'А123ВВ777'})
+    check('запись прошла', same.status_code == 200, str(same.json()))
+
     print('\n=== Чужой комплект не отдаётся ===')
     db = SessionLocal()
     stranger = Client(phone='79990001122')

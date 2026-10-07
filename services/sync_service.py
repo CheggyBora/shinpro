@@ -423,6 +423,7 @@ class SyncService:
             # заканчивается хранение и что пора переобуваться. Считать
             # их должен цех — сроки и сезон у каждого свои
             'storage_warn_days': settings.get('storage_warn_days'),
+            'storage_lead_days': settings.get('storage_lead_days'),
             'season_autumn_at': settings.get('season_autumn_at'),
             'season_spring_at': settings.get('season_spring_at'),
             'season_reminders_enabled': settings.get('season_reminders_enabled'),

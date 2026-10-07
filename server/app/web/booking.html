@@ -398,7 +398,7 @@ input.code {
       </span>
       <span>
         <b>Заказать шины с хранения</b>
-        <span>Достанем ваш комплект к приезду. Нужен вход в кабинет</span>
+        <span>Доставим ваш комплект к приезду. Нужен вход в кабинет</span>
       </span>
     </button>
 
@@ -602,13 +602,13 @@ input.code {
     <!-- хранение: только для вошедших -->
     <div class="card" id="storageCard" hidden>
       <h2><span class="num" style="background:var(--ok)">2</span> Ваши шины на хранении</h2>
-      <p class="hint">Отметьте, что достать к приезду.</p>
+      <p class="hint">Отметьте, что доставить к приезду.</p>
       <div id="storageList"></div>
     </div>
 
     <div class="card">
       <h2><span class="num" id="numWhen">2</span> Когда вам удобно</h2>
-      <p class="hint">Показаны только свободные окна.</p>
+      <p class="hint" id="daysHint">Показаны только свободные окна.</p>
       <div class="days" id="days"></div>
       <div class="slots" id="slots"></div>
       <div class="empty" id="slotsEmpty" hidden>
@@ -1642,14 +1642,33 @@ function currentWheels() {
 
 function loadDays() {
   var wheels = currentWheels();
-  var query = wheels === null || wheels === undefined
-    ? '' : '?wheels_assembled=' + wheels;
+  var parts = [];
+
+  if (wheels !== null && wheels !== undefined) {
+    parts.push('wheels_assembled=' + wheels);
+  }
+
+  // Просят комплект со склада — ближайшие дни отпадают: его надо
+  // найти и привезти. Сервер решает, сколько на это нужно
+  if (state.picked.length) { parts.push('with_storage=true'); }
+
+  var query = parts.length ? '?' + parts.join('&') : '';
   var path = (state.mode === 'cabinet' && state.token
     ? '/booking/days' : '/public/days') + query;
 
   api(path).then(function (result) {
     if (!result.ok) return;
     state.days = result.data;
+
+    // Если дни закрыты из-за склада — сказать почему. Человек выбрал
+    // комплект и вдруг не видит ближайших дней: без объяснения это
+    // выглядит как поломка
+    var waiting = state.days.filter(function (d) { return d.storage_too_soon; });
+    $('daysHint').textContent = waiting.length
+      ? 'Комплект везут со склада, поэтому ближайшие '
+        + waiting.length + ' '
+        + plural(waiting.length, 'день', 'дня', 'дней') + ' закрыты.'
+      : 'Показаны только свободные окна.';
 
     var keep = state.day;
     state.day = null;
@@ -1681,7 +1700,8 @@ function drawDays() {
       '<div class="dnum">' + when.getDate() + '</div>' +
       '<div class="free">' + (day.slots.length
         ? day.slots.length + ' ' + plural(day.slots.length, 'окно', 'окна', 'окон')
-        : (day.is_closed ? 'выходной' : 'занято')) + '</div>';
+        : (day.storage_too_soon ? 'везём'
+           : (day.is_closed ? 'выходной' : 'занято'))) + '</div>';
     button.addEventListener('click', function () { pickDay(day.day); });
     box.appendChild(button);
   });
@@ -1793,7 +1813,7 @@ function showDone(data) {
 
   if (state.picked.length) {
     $('doneStorage').hidden = false;
-    $('doneStorage').textContent = 'Ваш комплект достанем со склада '
+    $('doneStorage').textContent = 'Ваш комплект доставим со склада '
       + 'к этому времени — мастер уже знает.';
   }
 

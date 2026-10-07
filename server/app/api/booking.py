@@ -48,6 +48,9 @@ def days(wheels_assembled: Optional[bool] = Query(
              None, description='Колёса в сборе — от этого зависит время работ'),
          shop: Optional[str] = Query(
              None, description='Точка. Нужна, когда их у сети несколько'),
+         with_storage: Optional[bool] = Query(
+             False, description='Клиент просит комплект со склада — '
+                                'ближайшие дни закрыты'),
          client: Client = Depends(current_client),
          db: Session = Depends(get_db)):
     """
@@ -58,11 +61,12 @@ def days(wheels_assembled: Optional[bool] = Query(
     где под разбортовку уже не влезет.
     """
     calendar = BookingService(db, _shop(db, client, shop)).calendar(
-        wheels_assembled)
+        wheels_assembled, with_storage=bool(with_storage))
     return [
         DayOut(day=day['day'], is_closed=day['is_closed'],
                opens_at=day['opens_at'], closes_at=day['closes_at'],
                posts=day['posts'],
+               storage_too_soon=day['storage_too_soon'],
                slots=[SlotOut(**slot) for slot in day['slots']])
         for day in calendar
     ]

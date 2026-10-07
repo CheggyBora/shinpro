@@ -197,9 +197,9 @@ check('зовут в зимнюю', 'зимнюю' in one.text, one.text)
 check('и объясняют, зачем заранее', 'очеред' in one.text, one.text)
 
 with_set = next(notice for notice in made if notice.client_id == soon.id)
-check('владельцу комплекта сказали, что достанут',
-      'достанем' in with_set.text, with_set.text)
-check('а остальным — нет', 'достанем' not in one.text, one.text)
+check('владельцу комплекта сказали, что доставят',
+      'доставим' in with_set.text, with_set.text)
+check('а остальным — нет', 'доставим' not in one.text, one.text)
 
 print('\n=== Второй раз за год не зовём ===')
 again = campaigns.plan_season(db, shop, autumn)

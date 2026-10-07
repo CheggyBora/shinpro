@@ -115,7 +115,7 @@ def season_text(shop_name, season, has_storage):
                 'Запишитесь на удобное время в кабинете.')
 
     return (f'<b>{shop_name}</b>\n' + body
-            + ('\n\nВаш комплект лежит у нас — достанем к приезду.'
+            + ('\n\nВаш комплект лежит у нас — доставим к приезду.'
                if has_storage else ''))
 
 

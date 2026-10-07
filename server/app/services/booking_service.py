@@ -149,22 +149,53 @@ class BookingService:
     def days_ahead(self):
         return max(1, shop_settings.get_int(self.db, 'booking_days_ahead', shop=self.shop))
 
-    def calendar(self, wheels_assembled=None, now=None):
-        """Ближайшие дни со свободными окнами — то, что рисует приложение."""
+    def storage_lead_days(self):
+        """
+        За сколько дней записываться, если просят комплект со склада.
+
+        Комплект надо найти на хранении, привезти и подготовить. В тот
+        же день это не делается, и показать человеку завтрашнее утро —
+        значит либо обмануть его, либо сорвать работу склада.
+        """
+        return max(0, shop_settings.get_int(self.db, 'storage_lead_days',
+                                            shop=self.shop))
+
+    def storage_ready_from(self, now=None):
+        """С какого дня можно записываться с выдачей со склада."""
+        lead = self.storage_lead_days()
+        if not lead:
+            return None
+        return ((now or shop_now()) + timedelta(days=lead)).date()
+
+    def calendar(self, wheels_assembled=None, now=None, with_storage=False):
+        """
+        Ближайшие дни со свободными окнами — то, что рисует приложение.
+
+        Если человек просит комплект со склада, ближайшие дни закрыты:
+        комплект к ним не успеют привезти. Закрываем, а не прячем —
+        иначе непонятно, почему запись начинается с четверга.
+        """
         now = now or shop_now()
         duration = self.duration_for(wheels_assembled)
+        ready_from = self.storage_ready_from(now) if with_storage else None
 
         days = []
         for offset in range(self.days_ahead()):
             day = (now + timedelta(days=offset)).date()
             settings = self.day_settings(day)
+
+            too_soon = ready_from is not None and day < ready_from
             days.append({
                 'day': day,
-                'is_closed': settings['is_closed'],
+                'is_closed': settings['is_closed'] or too_soon,
                 'opens_at': settings['opens_at'],
                 'closes_at': settings['closes_at'],
                 'posts': settings['posts'],
-                'slots': self.free_slots(day, duration, now=now),
+                'slots': [] if too_soon else self.free_slots(day, duration,
+                                                             now=now),
+                # Чтобы приложение сказало человеку, почему день закрыт,
+                # а не оставило его гадать
+                'storage_too_soon': too_soon,
             })
         return days
 
@@ -238,6 +269,17 @@ class BookingService:
         settings = self.day_settings(at.date())
         if settings['is_closed']:
             raise BookingError('В этот день шиномонтаж не работает')
+
+        # Приложение такие дни не показывает, но полагаться на это
+        # нельзя: запрос приходит из интернета, а не из нашей страницы
+        if stored:
+            ready_from = self.storage_ready_from(now)
+            if ready_from is not None and at.date() < ready_from:
+                lead = self.storage_lead_days()
+                raise BookingError(
+                    f'Комплект со склада привезут не раньше чем через '
+                    f'{lead} дн. Выберите день с '
+                    f'{ready_from.strftime("%d.%m")}')
 
         if not self._slot_is_free(at, duration, settings['posts']):
             raise BookingError('Это время только что заняли. Выберите другое')
