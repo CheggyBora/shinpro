@@ -259,6 +259,10 @@ class SyncService:
                     'total': service.item_total(item),
                     'consumable_cost': service.item_consumables(item),
                     'comment': item.comment,
+                    # Основная услуга или допродажа. Запоминаем, чем она
+                    # была в день продажи: разметят прайс иначе — прошлые
+                    # наряды от этого меняться не должны
+                    'is_extra': bool(item.service.is_extra) if item.service else False,
                 } for item in items]
             except Exception as e:
                 log.warning(f"Наряд №{order.id} не попал в обмен: {e}")

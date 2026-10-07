@@ -84,6 +84,23 @@ def summary(day_from: Optional[date] = Query(None, alias='from'),
     return _service(db, staff, shop).summary(day_from, day_to)
 
 
+@router.get('/sales', summary='Продажи: основное и допродажи')
+def sales(day_from: Optional[date] = Query(None, alias='from'),
+          day_to: Optional[date] = Query(None, alias='to'),
+          shop: Optional[str] = None,
+          staff: StaffUser = Depends(require(PERM_REVENUE)),
+          db: Session = Depends(get_db)):
+    """
+    Что продано основным, что допродажей и какая доля у допов.
+
+    Доля допродаж — показатель приёмки: машин за день приезжает примерно
+    одинаково, а разница между хорошим месяцем и плохим обычно сидит
+    в том, предложили человеку что-то сверх или просто перекинули колёса.
+    """
+    day_from, day_to = _period(day_from, day_to)
+    return _service(db, staff, shop).sales(day_from, day_to)
+
+
 @router.get('/services', summary='Выручка по услугам')
 def services(day_from: Optional[date] = Query(None, alias='from'),
              day_to: Optional[date] = Query(None, alias='to'),
@@ -239,10 +256,21 @@ def salary(shop: Optional[str] = None,
     роли на стороне страницы нельзя, решает сервер.
     """
     service = _service(db, staff, shop)
+    people = service.salary_balances()
+
+    # Итог по всем: сколько начислено, сколько отдано и сколько ещё
+    # должны. Владельцу эта строка нужнее построчной — по ней видно,
+    # хватит ли в кассе на выдачу
     return {
         'can_pay': staff.can(PERM_SALARY_PAY),
-        'people': service.salary_balances(),
+        'people': people,
         'payouts': service.payout_history(),
+        'totals': {
+            'accrued': round(sum(row['accrued'] for row in people), 2),
+            'paid': round(sum(row['paid'] for row in people), 2),
+            'balance': round(sum(row['balance'] for row in people), 2),
+            'waiting': round(sum(row['waiting'] for row in people), 2),
+        },
     }
 
 

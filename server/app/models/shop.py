@@ -243,6 +243,12 @@ class VisitItem(Base):
     consumable_cost = Column(Float, default=0.0, nullable=False)
     comment = Column(Text, nullable=True)
 
+    # Основная услуга или допродажа. Приезжает из цеха вместе с позицией
+    # и запоминается как было в день продажи: разметят прайс иначе —
+    # прошлые наряды от этого меняться не должны, иначе сравнение
+    # месяцев перестанет что-либо значить
+    is_extra = Column(Boolean, default=False, nullable=False, index=True)
+
     visit = relationship('Visit', back_populates='items')
 
 

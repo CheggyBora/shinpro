@@ -98,6 +98,8 @@ employees.register_employee(1)
 employees.start_shift(1)
 
 db.add(Service(name='Шиномонтаж', vehicle_type='car', price_r16=1000.0))
+db.add(Service(name='Правка диска', vehicle_type='car', price_r16=1500.0,
+               is_extra=True))
 db.commit()
 
 orders = OrderService(db)
@@ -146,6 +148,14 @@ db.add(TireStorage(car_number='А123ВВ777', storage_type='Шины с диск
                    price=5000.0, status='stored'))
 db.commit()
 
+# Второй наряд — на допродаже: приехали за одним, предложили правку диска
+extra_order = orders.create_order('Х777ХХ77', 'R16', 'car')
+extra_service = db.query(Service).filter(Service.is_extra.is_(True)).first()
+orders.add_service_to_order(extra_order.id, extra_service.id)
+db.commit()
+SalaryService(db).process_payment(extra_order.id, 'cash',
+                                  orders.calculate_total(extra_order.id))
+
 result = sync.run_once()
 check('обмен прошёл', result['sent']['clients'] > 0, str(result['sent']))
 
@@ -153,7 +163,8 @@ srv = ServerSession()
 check('клиент ушёл наверх', srv.query(SrvClient).count() >= 1,
       str(srv.query(SrvClient).count()))
 check('машина ушла наверх', srv.query(SrvCar).count() >= 1)
-check('визит ушёл наверх', srv.query(SrvVisit).count() == 1,
+# Нарядов два: перекидка и допродажа
+check('визиты ушли наверх', srv.query(SrvVisit).count() == 2,
       str(srv.query(SrvVisit).count()))
 
 visit = srv.query(SrvVisit).first()
@@ -188,7 +199,7 @@ check('обмен записей не касается', srv.query(SrvAppointmen
 
 print('\n=== Повторный обмен не плодит дублей ===')
 sync.run_once()
-check('визит по-прежнему один', srv.query(SrvVisit).count() == 1,
+check('визитов по-прежнему два', srv.query(SrvVisit).count() == 2,
       str(srv.query(SrvVisit).count()))
 check('комплект по-прежнему один', srv.query(SrvStored).count() == 1)
 srv.close()
@@ -273,6 +284,19 @@ check('название услуги на месте', lines[0].service_name == 
 check('скидка учтена в позиции', lines[0].discount_percent == 5,
       str(lines[0].discount_percent))
 check('цена позиции со скидкой', lines[0].total == 950.0, str(lines[0].total))
+check('основная услуга доехала основной', lines[0].is_extra is False,
+      str(lines[0].is_extra))
+
+# Разметка прайса должна доезжать как есть: иначе доля допродаж на
+# дашборде окажется нулевой при размеченном прайсе, и владелец решит,
+# что мастера ничего не предлагают
+extra_visit = srv.query(SrvVisit).filter(
+    SrvVisit.local_id == extra_order.id).first()
+extra_lines = srv.query(SrvItem).filter(
+    SrvItem.visit_id == extra_visit.id).all()
+check('допродажа доехала', len(extra_lines) == 1, str(len(extra_lines)))
+check('и помечена допродажей', extra_lines[0].is_extra is True,
+      f'{extra_lines[0].service_name}: {extra_lines[0].is_extra}')
 check('сумма наряда — сумма позиций', visit.total_amount == lines[0].total,
       f'{visit.total_amount} против {lines[0].total}')
 

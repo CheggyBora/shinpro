@@ -119,10 +119,12 @@ def seed():
                       changed_at=at(day, hour), **extra)
         db.add(visit)
         db.flush()
-        for name, quantity, price, line_total in items:
+        for line in items:
+            name, quantity, price, line_total = line[:4]
             db.add(VisitItem(visit_id=visit.id, service_name=name,
                              quantity=quantity, unit_price=price,
-                             total=line_total))
+                             total=line_total,
+                             is_extra=bool(line[4]) if len(line) > 4 else False))
         for employee_id, amount in accruals:
             db.add(SalaryAccrual(visit_id=visit.id,
                                  employee_local_id=employee_id, amount=amount,
@@ -135,7 +137,9 @@ def seed():
     order(102, YESTERDAY, 15, 'В222ВВ77', 2000.0, 1800.0, 200.0, 'card', 10,
           [(1, 360.0), (2, 450.0)],
           [('Шиномонтаж', 4, 250.0, 1000.0),
-           ('Правка литого диска', 2, 500.0, 1000.0)])
+           # Пятым полем — допродажа: приехали перекинуть колёса,
+           # а заодно выправили диск
+           ('Правка литого диска', 2, 500.0, 1000.0, True)])
 
     # Сегодня: наряд, гарантия и удалённый
     order(103, TODAY, 11, 'С333СС77', 3000.0, 3000.0, 0.0, 'cash', 11,
@@ -228,6 +232,30 @@ with TestClient(app) as client:
           str(services))
     check('доля посчитана', abs(sum(row['share'] for row in services) - 100) < 1,
           str([row['share'] for row in services]))
+
+    print()
+    print('=== Продажи: основное и допродажи ===')
+    sales = client.get('/dashboard/sales', params=PERIOD, headers=owner).json()
+
+    check('суммы сошлись с общей',
+          abs(sales['main_amount'] + sales['extra_amount']
+              - sales['total_amount']) < 0.01, str(sales['total_amount']))
+    check('всё разложено по двум спискам',
+          len(sales['main']) + len(sales['extra']) == len(services),
+          f"{len(sales['main'])} + {len(sales['extra'])} против {len(services)}")
+
+    if sales['marked']:
+        check('доля допов посчитана от общей суммы',
+              abs(sales['extra_share']
+                  - sales['extra_amount'] / sales['total_amount'] * 100) < 0.2,
+              str(sales['extra_share']))
+        check('допы не попали в основные',
+              not [row for row in sales['main'] if row['is_extra']],
+              str([row['service_name'] for row in sales['main']]))
+    else:
+        check('пока прайс не размечен, долю не выдумываем',
+              sales['extra_share'] == 0 and not sales['extra'],
+              str(sales))
 
     print('\n=== Мастера ===')
     masters = client.get('/dashboard/masters', params=PERIOD,

@@ -184,12 +184,14 @@ class DashboardService:
             func.sum(VisitItem.quantity),
             func.sum(VisitItem.total),
             func.sum(VisitItem.consumable_cost * VisitItem.quantity),
+            VisitItem.is_extra,
         ).join(Visit, VisitItem.visit_id == Visit.id).filter(
             Visit.is_deleted.is_(False),
             Visit.visited_at >= start,
             Visit.visited_at <= end,
         )
-        rows = self._only_mine(rows).group_by(VisitItem.service_name).all()
+        rows = self._only_mine(rows).group_by(
+            VisitItem.service_name, VisitItem.is_extra).all()
 
         total = sum(float(row[2] or 0) for row in rows) or 1.0
 
@@ -199,10 +201,45 @@ class DashboardService:
             'amount': round(float(row[2] or 0), 2),
             'consumables': round(float(row[3] or 0), 2),
             'share': round(float(row[2] or 0) / total * 100, 1),
+            'is_extra': bool(row[4]),
         } for row in rows]
 
         result.sort(key=lambda item: item['amount'], reverse=True)
         return result
+
+    def sales(self, day_from, day_to):
+        """
+        Сводка по продажам: основное отдельно, допродажи отдельно.
+
+        Доля допов — показатель работы приёмки, а не бухгалтерии. Машин
+        за день приезжает примерно одинаково; разница в выручке между
+        хорошим месяцем и плохим обычно сидит именно в том, предложили
+        человеку что-то сверх или просто перекинули колёса.
+        """
+        rows = self.services(day_from, day_to)
+
+        main = [row for row in rows if not row['is_extra']]
+        extra = [row for row in rows if row['is_extra']]
+
+        main_sum = round(sum(row['amount'] for row in main), 2)
+        extra_sum = round(sum(row['amount'] for row in extra), 2)
+        total = main_sum + extra_sum
+
+        return {
+            'main': main,
+            'extra': extra,
+            'main_amount': main_sum,
+            'extra_amount': extra_sum,
+            'total_amount': round(total, 2),
+
+            # Сколько рублей из ста принесли допродажи
+            'extra_share': round(extra_sum / total * 100, 1) if total else 0.0,
+
+            # Пока прайс не размечен, допов нет вовсе — и показывать
+            # «доля допродаж: 0%» значит врать: их не ноль, их просто
+            # не отличили
+            'marked': bool(extra),
+        }
 
     # ------------------------------------------------------------------
     # Мастера

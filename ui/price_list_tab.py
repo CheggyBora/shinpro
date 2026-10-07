@@ -156,7 +156,9 @@ class PriceListTab:
         ttk.Label(content,
                   text="Себестоимость материалов вычитается из суммы наряда до расчёта зарплаты. "
                        "Время нужно для очереди и записи. От диаметра колеса не зависят.\n"
-                       "Двойной клик по ячейке — изменить.",
+                       "Вид — основная услуга или допродажа: по доле допов в дашборде видно, "
+                       "предлагают мастера что-то сверх или просто крутят колёса.\n"
+                       "Двойной клик по ячейке — изменить, по виду — переключить.",
                   font=(styles.DEFAULT_FONT, 9), foreground='#64748b',
                   wraplength=760, justify='left').pack(anchor='w', pady=(0, 12))
 
@@ -164,18 +166,21 @@ class PriceListTab:
         tree_frame.pack(fill='both', expand=True)
 
         tree = ttk.Treeview(tree_frame,
-                            columns=('Услуга', 'Тип', 'Расходник', 'Время', 'Скидка'),
+                            columns=('Услуга', 'Тип', 'Вид', 'Расходник',
+                                     'Время', 'Скидка'),
                             show='headings')
         tree.heading('Услуга', text='Услуга')
         tree.heading('Тип', text='Транспорт')
+        tree.heading('Вид', text='Вид')
         tree.heading('Расходник', text='Расходник, руб.')
         tree.heading('Время', text='Время, мин')
         tree.heading('Скидка', text='Макс. скидка, %')
-        tree.column('Услуга', width=290, anchor='w')
-        tree.column('Тип', width=110, anchor='center')
-        tree.column('Расходник', width=130, anchor='center')
-        tree.column('Время', width=110, anchor='center')
-        tree.column('Скидка', width=130, anchor='center')
+        tree.column('Услуга', width=260, anchor='w')
+        tree.column('Тип', width=100, anchor='center')
+        tree.column('Вид', width=110, anchor='center')
+        tree.column('Расходник', width=120, anchor='center')
+        tree.column('Время', width=100, anchor='center')
+        tree.column('Скидка', width=120, anchor='center')
         tree.pack(side='left', fill='both', expand=True)
 
         scroll = ttk.Scrollbar(tree_frame, orient='vertical', command=tree.yview)
@@ -195,6 +200,7 @@ class PriceListTab:
                 tree.insert('', 'end', values=(
                     service.name,
                     type_names.get(service.vehicle_type, service.vehicle_type),
+                    "допродажа" if service.is_extra else "основная",
                     f"{service.consumable_cost or 0:.0f}",
                     f"{service.duration_minutes or 0}",
                     "без ограничений" if limit is None or limit >= 100 else f"{limit}"
@@ -208,7 +214,7 @@ class PriceListTab:
                 return
             column = tree.identify_column(event.x)
             selection = tree.selection()
-            if not selection or column not in ('#3', '#4', '#5'):
+            if not selection or column not in ('#3', '#4', '#5', '#6'):
                 return
 
             service_id = int(tree.item(selection[0])['tags'][0])
@@ -216,10 +222,24 @@ class PriceListTab:
             if not service:
                 return
 
+            # Вид переключается щелчком, без окна: значений всего два,
+            # и спрашивать «введите основная или допродажа» — издевательство
             if column == '#3':
+                service.is_extra = not service.is_extra
+                self.db.commit()
+                AuditService(self.db).log(
+                    AuditService.PRICE_CHANGE,
+                    f"«{service.name}» — вид: "
+                    f"{'допродажа' if service.is_extra else 'основная'}",
+                    entity_type='service', entity_id=service.id
+                )
+                load()
+                return
+
+            if column == '#4':
                 title, prompt = "Себестоимость расходников", "Себестоимость материалов, руб.:"
                 current, maximum = service.consumable_cost or 0, None
-            elif column == '#4':
+            elif column == '#5':
                 title, prompt = "Время выполнения", "Сколько минут занимает услуга:"
                 current, maximum = service.duration_minutes or 0, None
             else:
@@ -237,11 +257,11 @@ class PriceListTab:
                 return
 
             try:
-                if column == '#3':
+                if column == '#4':
                     old, new = service.consumable_cost or 0, round(float(value), 2)
                     service.consumable_cost = new
                     what = 'расходник'
-                elif column == '#4':
+                elif column == '#5':
                     old, new = service.duration_minutes or 0, int(value)
                     service.duration_minutes = new
                     what = 'время'

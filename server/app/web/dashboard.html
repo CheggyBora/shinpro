@@ -107,6 +107,9 @@ button { font-family: inherit; cursor: pointer; }
 .tag.warn { background: #fef3c7; color: var(--warn); }
 .tag.ok { background: #d1fae5; color: var(--ok); }
 
+.hint {
+  margin: 10px 2px 0; font-size: 13px; color: var(--ink-soft); line-height: 1.5;
+}
 .empty { text-align: center; color: var(--muted); padding: 24px 10px; font-size: 14px; }
 .error { background: #fee2e2; color: #991b1b; border-radius: 12px;
   padding: 11px 13px; font-size: 14px; margin-bottom: 12px; }
@@ -708,16 +711,51 @@ function bars(days) {
     + dayText(days[days.length - 1].day) + '</span></div>';
 }
 
-function loadServices() {
-  api(query('/dashboard/services')).then(function (rows) {
-    if (!rows.length) return show('<div class="empty">За этот период услуг не было</div>');
+function serviceRows(rows) {
+  return rows.map(function (row) {
+    return '<div class="row"><div class="main"><b>' + escape(row.service_name)
+      + '</b><span>' + row.quantity + ' ' + plural(row.quantity, 'раз', 'раза', 'раз')
+      + ' · ' + row.share + '%</span></div>'
+      + '<div class="money">' + money(row.amount) + '</div></div>';
+  }).join('');
+}
 
-    show('<div class="card"><h2>Что продавалось</h2>' + rows.map(function (row) {
-      return '<div class="row"><div class="main"><b>' + escape(row.service_name)
-        + '</b><span>' + row.quantity + ' ' + plural(row.quantity, 'раз', 'раза', 'раз')
-        + ' · ' + row.share + '%</span></div>'
-        + '<div class="money">' + money(row.amount) + '</div></div>';
-    }).join('') + '</div>');
+function loadServices() {
+  api(query('/dashboard/sales')).then(function (data) {
+    var all = data.main.concat(data.extra);
+    if (!all.length) return show('<div class="empty">За этот период услуг не было</div>');
+
+    var html = '';
+
+    // Доля допродаж впереди всего: это главное число на экране.
+    // Пока прайс не размечен, его не показываем — ноль здесь означал бы
+    // «не продают», а на деле означает «не отличили»
+    if (data.marked) {
+      html += '<div class="card"><h2>Продажи</h2>'
+        + '<div class="tiles">'
+        + tile('Основные услуги', money(data.main_amount))
+        + tile('Допродажи', money(data.extra_amount))
+        + tile('Доля допродаж', data.extra_share + '%')
+        + '</div></div>';
+    }
+
+    if (data.main.length) {
+      html += '<div class="card"><h2>Основные услуги</h2>'
+        + serviceRows(data.main) + '</div>';
+    }
+
+    if (data.extra.length) {
+      html += '<div class="card"><h2>Допродажи</h2>'
+        + serviceRows(data.extra) + '</div>';
+    }
+
+    if (!data.marked) {
+      html += '<p class="hint">Чтобы видеть долю допродаж, разметьте прайс '
+        + 'в программе цеха: Прайс-лист → Расходники и время услуг → '
+        + 'столбец «Вид».</p>';
+    }
+
+    show(html);
   }).catch(function (e) { show(''); fail(e.message); });
 }
 
@@ -804,7 +842,22 @@ function loadShifts() {
 
 function loadSalary() {
   api(withShop('/dashboard/salary')).then(function (data) {
-    var html = '<div class="card"><h2>Кому сколько должны</h2>';
+    var html = '';
+
+    // Итог впереди построчного: владельцу сначала нужен ответ на
+    // вопрос «сколько всего отдать», а уже потом — кому именно
+    if (data.totals && data.people.length) {
+      html += '<div class="card"><h2>Итого</h2><div class="tiles">'
+        + tile('Начислено', money(data.totals.accrued))
+        + tile('Выдано', money(data.totals.paid))
+        + tile('Осталось выдать', money(data.totals.balance), '', 'bad')
+        + (data.totals.waiting
+           ? tile('Ждёт цеха', money(data.totals.waiting))
+           : '')
+        + '</div></div>';
+    }
+
+    html += '<div class="card"><h2>Кому сколько должны</h2>';
 
     if (!data.people.length) {
       html += '<div class="empty">Сотрудников пока нет</div>';

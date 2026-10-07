@@ -90,6 +90,10 @@ class VisitItemIn(BaseModel):
     consumable_cost: float = 0.0
     comment: Optional[str] = None
 
+    # Старая программа цеха этого поля не шлёт — считаем всё основным,
+    # пока не обновится
+    is_extra: bool = False
+
 
 class AccrualIn(BaseModel):
     employee_local_id: int
@@ -412,7 +416,8 @@ def push(payload: PushIn, db: Session = Depends(get_db),
                     discount_percent=line.discount_percent,
                     total=line.total,
                     consumable_cost=line.consumable_cost,
-                    comment=line.comment))
+                    comment=line.comment,
+                    is_extra=line.is_extra))
 
         if item.accruals:
             for old in list(row.accruals):
