@@ -107,21 +107,29 @@ body {
 
 /* --- Развилка на входе --- */
 .pick {
-  padding: 4px 0 8px;
-  /* Экран выбора — единственное, что на нём есть. Кнопки жмутся
-     к шапке и оставляют пустоту внизу, поэтому центрируем их
-     по высоте: смотреть на пустой низ экрана незачем */
+  /* Экран выбора — единственное, что на нём есть, поэтому кнопки
+     стоят по центру высоты: иначе они жмутся к шапке, а низ экрана
+     пустует.
+
+     Белой карточки вокруг здесь нет намеренно. Кнопки сами карточки,
+     и обёртка добавляла вокруг них пустое белое поле: на экране это
+     читалось как сломанная вёрстка, а не как отступ. */
   display: flex; flex-direction: column; justify-content: center;
-  min-height: calc(100vh - 240px);
+  gap: 12px;
+  min-height: calc(100vh - 230px);
+
+  /* Сверху больше, чем снизу, намеренно: шапка заходит на содержимое,
+     и без этой поправки кнопки встают выше середины, хотя по расчёту
+     они ровно посередине своего блока */
+  padding: 38px 0 16px;
 }
 .big {
   display: flex; align-items: center; gap: 14px; width: 100%; text-align: left;
-  padding: 18px 16px; margin-bottom: 12px; cursor: pointer;
+  padding: 18px 16px; cursor: pointer;
   border: 1.5px solid var(--line); border-radius: var(--radius);
   background: #fff; font-family: inherit;
   transition: border-color .15s, transform .06s, box-shadow .15s;
 }
-.big:last-child { margin-bottom: 0; }
 .big:active { transform: translateY(1px); }
 .big .ic {
   width: 46px; height: 46px; flex: 0 0 auto; border-radius: 13px;
@@ -365,7 +373,7 @@ input.code {
 <div class="wrap">
 
   <!-- ================================================ развилка -->
-  <div class="card pick" id="screenPick">
+  <div class="pick" id="screenPick">
     <button class="big main" id="goQuick" type="button">
       <span class="ic">
         <svg viewBox="0 0 26 26" fill="none" aria-hidden="true">
@@ -375,7 +383,7 @@ input.code {
         </svg>
       </span>
       <span>
-        <b>Просто записаться</b>
+        <b>Записаться на шиномонтаж</b>
         <span>Приеду со своими колёсами. Без регистрации, минута времени</span>
       </span>
     </button>
