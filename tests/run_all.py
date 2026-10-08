@@ -46,6 +46,7 @@ TESTS = [
     ('Интерфейс наряда', 'test_order_ui.py'),
     ('Клиенты и карточка клиента', 'test_clients_tab.py'),
     ('Миграция базы', 'test_migration.py'),
+    ('Обновление программы на рабочей базе', 'test_upgrade.py'),
     ('Очистка рабочих данных', 'test_clear_data.py'),
     ('Устойчивость к кодировке консоли', 'test_console_output.py'),
 ]
