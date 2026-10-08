@@ -56,10 +56,21 @@ async def lifespan(app: FastAPI):
             from app.services import tenancy as _tenancy
 
             account_id = _tenancy.account_for(session)
-            owner = StaffService(session, account_id).ensure_owner(
-                settings.OWNER_PHONE, settings.OWNER_NAME)
-            if owner is None:
-                log.warning('SERVER_OWNER_PHONE не похож на номер телефона')
+
+            # Без заказчика владельца не заводим вовсе. Иначе учётка
+            # повиснет ни на чём: войти по ней можно, а данных не
+            # видно — дашборд отбирает их по заказчику, которого у
+            # неё нет. А когда заказчик появится, при следующем
+            # запуске заведётся вторая учётка с тем же телефоном, и
+            # какая из них ответит на входе — как повезёт
+            if account_id is None:
+                log.warning('Владелец дашборда не заведён: сначала нужен '
+                            'заказчик — manage.py add-account "Название"')
+            else:
+                owner = StaffService(session, account_id).ensure_owner(
+                    settings.OWNER_PHONE, settings.OWNER_NAME)
+                if owner is None:
+                    log.warning('SERVER_OWNER_PHONE не похож на номер телефона')
         except Exception as e:
             log.error('Не удалось завести владельца дашборда: %s', e)
         finally:

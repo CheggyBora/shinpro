@@ -22,6 +22,13 @@ class MainWindow:
 
         styles.apply_modern_styles(self.root)
 
+        # Вставка и копирование при русской раскладке. Без этого Ctrl+V
+        # в полях не работает: Tkinter ждёт латинскую V, а система при
+        # русской раскладке сообщает ему про Ctrl+М
+        from ui.clipboard import enable as enable_clipboard
+
+        enable_clipboard(self.root)
+
         # Регистрируем DejaVu Sans шрифт для кириллицы на Linux
         styles.register_dejavu_font()
 

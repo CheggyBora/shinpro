@@ -36,6 +36,7 @@ TESTS = [
     ('Наклейки и термочек', 'test_labels.py'),
     ('Реквизиты, кнопки услуг, журнал, получатели', 'test_tech_debt.py'),
     ('Окно настроек и порядок кнопок', 'test_settings_ui.py'),
+    ('Вставка при русской раскладке', 'test_clipboard.py'),
     ('PIN-код и журнал действий', 'test_auth_and_audit.py'),
     ('Хранение шин', 'test_tire_storage.py'),
     ('Срок хранения и напоминание о нём', 'test_storage_term.py'),
