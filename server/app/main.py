@@ -193,7 +193,7 @@ def booking_manifest(shop: str = ''):
         row = (tenancy.shop_by_slug(session, shop) if shop
                else tenancy.only_shop(session))
         if row is not None:
-            name = shop_settings.get(session, 'shop_name', shop=row) or row.name
+            name = shop_settings.title(session, row)
             start = f'/z/{row.slug}'
     finally:
         session.close()

@@ -149,9 +149,35 @@ class Shop(Base):
     last_sync_at = Column(DateTime, nullable=True)
 
     is_active = Column(Boolean, default=True, nullable=False)
+
+    # Принимает ли точка запись через интернет. Выключают, когда точка
+    # закрыта на ремонт, работает только по звонку или ещё не готова
+    # показываться клиентам.
+    #
+    # Отдельно от is_active: выключенная точка продолжает обмениваться
+    # с цехом, её видно в дашборде, по ней считается выручка — просто
+    # записаться к ней нельзя
+    booking_enabled = Column(Boolean, default=True, nullable=False)
+
     created_at = Column(DateTime, default=shop_now, nullable=False)
 
     account = relationship('Account', back_populates='shops')
+
+    @property
+    def takes_bookings(self):
+        """
+        Можно ли записываться в эту точку.
+
+        Ни разу не выходившая на связь точка записи не принимает: на
+        сервере у неё нет ни смен, ни постов, ни часов работы —
+        предлагать человеку время значит выдумать его.
+
+        Временно пропавшая связь поводом не считается. Цех выключает
+        компьютер на ночь, а записи копятся на сервере и подхватятся
+        утром — на этом построен весь обмен.
+        """
+        return bool(self.is_active and self.booking_enabled
+                    and self.last_sync_at)
 
     def __repr__(self):
         return f"<Shop #{self.id} {self.name}>"

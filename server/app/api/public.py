@@ -101,6 +101,14 @@ def _shop(db, wanted=None):
             status.HTTP_404_NOT_FOUND,
             detail='Шиномонтаж не найден. Проверьте ссылку')
 
+    # Проверяем здесь, а не только при показе списка: ссылку могли
+    # сохранить в закладках, переслать или набрать руками
+    if not shop.takes_bookings:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
+            detail='Этот адрес сейчас не принимает запись через интернет. '
+                   'Позвоните нам, пожалуйста')
+
     from app.security import check_paid
     check_paid(db, shop.account_id)
 
@@ -113,7 +121,7 @@ def info(shop: Optional[str] = Query(None, description='Короткое имя 
     row = _shop(db, shop)
     return PublicInfoOut(
         shop=row.slug,
-        shop_name=shop_settings.get(db, 'shop_name', shop=row) or row.name,
+        shop_name=shop_settings.title(db, row),
         shop_phone=shop_settings.get(db, 'shop_phone', shop=row) or row.phone,
         shop_address=shop_settings.get(db, 'shop_address', shop=row) or row.address,
         minutes_assembled=shop_settings.get_int(db, 'booking_minutes_assembled',
@@ -144,12 +152,14 @@ def shops(db: Session = Depends(get_db)):
     if account_id is None:
         return []
 
+    # Показываем только те, куда правда можно записаться. Точка, ни
+    # разу не вышедшая на связь, или с выключенной записью, в списке
+    # не нужна: человек выберет её и упрётся
     return [{
         'slug': row.slug,
-        'name': shop_settings.get(db, 'shop_name', shop=row) or row.name,
-        'address': shop_settings.get(db, 'shop_address', shop=row)
-                   or row.address,
-    } for row in tenancy.shops_of(db, account_id)]
+        'name': shop_settings.title(db, row),
+        'address': shop_settings.address(db, row),
+    } for row in tenancy.shops_of(db, account_id) if row.takes_bookings]
 
 
 @router.get('/paint', summary='Калькулятор покраски дисков')

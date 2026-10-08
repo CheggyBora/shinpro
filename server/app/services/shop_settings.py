@@ -124,3 +124,29 @@ def all_values(db, shop=None):
         if row.value is not None:
             values[row.key] = row.value
     return values
+
+def title(db, shop):
+    """
+    Как называть точку человеку.
+
+    Берём название, присланное цехом. Нет его — собственное имя точки,
+    под которым её завели.
+
+    Отдельной функцией, потому что обычное get() здесь не годится: не
+    найдя настройки, оно возвращает значение по умолчанию — «Шиномонтаж».
+    Оно непустое, и запасное имя до дела не доходит. На одной точке это
+    незаметно, а на двух обе называются одинаково, и человеку нечего
+    выбирать.
+    """
+    if shop is None:
+        return DEFAULTS.get('shop_name')
+
+    return get(db, 'shop_name', '', shop=shop) or shop.name
+
+
+def address(db, shop):
+    """Адрес точки: присланный цехом или записанный при заведении."""
+    if shop is None:
+        return None
+
+    return get(db, 'shop_address', '', shop=shop) or shop.address

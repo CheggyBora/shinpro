@@ -17,6 +17,7 @@
     python manage.py check                             всё ли готово
     python manage.py bot rif ТОКЕН --url https://домен   подключить бота
     python manage.py notify                            разослать созревшее
+    python manage.py booking риф off                   закрыть запись на точку
     python manage.py drop-shop тест --yes              убрать точку насовсем
     python manage.py drop-account тест --yes           убрать заказчика
 
@@ -405,6 +406,33 @@ def cmd_notify(db, args):
           f"пропущено: {result['skipped']}")
 
 
+def cmd_booking(db, args):
+    """
+    Включить или выключить запись через интернет для точки.
+
+    Нужно, когда точка закрыта на ремонт, работает только по звонку
+    или ещё не готова показываться клиентам. Выключенная точка
+    продолжает обмениваться с цехом, её видно в дашборде, выручка по
+    ней считается — нельзя только записаться.
+    """
+    shop = tenancy.shop_by_slug(db, args.slug)
+    if shop is None:
+        print(f'Точки «{args.slug}» нет')
+        return
+
+    shop.booking_enabled = (args.state == 'on')
+    db.commit()
+
+    print(f'{shop.name} ({shop.slug}): запись '
+          f'{"включена" if shop.booking_enabled else "выключена"}')
+
+    if shop.booking_enabled and not shop.last_sync_at:
+        print()
+        print('Но записаться всё равно нельзя: точка ни разу не выходила')
+        print('на связь, и расписания у неё на сервере нет. Впишите ключ')
+        print('обмена в программе цеха.')
+
+
 def cmd_drop_shop(db, args):
     """
     Убрать точку со всем, что к ней относится.
@@ -554,6 +582,12 @@ def main():
     notify = commands.add_parser('notify', help='разослать созревшие напоминания')
     notify.add_argument('--limit', type=int, default=100)
 
+    booking = commands.add_parser(
+        'booking', help='включить или выключить запись для точки')
+    booking.add_argument('slug', help='короткое имя точки')
+    booking.add_argument('state', choices=['on', 'off'],
+                         help='on — принимать запись, off — не принимать')
+
     drop_shop = commands.add_parser('drop-shop',
                                     help='убрать точку со всем содержимым')
     drop_shop.add_argument('slug', help='короткое имя точки')
@@ -590,6 +624,7 @@ def main():
             'bot': cmd_bot,
             'notify': cmd_notify,
             'push-keys': cmd_push_keys,
+            'booking': cmd_booking,
             'drop-shop': cmd_drop_shop,
             'drop-account': cmd_drop_account,
         }[args.command]

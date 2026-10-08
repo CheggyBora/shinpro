@@ -227,7 +227,7 @@ def _already(db, about, about_id, client_id=None):
 
 
 def _shop_name(db, shop):
-    return shop_settings.get(db, 'shop_name', shop=shop) or shop.name
+    return shop_settings.title(db, shop)
 
 
 def _int(value, default):

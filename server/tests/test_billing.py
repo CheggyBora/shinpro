@@ -65,6 +65,11 @@ def finish():
 with TestClient(app) as client:
     db = SessionLocal()
     account, shop, sync_key = tenancy.create_account(db, 'Колесо', 'Колесо')
+
+    # Точка на связи: не выходившая на связь записи не принимает сама
+    # по себе, и проверка оплаты до неё бы не дошла
+    shop.last_sync_at = shop_now()
+
     account_id, shop_id, shop_slug = account.id, shop.id, shop.slug
 
     owner = StaffUser(account_id=account_id, phone='79099018931',

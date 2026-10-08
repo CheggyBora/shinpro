@@ -30,9 +30,9 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.database import SessionLocal
 from app.utils import now as shop_now
-from app.models import BookingDay, Appointment, Client, Car
+from app.models import BookingDay, Appointment, Client, Car, Shop
 from app.api import public
-from app.services import shop_settings
+from app.services import shop_settings, tenancy
 
 _failures = []
 
@@ -74,6 +74,10 @@ with TestClient(app) as client:
     # при запуске сервера
     from app.models import Shop
     shop = db.query(Shop).first()
+
+    # Точка на связи: без этого она записи не принимает, и правильно —
+    # на сервере у неё не было бы ни смен, ни постов
+    shop.last_sync_at = shop_now()
 
     shop_settings.set_value(db, 'shop_name', 'Шиномонтаж «РИФ»', commit=False,
                             shop=shop)
@@ -349,5 +353,84 @@ check('ответ по-прежнему двести', answer.status_code == 200
       str(answer.status_code))
 check('калькулятор просто выключен',
       answer.json()['available'] is False, str(answer.json()))
+
+
+# ----------------------------------------------------------------------
+# Несколько точек: выбор, скрытие и выключатель записи
+# ----------------------------------------------------------------------
+print()
+print('=== Пока точка одна, выбирать не из чего ===')
+db = SessionLocal()
+first = db.query(Shop).first()
+first_slug = first.slug
+account_id = first.account_id
+db.close()
+
+answer = client.get('/public/shops').json()
+check('точка одна', len(answer) == 1, str(answer))
+check('названа своим именем', answer[0]['slug'] == first_slug, str(answer))
+
+print()
+print('=== Вторая точка, ни разу не выходившая на связь, не показывается ===')
+db = SessionLocal()
+second = Shop(account_id=account_id, name='Вторая точка', slug='vtoraya')
+db.add(second)
+db.commit()
+second_id = second.id
+db.close()
+
+answer = client.get('/public/shops').json()
+check('в списке по-прежнему одна', len(answer) == 1,
+      str([row['slug'] for row in answer]))
+check('и это не новая',
+      'vtoraya' not in [row['slug'] for row in answer], str(answer))
+
+refused = client.get('/public/info?shop=vtoraya')
+check('по прямой ссылке тоже отказ', refused.status_code == 404,
+      str(refused.status_code))
+check('сказано позвонить', 'озвоните' in refused.json()['detail'],
+      refused.json()['detail'])
+
+print()
+print('=== Вышла на связь — появилась ===')
+db = SessionLocal()
+db.query(Shop).get(second_id).last_sync_at = shop_now()
+db.commit()
+db.close()
+
+answer = client.get('/public/shops').json()
+check('точек стало две', len(answer) == 2,
+      str([row['slug'] for row in answer]))
+check('названия разные',
+      len({row['name'] for row in answer}) == 2,
+      str([row['name'] for row in answer]))
+
+print()
+print('=== Выключили запись — пропала из выбора ===')
+db = SessionLocal()
+db.query(Shop).get(second_id).booking_enabled = False
+db.commit()
+db.close()
+
+answer = client.get('/public/shops').json()
+check('снова одна', len(answer) == 1, str([row['slug'] for row in answer]))
+
+refused = client.get('/public/days?shop=vtoraya')
+check('окна не отдаются', refused.status_code == 404,
+      str(refused.status_code))
+
+print()
+print('=== Включили обратно ===')
+db = SessionLocal()
+db.query(Shop).get(second_id).booking_enabled = True
+db.commit()
+db.close()
+
+check('вернулась', len(client.get('/public/shops').json()) == 2)
+
+# Дальше проверки идут на одной точке — убираем вторую
+db = SessionLocal()
+tenancy.drop_shop(db, db.query(Shop).get(second_id))
+db.close()
 
 finish()
