@@ -772,12 +772,26 @@ function remember(token) {
   } catch (e) {}
 }
 
+// Имя точки из адреса страницы: /z/имя-точки. Пусто, когда кабинет
+// открыт с корня — так бывает, пока точка на сервере одна
+var SHOP = (location.pathname.match(/^\/z\/([^\/?#]+)/) || [])[1] || '';
+
 function api(path, options) {
   options = options || {};
   options.headers = options.headers || {};
   options.headers['Content-Type'] = 'application/json';
   if (state.token) options.headers['Authorization'] = 'Bearer ' + state.token;
   if (options.body) options.body = JSON.stringify(options.body);
+
+  // О какой точке речь — говорим всегда и двумя способами: часть
+  // запросов ждёт имя в адресе, часть в заголовке. Пока точка одна,
+  // сервер угадывал сам, и это работало случайно: стоило завести
+  // вторую — записаться стало нельзя нигде
+  if (SHOP) {
+    options.headers['X-Shop'] = SHOP;
+    path += (path.indexOf('?') >= 0 ? '&' : '?') + 'shop='
+      + encodeURIComponent(SHOP);
+  }
 
   return fetch(path, options).then(function (answer) {
     return answer.json().catch(function () { return {}; }).then(function (data) {
@@ -1854,9 +1868,8 @@ loadPaint();
 // Ярлык должен называться той точкой, ссылку на которую человек
 // открыл, а не сетью вообще
 (function () {
-  var slug = (location.pathname.match(/^\/z\/([^\/]+)/) || [])[1];
   var link = document.querySelector('link[rel="manifest"]');
-  if (slug && link) link.href = '/z/manifest.webmanifest?shop=' + slug;
+  if (SHOP && link) link.href = '/z/manifest.webmanifest?shop=' + SHOP;
 })();
 
 // Вход с прошлого раза: открываем кабинет сразу. Ярлык на экране,
