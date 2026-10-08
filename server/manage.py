@@ -23,10 +23,50 @@
 потом нельзя: можно лишь выдать новый.
 """
 import argparse
+import io
 import os
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+
+
+def _load_env():
+    """
+    Прочитать .env рядом с программой — до того, как настройки
+    разберут переменные окружения.
+
+    Без этого команда, запущенная руками, работает не с той базой.
+    Служба получает настройки от systemd и живёт в PostgreSQL, а
+    человек из командной строки — с пустым окружением, и адрес базы
+    берётся по умолчанию: SQLite-файл рядом с программой. Он молча
+    создаётся, команда бодро рапортует об успехе, и заведённый
+    заказчик оказывается в файле-пустышке, которого никто не читает.
+
+    Ошибки при этом нет нигде, и разобраться трудно: всё «работает».
+
+    Переменные, уже заданные снаружи, не трогаем — так можно
+    запустить команду на другой базе, если однажды понадобится.
+    """
+    path = os.path.join(HERE, '.env')
+    if not os.path.exists(path):
+        return
+
+    with io.open(path, encoding='utf-8') as handle:
+        for line in handle:
+            line = line.strip()
+            if not line or line.startswith('#') or '=' not in line:
+                continue
+
+            name, value = line.split('=', 1)
+            name = name.strip()
+            value = value.strip().strip('"').strip("'")
+
+            if name and name not in os.environ:
+                os.environ[name] = value
+
+
+_load_env()
 
 from app.database import SessionLocal, init_db          # noqa: E402
 from app.models import Account, Shop                    # noqa: E402
