@@ -17,6 +17,8 @@
     python manage.py check                             всё ли готово
     python manage.py bot rif ТОКЕН --url https://домен   подключить бота
     python manage.py notify                            разослать созревшее
+    python manage.py drop-shop тест --yes              убрать точку насовсем
+    python manage.py drop-account тест --yes           убрать заказчика
 
 Ключ обмена показывается один раз — при создании точки или смене
 ключа. В базе от него остаётся только отпечаток, и подсмотреть его
@@ -403,6 +405,80 @@ def cmd_notify(db, args):
           f"пропущено: {result['skipped']}")
 
 
+def cmd_drop_shop(db, args):
+    """
+    Убрать точку со всем, что к ней относится.
+
+    Нужно после проверки: тестовую точку заводят, гоняют на ней обмен и
+    убирают. Оставлять нельзя — она висит в выборе точек дашборда и
+    путает того, кто туда смотрит.
+
+    Клиентов не трогаем: они принадлежат заказчику, а не точке, и могли
+    приезжать на обе.
+    """
+    shop = tenancy.shop_by_slug(db, args.slug)
+    if shop is None:
+        print(f'Точки «{args.slug}» нет')
+        return
+
+    counts = tenancy.shop_contents(db, shop)
+
+    print(f'Точка: {shop.name} ({shop.slug})')
+    for title, count in counts.items():
+        if count:
+            print(f'  {title}: {count}')
+
+    if not any(counts.values()):
+        print('  пусто')
+
+    if not args.yes:
+        print()
+        print('Это навсегда. Если точно: добавьте --yes')
+        return
+
+    tenancy.drop_shop(db, shop)
+    print()
+    print('Убрана')
+
+
+def cmd_drop_account(db, args):
+    """
+    Убрать заказчика целиком: точки, клиентов, персонал, уведомления.
+
+    Отдельно от точки, потому что у заказчика есть своё — клиенты и
+    учётки, — и без них остался бы мусор, привязанный к тому, чего нет.
+    """
+    from app.models import Account, Client, StaffUser
+
+    account = db.query(Account).filter(Account.slug == args.slug).first()
+    if account is None:
+        print(f'Заказчика «{args.slug}» нет')
+        return
+
+    shops = tenancy.shops_of(db, account.id)
+
+    print(f'Заказчик: {account.name} ({account.slug})')
+    print(f'  точек: {len(shops)}')
+    for shop in shops:
+        counts = tenancy.shop_contents(db, shop)
+        inside = ', '.join(f'{title} {count}'
+                           for title, count in counts.items() if count)
+        print(f'    {shop.name} ({shop.slug}): {inside or "пусто"}')
+
+    print(f'  клиентов: {db.query(Client).filter(Client.account_id == account.id).count()}')
+    print(f'  персонала: {db.query(StaffUser).filter(StaffUser.account_id == account.id).count()}')
+
+    if not args.yes:
+        print()
+        print('Это навсегда, вместе с клиентами и историей.')
+        print('Если точно: добавьте --yes')
+        return
+
+    tenancy.drop_account(db, account)
+    print()
+    print('Убран')
+
+
 def cmd_push_keys(db, args):
     """
     Пара ключей для уведомлений в браузере.
@@ -478,6 +554,18 @@ def main():
     notify = commands.add_parser('notify', help='разослать созревшие напоминания')
     notify.add_argument('--limit', type=int, default=100)
 
+    drop_shop = commands.add_parser('drop-shop',
+                                    help='убрать точку со всем содержимым')
+    drop_shop.add_argument('slug', help='короткое имя точки')
+    drop_shop.add_argument('--yes', action='store_true',
+                           help='да, убрать насовсем')
+
+    drop_account = commands.add_parser('drop-account',
+                                       help='убрать заказчика целиком')
+    drop_account.add_argument('slug', help='короткое имя заказчика')
+    drop_account.add_argument('--yes', action='store_true',
+                              help='да, убрать насовсем')
+
     keys = commands.add_parser('push-keys',
                                help='ключи для уведомлений в браузере')
     keys.add_argument('--force', action='store_true',
@@ -502,6 +590,8 @@ def main():
             'bot': cmd_bot,
             'notify': cmd_notify,
             'push-keys': cmd_push_keys,
+            'drop-shop': cmd_drop_shop,
+            'drop-account': cmd_drop_account,
         }[args.command]
         handler(db, args)
     finally:

@@ -25,6 +25,7 @@ TESTS = [
     ('Напоминания клиенту в Telegram', 'test_telegram.py'),
     ('Уведомления в браузере', 'test_webpush.py'),
     ('Хранение и сезонная перекидка', 'test_campaigns.py'),
+    ('Удаление точки и заказчика', 'test_drop.py'),
 ]
 
 

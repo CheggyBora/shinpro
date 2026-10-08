@@ -272,3 +272,106 @@ def account_for(db, wanted=None):
         return None
 
     raise ShopNeeded('Укажите, какой шиномонтаж')
+
+# ----------------------------------------------------------------------
+# Удаление
+# ----------------------------------------------------------------------
+
+def shop_contents(db, shop):
+    """Что лежит в точке. Нужно, чтобы показать это перед удалением."""
+    from app.models import (Appointment, BookingDay, QueueSnapshot,
+                            SalaryPayout, ShopEmployee, ShopSetting,
+                            ShopShift, StoredSet, Visit)
+
+    counts = {}
+    for title, model in (('нарядов', Visit),
+                         ('записей', Appointment),
+                         ('комплектов', StoredSet),
+                         ('смен', ShopShift),
+                         ('мастеров', ShopEmployee),
+                         ('выплат', SalaryPayout),
+                         ('дней записи', BookingDay),
+                         ('снимков очереди', QueueSnapshot),
+                         ('настроек', ShopSetting)):
+        counts[title] = db.query(model).filter(
+            model.shop_id == shop.id).count()
+
+    return counts
+
+
+def drop_shop(db, shop):
+    """
+    Удалить точку со всем, что к ней относится.
+
+    Нужно после проверки: тестовую точку заводят, гоняют на ней обмен и
+    убирают. Оставлять её нельзя — она будет висеть в выборе точек
+    дашборда и путать.
+
+    Клиентов не трогаем: они принадлежат заказчику, а не точке, и
+    могли приезжать на обе. Разбираться, чей клиент, здесь нельзя.
+    """
+    from app.models import (Appointment, BookingDay, QueueSnapshot,
+                            SalaryPayout, ShopEmployee, ShopSetting,
+                            ShopShift, StoredSet, Visit)
+
+    # Наряды через объекты, а не одним запросом: у них есть позиции и
+    # начисления, и убрать их должен каскад, описанный в модели
+    for visit in db.query(Visit).filter(Visit.shop_id == shop.id).all():
+        db.delete(visit)
+    db.flush()
+
+    for model in (Appointment, BookingDay, StoredSet, SalaryPayout,
+                  ShopEmployee, ShopShift, QueueSnapshot, ShopSetting):
+        db.query(model).filter(model.shop_id == shop.id).delete(
+            synchronize_session=False)
+
+    db.delete(shop)
+    db.commit()
+
+
+def drop_account(db, account):
+    """
+    Удалить заказчика целиком: точки, клиентов, персонал, уведомления.
+
+    Отдельная команда, а не повторение drop_shop в цикле: у заказчика
+    есть своё — клиенты, подписки на уведомления, учётки персонала, —
+    и без них в базе остался бы мусор, привязанный к тому, чего нет.
+    """
+    from app.models import (AccountPayment, Client, Car, Device, LoginCode,
+                            Notice, PushSubscription, StaffAction, StaffUser)
+
+    for shop in shops_of(db, account.id):
+        drop_shop(db, shop)
+
+    clients = [row.id for row in db.query(Client).filter(
+        Client.account_id == account.id).all()]
+
+    if clients:
+        # Эти привязаны к человеку
+        for model in (PushSubscription, Notice, Car, Device):
+            db.query(model).filter(model.client_id.in_(clients)).delete(
+                synchronize_session=False)
+
+        db.query(Client).filter(Client.account_id == account.id).delete(
+            synchronize_session=False)
+
+    # А коды входа — к заказчику: их запрашивают до того, как человек
+    # заведён, и клиента у них может не быть вовсе
+    db.query(LoginCode).filter(LoginCode.account_id == account.id).delete(
+        synchronize_session=False)
+
+    staff = [row.id for row in db.query(StaffUser).filter(
+        StaffUser.account_id == account.id).all()]
+    if staff:
+        db.query(StaffAction).filter(StaffAction.staff_id.in_(staff)).delete(
+            synchronize_session=False)
+        db.query(StaffUser).filter(
+            StaffUser.account_id == account.id).delete(
+            synchronize_session=False)
+
+    db.query(AccountPayment).filter(
+        AccountPayment.account_id == account.id).delete(
+        synchronize_session=False)
+
+    db.delete(account)
+    db.commit()
