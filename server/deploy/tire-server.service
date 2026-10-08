@@ -3,6 +3,15 @@ Description=Сервер шиномонтажа: кабинет клиента �
 After=network.target postgresql.service
 Wants=postgresql.service
 
+# Сервер падал — перезапускаем, но не бесконечно: если он падает по
+# кругу, пусть остановится, и это будет видно, а не тонет в журнале.
+#
+# Эти два ключа работают только в [Unit]. В [Service] systemd их молча
+# не замечает, и перезапуск становится вечным: на первой же установке
+# счётчик дошёл до 194, прежде чем это заметили
+StartLimitBurst=5
+StartLimitIntervalSec=120
+
 [Service]
 Type=simple
 User=tire
@@ -19,17 +28,16 @@ ExecStart=/opt/tire-server/venv/bin/uvicorn app.main:app \
 Restart=always
 RestartSec=3
 
-# Сервер падал — перезапускаем, но не бесконечно: если он падает
-# по кругу, пусть остановится и это будет видно, а не тонет в журнале
-StartLimitBurst=5
-StartLimitIntervalSec=120
-
 # Чужого на диске серверу трогать нечего
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/opt/tire-server /var/backups/tire
+# Копии складывает отдельная служба tire-backup, а не сервер: сюда
+# ему писать не нужно и нельзя. Пока эта папка была здесь, служба не
+# стартовала вовсе — ProtectSystem=strict требует, чтобы каждый путь
+# отсюда существовал, а папка создавалась позже по ходу установки
+ReadWritePaths=/opt/tire-server
 
 StandardOutput=journal
 StandardError=journal

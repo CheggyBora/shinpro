@@ -140,6 +140,12 @@ fi
 say "Миграции базы"
 sudo -u "$APP_USER" bash -c "cd '$APP_DIR' && set -a && . ./.env && set +a && ./venv/bin/alembic upgrade head"
 
+# Папку копий заводим до запуска службы, а не после: systemd с
+# ProtectSystem=strict проверяет пути при старте, и отсутствующая
+# папка роняет службу ещё до первой строки кода
+mkdir -p /var/backups/tire
+chown "$APP_USER:$APP_USER" /var/backups/tire
+
 say "Служба"
 install -m 644 "$APP_DIR/deploy/tire-server.service" /etc/systemd/system/tire-server.service
 systemctl daemon-reload
