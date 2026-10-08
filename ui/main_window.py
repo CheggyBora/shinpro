@@ -6,6 +6,7 @@ from ui.clients_tab import ClientsTab
 from ui.appointments_tab import AppointmentsTab
 from ui.tire_storage_tab import TireStorageTab
 from ui.paint_tab import PaintTab
+from ui.settings_tab import SettingsTab
 from ui.price_list_tab import PriceListTab
 from ui.statistics_tab import StatisticsTab
 from config import get_db
@@ -62,6 +63,7 @@ class MainWindow:
         self.paint_tab = PaintTab(self.content, self.db)
         self.statistics_tab = StatisticsTab(self.content, self.db)
         self.price_list_tab = PriceListTab(self.content, self.db)
+        self.settings_tab = SettingsTab(self.content, self.db)
 
         self.nav.add('Сотрудники', self.employees_tab.frame)
         self.nav.add('Наряды', self.orders_tab.frame)
@@ -71,6 +73,7 @@ class MainWindow:
         self.nav.add('Покраска', self.paint_tab.frame)
         self.nav.add('Отчёты', self.statistics_tab.frame)
         self.nav.add('Прайс-лист', self.price_list_tab.frame)
+        self.nav.add('Настройки', self.settings_tab.frame)
 
         self.nav.select(1)  # открываем сразу на нарядах — основная работа
         self.refresh_shift_status()

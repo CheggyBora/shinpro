@@ -524,6 +524,13 @@ def push(payload: PushIn, db: Session = Depends(get_db),
         shop_settings.set_value(db, key, value, commit=False, shop=shop)
         result.settings += 1
 
+        # Приём записи — не просто настройка, а признак самой точки:
+        # по нему её показывают или прячут в кабинете. Держать его
+        # только в настройках значило бы читать их при каждом запросе
+        # списка точек
+        if key == 'booking_enabled':
+            shop.booking_enabled = str(value).strip() in ('1', 'true', 'yes')
+
     db.commit()
     _drop_old_snapshots(db)
     return result

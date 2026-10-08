@@ -422,6 +422,7 @@ class SyncService:
             # По этим числам сервер сам предупреждает владельцев: что
             # заканчивается хранение и что пора переобуваться. Считать
             # их должен цех — сроки и сезон у каждого свои
+            'booking_enabled': settings.get('booking_enabled'),
             'storage_warn_days': settings.get('storage_warn_days'),
             'storage_lead_days': settings.get('storage_lead_days'),
             'season_autumn_at': settings.get('season_autumn_at'),

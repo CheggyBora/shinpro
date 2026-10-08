@@ -60,49 +60,116 @@ def open_settings(parent, db):
 
 
 class SettingsDialog:
-    def __init__(self, parent, db):
+    def __init__(self, parent, db, host=None):
+        """
+        Настройки программы.
+
+        host — рамка, в которую встроиться. Без него открывается своим
+        окном, как раньше. Встроенные настройки нужны разделу в главном
+        меню: окно поверх окна читается хуже, а настроек стало много.
+        """
         self.db = db
         self.settings = SettingsService(db)
         self.telegram = TelegramService(db)
+        self.embedded = host is not None
 
-        self.dialog = tk.Toplevel(parent)
-        self.dialog.title("Настройки")
-        self.dialog.geometry("700x760")
-        self.dialog.configure(bg=styles.COLORS['bg'])
-        self.dialog.transient(parent.winfo_toplevel())
-        self.dialog.grab_set()
-        styles.center_window(self.dialog, parent.winfo_toplevel())
+        if self.embedded:
+            # Окно верхнего уровня всё равно нужно: к нему привязываются
+            # вложенные диалоги — выбор папки, ввод числа, вопросы
+            self.dialog = host.winfo_toplevel()
+            outer = ttk.Frame(host, style='White.TFrame')
+            outer.pack(fill='both', expand=True)
+        else:
+            self.dialog = tk.Toplevel(parent)
+            self.dialog.title("Настройки")
+            self.dialog.geometry("860x760")
+            self.dialog.configure(bg=styles.COLORS['bg'])
+            self.dialog.transient(parent.winfo_toplevel())
+            self.dialog.grab_set()
+            styles.center_window(self.dialog, parent.winfo_toplevel())
 
-        outer = ttk.Frame(self.dialog, style='White.TFrame')
-        outer.pack(fill='both', expand=True)
+            outer = ttk.Frame(self.dialog, style='White.TFrame')
+            outer.pack(fill='both', expand=True)
 
         heading = ttk.Frame(outer, style='White.TFrame')
         heading.pack(fill='x', padx=22, pady=(20, 6))
         styles.create_label(heading, "Настройки", 'CardHeading.TLabel').pack(anchor='w')
 
-        content = self._scrollable_body(outer)
-
-        self._build_company(content)
-        self._build_sync(content)
-        self._build_telegram(content)
-        self._build_export_folder(content)
-        self._build_shift(content)
-        self._build_printing(content)
-        self._build_service_buttons(content)
-        self._build_orders(content)
-        self._build_storage(content)
+        # Разделов девять, и одним полотном их читать невозможно: нужное
+        # ищется прокруткой наугад. Слева список, справа один раздел —
+        # видно, что вообще есть, и видно, где сейчас находишься
+        self._build_sections(outer, [
+            ('Запись', self._build_booking),
+            ('Наряды и очередь', self._build_orders),
+            ('Смена', self._build_shift),
+            ('Хранение и сезон', self._build_storage),
+            ('Печать', self._build_printing),
+            ('Кнопки услуг', self._build_service_buttons),
+            ('Реквизиты', self._build_company),
+            ('Отчёты', self._build_export_folder),
+            ('Telegram', self._build_telegram),
+            ('Связь с приложением', self._build_sync),
+        ])
 
         # --- Кнопки: закреплены снизу, не уезжают вместе с содержимым ---
         buttons = ttk.Frame(outer, style='White.TFrame')
         buttons.pack(fill='x', padx=22, pady=(10, 18))
         styles.create_button(buttons, "Сохранить", self.save,
-                             'Primary.TButton').pack(side='left', fill='x', expand=True, padx=(0, 6))
-        styles.create_button(buttons, "Закрыть", self.dialog.destroy,
-                             'Secondary.TButton').pack(side='left', fill='x', expand=True, padx=(6, 0))
+                             'Primary.TButton').pack(
+            side='left', fill='x', expand=True, padx=(0, 6))
+
+        # Встроенным настройкам закрываться некуда — это целый раздел,
+        # а не окно поверх работы
+        if not self.embedded:
+            styles.create_button(buttons, "Закрыть", self.dialog.destroy,
+                                 'Secondary.TButton').pack(
+                side='left', fill='x', expand=True, padx=(6, 0))
 
     # ------------------------------------------------------------------
     # Каркас
     # ------------------------------------------------------------------
+
+    def _build_sections(self, parent, sections):
+        """
+        Список разделов слева, выбранный раздел справа.
+
+        Все разделы строятся сразу, а не по нажатию: в них лежат поля,
+        которые читает сохранение, и строить их лениво значило бы
+        сохранять только то, куда человек успел заглянуть.
+        """
+        body = ttk.Frame(parent, style='White.TFrame')
+        body.pack(fill='both', expand=True, padx=22, pady=(4, 0))
+
+        side = tk.Frame(body, bg=styles.COLORS['bg'], width=210)
+        side.pack(side='left', fill='y')
+        side.pack_propagate(False)
+
+        holder = ttk.Frame(body, style='White.TFrame')
+        holder.pack(side='left', fill='both', expand=True, padx=(16, 0))
+
+        self._pages = {}
+        self._buttons = {}
+
+        def open_section(title):
+            for name, page in self._pages.items():
+                page.pack_forget()
+                self._buttons[name].configure(
+                    style='Secondary.TButton' if name != title
+                    else 'Primary.TButton')
+            self._pages[title].pack(fill='both', expand=True)
+
+        for title, build in sections:
+            page = self._scrollable_body(holder)
+            self._pages[title] = page.master.master
+            build(page)
+
+            button = styles.create_button(
+                side, title, lambda t=title: open_section(t),
+                'Secondary.TButton')
+            button.pack(fill='x', pady=(0, 4))
+            self._buttons[title] = button
+
+        open_section(sections[0][0])
 
     def _scrollable_body(self, parent):
         """Прокручиваемая область: разделов больше, чем влезает в окно."""
@@ -115,7 +182,7 @@ class SettingsDialog:
         canvas.configure(yscrollcommand=scrollbar.set)
 
         scrollbar.pack(side='right', fill='y')
-        canvas.pack(side='left', fill='both', expand=True, padx=(22, 8))
+        canvas.pack(side='left', fill='both', expand=True, padx=(0, 8))
 
         body = ttk.Frame(canvas, style='White.TFrame')
         window = canvas.create_window((0, 0), window=body, anchor='nw')
@@ -133,9 +200,17 @@ class SettingsDialog:
         def on_wheel(event):
             canvas.yview_scroll(-1 if event.delta > 0 else 1, 'units')
 
-        # Колесо привязываем к окну, а не к канве: иначе прокрутка
-        # работает только когда мышь ровно над пустым местом
-        self.dialog.bind_all('<MouseWheel>', on_wheel)
+        # Колесо привязываем на время, пока мышь над этим разделом.
+        # Привязка ко всему окну работала, пока раздел был один; теперь
+        # их десять, и колесо крутило бы все сразу — включая невидимые
+        def grab_wheel(event):
+            self.dialog.bind_all('<MouseWheel>', on_wheel)
+
+        def release_wheel(event):
+            self.dialog.unbind_all('<MouseWheel>')
+
+        holder.bind('<Enter>', grab_wheel)
+        holder.bind('<Leave>', release_wheel)
         self.dialog.bind('<Destroy>',
                          lambda e: self.dialog.unbind_all('<MouseWheel>'))
 
@@ -366,16 +441,35 @@ class SettingsDialog:
                              self.open_service_layout,
                              'Secondary.TButton').pack(anchor='w', pady=(0, 10))
 
-    def _build_orders(self, content):
-        self._section(content, "Наряды и очередь")
+    def _build_booking(self, content):
+        """
+        Запись через интернет: принимать ли её вообще, когда и сколько.
 
-        grid = ttk.Frame(content, style='White.TFrame')
-        grid.pack(fill='x', pady=(0, 10))
+        Вынесено в свой раздел из «Нарядов»: это другая работа. Наряды
+        и очередь — про то, что происходит в цеху прямо сейчас, а запись
+        — про то, что видит клиент в телефоне, и выключать её приходится
+        отдельно: на ремонт, на выходные, на время, пока не разобрались.
+        """
+        self._section(content, "Запись через интернет")
 
-        # Часы работы — строками «07:00», рядом с числовыми полями
+        self.booking_var = tk.BooleanVar(
+            value=self.settings.get('booking_enabled', '1') == '1')
+        ttk.Checkbutton(content, text="Принимать запись через интернет",
+                        variable=self.booking_var).pack(anchor='w', pady=(0, 6))
+
+        self._hint(content,
+                   "Выключите, если точка закрыта, работает только по "
+                   "звонку или вы ещё не готовы пускать клиентов. "
+                   "Выключение доходит до приложения при ближайшем обмене, "
+                   "в течение десяти минут.\n"
+                   "Уже записанные при этом никуда не денутся — они "
+                   "останутся в ленте, и их надо либо принять, либо "
+                   "обзвонить.")
+
+        # Часы работы — строками «07:00»
         self.time_fields = {}
-        for key, title in (('booking_opens_at', 'Запись с (часы работы)'),
-                           ('booking_closes_at', 'Запись до (24:00 — полночь)')):
+        for key, title in (('booking_opens_at', 'Записывать с'),
+                           ('booking_closes_at', 'Записывать до (24:00 — полночь)')):
             row = ttk.Frame(content, style='White.TFrame')
             row.pack(fill='x', pady=(0, 6))
             styles.create_label(row, title, 'Card.TLabel').pack(
@@ -385,23 +479,46 @@ class SettingsDialog:
             entry.pack(side='left')
             self.time_fields[key] = entry
 
+        grid = ttk.Frame(content, style='White.TFrame')
+        grid.pack(fill='x', pady=(6, 10))
+
         self.numeric_fields = {}
-        for row, (key, title) in enumerate([
-            ('order_base_minutes', 'Базовое время наряда, мин'),
+        self._numeric_grid(grid, [
             ('default_posts', 'Постов по умолчанию'),
-            ('queue_buffer_percent', 'Запас к прогнозу очереди, %'),
-            ('order_autosave_minutes', 'Автосохранение наряда через, мин (0 — выкл.)'),
-            ('booking_minutes_assembled', 'Запись: колёса в сборе, мин'),
-            ('booking_minutes_tires', 'Запись: только шины, мин'),
-            ('booking_minutes_unknown', 'Запись: колёса не выяснены, мин'),
-            ('booking_slot_step', 'Шаг окон записи, мин'),
-        ]):
+            ('booking_slot_step', 'Шаг окон, мин'),
+            ('booking_minutes_assembled', 'На колёса в сборе, мин'),
+            ('booking_minutes_tires', 'На шины россыпью, мин'),
+            ('booking_minutes_unknown', 'Если не выяснили, мин'),
+        ])
+
+        self._hint(content,
+                   "Это общие настройки — по ним считаются все дни. "
+                   "Отдельный день правится в разделе «Запись», прямо в "
+                   "ленте: там видно, сколько постов открыто и во сколько "
+                   "работаем именно сегодня.")
+
+    def _numeric_grid(self, grid, fields):
+        """Числовые поля столбиком. Складываются в один словарь на всё окно."""
+        for row, (key, title) in enumerate(fields):
             styles.create_label(grid, title, 'Card.TLabel').grid(
                 row=row, column=0, sticky='w', pady=3)
             entry = styles.create_entry(grid, width=8)
             entry.insert(0, str(self.settings.get_int(key)))
             entry.grid(row=row, column=1, sticky='w', padx=(14, 0), pady=3)
             self.numeric_fields[key] = entry
+
+    def _build_orders(self, content):
+        self._section(content, "Наряды и очередь")
+
+        grid = ttk.Frame(content, style='White.TFrame')
+        grid.pack(fill='x', pady=(0, 10))
+
+        self._numeric_grid(grid, [
+            ('order_base_minutes', 'Базовое время наряда, мин'),
+            ('queue_buffer_percent', 'Запас к прогнозу очереди, %'),
+            ('order_autosave_minutes',
+             'Автосохранение наряда через, мин (0 — выкл.)'),
+        ])
 
     def _build_storage(self, content):
         self._section(content, "Хранение и сезон")
@@ -710,6 +827,10 @@ class SettingsDialog:
                     return
                 self.settings.set(key, value, commit=False)
 
+            self.settings.set('booking_enabled',
+                              '1' if self.booking_var.get() else '0',
+                              commit=False)
+
             self.settings.set('season_reminders_enabled',
                               '1' if self.season_var.get() else '0',
                               commit=False)
@@ -740,7 +861,11 @@ class SettingsDialog:
                 "Настройки сохранены.\nНазвание в шапке окна обновится "
                 "после перезапуска программы.",
                 parent=self.dialog)
-            self.dialog.destroy()
+
+            # Встроенные настройки — это раздел программы, закрывать его
+            # после сохранения нельзя: человеку некуда деться
+            if not self.embedded:
+                self.dialog.destroy()
         except Exception as e:
             self.db.rollback()
             messagebox.showerror("Ошибка", f"Не удалось сохранить настройки:\n{e}",

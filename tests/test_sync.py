@@ -467,4 +467,44 @@ check('время обмена записано', last is not None, str(last))
 check('оно свежее', (datetime.now() - last).total_seconds() < 120, str(last))
 
 db.close()
+
+# ----------------------------------------------------------------------
+# Выключатель записи доезжает до сервера
+# ----------------------------------------------------------------------
+print()
+print('=== Запись включена — точка принимает ===')
+srv = ServerSession()
+from app.models import Shop as SrvShop
+
+shop_row = srv.query(SrvShop).first()
+check('точка принимает запись', shop_row.booking_enabled is True,
+      str(shop_row.booking_enabled))
+srv.close()
+
+print()
+print('=== Выключили в цеху ===')
+SettingsService(db).set('booking_enabled', '0')
+sync.run_once()
+
+srv = ServerSession()
+srv.expire_all()
+shop_row = srv.query(SrvShop).first()
+check('сервер узнал', shop_row.booking_enabled is False,
+      str(shop_row.booking_enabled))
+check('и точка больше не принимает запись',
+      shop_row.takes_bookings is False, str(shop_row.takes_bookings))
+srv.close()
+
+print()
+print('=== Включили обратно ===')
+SettingsService(db).set('booking_enabled', '1')
+sync.run_once()
+
+srv = ServerSession()
+srv.expire_all()
+shop_row = srv.query(SrvShop).first()
+check('снова принимает', shop_row.booking_enabled is True,
+      str(shop_row.booking_enabled))
+srv.close()
+
 finish()

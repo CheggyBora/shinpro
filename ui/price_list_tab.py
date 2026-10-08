@@ -292,7 +292,13 @@ class PriceListTab:
             fill='x', pady=(10, 0))
 
     def show_settings(self):
-        """Настройки программы: Telegram, папка отчётов, автозакрытие смены."""
+        """
+        Настройки программы.
+
+        Кнопки здесь больше нет: настройки переехали в свой раздел
+        главного меню — искать их в ценах на балансировку было негде.
+        Метод оставлен, чтобы не ломать то, что на него ссылается.
+        """
         from ui.settings_dialog import open_settings
         try:
             open_settings(self.frame, self.db)
@@ -420,9 +426,6 @@ class PriceListTab:
 
         styles.create_button(header_frame, "Журнал действий",
                              self.show_audit_log, 'Secondary.TButton').pack(side='right')
-        styles.create_button(header_frame, "Настройки",
-                             self.show_settings, 'Secondary.TButton').pack(
-                                 side='right', padx=(0, 5))
         styles.create_button(header_frame, "Расходники и время",
                              self.show_consumables_and_duration, 'Secondary.TButton').pack(
                                  side='right', padx=(0, 5))
