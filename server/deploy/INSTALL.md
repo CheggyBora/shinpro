@@ -39,19 +39,41 @@ ssh root@IP-сервера
 
 ## 3. Копируем код
 
-Если код в git:
+Два способа. Первый удобнее: после него обновление сервера — одна
+команда `git push`.
+
+### Через git (рекомендуется)
+
+На сервере, один раз:
 
 ```bash
-apt-get update && apt-get install -y git
-git clone АДРЕС-РЕПОЗИТОРИЯ /tmp/tire
-cd /tmp/tire/server
+apt-get update && apt-get install -y git rsync && git init --bare --initial-branch=main /opt/tire.git
 ```
 
-Если репозитория нет — скопируйте папку `server` с компьютера:
+На своём компьютере, из папки проекта:
+
+```bash
+git remote add server ssh://root@IP-СЕРВЕРА/opt/tire.git
+git push server main
+```
+
+Код приедет в `/opt/tire.git`. Разложить его и поставить перехватчик,
+который будет делать это сам при каждом следующем push:
+
+```bash
+mkdir -p /opt/tire-src
+git --git-dir=/opt/tire.git --work-tree=/opt/tire-src checkout -f main
+sudo bash /opt/tire-src/server/deploy/setup-git.sh
+cd /opt/tire-src/server
+```
+
+### Через scp
+
+Если возиться с git не хочется — просто скопируйте папку:
 
 ```bash
 # выполнять на своём компьютере, не на сервере
-scp -r server root@IP-сервера:/tmp/tire-server
+scp -r server root@IP-СЕРВЕРА:/tmp/tire-server
 ```
 
 и на сервере: `cd /tmp/tire-server`

@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+#
+# Раскатка по git push. Ставится на сервере в /opt/tire.git/hooks/.
+#
+# После этого обновление выглядит так — с вашего компьютера, одной
+# командой, из папки проекта:
+#
+#     git push server main
+#
+# Что происходит: сервер забирает код, раскладывает его в рабочую
+# папку и запускает update.sh — копия базы, зависимости, миграции,
+# перезапуск. Настройки и база при этом не трогаются.
+#
+# Почему именно так, а не git pull на сервере: тянуть неоткуда.
+# Публичного репозитория нет, заводить его ради одного шиномонтажа
+# незачем, а городить ключи доступа к чужому сервису — лишний
+# посредник там, где хватает SSH, который уже настроен.
+set -euo pipefail
+
+REPO=/opt/tire.git          # куда приходит push
+SRC=/opt/tire-src           # распакованный код целиком
+APP=/opt/tire-server        # рабочая папка сервера
+BRANCH=main
+
+say() { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
+
+while read -r _old _new ref; do
+    [ "$ref" = "refs/heads/$BRANCH" ] || continue
+
+    say "Забираем код"
+    mkdir -p "$SRC"
+    git --git-dir="$REPO" --work-tree="$SRC" checkout -f "$BRANCH"
+
+    # Первый push делается ещё до установки: раскладывать нечего,
+    # и запускать update.sh не по чему. Говорим, что делать дальше
+    if [ ! -f "$APP/.env" ]; then
+        say "Сервер ещё не установлен"
+        echo "Код лежит в $SRC. Теперь выполните на сервере:"
+        echo
+        echo "    cd $SRC/server && sudo bash deploy/install.sh \\"
+        echo "        lk.ВАШ-ДОМЕН admin.ВАШ-ДОМЕН почта@ваш-домен"
+        echo
+        exit 0
+    fi
+
+    say "Раскладываем в $APP"
+    # Настройки, окружение Python и базу не трогаем: там ключи, пароли
+    # и данные, которых в репозитории нет и быть не должно
+    rsync -a --delete \
+        --exclude '.env' --exclude 'venv' --exclude '*.db' \
+        "$SRC/server/" "$APP/"
+    chown -R tire:tire "$APP"
+
+    bash "$APP/deploy/update.sh"
+done
