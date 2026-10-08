@@ -121,6 +121,37 @@ def info(shop: Optional[str] = Query(None, description='Короткое имя 
         minutes_tires=shop_settings.get_int(db, 'booking_minutes_tires', shop=row))
 
 
+@router.get('/shops', summary='Точки, куда можно записаться')
+def shops(db: Session = Depends(get_db)):
+    """
+    Список точек — чтобы человек выбрал, в какую едет.
+
+    Нужен, когда кабинет открыт с голого адреса, без имени точки.
+    Пока точка одна, страница открывает её сразу; как только их
+    становится больше, угадывать нельзя — записать человека не в тот
+    шиномонтаж хуже, чем спросить лишний раз.
+
+    Чужих точек здесь не бывает: берём только те, что принадлежат
+    заказчику этого сервера.
+    """
+    try:
+        account_id = tenancy.account_for(db)
+    except tenancy.ShopNeeded:
+        # Заказчиков несколько: без имени точки выбирать не из чего,
+        # и показывать чужие названия тем более нельзя
+        return []
+
+    if account_id is None:
+        return []
+
+    return [{
+        'slug': row.slug,
+        'name': shop_settings.get(db, 'shop_name', shop=row) or row.name,
+        'address': shop_settings.get(db, 'shop_address', shop=row)
+                   or row.address,
+    } for row in tenancy.shops_of(db, account_id)]
+
+
 @router.get('/paint', summary='Калькулятор покраски дисков')
 def paint(shop: Optional[str] = Query(None, description='Короткое имя точки'),
           db: Session = Depends(get_db)):
@@ -191,6 +222,7 @@ def _set_title(row):
 
 @router.post('/book', response_model=PublicBookingOut, summary='Записаться')
 def book(payload: PublicBookingIn, request: Request,
+         shop: Optional[str] = Query(None, description='Короткое имя точки'),
          db: Session = Depends(get_db)):
     address = request.client.host if request.client else 'unknown'
     if _too_often(address):
@@ -209,7 +241,10 @@ def book(payload: PublicBookingIn, request: Request,
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
                             detail='Укажите номер телефона полностью')
 
-    shop = _shop(db, payload.shop)
+    # Имя точки принимаем и в теле, и в адресе: остальные запросы
+    # страницы шлют его в адресе, и заставлять её делать для записи
+    # исключение — верный способ однажды его потерять
+    shop = _shop(db, payload.shop or shop)
     service = BookingService(db, shop)
     now = shop_now()
 

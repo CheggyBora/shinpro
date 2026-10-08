@@ -419,6 +419,15 @@ input.code {
     </button>
   </div>
 
+  <!-- ============================================ выбор точки -->
+  <!-- Показывается, только когда точек несколько и в адресе не
+       сказано, о какой речь. Пока точка одна, этот экран не нужен -->
+  <div class="card" id="screenShop" hidden>
+    <h2>Куда поедете?</h2>
+    <p class="hint">У нас несколько адресов — выберите удобный.</p>
+    <div id="shopList"></div>
+  </div>
+
   <!-- ================================================ покраска -->
   <div class="card" id="screenPaint" hidden>
     <button class="back" data-back type="button">← Назад</button>
@@ -696,7 +705,7 @@ function show(name) {
   }
 
   ['screenPick', 'screenLogin', 'screenBook', 'screenDone',
-   'screenPaint'].forEach(function (id) {
+   'screenPaint', 'screenShop'].forEach(function (id) {
     $(id).hidden = (id !== name);
   });
   window.scrollTo(0, 0);
@@ -1839,9 +1848,49 @@ function showDone(data) {
   }
 }
 
+function askWhichShop() {
+  api('/public/shops').then(function (answer) {
+    var shops = (answer.ok && answer.data) || [];
+
+    if (!shops.length) {
+      // Точек нет вовсе — спрашивать нечего, и выдумывать тоже
+      $('shopList').innerHTML = '<div class="empty">Запись сейчас '
+        + 'недоступна. Позвоните нам.</div>';
+      show('screenShop');
+      return;
+    }
+
+    if (shops.length === 1) {
+      // Одна точка, но имени в адресе нет — открываем её сразу,
+      // спрашивать не о чем
+      location.replace('/z/' + shops[0].slug);
+      return;
+    }
+
+    $('shopList').innerHTML = shops.map(function (shop) {
+      return '<a class="big" href="/z/' + encodeURIComponent(shop.slug) + '">'
+        + '<span class="ic"><svg viewBox="0 0 26 26" fill="none">'
+        + '<circle cx="13" cy="13" r="10.5" stroke="#2563eb" stroke-width="2"/>'
+        + '<circle cx="13" cy="13" r="3.5" stroke="#2563eb" stroke-width="2"/>'
+        + '</svg></span><span><b>' + escapeHtml(shop.name) + '</b>'
+        + (shop.address ? '<span>' + escapeHtml(shop.address) + '</span>' : '')
+        + '</span></a>';
+    }).join('');
+
+    show('screenShop');
+  });
+}
+
 // -------------------------------------------------------------- запуск
 api('/public/info').then(function (result) {
-  if (!result.ok) return;
+  if (!result.ok) {
+    // Сервер не смог понять, о какой точке речь. Это бывает ровно в
+    // одном случае: точек несколько, а в адресе имя не указано.
+    // Спрашиваем, а не показываем ошибку: человек пришёл записаться,
+    // а не разбираться с нашим устройством
+    askWhichShop();
+    return;
+  }
   var info = result.data;
   window.shopPhone = info.shop_phone;
   document.title = 'Запись — ' + info.shop_name;

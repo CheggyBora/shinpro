@@ -74,10 +74,12 @@ def days(wheels_assembled: Optional[bool] = Query(
 
 @router.post('', response_model=AppointmentOut, summary='Записаться')
 def book(payload: BookingIn,
+         shop: Optional[str] = Query(None, description='Короткое имя точки'),
          client: Client = Depends(current_client),
          db: Session = Depends(get_db)):
     try:
-        appointment = BookingService(db, _shop(db, client, payload.shop)).book(
+        appointment = BookingService(
+            db, _shop(db, client, payload.shop or shop)).book(
             client, payload.at, payload.license_plate,
             payload.wheels_assembled, payload.comment,
             storage_ids=payload.storage_ids)
