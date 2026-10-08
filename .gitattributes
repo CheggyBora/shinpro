@@ -6,6 +6,14 @@
 # для всего, что уезжает на сервер, перевод строк закреплён.
 
 *.sh            text eol=lf
+
+# Перехватчики git расширения не имеют, а запускает их всё тот же bash.
+# Без этой строки файл уезжает на сервер с виндовыми переносами и не
+# запускается вовсе: git молча не выполняет перехватчик, и push
+# проходит «успешно», ничего не сделав
+post-receive    text eol=lf
+pre-receive     text eol=lf
+post-update     text eol=lf
 *.service       text eol=lf
 *.timer         text eol=lf
 *.conf          text eol=lf
