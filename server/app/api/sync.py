@@ -175,14 +175,6 @@ class StorageIn(BaseModel):
     status: str = 'stored'
 
 
-class BookingDayIn(BaseModel):
-    day: str = Field(..., description='Дата как ГГГГ-ММ-ДД')
-    posts: int = 1
-    opens_at: str = '09:00'
-    closes_at: str = '21:00'
-    is_closed: bool = False
-
-
 class QueueIn(BaseModel):
     cars_in_work: int = 0
     cars_waiting: int = 0

@@ -334,22 +334,6 @@ class SyncService:
             })
         return storage
 
-    def _collect_booking_days(self, today):
-        from services.appointment_service import AppointmentService
-
-        service = AppointmentService(self.db)
-        days = []
-        for offset in range(DAYS_AHEAD):
-            day = today + timedelta(days=offset)
-            days.append({
-                'day': day.isoformat(),
-                'posts': service.get_posts_for_day(day),
-                'opens_at': '09:00',
-                'closes_at': '21:00',
-                'is_closed': False,
-            })
-        return days
-
     def _collect_queue(self):
         """
         Что сейчас в цеху.
