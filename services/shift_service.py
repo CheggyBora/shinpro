@@ -37,6 +37,12 @@ class ShiftService:
         self.db.add(shift)
         self.db.commit()
         self.db.refresh(shift)
+        # Число постов и часы смены меняют расчёт свободных окон:
+        # клиент, выбирающий время, должен видеть сегодняшнее
+        from services import sync_nudge
+
+        sync_nudge.request('смена открыта')
+
         return shift
 
     def set_open_posts(self, shift_id: int, open_posts: int) -> Shift:
@@ -50,6 +56,12 @@ class ShiftService:
 
         shift.open_posts = open_posts
         self.db.commit()
+        # Число постов и часы смены меняют расчёт свободных окон:
+        # клиент, выбирающий время, должен видеть сегодняшнее
+        from services import sync_nudge
+
+        sync_nudge.request('изменилось число постов')
+
         return shift
     
     def get_current_shift(self):
@@ -155,6 +167,13 @@ class ShiftService:
         duration_hours = duration.total_seconds() / 3600
         
         self.db.commit()
+
+        # Смена закрыта — итоги дня должны быть в дашборде сразу,
+        # а не через десять минут после того, как цех погасил свет
+        from services import sync_nudge
+
+        sync_nudge.request('смена закрыта')
+
         self.db.refresh(shift)
         
         return {

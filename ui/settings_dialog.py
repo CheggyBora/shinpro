@@ -856,6 +856,13 @@ class SettingsDialog:
             self.telegram.save_recipients(self.recipients)
             self._save_sync_settings()
 
+            # Часы записи, число постов и приём записи клиент видит
+            # сразу. Особенно выключатель: пока он едет десять минут,
+            # люди продолжают записываться на закрытую точку
+            from services import sync_nudge
+
+            sync_nudge.request('изменены настройки')
+
             messagebox.showinfo(
                 "Готово",
                 "Настройки сохранены.\nНазвание в шапке окна обновится "

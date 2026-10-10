@@ -86,7 +86,15 @@ class MainWindow:
         # Обмен с сервером приложения. Выключен, пока сервера нет,
         # и никак не мешает работе цеха, если связь пропала
         self.sync_failures = 0
+        self.sync_running = False
+        self.sync_soon = None
         self.schedule_sync(first=True)
+
+        # Срочная досылка: после важных изменений цех выходит на связь
+        # сам, не дожидаясь расписания
+        from services import sync_nudge
+
+        sync_nudge.set_runner(self.sync_soon_after)
 
     def schedule_shift_check(self):
         self.root.after(10 * 60 * 1000, self._periodic_shift_check)
@@ -107,16 +115,54 @@ class MainWindow:
         delay = 30 * 1000 if first else INTERVAL_MINUTES * 60 * 1000
         self.root.after(delay, self._periodic_sync)
 
-    def _periodic_sync(self):
+    def sync_soon_after(self, delay_ms, reason):
+        """
+        Выйти на связь через delay_ms, если не вышли только что.
+
+        Пачкой, а не по событию: приёмщик закрывает наряд, следом
+        второй, следом двигает машину — это три события за десять
+        секунд, а отправка нужна одна. Пока досылка отложена, новые
+        просьбы к ней присоединяются.
+        """
+        try:
+            from services.sync_service import SyncService
+
+            if not SyncService(self.db).is_enabled():
+                return False
+        except Exception:
+            return False
+
+        if self.sync_soon is not None or self.sync_running:
+            return False
+
+        log.info(f"Срочный обмен: {reason}")
+        self.sync_soon = self.root.after(delay_ms, self._nudged_sync)
+        return True
+
+    def _nudged_sync(self):
+        self.sync_soon = None
+        self._start_sync()
+
+    def _start_sync(self):
+        """Запустить обмен, если он уже не идёт."""
+        if self.sync_running:
+            return
+
         try:
             from services.sync_service import SyncService
 
             service = SyncService(self.db)
-            if service.is_enabled():
-                service.run_in_background(on_done=self._sync_done)
+            if not service.is_enabled():
+                return
+
+            self.sync_running = True
+            service.run_in_background(on_done=self._sync_done)
         except Exception as e:
+            self.sync_running = False
             log.error(f"Не удалось запустить обмен: {e}")
 
+    def _periodic_sync(self):
+        self._start_sync()
         self.schedule_sync()
 
     def _sync_done(self, success, result):
@@ -128,6 +174,8 @@ class MainWindow:
         приёмщика с ума. Поэтому молчим, пока сбои не станут упорными.
         """
         def show():
+            self.sync_running = False
+
             if success:
                 if self.sync_failures:
                     log.info("Связь с сервером восстановлена")
@@ -144,7 +192,7 @@ class MainWindow:
             self.root.after(0, show)
         except Exception:
             # Окно уже закрыли — обновлять нечего
-            pass
+            self.sync_running = False
 
     def _periodic_shift_check(self):
         self.check_overdue_shift()

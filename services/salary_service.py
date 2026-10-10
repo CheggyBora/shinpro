@@ -62,3 +62,10 @@ class SalaryService:
         order.status = 'paid'
 
         self.db.commit()
+
+        # Владелец смотрит в дашборд сразу после оплаты, и ждать
+        # десять минут ему незачем
+        from services import sync_nudge
+
+        sync_nudge.request('наряд оплачен')
+

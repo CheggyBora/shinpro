@@ -167,6 +167,13 @@ class TireStorageService:
             self.db.add(storage)
             self.db.commit()
             self.db.refresh(storage)
+
+            # Комплект должен появиться в кабинете владельца сразу:
+            # человек уехал, а шины остались, и он это проверяет
+            from services import sync_nudge
+
+            sync_nudge.request('приняли комплект на хранение')
+
             return storage
         except Exception:
             self.db.rollback()
@@ -213,6 +220,11 @@ class TireStorageService:
                 f"{storage.storage_type}, {storage.diameter})",
                 entity_type='tire_storage', entity_id=storage_id
             )
+
+            from services import sync_nudge
+
+            sync_nudge.request('выдали комплект')
+
             return storage
         except Exception:
             self.db.rollback()

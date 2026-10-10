@@ -295,6 +295,17 @@ class AppointmentDialog:
                         self.db.commit()
         except Exception as e:
             self.db.rollback()
+
+            # Чаще всего отказ — это «время только что заняли»: клиент
+            # из интернета успел раньше. Обновляем ленту позади, чтобы
+            # приёмщик, закрыв сообщение, увидел, кто там стоит, а не
+            # то же пустое место
+            if self.on_saved:
+                try:
+                    self.on_saved()
+                except Exception:
+                    pass
+
             messagebox.showerror("Ошибка", f"Не удалось сохранить запись:\n{e}",
                                  parent=self.dialog)
             return
