@@ -13,6 +13,7 @@ from datetime import datetime, timedelta
 from tkcalendar import DateEntry
 
 from models import Appointment
+from services.booking_api import SlotTaken
 from services.booking_gateway import get_booking
 from services import ClientService
 from utils import format_phone, normalize_plate
@@ -270,7 +271,7 @@ class AppointmentDialog:
                     parent=self.dialog):
                 return
 
-        try:
+        def write(force=False):
             if self.appointment is None:
                 self.service.create(
                     scheduled_at=scheduled_at,
@@ -278,7 +279,8 @@ class AppointmentDialog:
                     client_name=name,
                     client_phone=phone,
                     license_plate=plate,
-                    wheels_assembled=wheels)
+                    wheels_assembled=wheels,
+                    force=force)
             else:
                 self.service.update(
                     self.service.key_of(self.appointment),
@@ -286,13 +288,38 @@ class AppointmentDialog:
                     duration_minutes=duration,
                     client_name=name or None,
                     client_phone=phone or None,
-                    license_plate=plate or None)
+                    license_plate=plate or None,
+                    force=force)
                 if plate:
                     car = self.clients.get_car(plate)
                     if car is not None and wheels is not None \
                             and car.wheels_assembled is None:
                         car.wheels_assembled = wheels
                         self.db.commit()
+
+        try:
+            try:
+                write()
+            except SlotTaken as e:
+                # Пока приёмщик заполнял форму, окно заняли — чаще всего
+                # записались через интернет. Решает приёмщик: он видит
+                # бокс и знает, влезет ли машина. Но решает он, а не
+                # программа молча за него
+                if self.on_saved:
+                    try:
+                        self.on_saved()
+                    except Exception:
+                        pass
+
+                if not messagebox.askyesno(
+                        "Время заняли",
+                        f"{e}\n\nСкорее всего, записались через интернет, "
+                        f"пока вы заполняли форму.\n"
+                        f"Записать всё равно, сверх постов?",
+                        parent=self.dialog):
+                    return
+
+                write(force=True)
         except Exception as e:
             self.db.rollback()
 

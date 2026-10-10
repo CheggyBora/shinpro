@@ -143,9 +143,27 @@ state = booking.load_day(TOMORROW)
 columns = sorted(column for _, column in state['placed'])
 check('колонки разные', columns == [0, 1], str(columns))
 
-print('\n=== Сверх постов запись всё равно принимается ===')
+print('\n=== Сверх постов — только с ведома приёмщика ===')
+# Раньше такая запись проходила молча, и клиент из интернета мог
+# обнаружить на своём времени чужую машину. Теперь сервер сначала
+# отказывает: спросить приёмщика — дело программы
+from services.booking_api import SlotTaken
+
+refused = None
+try:
+    booking.create(scheduled_at=at(10, 30), duration_minutes=40,
+                   license_plate='Т111ТТ77')
+except SlotTaken as e:
+    refused = str(e)
+
+check('сервер отказал', refused is not None, str(refused))
+check('и сказал, почему', 'заняты' in (refused or ''), str(refused))
+check('запись не завелась',
+      len(booking.load_day(TOMORROW)['placed']) == 2,
+      str(len(booking.load_day(TOMORROW)['placed'])))
+
 booking.create(scheduled_at=at(10, 30), duration_minutes=40,
-               license_plate='Т111ТТ77')
+               license_plate='Т111ТТ77', force=True)
 state = booking.load_day(TOMORROW)
 columns = sorted(column for _, column in state['placed'])
 check('третья вынесена за сетку', columns == [0, 1, 2], str(columns))

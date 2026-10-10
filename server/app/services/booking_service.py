@@ -73,17 +73,25 @@ class BookingService:
     def _default_closes(self):
         return shop_settings.get(self.db, 'booking_closes_at', shop=self.shop)
 
-    def _busy_at(self, day):
-        """Записи дня, занимающие посты, отрезками времени."""
+    def _busy_at(self, day, exclude_id=None):
+        """
+        Записи дня, занимающие посты, отрезками времени.
+
+        exclude_id — не считать саму переносимую запись. Иначе сдвиг
+        на четверть часа упёрся бы в собственный хвост.
+        """
         start = datetime.combine(day, time.min)
         end = start + timedelta(days=1)
 
-        rows = self.db.query(Appointment).filter(
+        query = self.db.query(Appointment).filter(
             Appointment.shop_id == self.shop_id,
             Appointment.scheduled_at >= start,
             Appointment.scheduled_at < end,
             Appointment.status.in_(BUSY_STATUSES),
-        ).all()
+        )
+        if exclude_id is not None:
+            query = query.filter(Appointment.id != exclude_id)
+        rows = query.all()
 
         return [(row.scheduled_at,
                  row.scheduled_at + timedelta(minutes=row.duration_minutes or 0))
@@ -387,9 +395,9 @@ class BookingService:
 
         return car
 
-    def _slot_is_free(self, at, duration_minutes, posts):
+    def _slot_is_free(self, at, duration_minutes, posts, exclude_id=None):
         finish = at + timedelta(minutes=duration_minutes)
-        overlapping = sum(1 for start, end in self._busy_at(at.date())
+        overlapping = sum(1 for start, end in self._busy_at(at.date(), exclude_id)
                           if start < finish and at < end)
         return overlapping < posts
 

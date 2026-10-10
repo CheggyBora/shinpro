@@ -619,8 +619,12 @@ class ShopBookingIn(BaseModel):
     client_phone: Optional[str] = None
     wheels_assembled: Optional[bool] = None
     comment: Optional[str] = None
-    # Приёмщик решает сам: он видит цех и может втиснуть машину
-    force: bool = True
+    # Приёмщик может втиснуть машину сверх постов — он видит бокс. Но
+    # просит об этом отдельно: по умолчанию отказываем, программа
+    # спрашивает человека и повторяет запрос с force. Иначе запись
+    # сверх постов проходила бы молча, и клиент, записавшийся через
+    # интернет, нашёл бы на своём времени чужую машину
+    force: bool = False
 
 
 @router.post('/appointments', summary='Приёмщик записывает клиента')
@@ -719,6 +723,7 @@ class AppointmentPatchIn(BaseModel):
     client_phone: Optional[str] = None
     status: Optional[str] = None
     comment: Optional[str] = None
+    force: bool = False
 
 
 @router.patch('/appointments/{appointment_id}', summary='Изменить запись')
@@ -732,6 +737,23 @@ def patch_appointment(appointment_id: int, payload: AppointmentPatchIn,
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail='Запись не найдена')
 
     was_time, was_status = row.scheduled_at, row.status
+
+    # Перенос на занятое время. Отмену и отметку приезда не проверяем:
+    # там время не меняется, а запись, которую отменяют, пост освобождает
+    moving = (payload.scheduled_at is not None
+              or payload.duration_minutes is not None)
+    if moving and (payload.status or row.status) == 'scheduled':
+        service = BookingService(db, shop)
+        at = payload.scheduled_at or row.scheduled_at
+        minutes = payload.duration_minutes or row.duration_minutes or 0
+        settings = service.day_settings(at.date())
+
+        # Саму запись из расчёта убираем: иначе сдвиг на четверть часа
+        # упёрся бы в собственный хвост
+        if not payload.force and not service._slot_is_free(
+                at, minutes, settings['posts'], exclude_id=row.id):
+            raise HTTPException(status.HTTP_409_CONFLICT,
+                                detail='На это время все посты заняты')
 
     if payload.scheduled_at is not None:
         row.scheduled_at = payload.scheduled_at

@@ -43,6 +43,16 @@ class BookingError(Exception):
     """Сервер отказал по делу — например, время уже занято."""
 
 
+class SlotTaken(BookingError):
+    """
+    На это время все посты заняты.
+
+    Отдельный тип, потому что это не «нельзя», а «вы уверены?».
+    Приёмщик видит бокс и может записать сверх постов — но решить
+    это должен он, а не программа молча за него.
+    """
+
+
 class BookingApi:
     def __init__(self, db):
         self.db = db
@@ -83,6 +93,8 @@ class BookingApi:
             except Exception:
                 pass
             # Отказ по делу — это не потеря связи: показывать надо разное
+            if e.code == 409:
+                raise SlotTaken(detail or 'На это время все посты заняты')
             raise BookingError(detail or f'Сервер отклонил запрос: {e}')
         except urllib.error.URLError as e:
             raise Offline(f'Нет связи с сервером: {e.reason}')
@@ -207,13 +219,15 @@ class BookingApi:
 
     def create(self, scheduled_at, duration_minutes, license_plate=None,
                client_name=None, client_phone=None, wheels_assembled=None,
-               comment=None, force=True):
+               comment=None, force=False):
         """
         Записать клиента. Возвращает ответ сервера.
 
-        force=True — приёмщик может записать сверх постов: он видит бокс
-        и решает сам. Но занятость сервер всё равно вернёт, и программа
-        предупредит до сохранения.
+        force=False — сначала спрашиваем по-честному. Если время заняли
+        (клиент из интернета успел раньше), сервер откажет, и программа
+        спросит приёмщика: он видит бокс и может настоять. Раньше здесь
+        стояло force=True, и запись сверх постов проходила молча — ровно
+        то, от чего запись на сервере и должна была спасти.
         """
         return self._call('POST', '/sync/appointments', {
             'scheduled_at': as_naive(scheduled_at),
@@ -229,7 +243,8 @@ class BookingApi:
     def update(self, server_id, **fields):
         payload = {}
         for key in ('scheduled_at', 'duration_minutes', 'license_plate',
-                    'client_name', 'client_phone', 'status', 'comment'):
+                    'client_name', 'client_phone', 'status', 'comment',
+                    'force'):
             if key in fields:
                 value = fields[key]
                 if key == 'scheduled_at' and value is not None:

@@ -81,6 +81,9 @@ class LocalBooking:
 
     def update(self, key, **fields):
         fields.pop('wheels_assembled', None)
+        # «Записать всё равно» — разговор с сервером. Своя база о
+        # занятости спрашивает заранее, до сохранения
+        fields.pop('force', None)
         return self.service.update(key, **fields)
 
     def get(self, key):
@@ -145,8 +148,9 @@ class RemoteBooking:
         Занятость считает сервер при сохранении.
 
         Заранее спрашивать не идём: пока приёмщик заполняет форму,
-        окно могли занять, и ответ всё равно устареет. Сервер вернёт
-        занятость вместе с созданием.
+        окно могли занять, и ответ всё равно устареет. Поэтому здесь
+        отвечаем «свободно», а настоящий ответ даёт сервер в момент
+        сохранения — отказом, на который программа спросит приёмщика.
         """
         posts = self.api.get_posts_for_day(at.date())
         return True, 0, posts
@@ -159,7 +163,8 @@ class RemoteBooking:
             client_name=fields.get('client_name'),
             client_phone=fields.get('client_phone'),
             wheels_assembled=fields.get('wheels_assembled'),
-            comment=fields.get('comment'))
+            comment=fields.get('comment'),
+            force=fields.get('force', False))
         return answer['id']
 
     def update(self, key, **fields):
