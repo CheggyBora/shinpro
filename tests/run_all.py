@@ -30,6 +30,7 @@ TESTS = [
     ('Запись видна сразу с обеих сторон', 'test_booking_live.py'),
     ('Обмен с сервером приложения', 'test_sync.py'),
     ('Срочная досылка важного', 'test_sync_nudge.py'),
+    ('Время правки настроек', 'test_settings_stamps.py'),
     ('Записи через сервер', 'test_booking_remote.py'),
     ('Отчёты и выгрузка', 'test_reports.py'),
     ('Сводка по смене и Telegram', 'test_shift_report.py'),

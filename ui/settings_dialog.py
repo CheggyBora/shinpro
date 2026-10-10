@@ -73,6 +73,12 @@ class SettingsDialog:
         self.telegram = TelegramService(db)
         self.embedded = host is not None
 
+        # Поля собираются из разных разделов в общие словари: сохранение
+        # читает их все сразу. Заводим здесь, а не в том разделе, который
+        # строится первым, — порядок разделов менялся уже дважды
+        self.numeric_fields = {}
+        self.time_fields = {}
+
         if self.embedded:
             # Окно верхнего уровня всё равно нужно: к нему привязываются
             # вложенные диалоги — выбор папки, ввод числа, вопросы
@@ -395,6 +401,18 @@ class SettingsDialog:
         ttk.Checkbutton(content, text="Отправлять сводку по смене в Telegram",
                         variable=self.report_var).pack(anchor='w', pady=(0, 10))
 
+        # Это про смену, а не про запись: сколько постов считается
+        # работающими, когда смену открыли. Раньше поле стояло в
+        # «Записи» и читалось как «постов под запись» — две разные вещи
+        # с похожими названиями на одном экране
+        self._section(content, "Посты при открытии смены")
+
+        grid = ttk.Frame(content, style='White.TFrame')
+        grid.pack(fill='x', pady=(0, 10))
+        self._numeric_grid(grid, [
+            ('default_posts', 'Постов открывается по умолчанию'),
+        ])
+
     def _build_printing(self, content):
         self._section(content, "Печать")
 
@@ -467,7 +485,6 @@ class SettingsDialog:
                    "обзвонить.")
 
         # Часы работы — строками «07:00»
-        self.time_fields = {}
         for key, title in (('booking_opens_at', 'Записывать с'),
                            ('booking_closes_at', 'Записывать до (24:00 — полночь)')):
             row = ttk.Frame(content, style='White.TFrame')
@@ -482,9 +499,8 @@ class SettingsDialog:
         grid = ttk.Frame(content, style='White.TFrame')
         grid.pack(fill='x', pady=(6, 10))
 
-        self.numeric_fields = {}
         self._numeric_grid(grid, [
-            ('default_posts', 'Постов по умолчанию'),
+            ('booking_posts', 'Постов под запись'),
             ('booking_slot_step', 'Шаг окон, мин'),
             ('booking_minutes_assembled', 'На колёса в сборе, мин'),
             ('booking_minutes_tires', 'На шины россыпью, мин'),
@@ -494,8 +510,11 @@ class SettingsDialog:
         self._hint(content,
                    "Это общие настройки — по ним считаются все дни. "
                    "Отдельный день правится в разделе «Запись», прямо в "
-                   "ленте: там видно, сколько постов открыто и во сколько "
-                   "работаем именно сегодня.")
+                   "ленте: настроенный день главнее общего числа, потому "
+                   "что приёмщик знает, кто в тот день работает.\n"
+                   "Приём записи, посты и часы владелец может поменять и "
+                   "из дашборда. Если поменяли с двух сторон, останется "
+                   "то, что поставили позже.")
 
     def _numeric_grid(self, grid, fields):
         """Числовые поля столбиком. Складываются в один словарь на всё окно."""

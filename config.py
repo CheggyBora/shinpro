@@ -92,6 +92,40 @@ def init_db():
     fill_storage_deadlines()
     classify_services()
     seed_paint_options()
+    stamp_settings()
+
+
+def stamp_settings():
+    """
+    Проставить время правки настройкам, у которых его ещё нет.
+
+    Колонку add_missing_columns() добавит, но пустую. Часть настроек
+    меняют и в цеху, и в дашборде, и спор решается по времени правки:
+    без него цех выглядел бы так, будто не менял настройки никогда, и
+    любая правка из дашборда перебивала бы рабочие значения.
+
+    Ставим «сейчас»: когда их задали на самом деле, мы не знаем, но
+    это те значения, по которым цех работает прямо сегодня.
+    """
+    from sqlalchemy.orm import Session
+
+    try:
+        from models import Settings
+        from utils import get_moscow_time
+
+        with Session(engine) as session:
+            rows = session.query(Settings).filter(
+                Settings.changed_at.is_(None)).all()
+            if not rows:
+                return
+
+            now = get_moscow_time()
+            for row in rows:
+                row.changed_at = now
+            session.commit()
+            print(f'Настройкам проставлено время правки: {len(rows)}')
+    except Exception as e:
+        print(f'Не удалось проставить время правки настроек: {e}')
 
 
 def fill_storage_deadlines():

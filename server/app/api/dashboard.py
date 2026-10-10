@@ -16,10 +16,11 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import (StaffUser, PERM_REVENUE, PERM_ORDERS,
-                        PERM_SALARY_ALL, PERM_SALARY_PAY, QueueSnapshot)
+                        PERM_SALARY_ALL, PERM_SALARY_PAY, PERM_BOOKING,
+                        QueueSnapshot)
 from app.security import current_staff, require
 from app.services.dashboard_service import DashboardService
-from app.services import tenancy
+from app.services import tenancy, shop_settings
 
 router = APIRouter(prefix='/dashboard', tags=['Дашборд: цифры'])
 
@@ -294,3 +295,170 @@ def pay_salary(payload: PayoutIn, shop: Optional[str] = None,
 
     return {'id': payout.id, 'amount': payout.amount,
             'waiting_for_shop': True}
+
+
+# ----------------------------------------------------------------------
+# Настройки записи
+# ----------------------------------------------------------------------
+#
+# Эти четыре настройки владелец меняет и из цеха, и отсюда: посты, часы
+# и сам выключатель приёма записи. Из цеха — потому что там стоит
+# приёмщик и видит, кто сегодня работает. Отсюда — потому что владелец
+# в цеху не сидит, а запись выключить может понадобиться немедленно:
+# прорвало воду, не привезли грузы, заболел мастер.
+#
+# Разошлись — прав тот, кто поставил позже. Обмен приносит время правки
+# и сравнивает его с нашим, а не просто перезаписывает наше присланным.
+#
+# Вниз это уезжает при обмене: сервер сам к цеху не ходит, цех выходит
+# на связь. Значит, цех увидит правку в пределах десяти минут, а для
+# клиентов из интернета она действует сразу — кабинет читает сервер.
+
+BOOKING_KEYS = ('booking_enabled', 'booking_posts',
+                'booking_opens_at', 'booking_closes_at')
+
+MIN_POSTS, MAX_POSTS = 1, 3
+
+
+class BookingSettingsIn(BaseModel):
+    booking_enabled: Optional[bool] = None
+    booking_posts: Optional[int] = None
+    booking_opens_at: Optional[str] = None
+    booking_closes_at: Optional[str] = None
+
+
+def _one_shop(db, staff, shop):
+    """
+    Точка, настройки которой правим. Одна и обязательно.
+
+    По всем точкам сразу такие настройки менять нельзя: часы и посты у
+    каждой свои, и «применить ко всем» однажды выключило бы запись там,
+    где её выключать не собирались.
+    """
+    shops = tenancy.shops_of(db, staff.account_id)
+
+    if not shop:
+        if len(shops) == 1:
+            return shops[0]
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            detail='Выберите точку: настройки записи у '
+                                   'каждой свои')
+
+    for row in shops:
+        if str(row.id) == str(shop) or row.slug == str(shop):
+            return row
+
+    raise HTTPException(status.HTTP_404_NOT_FOUND, detail='Такой точки нет')
+
+
+def _clock(value, field):
+    """«07:00» или «24:00». Иначе человек не узнает, что ошибся."""
+    raw = (value or '').strip()
+    try:
+        hours, minutes = [int(part) for part in raw.split(':')]
+    except (ValueError, AttributeError):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            detail=f'{field}: нужно время как 09:00')
+
+    if not (0 <= hours <= 24 and 0 <= minutes <= 59):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            detail=f'{field}: такого времени не бывает')
+
+    return f'{hours:02d}:{minutes:02d}'
+
+
+@router.get('/booking-settings', summary='Настройки записи точки')
+def booking_settings(shop: Optional[str] = None,
+                     staff: StaffUser = Depends(require(PERM_BOOKING)),
+                     db: Session = Depends(get_db)):
+    chosen = _one_shop(db, staff, shop)
+    values = {key: shop_settings.get(db, key, shop=chosen)
+              for key in BOOKING_KEYS}
+
+    return {
+        'shop': {'id': chosen.id, 'slug': chosen.slug, 'name': chosen.name,
+                 'address': chosen.address,
+                 'last_sync_at': chosen.last_sync_at,
+                 'takes_bookings': chosen.takes_bookings},
+        'booking_enabled': str(values['booking_enabled']).strip() in
+                           ('1', 'true', 'yes'),
+        'booking_posts': int(float(values['booking_posts'] or 1)),
+        'booking_opens_at': values['booking_opens_at'],
+        'booking_closes_at': values['booking_closes_at'],
+        'changed_at': {key: shop_settings.updated_at(db, key, shop=chosen)
+                       for key in BOOKING_KEYS},
+    }
+
+
+@router.put('/booking-settings', summary='Поменять настройки записи')
+def set_booking_settings(payload: BookingSettingsIn,
+                         shop: Optional[str] = None,
+                         staff: StaffUser = Depends(require(PERM_BOOKING)),
+                         db: Session = Depends(get_db)):
+    """
+    Поменять посты, часы записи или выключить приём записи.
+
+    Присланное применяется сразу: кабинет читает сервер и перестанет
+    предлагать окна в тот же миг. Цех узнает при ближайшем обмене.
+    """
+    chosen = _one_shop(db, staff, shop)
+    changed = []
+
+    if payload.booking_enabled is not None:
+        shop_settings.set_value(db, 'booking_enabled',
+                                '1' if payload.booking_enabled else '0',
+                                commit=False, shop=chosen)
+        # Тот же признак у самой точки: по нему её показывают или
+        # прячут в кабинете, не читая настройки на каждый запрос
+        chosen.booking_enabled = bool(payload.booking_enabled)
+        changed.append('booking_enabled')
+
+    if payload.booking_posts is not None:
+        posts = max(MIN_POSTS, min(MAX_POSTS, int(payload.booking_posts)))
+        shop_settings.set_value(db, 'booking_posts', posts,
+                                commit=False, shop=chosen)
+        changed.append('booking_posts')
+
+    if payload.booking_opens_at is not None:
+        shop_settings.set_value(
+            db, 'booking_opens_at',
+            _clock(payload.booking_opens_at, 'Записывать с'),
+            commit=False, shop=chosen)
+        changed.append('booking_opens_at')
+
+    if payload.booking_closes_at is not None:
+        shop_settings.set_value(
+            db, 'booking_closes_at',
+            _clock(payload.booking_closes_at, 'Записывать до'),
+            commit=False, shop=chosen)
+        changed.append('booking_closes_at')
+
+    # Открытие позже закрытия — окон не будет вовсе, и человек решит,
+    # что сломалась запись. Проверяем по тому, что получилось в итоге,
+    # а не по присланному: поменять могли только одно из двух полей.
+    #
+    # flush обязателен: настройки, которой раньше не было, в базе ещё
+    # нет, а сессия сервера не досылает изменения перед запросом сама.
+    # Без него проверка читала бы значение по умолчанию вместо того,
+    # что только что прислали, и пропускала бы «с 20:00 до 09:00»
+    db.flush()
+
+    opens = shop_settings.get(db, 'booking_opens_at', shop=chosen)
+    closes = shop_settings.get(db, 'booking_closes_at', shop=chosen)
+    if _minutes(opens) >= _minutes(closes):
+        db.rollback()
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail=f'Записывать с {opens} до {closes} нельзя: '
+                   f'закрытие раньше открытия')
+
+    db.commit()
+    return {'ok': True, 'changed': changed}
+
+
+def _minutes(value):
+    try:
+        hours, minutes = [int(part) for part in str(value).split(':')]
+        return hours * 60 + minutes
+    except (ValueError, AttributeError, TypeError):
+        return 0

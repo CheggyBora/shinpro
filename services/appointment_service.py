@@ -249,12 +249,19 @@ class AppointmentService:
         """
         Сколько постов открыто под запись на этот день.
 
-        День, который не настраивали, считается однопостовым — так
-        приёмщик не пообещает больше, чем сможет сделать.
+        Настроенный день главнее: приёмщик задал его руками, зная, кто
+        работает. Про остальные берём общее число из настроек — его же
+        видит кабинет, иначе цех и приложение считали бы по-разному.
         """
         day = self._as_date(day)
         row = self.db.query(BookingPosts).filter(BookingPosts.day == day).first()
-        return self.clamp_posts(row.posts) if row else DEFAULT_POSTS
+        if row:
+            return self.clamp_posts(row.posts)
+
+        from services.settings_service import SettingsService
+
+        return self.clamp_posts(
+            SettingsService(self.db).get_int('booking_posts'))
 
     def set_posts_for_day(self, day, posts):
         """Задать число постов на один день."""

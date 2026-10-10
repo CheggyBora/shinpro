@@ -177,6 +177,17 @@ input.code { letter-spacing: 8px; text-align: center; font-size: 22px; font-weig
 .block-title { font-size: 12.5px; color: var(--muted); text-transform: uppercase;
   letter-spacing: .04em; margin: 16px 0 4px; }
 
+/* --- Часы записи: подпись над полем, два поля в строку --- */
+.clock { display: flex; gap: 18px; flex-wrap: wrap; margin: 4px 0 2px; }
+.clock label { display: block; font-size: 13px; color: var(--ink-soft);
+  margin-bottom: 5px; }
+.clock input {
+  padding: 10px 12px; border: 1.5px solid var(--line); border-radius: 12px;
+  font-size: 16px; font-family: inherit; color: var(--ink);
+  background: var(--card);
+}
+.clock input:focus { outline: none; border-color: var(--brand); }
+
 /* --- Форма сотрудника --- */
 .form label { display: block; font-size: 13px; color: var(--ink-soft); margin: 14px 0 5px; }
 .form input[type="text"], .form input[type="tel"], .form input[type="number"], .form select {
@@ -500,7 +511,9 @@ var ICONS = {
   staff: '<circle cx="9" cy="8" r="3"/><path d="M3 20c0-3 3-5 6-5s6 2 6 5"/>'
        + '<path d="M16 5l2 2 4-4"/>',
   salary: '<rect x="2" y="6" width="20" height="12" rx="2"/>'
-        + '<circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/>'
+        + '<circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/>',
+  booking: '<rect x="3" y="5" width="18" height="16" rx="2"/>'
+         + '<path d="M8 3v4M16 3v4M3 11h18"/><path d="M8 15h3"/>'
 };
 
 function sections() {
@@ -515,6 +528,7 @@ function sections() {
   if (can('orders')) list.push({ key: 'orders', title: 'Наряды' });
   if (can('salary_all')) list.push({ key: 'shifts', title: 'Смены' });
   if (can('salary_all')) list.push({ key: 'salary', title: 'Зарплата' });
+  if (can('booking')) list.push({ key: 'booking', title: 'Запись' });
   if (can('staff')) list.push({ key: 'staff', title: 'Доступ' });
 
   return list;
@@ -647,10 +661,12 @@ function load() {
   show('<div class="empty">Загружаем…</div>');
 
   // На экране доступа период ни при чём: люди не относятся к месяцу
-  var aboutPeople = section === 'staff' || section === 'salary';
+  var aboutPeople = section === 'staff' || section === 'salary'
+                 || section === 'booking';
   $('period').style.display = aboutPeople ? 'none' : '';
   $('dates').style.display = aboutPeople ? 'none' : '';
 
+  if (section === 'booking') return loadBooking();
   if (section === 'staff') return loadStaff();
   if (section === 'salary') return loadSalary();
   if (section === 'summary') return loadSummary();
@@ -984,6 +1000,123 @@ function openPayout(person) {
       loadSalary();
     }).catch(function (e) { formError(e.message); });
   });
+}
+
+// ------------------------------------------------------------------
+// Запись: посты, часы и выключатель
+// ------------------------------------------------------------------
+//
+// То же самое меняется и в цеху, под ПИНом администратора. Разошлись —
+// прав тот, кто поставил позже. Поэтому здесь всегда показываем, когда
+// настройку правили в последний раз: иначе владелец, выключивший
+// запись, не поймёт, почему через десять минут она снова включена.
+
+function loadBooking() {
+  if (shops.length > 1 && !currentShop) {
+    show('<div class="card"><h2>Запись</h2><p class="note">Часы и посты '
+       + 'у каждой точки свои. Выберите точку сверху.</p></div>');
+    return;
+  }
+
+  api(withShop('/dashboard/booking-settings')).then(function (data) {
+    drawBooking(data);
+  }).catch(function (e) {
+    show('<div class="empty">' + escape(e.message) + '</div>');
+  });
+}
+
+function drawBooking(data) {
+  var posts = [1, 2, 3].map(function (count) {
+    return '<button class="chip" type="button" data-posts="' + count
+      + '" aria-pressed="' + (count === data.booking_posts) + '">'
+      + count + '</button>';
+  }).join('');
+
+  var html = '<div class="card"><h2>Приём записи</h2>'
+    + '<div class="line"><span>Через интернет</span><b id="bState">'
+    + (data.booking_enabled ? 'включён' : 'выключен') + '</b></div>'
+    + '<button class="go" type="button" id="bToggle" style="margin-top:12px">'
+    + (data.booking_enabled ? 'Выключить приём записи' : 'Включить приём записи')
+    + '</button>';
+
+  if (data.booking_enabled && !data.shop.takes_bookings) {
+    html += '<p class="note">Приём включён, но точка не выходила на связь '
+      + 'с программой цеха — пока связи не будет, записаться нельзя.</p>';
+  } else {
+    html += '<p class="note">Выключенную запись клиенты не видят: точка '
+      + 'не показывается в кабинете. Записи, сделанные раньше, остаются '
+      + 'на месте.</p>';
+  }
+  html += '</div>';
+
+  html += '<div class="card"><h2>Постов под запись</h2>'
+    + '<div class="period" id="bPosts" style="padding:0;margin:4px 0 2px">'
+    + posts + '</div>'
+    + '<p class="note">Это запас на дни, которые в цеху отдельно не '
+    + 'настраивали. Если приёмщик задал посты на конкретный день, '
+    + 'главнее его число: он видит, кто в тот день работает.</p></div>';
+
+  html += '<div class="card"><h2>Часы записи</h2>'
+    + '<div class="clock">'
+    + '<div><label for="bOpens">Записывать с</label>'
+    + '<input id="bOpens" type="time" value="'
+    + escape(data.booking_opens_at) + '"></div>'
+    + '<div><label for="bCloses">Записывать до</label>'
+    + '<input id="bCloses" type="time" value="'
+    + escape(data.booking_closes_at === '24:00' ? '23:59' : data.booking_closes_at)
+    + '"></div></div>'
+    + '<p class="note">В эти часы кабинет предлагает окна клиентам. '
+    + 'Приёмщика они не ограничивают: по телефону он запишет на любое '
+    + 'время.</p>'
+    + '<button class="go" type="button" id="bSaveHours" '
+    + 'style="margin-top:12px">Сохранить часы</button></div>';
+
+  html += '<div class="card"><h2>Когда меняли</h2>'
+    + bookingWhen('Приём записи', data.changed_at.booking_enabled)
+    + bookingWhen('Посты', data.changed_at.booking_posts)
+    + bookingWhen('Записывать с', data.changed_at.booking_opens_at)
+    + bookingWhen('Записывать до', data.changed_at.booking_closes_at)
+    + '<p class="note">То же меняется и в цеху. Если поменяли с двух '
+    + 'сторон, останется то, что поставили позже. Цех узнает об этой '
+    + 'правке при ближайшем обмене, клиенты в кабинете — сразу.</p></div>';
+
+  html += '<div class="error" id="formError" hidden></div>';
+  show(html);
+
+  $('bToggle').addEventListener('click', function () {
+    saveBooking({ booking_enabled: !data.booking_enabled });
+  });
+
+  [].slice.call($('bPosts').querySelectorAll('button')).forEach(function (button) {
+    button.addEventListener('click', function () {
+      saveBooking({ booking_posts: parseInt(button.getAttribute('data-posts'), 10) });
+    });
+  });
+
+  $('bSaveHours').addEventListener('click', function () {
+    var closes = $('bCloses').value;
+    // Полночь браузер отдаёт как 23:59: «24:00» в поле времени не ввести,
+    // а сервер понимает именно конец суток
+    if (closes === '23:59') closes = '24:00';
+    saveBooking({ booking_opens_at: $('bOpens').value,
+                  booking_closes_at: closes });
+  });
+}
+
+function bookingWhen(title, iso) {
+  return '<div class="line"><span>' + title + '</span><b>'
+    + (iso ? timeText(iso) : 'не меняли') + '</b></div>';
+}
+
+function saveBooking(body) {
+  api(withShop('/dashboard/booking-settings'),
+      { method: 'PUT', body: body })
+    .then(function () { loadBooking(); })
+    .catch(function (e) {
+      var box = $('formError');
+      if (box) { box.textContent = e.message; box.hidden = false; }
+      else fail(e.message);
+    });
 }
 
 // ------------------------------------------------------------------

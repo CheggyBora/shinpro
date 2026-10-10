@@ -25,7 +25,8 @@ from app.database import get_db
 from app.models import Appointment, Car, Client, StoredSet, PENDING
 from app.schemas import DayOut, SlotOut
 from app.services import shop_settings, notify, tenancy
-from app.services.booking_service import BookingService, BookingError
+from app.services.booking_service import (BookingService, BookingError,
+                                           SLOT_TAKEN)
 from app.utils import normalize_plate, normalize_phone, format_phone, now as shop_now
 
 router = APIRouter(prefix='/public', tags=['Запись по ссылке'])
@@ -291,9 +292,9 @@ def book(payload: PublicBookingIn, request: Request,
                             detail='В этот день шиномонтаж не работает')
 
     if not service._slot_is_free(payload.at, duration, settings['posts']):
-        raise HTTPException(status.HTTP_409_CONFLICT,
-                            detail='Это время только что заняли. '
-                                   'Выберите другое')
+        # Тот же ответ, что получит приёмщик в цеху: событие одно, и
+        # разные формулировки заставляли бы думать, что запреты разные
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=SLOT_TAKEN)
 
     # Клиента заводим: он уже назвал телефон, и цеху он понадобится.
     # Машину тоже — иначе при следующем визите заведётся вторая

@@ -240,6 +240,22 @@ class AppointmentDialog:
         day = self.date_entry.get_date()
         return datetime(day.year, day.month, day.day, hours, minutes)
 
+    def _refresh_behind(self):
+        """
+        Перечитать ленту позади формы.
+
+        Нужно после отказа: приёмщик должен увидеть, кто занял время, а
+        не то же пустое место, в которое он только что тыкал. Своя
+        ошибка здесь ничего не решает — сообщение человек получит всё
+        равно, и падать из-за неудачного обновления незачем.
+        """
+        if not self.on_saved:
+            return
+        try:
+            self.on_saved()
+        except Exception:
+            pass
+
     def save(self):
         try:
             scheduled_at = self._scheduled_at()
@@ -264,14 +280,17 @@ class AppointmentDialog:
         free, busy, posts = self.service.check_capacity(
             scheduled_at, duration, exclude_id=exclude)
         if not free:
-            if not messagebox.askyesno(
-                    "Посты заняты",
-                    f"На {scheduled_at.strftime('%d.%m %H:%M')} уже записано "
-                    f"{busy} при {posts} постах.\nЗаписать всё равно?",
-                    parent=self.dialog):
-                return
+            # Отказ, а не вопрос. Двух машин на один пост в одно время
+            # не бывает, и «записать всё равно» кончалось бы тем, что
+            # на это время приедут двое
+            messagebox.showerror(
+                "Время занято",
+                f"На {scheduled_at.strftime('%d.%m %H:%M')} уже записано "
+                f"{busy} при {posts} постах.\nВыберите другое время.",
+                parent=self.dialog)
+            return
 
-        def write(force=False):
+        def write():
             if self.appointment is None:
                 self.service.create(
                     scheduled_at=scheduled_at,
@@ -279,8 +298,7 @@ class AppointmentDialog:
                     client_name=name,
                     client_phone=phone,
                     license_plate=plate,
-                    wheels_assembled=wheels,
-                    force=force)
+                    wheels_assembled=wheels)
             else:
                 self.service.update(
                     self.service.key_of(self.appointment),
@@ -288,8 +306,7 @@ class AppointmentDialog:
                     duration_minutes=duration,
                     client_name=name or None,
                     client_phone=phone or None,
-                    license_plate=plate or None,
-                    force=force)
+                    license_plate=plate or None)
                 if plate:
                     car = self.clients.get_car(plate)
                     if car is not None and wheels is not None \
@@ -298,41 +315,21 @@ class AppointmentDialog:
                         self.db.commit()
 
         try:
-            try:
-                write()
-            except SlotTaken as e:
-                # Пока приёмщик заполнял форму, окно заняли — чаще всего
-                # записались через интернет. Решает приёмщик: он видит
-                # бокс и знает, влезет ли машина. Но решает он, а не
-                # программа молча за него
-                if self.on_saved:
-                    try:
-                        self.on_saved()
-                    except Exception:
-                        pass
-
-                if not messagebox.askyesno(
-                        "Время заняли",
-                        f"{e}\n\nСкорее всего, записались через интернет, "
-                        f"пока вы заполняли форму.\n"
-                        f"Записать всё равно, сверх постов?",
-                        parent=self.dialog):
-                    return
-
-                write(force=True)
-        except Exception as e:
+            write()
+        except SlotTaken as e:
             self.db.rollback()
 
-            # Чаще всего отказ — это «время только что заняли»: клиент
-            # из интернета успел раньше. Обновляем ленту позади, чтобы
-            # приёмщик, закрыв сообщение, увидел, кто там стоит, а не
-            # то же пустое место
-            if self.on_saved:
-                try:
-                    self.on_saved()
-                except Exception:
-                    pass
+            # Пока приёмщик заполнял форму, окно заняли — скорее всего
+            # записались через интернет. Обновляем ленту позади, чтобы,
+            # закрыв сообщение, он увидел, кто там стоит, а не то же
+            # пустое место, и сразу назвал клиенту другое время
+            self._refresh_behind()
 
+            messagebox.showerror("Время занято", str(e), parent=self.dialog)
+            return
+        except Exception as e:
+            self.db.rollback()
+            self._refresh_behind()
             messagebox.showerror("Ошибка", f"Не удалось сохранить запись:\n{e}",
                                  parent=self.dialog)
             return

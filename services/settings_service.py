@@ -7,6 +7,7 @@
 """
 from models import Settings
 from services.company_service import COMPANY_DEFAULTS
+from utils import get_moscow_time
 
 # Настройки этапа планирования времени.
 # Значения по умолчанию подобраны так, чтобы программа работала
@@ -18,6 +19,12 @@ DEFAULTS = {
 
     # Сколько постов открыто по умолчанию при открытии смены
     'default_posts': '2',
+
+    # Сколько постов под запись на дни, которые отдельно не настраивали.
+    # Приёмщик задаёт посты по дням на экране записи, но на все дни
+    # вперёд этого не сделать — дальше работает это число. Единица
+    # осторожна: лучше пообещать меньше, чем не успеть
+    'booking_posts': '1',
 
     # Запас к расчётному времени в процентах: реальность всегда медленнее
     # норматива, лучше приятно удивить клиента, чем задержать
@@ -156,9 +163,45 @@ class SettingsService:
     def set(self, key, value, commit=True):
         setting = self.db.query(Settings).filter(Settings.key == key).first()
         if setting:
+            if setting.value == str(value):
+                # Записать то же самое — значит сдвинуть метку времени
+                # и тем самым «выиграть» у дашборда, ничего не поменяв.
+                # Окно настроек сохраняет все поля сразу, так что без
+                # этой проверки любое сохранение отменяло бы правку
+                # владельца, сделанную из дашборда.
+                # Но commit всё равно делаем: этим вызовом часто
+                # закрывают пачку правок, сделанных с commit=False
+                if commit:
+                    self.db.commit()
+                return
             setting.value = str(value)
+            setting.changed_at = get_moscow_time()
         else:
-            self.db.add(Settings(key=key, value=str(value)))
+            self.db.add(Settings(key=key, value=str(value),
+                                 changed_at=get_moscow_time()))
+        if commit:
+            self.db.commit()
+
+    def changed_at(self, key):
+        """Когда настройку поменяли в цеху. None — ни разу с обновления."""
+        setting = self.db.query(Settings).filter(Settings.key == key).first()
+        return setting.changed_at if setting else None
+
+    def adopt(self, key, value, changed_at, commit=True):
+        """
+        Принять значение, пришедшее с сервера.
+
+        Метку времени берём серверную, а не ставим «сейчас»: иначе цех
+        всегда оказывался бы прав последним, и правка из дашборда
+        уезжала бы обратно при следующем же обмене.
+        """
+        setting = self.db.query(Settings).filter(Settings.key == key).first()
+        if setting:
+            setting.value = str(value)
+            setting.changed_at = changed_at
+        else:
+            self.db.add(Settings(key=key, value=str(value),
+                                 changed_at=changed_at))
         if commit:
             self.db.commit()
 

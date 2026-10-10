@@ -23,7 +23,7 @@
 и путать этот доступ с клиентским входом нельзя.
 """
 from datetime import datetime, timedelta, time
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
@@ -37,7 +37,7 @@ from app.models import (Client, Car, Appointment, BookingDay, StoredSet,
                         PENDING, TAKEN, REJECTED)
 from app.security import require_sync_key
 from app.services import shop_settings
-from app.services.booking_service import BookingService
+from app.services.booking_service import BookingService, SLOT_TAKEN
 from app.utils import normalize_phone, normalize_plate, normalize_email, now as shop_now
 
 router = APIRouter(prefix='/sync', tags=['Обмен с цехом'])
@@ -194,6 +194,17 @@ class PushIn(BaseModel):
     queue: Optional[QueueIn] = None
     settings: dict = {}
 
+    # Когда каждую настройку поменяли в цеху. Старая версия программы
+    # этого не присылает — тогда её значения принимаются как раньше,
+    # без разбора, кто был позже
+    settings_changed_at: Dict[str, datetime] = {}
+
+
+class SettingOut(BaseModel):
+    key: str
+    value: Optional[str] = None
+    changed_at: datetime
+
 
 class PushOut(BaseModel):
     clients: int = 0
@@ -205,6 +216,11 @@ class PushOut(BaseModel):
     storage: int = 0
     queue: bool = False
     settings: int = 0
+
+    # Настройки, которые владелец поменял из дашборда позже, чем цех у
+    # себя. Цех их принимает: иначе правка из дашборда жила бы до
+    # первого обмена и молча исчезала
+    from_server: List[SettingOut] = []
 
 
 # ----------------------------------------------------------------------
@@ -512,8 +528,23 @@ def push(payload: PushIn, db: Session = Depends(get_db),
         result.queue = True
 
     # --- Настройки ------------------------------------------------------
+    stamps = payload.settings_changed_at or {}
+
     for key, value in (payload.settings or {}).items():
-        shop_settings.set_value(db, key, value, commit=False, shop=shop)
+        theirs = stamps.get(key)
+        mine = shop_settings.updated_at(db, key, shop=shop)
+
+        # Разошлись — прав тот, кто поставил позже. Часы записи, посты и
+        # выключатель записи меняют с двух сторон, и без этого правка
+        # владельца из дашборда жила бы до первого обмена
+        if theirs is not None and mine is not None and mine > theirs:
+            result.from_server.append(SettingOut(
+                key=key, value=shop_settings.get(db, key, shop=shop),
+                changed_at=mine))
+            continue
+
+        shop_settings.set_value(db, key, value, commit=False, shop=shop,
+                                when=theirs)
         result.settings += 1
 
         # Приём записи — не просто настройка, а признак самой точки:
@@ -619,12 +650,6 @@ class ShopBookingIn(BaseModel):
     client_phone: Optional[str] = None
     wheels_assembled: Optional[bool] = None
     comment: Optional[str] = None
-    # Приёмщик может втиснуть машину сверх постов — он видит бокс. Но
-    # просит об этом отдельно: по умолчанию отказываем, программа
-    # спрашивает человека и повторяет запрос с force. Иначе запись
-    # сверх постов проходила бы молча, и клиент, записавшийся через
-    # интернет, нашёл бы на своём времени чужую машину
-    force: bool = False
 
 
 @router.post('/appointments', summary='Приёмщик записывает клиента')
@@ -633,9 +658,10 @@ def create_appointment(payload: ShopBookingIn, db: Session = Depends(get_db),
     """
     Записать клиента со стороны цеха.
 
-    В отличие от приложения, здесь можно записать сверх постов: приёмщик
-    видит, что происходит в боксе, и решение за ним. Но занятость всё
-    равно возвращаем — программа предупредит.
+    Проверка та же, что у клиента из интернета, и так же без поддавков:
+    на занятое время не записываем никого. Двух машин на один пост в
+    одно время не бывает, и кто бы ни нажал кнопку — ответ один:
+    время занято, выберите другое.
     """
     plate = normalize_plate(payload.license_plate)
     phone = normalize_phone(payload.client_phone)
@@ -646,9 +672,8 @@ def create_appointment(payload: ShopBookingIn, db: Session = Depends(get_db),
     free = service._slot_is_free(payload.scheduled_at,
                                  payload.duration_minutes, settings['posts'])
 
-    if not free and not payload.force:
-        raise HTTPException(status.HTTP_409_CONFLICT,
-                            detail='На это время все посты заняты')
+    if not free:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=SLOT_TAKEN)
 
     client = None
     if phone or name:
@@ -723,7 +748,6 @@ class AppointmentPatchIn(BaseModel):
     client_phone: Optional[str] = None
     status: Optional[str] = None
     comment: Optional[str] = None
-    force: bool = False
 
 
 @router.patch('/appointments/{appointment_id}', summary='Изменить запись')
@@ -750,10 +774,9 @@ def patch_appointment(appointment_id: int, payload: AppointmentPatchIn,
 
         # Саму запись из расчёта убираем: иначе сдвиг на четверть часа
         # упёрся бы в собственный хвост
-        if not payload.force and not service._slot_is_free(
-                at, minutes, settings['posts'], exclude_id=row.id):
-            raise HTTPException(status.HTTP_409_CONFLICT,
-                                detail='На это время все посты заняты')
+        if not service._slot_is_free(at, minutes, settings['posts'],
+                                     exclude_id=row.id):
+            raise HTTPException(status.HTTP_409_CONFLICT, detail=SLOT_TAKEN)
 
     if payload.scheduled_at is not None:
         row.scheduled_at = payload.scheduled_at

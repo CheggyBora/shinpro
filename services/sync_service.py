@@ -174,6 +174,7 @@ class SyncService:
             'storage': self._collect_storage(),
             'queue': self._collect_queue(),
             'settings': self._collect_settings(),
+            'settings_changed_at': self._settings_changed_at(),
         }
 
     def _collect_payouts(self, changed_since):
@@ -403,6 +404,10 @@ class SyncService:
             'booking_opens_at': settings.get('booking_opens_at'),
             'booking_closes_at': settings.get('booking_closes_at'),
 
+            # Постов под запись на дни, которые приёмщик не настраивал
+            # отдельно. Кабинет должен обещать столько же, сколько цех
+            'booking_posts': settings.get('booking_posts'),
+
             # По этим числам сервер сам предупреждает владельцев: что
             # заканчивается хранение и что пора переобуваться. Считать
             # их должен цех — сроки и сезон у каждого свои
@@ -429,6 +434,56 @@ class SyncService:
             # где цены могут разъехаться
             'paint_config': self._paint_config(),
         }
+
+    # Настройки, которые владелец меняет и из дашборда. Для них
+    # смотрим, кто поставил позже; остальные цех задаёт один и
+    # спорить о них не с кем
+    SHARED_SETTINGS = ('booking_enabled', 'booking_posts',
+                       'booking_opens_at', 'booking_closes_at')
+
+    def _settings_changed_at(self):
+        """Когда каждую из спорных настроек поменяли в цеху."""
+        from services.settings_service import SettingsService
+
+        settings = SettingsService(self.db)
+        stamps = {}
+        for key in self.SHARED_SETTINGS:
+            when = settings.changed_at(key)
+            if when is not None:
+                stamps[key] = when.isoformat()
+        return stamps
+
+    def _adopt_settings(self, rows):
+        """
+        Принять настройки, которые владелец поставил позже нас.
+
+        Приходят в ответе на отправку: сервер сравнил время правки и
+        вернул то, что новее нашего. Пишем с его меткой времени, иначе
+        цех всегда оказывался бы прав последним.
+        """
+        if not rows:
+            return 0
+
+        from services.settings_service import SettingsService
+
+        settings = SettingsService(self.db)
+        taken = 0
+        for row in rows:
+            key = row.get('key')
+            if key not in self.SHARED_SETTINGS:
+                # Принимаем только то, что сами считаем спорным: сервер
+                # не должен иметь возможности переписать цеху что угодно
+                continue
+
+            when = _decode_time(row.get('changed_at'))
+            settings.adopt(key, row.get('value'), when or get_moscow_time(),
+                           commit=False)
+            taken += 1
+            log.info(f"Настройка «{key}» принята из дашборда: {row.get('value')}")
+
+        if taken:
+            self.db.commit()
+        return taken
 
     def _paint_config(self):
         from services.paint_service import PaintService
@@ -572,6 +627,11 @@ class SyncService:
         pushed = self._call('POST', '/sync/push',
                             self.collect_push(changed_since))
 
+        # Что владелец поменял из дашборда позже нас — принимаем сразу,
+        # до остальной выкачки: по этим настройкам цех считает посты и
+        # часы записи
+        adopted = self._adopt_settings(pushed.get('from_server'))
+
         requests = self._call('GET', '/sync/storage-requests')
         acks = self.apply_pull(requests)
 
@@ -591,6 +651,7 @@ class SyncService:
             'sent': pushed,
             'new_storage_requests': len(requests),
             'new_payouts': len(payouts),
+            'settings_from_dashboard': adopted,
         }
 
     def run_in_background(self, on_done=None):

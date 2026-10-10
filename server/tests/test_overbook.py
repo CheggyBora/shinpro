@@ -5,11 +5,11 @@
 читают и пишут сюда же. Значит, занять одно окно дважды нельзя — но
 только если проверка стоит на всех путях, а не на одном.
 
-Клиенту из интернета отказываем молча и твёрдо: он бокса не видит и
-решать за цех не может. Приёмщику — отказываем с вопросом: он видит,
-что происходит в боксе, и может записать сверх постов осознанно. Чего
-не должно быть — так это молчаливой записи сверх постов: клиент
-приедет на своё время и найдёт там чужую машину.
+Отказываем одинаково всем и без поддавков: двух машин на один пост
+в одно время не бывает. Кто сохранил первым — того и время, второму
+говорим «выберите другое». Настоять нельзя ни приёмщику, ни клиенту:
+иначе на одно время приедут двое, и разбираться с этим будет не тот,
+кто нажал кнопку.
 
 Проверяем оба пути: и создание, и перенос.
 """
@@ -111,15 +111,19 @@ with TestClient(app) as client:
           str(rejected.json()))
 
     print()
-    print('=== Приёмщику отказывают, пока он не настоял ===')
+    print('=== Приёмщику отказывают так же ===')
     second = client.post('/sync/appointments', headers=KEY, json={
         'scheduled_at': at(10, 15).isoformat(),
         'duration_minutes': 40,
         'license_plate': 'Т111ТТ77'})
     check('отказ, а не молчаливая запись', second.status_code == 409,
           str(second.json()))
-    check('сказано, в чём дело',
-          'заняты' in second.json()['detail'], second.json()['detail'])
+    check('сказано то же, что клиенту',
+          second.json()['detail'] == rejected.json()['detail'],
+          second.json()['detail'])
+    check('и предложено другое время',
+          'выберите другое время' in second.json()['detail'].lower(),
+          second.json()['detail'])
 
     db = SessionLocal()
     check('лишней записи не завелось',
@@ -128,15 +132,22 @@ with TestClient(app) as client:
     db.close()
 
     print()
-    print('=== Настоял — записали, но сказали, что было занято ===')
+    print('=== Настоять нельзя ===')
+    # Раньше цех присылал «записать всё равно» и запись проходила.
+    # Теперь такого хода нет: лишнее поле сервер просто не слушает
     forced = client.post('/sync/appointments', headers=KEY, json={
         'scheduled_at': at(10, 15).isoformat(),
         'duration_minutes': 40,
         'license_plate': 'Т111ТТ77',
         'force': True})
-    check('записали', forced.status_code == 200, str(forced.json()))
-    check('и честно сказали, что было занято',
-          forced.json()['was_free'] is False, str(forced.json()))
+    check('«всё равно» не помогает', forced.status_code == 409,
+          str(forced.json()))
+
+    db = SessionLocal()
+    check('записи по-прежнему одна',
+          db.query(Appointment).count() == 1,
+          str(db.query(Appointment).count()))
+    db.close()
 
     print()
     print('=== Перенос на занятое время — так же ===')
@@ -149,6 +160,9 @@ with TestClient(app) as client:
                          json={'scheduled_at': at(10).isoformat()})
     check('перенос на занятое отклонён', moved.status_code == 409,
           str(moved.json()))
+    check('тем же ответом',
+          moved.json()['detail'] == rejected.json()['detail'],
+          moved.json()['detail'])
 
     db = SessionLocal()
     row = db.query(Appointment).filter(Appointment.id == third['id']).first()
@@ -159,8 +173,8 @@ with TestClient(app) as client:
     forced_move = client.patch(f"/sync/appointments/{third['id']}", headers=KEY,
                                json={'scheduled_at': at(10).isoformat(),
                                      'force': True})
-    check('с ведома приёмщика — переносим',
-          forced_move.status_code == 200, str(forced_move.json()))
+    check('и «всё равно» при переносе не работает',
+          forced_move.status_code == 409, str(forced_move.json()))
 
     print()
     print('=== Сдвиг не упирается в самого себя ===')

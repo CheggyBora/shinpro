@@ -16,6 +16,12 @@ from app.utils import normalize_plate, now as shop_now
 # Состояния, при которых машина занимает пост
 BUSY_STATUSES = ('scheduled', 'arrived')
 
+# Один ответ на все случаи: цех, кабинет, перенос. Двух машин на один
+# пост в одно время не бывает, и кто сохранил первым — того и время.
+# Разные формулировки на одно событие заставляли бы человека думать,
+# что это разные запреты
+SLOT_TAKEN = 'На это время уже кто-то записался. Выберите другое время'
+
 STATUS_TITLES = {
     'scheduled': 'Ожидается',
     'arrived': 'Вы приехали',
@@ -58,14 +64,20 @@ class BookingService:
             BookingDay.day == day,
             BookingDay.shop_id == self.shop_id).first()
         if row is None:
-            # День, о котором цех не сказал ничего, считаем однопостовым —
-            # так же, как это делает сама программа шиномонтажа
-            return {'posts': 1, 'opens_at': self._default_opens(),
+            # День, который в цеху отдельно не настраивали: берём общее
+            # число постов из настроек — то же, по которому считает сама
+            # программа шиномонтажа
+            return {'posts': self._default_posts(),
+                    'opens_at': self._default_opens(),
                     'closes_at': self._default_closes(), 'is_closed': False}
         return {'posts': max(1, row.posts),
                 'opens_at': row.opens_at or self._default_opens(),
                 'closes_at': row.closes_at or self._default_closes(),
                 'is_closed': row.is_closed}
+
+    def _default_posts(self):
+        return max(1, shop_settings.get_int(self.db, 'booking_posts',
+                                            shop=self.shop))
 
     def _default_opens(self):
         return shop_settings.get(self.db, 'booking_opens_at', shop=self.shop)
@@ -290,7 +302,7 @@ class BookingService:
                     f'{ready_from.strftime("%d.%m")}')
 
         if not self._slot_is_free(at, duration, settings['posts']):
-            raise BookingError('Это время только что заняли. Выберите другое')
+            raise BookingError(SLOT_TAKEN)
 
         if self._already_booked(client, at):
             raise BookingError('У вас уже есть запись на это время')

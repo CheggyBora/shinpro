@@ -6,6 +6,7 @@
 приложение должно вести себя предсказуемо с первого дня.
 """
 from app.models import ShopSetting
+from app.utils import now as shop_now
 
 DEFAULTS = {
     # Время на запись по колёсам — те же значения, что в цеху
@@ -16,6 +17,9 @@ DEFAULTS = {
     # Шаг сетки окон, которые предлагаем клиенту. Час: на полчаса
     # не успеть даже перекидку с приёмом и выдачей машины
     'booking_slot_step': '60',
+
+    # Постов под запись на дни, которые в цеху отдельно не настраивали
+    'booking_posts': '1',
 
     # Часы, в которые предлагаем записаться. 24:00 — до полуночи
     'booking_opens_at': '07:00',
@@ -101,7 +105,19 @@ def get_int(db, key, default=None, shop=None):
         return int(float(DEFAULTS.get(key, 0)))
 
 
-def set_value(db, key, value, commit=True, shop=None):
+def set_value(db, key, value, commit=True, shop=None, when=None):
+    """
+    Записать настройку точки.
+
+    when — когда её поменяли. Часть настроек правят с двух сторон: часы
+    записи и посты меняют и в цеху, и владелец из дашборда. Разошлись —
+    прав тот, кто поставил позже, а для этого время правки должно быть
+    именно временем правки, а не временем, когда данные доехали.
+
+    Запись того же значения метку не двигает: обмен присылает все
+    настройки целиком каждый раз, и без этой проверки цех «выигрывал»
+    бы у дашборда просто тем, что вышел на связь.
+    """
     shop_id = _shop_id(shop)
     row = db.query(ShopSetting).filter(
         ShopSetting.key == key,
@@ -111,10 +127,22 @@ def set_value(db, key, value, commit=True, shop=None):
         row = ShopSetting(key=key, shop_id=shop_id)
         db.add(row)
 
-    row.value = None if value is None else str(value)
+    fresh = None if value is None else str(value)
+    if row.value != fresh or row.updated_at is None:
+        row.value = fresh
+        row.updated_at = when or shop_now()
+
     if commit:
         db.commit()
     return row
+
+
+def updated_at(db, key, shop=None):
+    """Когда настройку поменяли здесь. None — такой настройки нет."""
+    row = db.query(ShopSetting).filter(
+        ShopSetting.key == key,
+        ShopSetting.shop_id == _shop_id(shop)).first()
+    return row.updated_at if row is not None else None
 
 
 def all_values(db, shop=None):
