@@ -552,7 +552,7 @@ def push(payload: PushIn, db: Session = Depends(get_db),
         # только в настройках значило бы читать их при каждом запросе
         # списка точек
         if key == 'booking_enabled':
-            shop.booking_enabled = str(value).strip() in ('1', 'true', 'yes')
+            shop.booking_enabled = shop_settings.is_on(value)
 
     db.commit()
     _drop_old_snapshots(db)

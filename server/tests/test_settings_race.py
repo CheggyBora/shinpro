@@ -142,6 +142,44 @@ with TestClient(app) as client:
           f'{before} против {after}')
 
     print()
+    print('=== Новая точка принимает запись с самого начала ===')
+    # Выключенная запись закрывает точку для клиентов. Приходить к
+    # этому по умолчанию нельзя: включают запись не для того, чтобы
+    # потом искать, где её включить
+    view = client.get('/dashboard/booking-settings', headers=owner).json()
+    check('приём включён', view['booking_enabled'] is True, str(view))
+
+    db = SessionLocal()
+    shop = db.query(Shop).first()
+    check('и у самой точки тоже', shop.booking_enabled is True,
+          str(shop.booking_enabled))
+    db.close()
+
+    print()
+    print('=== Непонятное значение запись не выключает ===')
+    # Старая версия программы, пустая настройка, сбой при чтении — что
+    # угодно. Выключение бывает только осознанным
+    for value in ('', 'да', 'ага', 'None'):
+        push(client, {'booking_enabled': value},
+             {'booking_enabled': shop_now()})
+        db = SessionLocal()
+        shop = db.query(Shop).first()
+        on = shop.booking_enabled
+        db.close()
+        check(f'«{value}» не выключило', on is True, str(on))
+
+    for value in ('0', 'false', 'нет'):
+        push(client, {'booking_enabled': value},
+             {'booking_enabled': shop_now()})
+        db = SessionLocal()
+        shop = db.query(Shop).first()
+        off = shop.booking_enabled
+        db.close()
+        check(f'«{value}» выключило', off is False, str(off))
+
+    push(client, {'booking_enabled': '1'}, {'booking_enabled': shop_now()})
+
+    print()
     print('=== Владелец поменял из дашборда ===')
     saved = client.put('/dashboard/booking-settings', headers=owner,
                        json={'booking_posts': 3, 'booking_enabled': False})

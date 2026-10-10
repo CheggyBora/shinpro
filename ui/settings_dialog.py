@@ -471,7 +471,7 @@ class SettingsDialog:
         self._section(content, "Запись через интернет")
 
         self.booking_var = tk.BooleanVar(
-            value=self.settings.get('booking_enabled', '1') == '1')
+            value=self.settings.is_on('booking_enabled'))
         ttk.Checkbutton(content, text="Принимать запись через интернет",
                         variable=self.booking_var).pack(anchor='w', pady=(0, 6))
 

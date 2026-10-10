@@ -182,6 +182,16 @@ class SettingsService:
         if commit:
             self.db.commit()
 
+    # Что считается выключением. Всё остальное — включено, в том числе
+    # пустое и непонятное. Выключенный приём записи закрывает точку для
+    # клиентов, и приходить к этому из-за сбоя нельзя: выключают
+    # осознанно, галочкой здесь или кнопкой в дашборде
+    OFF = ('0', 'false', 'no', 'нет', 'выкл')
+
+    def is_on(self, key):
+        """Включена ли настройка-выключатель."""
+        return str(self.get(key, '')).strip().lower() not in self.OFF
+
     def changed_at(self, key):
         """Когда настройку поменяли в цеху. None — ни разу с обновления."""
         setting = self.db.query(Settings).filter(Settings.key == key).first()
