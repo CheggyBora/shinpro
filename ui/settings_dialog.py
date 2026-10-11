@@ -32,6 +32,12 @@ def _looks_like_time(value):
     return 0 <= hours <= 23 and 0 <= minutes <= 59
 
 
+def _minutes_of(value):
+    """«07:00» в минуты от полуночи. «24:00» — конец суток, 1440."""
+    hours, minutes = [int(part) for part in str(value).split(':')]
+    return hours * 60 + minutes
+
+
 def _looks_like_day_month(value):
     """
     «01.10» — день и месяц без года.
@@ -826,6 +832,7 @@ class SettingsDialog:
                     return
                 self.settings.set(key, int(value), commit=False)
 
+            hours = {}
             for key, entry in self.time_fields.items():
                 value = entry.get().strip()
                 if not _looks_like_time(value):
@@ -834,6 +841,24 @@ class SettingsDialog:
                         f"Время «{value}» непонятно, нужно как 07:00",
                         parent=self.dialog)
                     return
+                hours[key] = value
+
+            # Закрытие раньше открытия — окон в кабинете не будет вовсе,
+            # и человек решит, что сломалась запись. Проверяем здесь, а
+            # не при показе: отказ в момент сохранения понятен, а
+            # пустой кабинет через неделю — нет
+            opens = hours.get('booking_opens_at')
+            closes = hours.get('booking_closes_at')
+            if opens and closes and _minutes_of(opens) >= _minutes_of(closes):
+                messagebox.showerror(
+                    "Ошибка",
+                    f"Записывать с {opens} до {closes} нельзя: закрытие "
+                    f"раньше открытия.\nДля круглосуточной записи "
+                    f"поставьте с 00:00 до 24:00.",
+                    parent=self.dialog)
+                return
+
+            for key, value in hours.items():
                 self.settings.set(key, value, commit=False)
 
             for key, entry in self.season_fields.items():

@@ -129,6 +129,56 @@ check('и включается обратно',
       settings.get('booking_enabled') == '1',
       str(settings.get('booking_enabled')))
 
+print()
+print('=== Часы записи: закрытие раньше открытия не сохраняется ===')
+# Окон в кабинете не будет вовсе, и человек решит, что сломалась
+# запись. Сказать об этом надо в момент правки, а не оставлять
+# разбираться через неделю без клиентов
+
+
+def put_hours(opens, closes):
+    for key, value in (('booking_opens_at', opens),
+                       ('booking_closes_at', closes)):
+        field = built.time_fields[key]
+        field.delete(0, 'end')
+        field.insert(0, value)
+
+
+was_opens = settings.get('booking_opens_at')
+shown.clear()
+
+put_hours('20:00', '09:00')
+built.save()
+root.update()
+
+check('сказали, что так нельзя',
+      any('раньше открытия' in (text or '')
+          for _kind, _title, text in shown), str(shown[-1:]))
+check('ничего не записалось',
+      settings.get('booking_opens_at') == was_opens,
+      f"{settings.get('booking_opens_at')} против {was_opens}")
+
+print()
+print('=== Одинаковые часы — тоже нельзя ===')
+shown.clear()
+put_hours('09:00', '09:00')
+built.save()
+root.update()
+
+check('отказали', any('раньше открытия' in (text or '')
+                      for _kind, _title, text in shown), str(shown[-1:]))
+
+print()
+print('=== Круглые сутки сохраняются ===')
+shown.clear()
+put_hours('00:00', '24:00')
+built.save()
+root.update()
+
+check('приняли', settings.get('booking_opens_at') == '00:00'
+      and settings.get('booking_closes_at') == '24:00',
+      f"{settings.get('booking_opens_at')} — {settings.get('booking_closes_at')}")
+
 root.destroy()
 db.close()
 finish()
