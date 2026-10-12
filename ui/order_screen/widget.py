@@ -9,7 +9,7 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 
-from utils import format_phone
+from utils import format_phone, get_moscow_time
 from logger import log
 import styles
 
@@ -100,6 +100,21 @@ class OrderWidget(OrderItemsMixin, OrderPaymentMixin, OrderTimingMixin):
             styles.create_button(client_row, "Карточка клиента",
                                  self.open_client_card, 'Secondary.TButton').pack(
                                      side='left', padx=(10, 0))
+
+            # «Машина готова» — клиенту, который уехал ждать. Кнопка
+            # рядом с его телефоном: если сказать нечем, приёмщик тут
+            # же видит номер и звонит
+            self.ready_button = styles.create_button(
+                client_row, "Сообщить, что готово", self.tell_ready,
+                'Secondary.TButton')
+            self.ready_button.pack(side='left', padx=(6, 0))
+
+            self.told_label = ttk.Label(
+                client_row, text="", font=(styles.DEFAULT_FONT, 9),
+                background=styles.COLORS['bg_card'],
+                foreground=styles.COLORS['success'])
+            self.told_label.pack(side='left', padx=(10, 0))
+            self.refresh_told()
 
         # Сотрудники (под машиной)
         self.employees_label = ttk.Label(info_frame, text="",
@@ -230,6 +245,55 @@ class OrderWidget(OrderItemsMixin, OrderPaymentMixin, OrderTimingMixin):
         
         # Загрузка данных
         self.refresh_items()
+
+    # ------------------------------------------------------------------
+    # «Машина готова»
+    # ------------------------------------------------------------------
+
+    def refresh_told(self):
+        """Показать, звали ли уже клиента. Кнопка при этом не исчезает:
+        бывает, что сообщение не заметили и зовут второй раз."""
+        told = getattr(self.order, 'client_told_at', None)
+        if told is None:
+            self.told_label.config(text="")
+            return
+
+        self.told_label.config(text=f"сообщили в {told.strftime('%H:%M')}")
+
+    def tell_ready(self):
+        """
+        Сказать клиенту, что машина готова.
+
+        Уходит в Телеграм или уведомлением в браузере — туда, где
+        клиент нас подключил. Не вышло — говорим честно и сразу: у
+        приёмщика перед глазами телефон, он позвонит.
+        """
+        from services.sync_service import SyncService
+
+        self.ready_button.config(state='disabled')
+        try:
+            ok, how = SyncService(self.db).tell_ready(self.order)
+        except Exception as e:
+            ok, how = False, str(e)
+        finally:
+            self.ready_button.config(state='normal')
+
+        if not ok:
+            phone = (format_phone(self.order.client.phone)
+                     if self.order.client and self.order.client.phone else '—')
+            messagebox.showwarning(
+                "Не отправлено",
+                f"{how}.\n\nПозвоните клиенту: {phone}")
+            return
+
+        where = {'telegram': 'в Телеграм',
+                 'webpush': 'уведомлением в браузере'}.get(how, '')
+        self.order.client_told_at = get_moscow_time()
+        self.db.commit()
+        self.refresh_told()
+
+        messagebox.showinfo("Отправлено",
+                            f"Клиенту сообщили {where}, что машина готова.")
 
     def open_client_card(self):
         """Открыть карточку клиента этого наряда."""

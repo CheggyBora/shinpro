@@ -3,7 +3,8 @@ from app.models.account import Account, AccountPayment, Shop
 from app.models.client import Client, Car, Device, LoginCode
 from app.models.notice import (Notice, TITLES, KIND_BOOKED, KIND_REMINDER,
                                KIND_CANCELLED, KIND_MOVED, KIND_STORAGE,
-                               KIND_SEASON, ABOUT_AUTUMN, ABOUT_SPRING,
+                               KIND_SEASON, KIND_READY,
+                               ABOUT_AUTUMN, ABOUT_SPRING,
                                WAITING, SENT, FAILED, SKIPPED,
                                BY_TELEGRAM, BY_PUSH)
 from app.models.push import PushSubscription
@@ -23,7 +24,8 @@ __all__ = [
     'Account', 'AccountPayment', 'Shop',
     'Client', 'Car', 'Device', 'LoginCode',
     'Notice', 'TITLES', 'BY_TELEGRAM', 'BY_PUSH', 'KIND_BOOKED', 'KIND_REMINDER', 'KIND_CANCELLED', 'KIND_MOVED',
-    'KIND_STORAGE', 'KIND_SEASON', 'ABOUT_AUTUMN', 'ABOUT_SPRING',
+    'KIND_STORAGE', 'KIND_SEASON', 'KIND_READY',
+    'ABOUT_AUTUMN', 'ABOUT_SPRING',
     'WAITING', 'SENT', 'FAILED', 'SKIPPED',
     'PushSubscription',
     'Appointment', 'BookingDay', 'StoredSet', 'Visit', 'VisitItem',

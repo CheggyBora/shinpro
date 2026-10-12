@@ -34,7 +34,7 @@ from app.database import get_db
 from app.models import (Client, Car, Appointment, BookingDay, StoredSet,
                         Visit, VisitItem, SalaryAccrual, SalaryPayout,
                         ShopEmployee, ShopShift, QueueSnapshot, Shop,
-                        PENDING, TAKEN, REJECTED)
+                        PENDING, TAKEN, REJECTED, KIND_READY)
 from app.security import require_sync_key
 from app.services import shop_settings
 from app.services.booking_service import BookingService, SLOT_TAKEN
@@ -1051,3 +1051,62 @@ def state(db: Session = Depends(get_db),
             SalaryPayout.sync_state == PENDING).count(),
         'queue_taken_at': last.taken_at if last else None,
     }
+
+
+# ----------------------------------------------------------------------
+# «Машина готова»
+# ----------------------------------------------------------------------
+
+class ReadyIn(BaseModel):
+    client_phone: Optional[str] = None
+    license_plate: Optional[str] = None
+    order_local_id: Optional[int] = None
+
+
+@router.post('/ready', summary='Сказать клиенту, что машина готова')
+def tell_ready(payload: ReadyIn, db: Session = Depends(get_db),
+               shop: Shop = Mine):
+    """
+    Приёмщик нажал «сообщить, что готово».
+
+    Шлём сразу, а не кладём в очередь до следующего прохода рассыльщика:
+    человек ждёт машину сейчас, и сообщение через десять минут — это
+    сообщение, которое он прочтёт уже у ворот.
+
+    Ответ честный. Нечем сказать — так и говорим: приёмщик снимет
+    трубку и позвонит, а не решит, что клиента уже позвали.
+    """
+    from app.models import Account
+    from app.services import notices
+
+    phone = normalize_phone(payload.client_phone)
+    if not phone:
+        return {'sent': False, 'reason': 'У клиента не записан телефон'}
+
+    client = db.query(Client).filter(
+        Client.phone == phone,
+        Client.account_id == shop.account_id).first()
+
+    if client is None:
+        return {'sent': False,
+                'reason': 'Клиент ещё не заходил в кабинет'}
+
+    account = db.query(Account).filter(
+        Account.id == shop.account_id).first()
+    name = shop_settings.title(db, shop)
+    plate = normalize_plate(payload.license_plate) or None
+
+    try:
+        channel = notices.send_now(
+            db, client, account, KIND_READY,
+            notices.ready_text(name, plate),
+            about='order', about_id=payload.order_local_id)
+    except Exception as e:
+        return {'sent': False, 'reason': f'Не доставлено: {e}'}
+
+    if channel is None:
+        return {'sent': False,
+                'reason': 'Клиент не подключил ни Телеграм, ни уведомления '
+                          'в браузере'}
+
+    return {'sent': True, 'channel': channel}

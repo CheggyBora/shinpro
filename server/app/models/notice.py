@@ -30,6 +30,7 @@ KIND_CANCELLED = 'cancelled'      # запись отменили
 KIND_MOVED = 'moved'              # запись перенесли
 KIND_STORAGE = 'storage'          # заканчивается срок хранения
 KIND_SEASON = 'season'            # пора переобуваться
+KIND_READY = 'ready'              # машина готова, можно забирать
 
 TITLES = {
     KIND_BOOKED: 'Подтверждение записи',
@@ -38,6 +39,7 @@ TITLES = {
     KIND_MOVED: 'Запись перенесена',
     KIND_STORAGE: 'Заканчивается хранение',
     KIND_SEASON: 'Пора переобуваться',
+    KIND_READY: 'Машина готова',
 }
 
 # На что ссылаются сезонные напоминания. Осень и весна порознь: иначе

@@ -152,6 +152,65 @@ def for_browser(notice):
     return TITLES.get(notice.kind, 'Шиномонтаж'), plain
 
 
+def deliver(db, notice, account, channel):
+    """
+    Отправить одно сообщение выбранным каналом.
+
+    Отдельно от рассылки, потому что часть сообщений уходит не по
+    расписанию, а в ответ на действие человека: приёмщик нажал
+    «машина готова» и должен сразу увидеть, дошло или нет.
+    """
+    client = notice.client
+
+    if channel == BY_TELEGRAM:
+        telegram.send_message(account, client.telegram_chat_id, notice.text)
+    else:
+        title, body = for_browser(notice)
+        webpush.send(db, client, title, body, url='/z',
+                     tag=f'{notice.about or notice.kind}-'
+                         f'{notice.about_id or notice.id}')
+
+    notice.state = SENT
+    notice.sent_at = shop_now()
+    notice.channel = channel
+    notice.last_error = None
+    return channel
+
+
+def send_now(db, client, account, kind, text, about=None, about_id=None):
+    """
+    Сказать клиенту прямо сейчас и вернуть, чем сказали.
+
+    Возвращает название канала или None, если сказать нечем: человек
+    не подключил ни Телеграм, ни уведомления в браузере. Приёмщику
+    важно узнать об этом сразу — он снимет трубку и позвонит, а не
+    будет думать, что клиента уже позвали.
+
+    Ошибку наружу не прячем: «отправлено» вместо «не дошло» хуже, чем
+    честное сообщение о сбое.
+    """
+    channel = channel_for(db, client, account)
+
+    notice = add(db, client, kind, text, about=about, about_id=about_id)
+    if channel is None:
+        notice.state = SKIPPED
+        db.commit()
+        return None
+
+    notice.attempts += 1
+    try:
+        deliver(db, notice, account, channel)
+    except (telegram.TelegramError, webpush.PushError) as e:
+        notice.last_error = str(e)[:255]
+        notice.state = FAILED
+        db.commit()
+        log.warning('Не удалось сказать клиенту (%s): %s', channel, e)
+        raise
+
+    db.commit()
+    return channel
+
+
 def send_due(db, limit=100):
     """
     Отправить созревшие. Возвращает сводку.
@@ -181,19 +240,7 @@ def send_due(db, limit=100):
 
         notice.attempts += 1
         try:
-            if channel == BY_TELEGRAM:
-                telegram.send_message(account, client.telegram_chat_id,
-                                      notice.text)
-            else:
-                title, body = for_browser(notice)
-                webpush.send(db, client, title, body, url='/z',
-                             tag=f'{notice.about or notice.kind}-'
-                                 f'{notice.about_id or notice.id}')
-
-            notice.state = SENT
-            notice.sent_at = shop_now()
-            notice.channel = channel
-            notice.last_error = None
+            deliver(db, notice, account, channel)
             result['sent'] += 1
             result[channel] += 1
 
@@ -235,6 +282,18 @@ def reminder_text(shop_name, appointment):
                if appointment.license_plate else '')
             + '\n\nНе получается — отмените в кабинете, окно достанется '
               'другому.')
+
+
+def ready_text(shop_name, plate=None):
+    """
+    Машина готова.
+
+    Коротко и без «спасибо за обращение»: человек читает это в шторке
+    телефона, и ему нужно понять две вещи — кто пишет и что ехать.
+    """
+    return (f'<b>{shop_name}</b>\n'
+            f'Машина готова, можно забирать.'
+            + (f'\n{plate}' if plate else ''))
 
 
 def cancelled_text(shop_name, appointment):

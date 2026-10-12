@@ -125,6 +125,39 @@ class SyncService:
         """Проверить адрес и ключ. Возвращает сводку с сервера."""
         return self._call('GET', '/sync/state')
 
+    def tell_ready(self, order):
+        """
+        Сказать клиенту, что машина готова.
+
+        Идёт сразу, отдельным запросом, а не ждёт обмена: человек ждёт
+        машину сейчас, и сообщение через десять минут он прочтёт уже
+        у ворот.
+
+        Возвращает (получилось, чем сказали или почему нет). Не
+        получилось — это не ошибка программы, а повод снять трубку:
+        у клиента может не быть ни Телеграма, ни кабинета.
+        """
+        if not self.is_enabled():
+            return False, 'Обмен с сервером не настроен — позвоните клиенту'
+
+        client = getattr(order, 'client', None)
+        phone = getattr(client, 'phone', None) if client else None
+        if not phone:
+            return False, 'У клиента не записан телефон'
+
+        try:
+            answer = self._call('POST', '/sync/ready', {
+                'client_phone': phone,
+                'license_plate': getattr(order.car, 'license_plate', None),
+                'order_local_id': order.id,
+            })
+        except SyncError as e:
+            return False, str(e)
+
+        if answer.get('sent'):
+            return True, answer.get('channel') or ''
+        return False, answer.get('reason') or 'Не доставлено'
+
     # ------------------------------------------------------------------
     # Наверх
     # ------------------------------------------------------------------

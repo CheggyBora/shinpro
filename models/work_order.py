@@ -28,6 +28,11 @@ class WorkOrder(Base):
     # услуги для обсуждения с клиентом, время в очереди не должно скакать.
     planned_minutes = Column(Integer, default=0)
 
+    # Когда сказали клиенту, что машина готова. Нужно, чтобы приёмщик
+    # видел: уже позвали или ещё нет. Иначе в запарке клиента зовут
+    # дважды или не зовут вовсе — каждый думает, что это сделал другой
+    client_told_at = Column(DateTime(timezone=True), nullable=True)
+
     # Фактическое время: нужно, чтобы уточнять нормативы по реальным данным
     started_at = Column(DateTime(timezone=True), nullable=True)
     finished_at = Column(DateTime(timezone=True), nullable=True)
