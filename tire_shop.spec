@@ -42,6 +42,11 @@ a = Analysis(
         'reportlab.platypus',
         'reportlab.pdfbase',
         'reportlab.pdfbase.ttfonts',
+
+        # QR-код для телефонов мастеров. Рисуем матрицей на холсте,
+        # поэтому картинок (PIL) не нужно — но сам модуль PyInstaller
+        # не находит: его зовут только внутри функции
+        'qrcode',
     ] + sqlalchemy_hiddenimports,
     hookspath=[],
     hooksconfig={},

@@ -39,6 +39,9 @@ TIMEOUT_SECONDS = 15
 # неделю коду незачем
 CODE_MINUTES = 10
 
+# Фото уезжает дольше текста, особенно из цеха на мобильном интернете
+PHOTO_TIMEOUT = 45
+
 
 class TelegramError(Exception):
     """Телеграм отказал. Текст — то, что он ответил."""
@@ -123,6 +126,69 @@ def send_message(account, chat_id, text):
         'parse_mode': 'HTML',
         'disable_web_page_preview': True,
     })
+
+
+def send_photo(account, chat_id, data, caption=None):
+    """
+    Отправить снимок. Картинкой, а не ссылкой.
+
+    Человек должен увидеть грыжу на боковине, не выходя из переписки
+    и ничего не нажимая. Ссылка, по которой надо куда-то перейти, —
+    это ссылка, по которой половина не перейдёт.
+
+    Собираем multipart руками: ради одного запроса в день тянуть
+    библиотеку незачем, а телеграм принимает обычную форму.
+    """
+    token = account.telegram_bot_token
+    if not token:
+        raise TelegramError('Бот не подключён')
+
+    boundary = '----tire' + secrets.token_hex(12)
+    fields = {'chat_id': str(chat_id)}
+    if caption:
+        # Телеграм режет подпись на 1024 знаках, и режет грубо —
+        # обрываем сами, чтобы не оборвалось посреди слова
+        fields['caption'] = caption[:1000]
+        fields['parse_mode'] = 'HTML'
+
+    body = bytearray()
+    for name, value in fields.items():
+        body += f'--{boundary}\r\n'.encode('utf-8')
+        body += (f'Content-Disposition: form-data; name="{name}"\r\n\r\n'
+                 ).encode('utf-8')
+        body += value.encode('utf-8') + b'\r\n'
+
+    body += f'--{boundary}\r\n'.encode('utf-8')
+    body += (b'Content-Disposition: form-data; name="photo"; '
+             b'filename="photo.jpg"\r\n')
+    body += b'Content-Type: image/jpeg\r\n\r\n'
+    body += data + b'\r\n'
+    body += f'--{boundary}--\r\n'.encode('utf-8')
+
+    request = urllib.request.Request(
+        API.format(token=token, method='sendPhoto'),
+        data=bytes(body),
+        headers={'Content-Type':
+                 f'multipart/form-data; boundary={boundary}'},
+        method='POST')
+
+    try:
+        with urllib.request.urlopen(request, timeout=PHOTO_TIMEOUT) as answer:
+            result = json.loads(answer.read().decode('utf-8'))
+    except urllib.error.HTTPError as e:
+        detail = ''
+        try:
+            detail = json.loads(e.read().decode('utf-8')).get('description', '')
+        except Exception:
+            pass
+        raise TelegramError(detail or f'Телеграм отказал: {e}')
+    except Exception as e:
+        raise TelegramError(f'Не удалось отправить фото: {e}')
+
+    if not result.get('ok'):
+        raise TelegramError(result.get('description', 'Телеграм отказал'))
+
+    return result.get('result')
 
 
 # ----------------------------------------------------------------------

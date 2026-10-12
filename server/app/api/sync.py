@@ -37,6 +37,7 @@ from app.models import (Client, Car, Appointment, BookingDay, StoredSet,
                         PENDING, TAKEN, REJECTED, KIND_READY)
 from app.security import require_sync_key
 from app.services import shop_settings
+from app.models.photo import MasterDevice, OpenOrder, OrderPhoto
 from app.services.booking_service import BookingService, SLOT_TAKEN
 from app.utils import normalize_phone, normalize_plate, normalize_email, now as shop_now
 
@@ -176,12 +177,24 @@ class StorageIn(BaseModel):
     status: str = 'stored'
 
 
+class OpenCarIn(BaseModel):
+    local_id: int
+    license_plate: str
+    state: str = 'waiting'
+    started_at: Optional[datetime] = None
+
+
 class QueueIn(BaseModel):
     cars_in_work: int = 0
     cars_waiting: int = 0
     open_posts: int = 0
     free_in_minutes: Optional[int] = None
     shift_is_open: bool = False
+
+    # Сами машины, а не только их число. Нужны телефону мастера: он
+    # тыкает в свою машину вместо того, чтобы набирать госномер.
+    # Старая программа цеха их не шлёт — тогда список просто пуст
+    cars: List[OpenCarIn] = []
 
 
 class PushIn(BaseModel):
@@ -528,6 +541,21 @@ def push(payload: PushIn, db: Session = Depends(get_db),
             free_in_minutes=payload.queue.free_in_minutes,
             shift_is_open=payload.queue.shift_is_open))
         result.queue = True
+
+        # Список машин заменяем целиком: это снимок на момент обмена,
+        # и уехавшая машина не должна висеть в телефоне до вечера
+        db.query(OpenOrder).filter(OpenOrder.shop_id == shop.id).delete()
+        for car in payload.queue.cars:
+            plate = normalize_plate(car.license_plate)
+            if not plate:
+                continue
+            db.add(OpenOrder(
+                shop_id=shop.id,
+                local_id=car.local_id,
+                license_plate=plate,
+                state=car.state if car.state in ('work', 'waiting') else 'waiting',
+                started_at=car.started_at,
+                updated_at=shop_now()))
 
     # --- Настройки ------------------------------------------------------
     stamps = payload.settings_changed_at or {}
@@ -1112,3 +1140,48 @@ def tell_ready(payload: ReadyIn, db: Session = Depends(get_db),
                           'в браузере'}
 
     return {'sent': True, 'channel': channel}
+
+
+# ----------------------------------------------------------------------
+# Фото из цеха
+# ----------------------------------------------------------------------
+
+@router.post('/master-link', summary='Ключ для QR-кода мастеру')
+def master_link(shop: Shop = Mine):
+    """
+    Выдать одноразовый ключ, из которого цех нарисует QR.
+
+    Адрес страницы цех собирает сам: он и так знает, по какому адресу
+    стучится на сервер. Второе место, где хранится имя домена, — это
+    второе место, где оно однажды разойдётся.
+    """
+    from app.api.photos import issue_link
+    from app.services.photos import LINK_MINUTES
+
+    return {'link': issue_link(shop.id), 'minutes': LINK_MINUTES}
+
+
+@router.get('/photos', summary='Фото по наряду')
+def order_photos(order_local_id: int, db: Session = Depends(get_db),
+                 shop: Shop = Mine):
+    """
+    Что мастера прислали по этому наряду.
+
+    Сами файлы цех не скачивает: их десятки мегабайт, а нужны они
+    редко. Здесь — список, картинка берётся по ссылке, когда приёмщик
+    решит посмотреть.
+    """
+    rows = db.query(OrderPhoto).filter(
+        OrderPhoto.shop_id == shop.id,
+        OrderPhoto.order_local_id == order_local_id).order_by(
+        OrderPhoto.created_at).all()
+
+    return [{
+        'id': row.id,
+        'comment': row.comment,
+        'author': row.author,
+        'created_at': row.created_at,
+        'sent_at': row.sent_at,
+        'channel': row.channel,
+        'error': row.last_error,
+    } for row in rows]

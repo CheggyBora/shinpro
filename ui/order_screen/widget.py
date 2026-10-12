@@ -109,6 +109,10 @@ class OrderWidget(OrderItemsMixin, OrderPaymentMixin, OrderTimingMixin):
                 'Secondary.TButton')
             self.ready_button.pack(side='left', padx=(6, 0))
 
+            styles.create_button(client_row, "Фото", self.open_photos,
+                                 'Secondary.TButton').pack(side='left',
+                                                           padx=(6, 0))
+
             self.told_label = ttk.Label(
                 client_row, text="", font=(styles.DEFAULT_FONT, 9),
                 background=styles.COLORS['bg_card'],
@@ -249,6 +253,12 @@ class OrderWidget(OrderItemsMixin, OrderPaymentMixin, OrderTimingMixin):
     # ------------------------------------------------------------------
     # «Машина готова»
     # ------------------------------------------------------------------
+
+    def open_photos(self):
+        """Фото по наряду: QR для телефона мастера и что уже прислали."""
+        from ui.photo_dialog import open_photos
+
+        open_photos(self.frame, self.db, self.order)
 
     def refresh_told(self):
         """Показать, звали ли уже клиента. Кнопка при этом не исчезает:

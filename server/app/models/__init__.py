@@ -7,6 +7,7 @@ from app.models.notice import (Notice, TITLES, KIND_BOOKED, KIND_REMINDER,
                                ABOUT_AUTUMN, ABOUT_SPRING,
                                WAITING, SENT, FAILED, SKIPPED,
                                BY_TELEGRAM, BY_PUSH)
+from app.models.photo import MasterDevice, OpenOrder, OrderPhoto
 from app.models.push import PushSubscription
 from app.models.shop import (Appointment, BookingDay, StoredSet, Visit,
                              VisitItem, SalaryAccrual, SalaryPayout,
@@ -27,6 +28,7 @@ __all__ = [
     'KIND_STORAGE', 'KIND_SEASON', 'KIND_READY',
     'ABOUT_AUTUMN', 'ABOUT_SPRING',
     'WAITING', 'SENT', 'FAILED', 'SKIPPED',
+    'MasterDevice', 'OpenOrder', 'OrderPhoto',
     'PushSubscription',
     'Appointment', 'BookingDay', 'StoredSet', 'Visit', 'VisitItem',
     'SalaryAccrual', 'SalaryPayout', 'ShopEmployee', 'ShopShift',

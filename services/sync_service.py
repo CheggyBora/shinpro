@@ -125,6 +125,24 @@ class SyncService:
         """Проверить адрес и ключ. Возвращает сводку с сервера."""
         return self._call('GET', '/sync/state')
 
+    def master_link(self):
+        """
+        Ключ для QR, которым подключается телефон мастера.
+
+        Адрес страницы собираем здесь: мы и так знаем, по какому адресу
+        стучимся на сервер. Второе место, где хранится имя домена, —
+        это второе место, где оно однажды разойдётся.
+        """
+        answer = self._call('POST', '/sync/master-link')
+        return {
+            'url': f"{self.get_url()}/m/k/{answer['link']}",
+            'minutes': answer.get('minutes', 15),
+        }
+
+    def order_photos(self, order_local_id):
+        """Что мастера прислали по этому наряду."""
+        return self._call('GET', f'/sync/photos?order_local_id={order_local_id}')
+
     def tell_ready(self, order):
         """
         Сказать клиенту, что машина готова.
@@ -393,9 +411,10 @@ class SyncService:
             WorkOrder.started_at.isnot(None),
             WorkOrder.finished_at.is_(None)).all()
 
-        waiting = self.db.query(WorkOrder).filter(
+        waiting_orders = self.db.query(WorkOrder).filter(
             WorkOrder.status != 'paid',
-            WorkOrder.started_at.is_(None)).count()
+            WorkOrder.started_at.is_(None)).all()
+        waiting = len(waiting_orders)
 
         posts = shift.open_posts or 1
         free_in = None
@@ -418,7 +437,28 @@ class SyncService:
             'open_posts': posts,
             'free_in_minutes': free_in,
             'shift_is_open': True,
+
+            # Сами машины, а не только их число. Нужны мастеру: он
+            # открывает страницу на телефоне и тыкает в свою машину,
+            # вместо того чтобы набирать госномер пальцем в перчатке
+            'cars': self._open_cars(in_work, waiting_orders),
         }
+
+    @staticmethod
+    def _open_cars(in_work, waiting_orders):
+        cars = []
+        for order, state in ([(row, 'work') for row in in_work]
+                             + [(row, 'waiting') for row in waiting_orders]):
+            plate = getattr(order.car, 'license_plate', None) if order.car else None
+            if not plate:
+                continue
+            cars.append({
+                'local_id': order.id,
+                'license_plate': plate,
+                'state': state,
+                'started_at': as_naive(order.started_at) if order.started_at else None,
+            })
+        return cars
 
     def _collect_settings(self):
         """Настройки, по которым приложение должно считать так же, как цех."""

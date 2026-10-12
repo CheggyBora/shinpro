@@ -1,0 +1,405 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Фото в наряд</title>
+<style>
+/*
+  Страница для телефона мастера. Всё крупное: на неё смотрят в боксе,
+  в перчатках, одной рукой, при плохом свете. Мелкая кнопка здесь —
+  это кнопка, в которую не попадут.
+*/
+:root {
+  --ink: #0f172a;
+  --ink-soft: #475569;
+  --muted: #94a3b8;
+  --line: #e2e8f0;
+  --bg: #f1f5f9;
+  --card: #ffffff;
+  --brand: #2563eb;
+  --ok: #16a34a;
+  --bad: #dc2626;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ink: #e2e8f0;
+    --ink-soft: #94a3b8;
+    --muted: #64748b;
+    --line: #1e293b;
+    --bg: #0b1220;
+    --card: #111a2e;
+  }
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 17px; line-height: 1.45;
+  padding: env(safe-area-inset-top) 16px calc(env(safe-area-inset-bottom) + 24px);
+}
+
+header { padding: 18px 0 10px; }
+h1 { margin: 0; font-size: 20px; }
+.sub { color: var(--ink-soft); font-size: 14px; margin-top: 2px; }
+
+.card {
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: 16px; padding: 16px; margin-bottom: 12px;
+}
+
+label { display: block; font-size: 14px; color: var(--ink-soft); margin-bottom: 6px; }
+
+input[type="text"], textarea {
+  width: 100%; padding: 14px; font-size: 17px; font-family: inherit;
+  color: var(--ink); background: var(--card);
+  border: 1.5px solid var(--line); border-radius: 12px;
+}
+textarea { min-height: 80px; resize: vertical; }
+input:focus, textarea:focus { outline: none; border-color: var(--brand); }
+
+button {
+  width: 100%; padding: 16px; font-size: 17px; font-family: inherit;
+  font-weight: 600; border: 0; border-radius: 14px;
+  background: var(--brand); color: #fff;
+}
+button:disabled { opacity: .55; }
+button.ghost { background: var(--card); color: var(--ink); border: 1.5px solid var(--line); }
+
+/* Машина — большая строка во всю ширину: по ней попадают пальцем */
+.car {
+  display: flex; align-items: center; gap: 12px;
+  width: 100%; text-align: left; padding: 16px;
+  background: var(--card); border: 1.5px solid var(--line);
+  border-radius: 14px; margin-bottom: 10px; font-size: 19px;
+  font-weight: 700; color: var(--ink);
+}
+.car .state {
+  margin-left: auto; font-size: 13px; font-weight: 500; color: var(--muted);
+}
+.car.work { border-color: var(--brand); }
+.car.work .state { color: var(--brand); }
+
+/*
+  Выбор файла прячем за своей кнопкой: родная выглядит мелкой серой
+  надписью, а в неё надо попасть пальцем в перчатке. Сам input
+  остаётся на месте и работает — меняется только то, что видно
+*/
+.pick input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.pick span {
+  display: block; width: 100%; padding: 16px; text-align: center;
+  font-size: 17px; font-weight: 600; border-radius: 14px;
+  background: var(--card); color: var(--ink);
+  border: 2px dashed var(--line);
+}
+
+.shots { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
+.shots img { width: 92px; height: 92px; object-fit: cover; border-radius: 12px; }
+
+.note { font-size: 14px; color: var(--ink-soft); margin: 10px 0 0; }
+.bad { color: var(--bad); }
+.ok { color: var(--ok); }
+.empty { text-align: center; color: var(--muted); padding: 40px 0; }
+
+[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1 id="title">Фото в наряд</h1>
+  <div class="sub" id="who"></div>
+</header>
+
+<!-- Первый заход: телефон ещё не знаком -->
+<section id="screenConnect" hidden>
+  <div class="card">
+    <label for="name">Как вас зовут</label>
+    <input id="name" type="text" placeholder="Иван" autocomplete="name">
+    <p class="note">Имя увидит приёмщик рядом с вашим фото. Больше оно
+      нигде не нужно — ни пароля, ни входа.</p>
+  </div>
+  <button type="button" id="doConnect">Подключить телефон</button>
+  <p class="note bad" id="connectError" hidden></p>
+</section>
+
+<!-- Список машин -->
+<section id="screenCars" hidden>
+  <div id="cars"></div>
+  <button type="button" class="ghost" id="reload">Обновить список</button>
+</section>
+
+<!-- Снимок по выбранной машине -->
+<section id="screenShot" hidden>
+  <div class="card">
+    <div style="font-size:22px;font-weight:700" id="shotPlate"></div>
+    <div class="shots" id="shots"></div>
+
+    <label class="pick" style="margin-top:4px">
+      <input id="pick" type="file" accept="image/*" capture="environment" multiple>
+      <span id="pickLabel">Снять или выбрать фото</span>
+    </label>
+
+    <label for="comment" style="margin-top:14px">Что показываем</label>
+    <textarea id="comment" placeholder="Грыжа на боковине, заднее левое"></textarea>
+    <p class="note">Клиент получит фото сразу — в Телеграм или в кабинет.</p>
+  </div>
+
+  <button type="button" id="doSend" disabled>Отправить клиенту</button>
+  <button type="button" class="ghost" id="back" style="margin-top:8px">Назад</button>
+  <p class="note" id="sendState" hidden></p>
+</section>
+
+<script>
+'use strict';
+
+var KEY = 'tire-master-key';
+var state = { key: null, car: null, files: [] };
+
+function $(id) { return document.getElementById(id); }
+
+function show(name) {
+  ['screenConnect', 'screenCars', 'screenShot'].forEach(function (id) {
+    $(id).hidden = (id !== name);
+  });
+}
+
+function escape(text) {
+  return String(text == null ? '' : text).replace(/[&<>"']/g, function (ch) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;',
+             '"': '&quot;', "'": '&#39;' }[ch];
+  });
+}
+
+function api(path, options) {
+  options = options || {};
+  options.headers = options.headers || {};
+  if (state.key) options.headers['X-Master-Key'] = state.key;
+
+  return fetch(path, options).then(function (answer) {
+    return answer.json().catch(function () { return {}; }).then(function (data) {
+      if (answer.ok) return data;
+
+      // Пропуск отозвали или сервер подняли заново — честно просим
+      // отсканировать QR ещё раз, а не показываем пустой список
+      if (answer.status === 401) {
+        try { localStorage.removeItem(KEY); } catch (e) {}
+        state.key = null;
+      }
+      throw new Error(data.detail || 'Не получилось');
+    });
+  });
+}
+
+// --- Первый заход -----------------------------------------------------
+
+function linkFromAddress() {
+  var parts = location.pathname.split('/').filter(Boolean);
+  // /m/k/<ключ> — пришли по QR; просто /m — телефон уже знаком
+  return (parts.length > 2 && parts[1] === 'k') ? parts[2] : '';
+}
+
+$('doConnect').addEventListener('click', function () {
+  var link = linkFromAddress();
+  $('doConnect').disabled = true;
+  $('connectError').hidden = true;
+
+  fetch('/m/connect', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ link: link, name: $('name').value })
+  }).then(function (answer) {
+    return answer.json().then(function (data) {
+      if (!answer.ok) throw new Error(data.detail || 'Код не принят');
+      return data;
+    });
+  }).then(function (data) {
+    state.key = data.key;
+    try { localStorage.setItem(KEY, data.key); } catch (e) {}
+
+    // Убираем ключ из адреса: иначе он останется в истории браузера
+    // и в закладке, а он одноразовый
+    history.replaceState(null, '', '/m');
+    loadCars();
+  }).catch(function (e) {
+    $('connectError').textContent = e.message;
+    $('connectError').hidden = false;
+    $('doConnect').disabled = false;
+  });
+});
+
+// --- Машины -----------------------------------------------------------
+
+function loadCars() {
+  api('/m/cars').then(function (data) {
+    $('title').textContent = data.shop || 'Фото в наряд';
+    $('who').textContent = data.name ? data.name : '';
+
+    if (!data.cars.length) {
+      $('cars').innerHTML = '<div class="empty">Сейчас в цеху пусто.<br>'
+        + 'Машина появится здесь, когда приёмщик заведёт наряд.</div>';
+    } else {
+      $('cars').innerHTML = data.cars.map(function (car) {
+        return '<button type="button" class="car ' + car.state + '" '
+          + 'data-id="' + car.order_local_id + '" '
+          + 'data-plate="' + escape(car.license_plate) + '">'
+          + escape(car.license_plate)
+          + '<span class="state">' + (car.state === 'work' ? 'на посту' : 'ждёт')
+          + '</span></button>';
+      }).join('');
+
+      [].slice.call($('cars').querySelectorAll('.car')).forEach(function (button) {
+        button.addEventListener('click', function () {
+          openShot(button.getAttribute('data-id'),
+                   button.getAttribute('data-plate'));
+        });
+      });
+    }
+
+    show('screenCars');
+  }).catch(function (e) {
+    if (!state.key) return show('screenConnect');
+    $('cars').innerHTML = '<div class="empty">' + escape(e.message) + '</div>';
+    show('screenCars');
+  });
+}
+
+$('reload').addEventListener('click', loadCars);
+
+// --- Снимок -----------------------------------------------------------
+
+function openShot(id, plate) {
+  state.car = { id: id, plate: plate };
+  state.files = [];
+  $('shotPlate').textContent = plate;
+  $('shots').innerHTML = '';
+  $('comment').value = '';
+  $('pick').value = '';
+  $('pickLabel').textContent = 'Снять или выбрать фото';
+  $('doSend').disabled = true;
+  $('sendState').hidden = true;
+  show('screenShot');
+}
+
+$('back').addEventListener('click', loadCars);
+
+$('pick').addEventListener('change', function (event) {
+  var chosen = [].slice.call(event.target.files || []);
+  if (!chosen.length) return;
+
+  $('shots').innerHTML = '';
+  state.files = [];
+
+  // Жмём прямо в телефоне: в боксе связь плохая, и разница между
+  // четырьмя мегабайтами и тремястами килобайтами — это разница
+  // между «секунда» и «полминуты»
+  Promise.all(chosen.map(shrink)).then(function (ready) {
+    state.files = ready.filter(Boolean);
+    $('pickLabel').textContent = state.files.length === 1
+      ? 'Снимок выбран — можно добавить ещё'
+      : 'Снимков: ' + state.files.length + ' — можно добавить ещё';
+
+    state.files.forEach(function (blob) {
+      var img = document.createElement('img');
+      img.src = URL.createObjectURL(blob);
+      $('shots').appendChild(img);
+    });
+    $('doSend').disabled = state.files.length === 0;
+  });
+});
+
+function shrink(file) {
+  return new Promise(function (resolve) {
+    var image = new Image();
+    var url = URL.createObjectURL(file);
+
+    image.onload = function () {
+      URL.revokeObjectURL(url);
+
+      var side = 1600;
+      var scale = Math.min(1, side / Math.max(image.width, image.height));
+      var canvas = document.createElement('canvas');
+      canvas.width = Math.round(image.width * scale);
+      canvas.height = Math.round(image.height * scale);
+      canvas.getContext('2d').drawImage(image, 0, 0, canvas.width, canvas.height);
+
+      canvas.toBlob(function (blob) {
+        resolve(blob || file);
+      }, 'image/jpeg', 0.72);
+    };
+
+    // Телефон отдал что-то, что браузер не считает картинкой —
+    // отправим как есть, пусть решает сервер
+    image.onerror = function () { URL.revokeObjectURL(url); resolve(file); };
+    image.src = url;
+  });
+}
+
+$('doSend').addEventListener('click', function () {
+  if (!state.files.length) return;
+
+  $('doSend').disabled = true;
+  $('sendState').hidden = false;
+  $('sendState').className = 'note';
+  $('sendState').textContent = 'Отправляем…';
+
+  var sent = 0, failed = [];
+
+  var chain = state.files.reduce(function (previous, blob, index) {
+    return previous.then(function () {
+      var form = new FormData();
+      form.append('file', blob, 'photo.jpg');
+      form.append('order_local_id', state.car.id);
+      form.append('license_plate', state.car.plate);
+      // Подпись — к первому снимку: иначе клиент получит её трижды
+      form.append('comment', index === 0 ? $('comment').value : '');
+
+      return api('/m/photo', { method: 'POST', body: form })
+        .then(function (answer) {
+          if (answer.sent) sent += 1;
+          else failed.push(answer.reason || 'не доставлено');
+        });
+    });
+  }, Promise.resolve());
+
+  chain.then(function () {
+    if (sent && !failed.length) {
+      $('sendState').className = 'note ok';
+      $('sendState').textContent = 'Клиент получил. Можно работать.';
+    } else if (sent) {
+      $('sendState').className = 'note bad';
+      $('sendState').textContent = 'Отправлено не всё: ' + failed[0]
+        + '. Скажите приёмщику.';
+    } else {
+      $('sendState').className = 'note bad';
+      $('sendState').textContent = (failed[0] || 'Не дошло')
+        + '. Фото сохранилось в наряде — скажите приёмщику, он позвонит.';
+    }
+    $('doSend').disabled = false;
+  }).catch(function (e) {
+    $('sendState').className = 'note bad';
+    $('sendState').textContent = e.message;
+    $('doSend').disabled = false;
+  });
+});
+
+// --- Запуск -----------------------------------------------------------
+
+try { state.key = localStorage.getItem(KEY); } catch (e) {}
+
+if (state.key) {
+  loadCars();
+} else if (linkFromAddress()) {
+  show('screenConnect');
+} else {
+  $('cars').innerHTML = '<div class="empty">Этот телефон ещё не подключён.<br>'
+    + 'Попросите приёмщика показать QR-код и наведите камеру.</div>';
+  show('screenCars');
+  $('reload').hidden = true;
+}
+</script>
+</body>
+</html>
