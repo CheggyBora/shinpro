@@ -125,9 +125,7 @@ class OrderService:
                 return existing_item
             
             # Создаем новую позицию
-            diameter = order.wheel_diameter.lower()
-            price_field = f'price_{diameter}'
-            price = getattr(service, price_field, 0.0)
+            price = self.price_for(service, order.wheel_diameter)
             
             # Определяем начальную скидку для новой позиции
             # Выбираем максимум из всех доступных скидок
@@ -156,8 +154,12 @@ class OrderService:
                 price=price,
                 discount_percent=initial_discount,
                 # Снимок себестоимости: подорожание закупки не должно
-                # менять уже начисленные зарплаты
-                consumable_cost=service.consumable_cost or 0.0
+                # менять уже начисленные зарплаты. У товара себестоимость —
+                # это его закупочная цена
+                consumable_cost=((service.purchase_price or 0.0)
+                                 if service.is_goods
+                                 else (service.consumable_cost or 0.0)),
+                is_goods=bool(service.is_goods),
             )
             self.db.add(item)
             self.db.commit()
@@ -167,6 +169,20 @@ class OrderService:
             self.db.rollback()
             raise
     
+    @staticmethod
+    def price_for(service, diameter):
+        """
+        Цена позиции для этого диаметра.
+
+        У товара цена одна: вентиль не стоит по-разному под R15 и R17.
+        Единая цена разрешена и обычной услуге — мойка одного колеса
+        тоже бывает без разбора диаметра.
+        """
+        if service.flat_price is not None:
+            return service.flat_price
+
+        return getattr(service, f'price_{(diameter or "").lower()}', 0.0) or 0.0
+
     def update_item_discount(self, item_id: int, discount: int, comment: str = None):
         try:
             item = self.db.query(WorkOrderItem).filter(WorkOrderItem.id == item_id).first()
@@ -376,14 +392,25 @@ class OrderService:
 
     def calculate_salary_base(self, order_id: int) -> float:
         """
-        База, от которой начисляется зарплата: итог к оплате минус расходники.
+        База, от которой начисляется зарплата: работа минус расходники.
+
+        Товары в базу не входят вовсе. Вентиль мастер не делал, он его
+        достал с полки, и процент с перепродажи — это не зарплата за
+        работу, а скидка себе в убыток.
 
         Не опускается ниже нуля: если материалы вышли дороже работы,
         механик не должен уходить в минус.
         """
-        total = self.calculate_total(order_id)
-        consumables = self.calculate_consumables(order_id)
-        return round(max(0.0, total - consumables), 2)
+        items = self.db.query(WorkOrderItem).filter(
+            WorkOrderItem.work_order_id == order_id).all()
+
+        base = 0.0
+        for item in items:
+            if getattr(item, 'is_goods', False):
+                continue
+            base += self.item_total(item) - self.item_consumables(item)
+
+        return round(max(0.0, base), 2)
 
     def calculate_total(self, order_id: int) -> float:
         order = self.db.query(WorkOrder).filter(WorkOrder.id == order_id).first()

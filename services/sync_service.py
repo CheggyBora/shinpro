@@ -297,6 +297,10 @@ class SyncService:
                     # была в день продажи: разметят прайс иначе — прошлые
                     # наряды от этого меняться не должны
                     'is_extra': bool(item.service.is_extra) if item.service else False,
+
+                    # Товар или работа. Снимок с позиции наряда, а не
+                    # взгляд в прайс: позицию могли переделать после
+                    'is_goods': bool(getattr(item, 'is_goods', False)),
                 } for item in items]
             except Exception as e:
                 log.warning(f"Наряд №{order.id} не попал в обмен: {e}")

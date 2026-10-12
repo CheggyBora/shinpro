@@ -24,6 +24,7 @@ TESTS = [
     ('Экран выдачи зарплаты', 'test_payout_ui.py'),
     ('Планирование времени и посты', 'test_planning.py'),
     ('Скидка на отдельную услугу', 'test_item_discount.py'),
+    ('Товары: вентиль, грузик, грибок', 'test_goods.py'),
     ('Запись клиентов', 'test_appointments.py'),
     ('Посты записи и лента времени', 'test_booking.py'),
     ('Экран записи', 'test_booking_ui.py'),

@@ -185,13 +185,15 @@ class DashboardService:
             func.sum(VisitItem.total),
             func.sum(VisitItem.consumable_cost * VisitItem.quantity),
             VisitItem.is_extra,
+            VisitItem.is_goods,
         ).join(Visit, VisitItem.visit_id == Visit.id).filter(
             Visit.is_deleted.is_(False),
             Visit.visited_at >= start,
             Visit.visited_at <= end,
         )
         rows = self._only_mine(rows).group_by(
-            VisitItem.service_name, VisitItem.is_extra).all()
+            VisitItem.service_name, VisitItem.is_extra,
+            VisitItem.is_goods).all()
 
         total = sum(float(row[2] or 0) for row in rows) or 1.0
 
@@ -202,6 +204,7 @@ class DashboardService:
             'consumables': round(float(row[3] or 0), 2),
             'share': round(float(row[2] or 0) / total * 100, 1),
             'is_extra': bool(row[4]),
+            'is_goods': bool(row[5]),
         } for row in rows]
 
         result.sort(key=lambda item: item['amount'], reverse=True)
@@ -221,6 +224,13 @@ class DashboardService:
         main = [row for row in rows if not row['is_extra']]
         extra = [row for row in rows if row['is_extra']]
 
+        # Товары — разрез поперёк: вентиль и допродажа, и товар. Поэтому
+        # отдельным списком, а не третьей корзиной: иначе суммы «основное
+        # плюс допы» перестали бы сходиться с выручкой
+        goods = [row for row in rows if row['is_goods']]
+        goods_sum = round(sum(row['amount'] for row in goods), 2)
+        goods_cost = round(sum(row['consumables'] for row in goods), 2)
+
         main_sum = round(sum(row['amount'] for row in main), 2)
         extra_sum = round(sum(row['amount'] for row in extra), 2)
         total = main_sum + extra_sum
@@ -230,6 +240,14 @@ class DashboardService:
             'extra': extra,
             'main_amount': main_sum,
             'extra_amount': extra_sum,
+
+            # Продажа товара — это оборот, а прибыль с него — наценка.
+            # Показывать выручку с перепродажи без закупки значит
+            # считать чужие деньги своими
+            'goods': goods,
+            'goods_amount': goods_sum,
+            'goods_cost': goods_cost,
+            'goods_margin': round(goods_sum - goods_cost, 2),
             'total_amount': round(total, 2),
 
             # Сколько рублей из ста принесли допродажи

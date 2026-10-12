@@ -132,18 +132,17 @@ class PriceListTab:
     
     def show_consumables_and_duration(self):
         """
-        Окно «Расходники и время»: себестоимость материалов и длительность
-        по каждой услуге.
+        Окно «Свойства позиций»: всё, что не зависит от диаметра.
 
-        Отдельно от таблицы цен: и то, и другое не зависит от диаметра,
-        поэтому одно поле на услугу, а не двенадцать.
+        Отдельно от таблицы цен: себестоимость, время, вид, товар или
+        работа — по одному полю на позицию, а не по двенадцать.
         """
         from models import Service
         from services import AuditService
 
         dialog = tk.Toplevel(self.frame)
-        dialog.title("Расходники и время услуг")
-        dialog.geometry("820x600")
+        dialog.title("Свойства позиций")
+        dialog.geometry("1000x620")
         dialog.configure(bg=styles.COLORS['bg'])
         dialog.transient(self.frame.winfo_toplevel())
         styles.center_window(dialog, self.frame.winfo_toplevel())
@@ -151,36 +150,46 @@ class PriceListTab:
         content = ttk.Frame(dialog, style='White.TFrame')
         content.pack(fill='both', expand=True, padx=20, pady=20)
 
-        styles.create_label(content, "Расходники и время услуг",
+        styles.create_label(content, "Свойства позиций",
                             'CardHeading.TLabel').pack(anchor='w', pady=(0, 5))
         ttk.Label(content,
-                  text="Себестоимость материалов вычитается из суммы наряда до расчёта зарплаты. "
-                       "Время нужно для очереди и записи. От диаметра колеса не зависят.\n"
+                  text="Всё, что не зависит от диаметра колеса — одно поле на позицию, "
+                       "а не двенадцать.\n"
+                       "Товар — вентиль, грузик, грибок: продаётся позицией в наряде, но "
+                       "процент мастеру с него не идёт, он его не делал.\n"
+                       "Цена — единая, когда позиция стоит одинаково при любом диаметре. "
+                       "Пусто — цена берётся из таблицы по диаметрам.\n"
+                       "Себестоимость — закупка товара или материалы внутри работы. "
+                       "Вычитается до расчёта зарплаты.\n"
                        "Вид — основная услуга или допродажа: по доле допов в дашборде видно, "
                        "предлагают мастера что-то сверх или просто крутят колёса.\n"
-                       "Двойной клик по ячейке — изменить, по виду — переключить.",
+                       "Двойной клик по ячейке — изменить, по виду и товару — переключить.",
                   font=(styles.DEFAULT_FONT, 9), foreground='#64748b',
-                  wraplength=760, justify='left').pack(anchor='w', pady=(0, 12))
+                  wraplength=940, justify='left').pack(anchor='w', pady=(0, 12))
 
         tree_frame = ttk.Frame(content, style='White.TFrame')
         tree_frame.pack(fill='both', expand=True)
 
         tree = ttk.Treeview(tree_frame,
-                            columns=('Услуга', 'Тип', 'Вид', 'Расходник',
-                                     'Время', 'Скидка'),
+                            columns=('Услуга', 'Тип', 'Вид', 'Товар', 'Цена',
+                                     'Себестоимость', 'Время', 'Скидка'),
                             show='headings')
-        tree.heading('Услуга', text='Услуга')
+        tree.heading('Услуга', text='Позиция')
         tree.heading('Тип', text='Транспорт')
         tree.heading('Вид', text='Вид')
-        tree.heading('Расходник', text='Расходник, руб.')
+        tree.heading('Товар', text='Товар')
+        tree.heading('Цена', text='Цена, руб.')
+        tree.heading('Себестоимость', text='Себестоимость, руб.')
         tree.heading('Время', text='Время, мин')
         tree.heading('Скидка', text='Макс. скидка, %')
-        tree.column('Услуга', width=260, anchor='w')
-        tree.column('Тип', width=100, anchor='center')
-        tree.column('Вид', width=110, anchor='center')
-        tree.column('Расходник', width=120, anchor='center')
-        tree.column('Время', width=100, anchor='center')
-        tree.column('Скидка', width=120, anchor='center')
+        tree.column('Услуга', width=240, anchor='w')
+        tree.column('Тип', width=90, anchor='center')
+        tree.column('Вид', width=100, anchor='center')
+        tree.column('Товар', width=80, anchor='center')
+        tree.column('Цена', width=110, anchor='center')
+        tree.column('Себестоимость', width=130, anchor='center')
+        tree.column('Время', width=90, anchor='center')
+        tree.column('Скидка', width=110, anchor='center')
         tree.pack(side='left', fill='both', expand=True)
 
         scroll = ttk.Scrollbar(tree_frame, orient='vertical', command=tree.yview)
@@ -197,11 +206,16 @@ class PriceListTab:
             ).order_by(Service.name, Service.vehicle_type).all()
             for service in services:
                 limit = service.max_discount_percent
+                cost = ((service.purchase_price or 0) if service.is_goods
+                        else (service.consumable_cost or 0))
                 tree.insert('', 'end', values=(
                     service.name,
                     type_names.get(service.vehicle_type, service.vehicle_type),
                     "допродажа" if service.is_extra else "основная",
-                    f"{service.consumable_cost or 0:.0f}",
+                    "товар" if service.is_goods else "работа",
+                    (f"{service.flat_price:.0f}"
+                     if service.flat_price is not None else "по диаметру"),
+                    f"{cost:.0f}",
                     f"{service.duration_minutes or 0}",
                     "без ограничений" if limit is None or limit >= 100 else f"{limit}"
                 ), tags=(str(service.id),))
@@ -214,7 +228,8 @@ class PriceListTab:
                 return
             column = tree.identify_column(event.x)
             selection = tree.selection()
-            if not selection or column not in ('#3', '#4', '#5', '#6'):
+            if not selection or column not in ('#3', '#4', '#5', '#6',
+                                               '#7', '#8'):
                 return
 
             service_id = int(tree.item(selection[0])['tags'][0])
@@ -236,10 +251,43 @@ class PriceListTab:
                 load()
                 return
 
+            # Товар или работа — тоже переключателем: значений два
             if column == '#4':
-                title, prompt = "Себестоимость расходников", "Себестоимость материалов, руб.:"
-                current, maximum = service.consumable_cost or 0, None
-            elif column == '#5':
+                service.is_goods = not service.is_goods
+
+                # Переделали услугу в товар, а единой цены нет — берём
+                # наибольшую из цен по диаметрам. Обычно они одинаковые
+                # или нулевые, а молча выставить ноль значит однажды
+                # продать вентиль бесплатно
+                if service.is_goods and service.flat_price is None:
+                    prices = [getattr(service, f'price_r{n}', 0) or 0
+                              for n in range(13, 25)]
+                    service.flat_price = max(prices) if prices else 0.0
+
+                self.db.commit()
+                AuditService(self.db).log(
+                    AuditService.PRICE_CHANGE,
+                    f"«{service.name}» — "
+                    f"{'товар' if service.is_goods else 'работа'}",
+                    entity_type='service', entity_id=service.id
+                )
+                load()
+                return
+
+            if column == '#5':
+                title = "Единая цена"
+                prompt = ("Цена при любом диаметре, руб.\n"
+                          "(0 — цена берётся из таблицы по диаметрам):")
+                current, maximum = service.flat_price or 0, None
+            elif column == '#6':
+                title = "Себестоимость"
+                prompt = ("Закупка товара или материалы внутри работы, руб.:"
+                          if not service.is_goods
+                          else "Закупочная цена товара, руб.:")
+                current, maximum = ((service.purchase_price or 0)
+                                    if service.is_goods
+                                    else (service.consumable_cost or 0)), None
+            elif column == '#7':
                 title, prompt = "Время выполнения", "Сколько минут занимает услуга:"
                 current, maximum = service.duration_minutes or 0, None
             else:
@@ -257,11 +305,24 @@ class PriceListTab:
                 return
 
             try:
-                if column == '#4':
-                    old, new = service.consumable_cost or 0, round(float(value), 2)
-                    service.consumable_cost = new
-                    what = 'расходник'
-                elif column == '#5':
+                if column == '#5':
+                    old = service.flat_price or 0
+                    # Ноль — это «цены нет», а не «бесплатно»: вернуться
+                    # к ценам по диаметрам иначе было бы нечем
+                    new = round(float(value), 2)
+                    service.flat_price = new if new > 0 else None
+                    what = 'единая цена'
+                elif column == '#6':
+                    new = round(float(value), 2)
+                    if service.is_goods:
+                        old = service.purchase_price or 0
+                        service.purchase_price = new
+                        what = 'закупка'
+                    else:
+                        old = service.consumable_cost or 0
+                        service.consumable_cost = new
+                        what = 'расходник'
+                elif column == '#7':
                     old, new = service.duration_minutes or 0, int(value)
                     service.duration_minutes = new
                     what = 'время'
@@ -426,7 +487,7 @@ class PriceListTab:
 
         styles.create_button(header_frame, "Журнал действий",
                              self.show_audit_log, 'Secondary.TButton').pack(side='right')
-        styles.create_button(header_frame, "Расходники и время",
+        styles.create_button(header_frame, "Свойства позиций",
                              self.show_consumables_and_duration, 'Secondary.TButton').pack(
                                  side='right', padx=(0, 5))
         styles.create_button(header_frame, "Сменить PIN",

@@ -773,9 +773,23 @@ function loadServices() {
         + serviceRows(data.extra) + '</div>';
     }
 
+    // Товары — разрез поперёк основного и допов: вентиль и то, и
+    // другое. Поэтому отдельной карточкой, и главное в ней наценка:
+    // выручка с перепродажи без закупки — это оборот, а не прибыль
+    if (data.goods && data.goods.length) {
+      html += '<div class="card"><h2>Товары</h2>'
+        + '<div class="tiles">'
+        + tile('Продано', money(data.goods_amount))
+        + tile('Закупка', money(data.goods_cost))
+        + tile('Наценка', money(data.goods_margin), 'wide',
+               data.goods_margin > 0 ? 'ok' : '')
+        + '</div>'
+        + serviceRows(data.goods) + '</div>';
+    }
+
     if (!data.marked) {
       html += '<p class="hint">Чтобы видеть долю допродаж, разметьте прайс '
-        + 'в программе цеха: Прайс-лист → Расходники и время услуг → '
+        + 'в программе цеха: Прайс-лист → Свойства позиций → '
         + 'столбец «Вид».</p>';
     }
 

@@ -90,9 +90,10 @@ class VisitItemIn(BaseModel):
     consumable_cost: float = 0.0
     comment: Optional[str] = None
 
-    # Старая программа цеха этого поля не шлёт — считаем всё основным,
-    # пока не обновится
+    # Старая программа цеха этих полей не шлёт — считаем всё основной
+    # работой, пока она не обновится
     is_extra: bool = False
+    is_goods: bool = False
 
 
 class AccrualIn(BaseModel):
@@ -425,7 +426,8 @@ def push(payload: PushIn, db: Session = Depends(get_db),
                     total=line.total,
                     consumable_cost=line.consumable_cost,
                     comment=line.comment,
-                    is_extra=line.is_extra))
+                    is_extra=line.is_extra,
+                    is_goods=line.is_goods))
 
         if item.accruals:
             for old in list(row.accruals):
