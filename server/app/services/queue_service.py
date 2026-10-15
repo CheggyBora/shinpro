@@ -30,11 +30,19 @@ from app.utils import now as shop_now, normalize_plate, normalize_phone
 
 log = logging.getLogger('tire_server')
 
-# Насколько вперёд разрешаем занимать место. Час — горизонт, на
-# котором ещё можно считать: работы известны, записи известны. Дальше
-# это уже не очередь, а запись на время, и для неё есть запись
-AHEAD_KEY = 'queue_ahead_minutes'
-AHEAD_DEFAULT = 60
+# Через сколько зовём того, кто встал в пустую очередь.
+#
+# Время назначаем мы, а не спрашиваем человека. Спрашивать «через
+# сколько будете» — значит получать ответ, на который нельзя
+# опереться: один ошибётся в пробках, другой скажет «я рядом», чтобы
+# встать первым. А главное — это лишний вопрос там, где человек
+# просто хочет занять место.
+#
+# Час — чтобы успел доехать кто угодно, и чтобы цех заранее понимал,
+# что к нему едет. Ближе часа смысла нет: кто уже у ворот, тот и так
+# стоит в живой очереди.
+MIN_WAIT_KEY = 'queue_min_wait_minutes'
+MIN_WAIT_DEFAULT = 60
 
 # За сколько до своего черёда человек должен быть на месте. Запас не
 # только на дорогу: приёмщику надо увидеть машину и оформить
@@ -60,9 +68,10 @@ def posts_for(db, shop):
     return max(0, shop_settings.get_int(db, 'queue_posts', shop=shop))
 
 
-def ahead_minutes(db, shop):
-    return max(10, shop_settings.get_int(db, AHEAD_KEY, shop=shop)
-               or AHEAD_DEFAULT)
+def min_wait_minutes(db, shop):
+    """Через сколько зовём того, кто встал в пустую очередь."""
+    return max(10, shop_settings.get_int(db, MIN_WAIT_KEY, shop=shop)
+               or MIN_WAIT_DEFAULT)
 
 
 def lead_minutes(db, shop):
@@ -191,9 +200,18 @@ def forecast(db, shop, now=None):
         index = free_at.index(soonest)
 
         # Раньше, чем человек доедет, его не позовут. Приехавший
-        # считается готовым сейчас, ждущий — к обещанному времени
+        # считается готовым сейчас, ждущий — к обещанному времени.
+        #
+        # И никогда не раньше того, что мы ему уже назвали: впереди
+        # кто-то не приехал — это не повод требовать от остальных
+        # быть раньше. Они на названное время рассчитывали: выехать,
+        # отпроситься, отвезти ребёнка. Освободившееся берёт живая
+        # очередь, а не те, кто ещё в пути
         ready = now if ticket.is_here else ticket.eta_at
         starts = max(soonest, ready, now)
+
+        if ticket.promised_at is not None and not ticket.is_here:
+            starts = max(starts, ticket.promised_at)
         answer[ticket.id] = starts
 
         free_at[index] = starts + timedelta(minutes=_minutes_for(db, shop, ticket))
@@ -386,29 +404,20 @@ def place_of(db, shop, ticket, now=None):
 # Встать, отметиться, уйти
 # ----------------------------------------------------------------------
 
-def join(db, shop, client, minutes_away, plate=None, wheels_assembled=None,
+def join(db, shop, client, plate=None, wheels_assembled=None,
          comment=None, now=None):
     """
-    Встать в очередь. minutes_away — через сколько человек будет на месте.
+    Встать в очередь.
+
+    Время назначаем мы: не раньше чем через час. Человека ни о чём не
+    спрашиваем — он просто занимает место, а когда подъезжать, узнаёт
+    из ответа.
     """
     now = now or shop_now()
 
     if not enabled(db, shop):
         raise QueueError('Онлайн-очередь сейчас не работает. '
                          'Запишитесь на время или подъезжайте')
-
-    try:
-        minutes = int(minutes_away)
-    except (TypeError, ValueError):
-        raise QueueError('Непонятно, через сколько вы будете')
-
-    if minutes < 0:
-        minutes = 0
-    limit = ahead_minutes(db, shop)
-    if minutes > limit:
-        raise QueueError(
-            f'Занять место можно не больше чем за {limit // 60} ч. '
-            f'Хотите приехать к определённому времени — запишитесь')
 
     already = db.query(QueueTicket).filter(
         QueueTicket.shop_id == shop.id,
@@ -426,8 +435,9 @@ def join(db, shop, client, minutes_away, plate=None, wheels_assembled=None,
         client_phone=normalize_phone(client.phone),
         wheels_assembled=wheels_assembled,
         comment=(comment or '').strip() or None,
-        eta_at=now + timedelta(minutes=minutes),
-        arrived_at=now if minutes == 0 else None,
+        # Раньше чем через час не зовём: человеку надо доехать, а
+        # цеху — заранее понимать, что к нему едет
+        eta_at=now + timedelta(minutes=min_wait_minutes(db, shop)),
         state=TICKET_WAITING)
 
     db.add(ticket)
@@ -543,7 +553,10 @@ def drop_stale(db, shop, now=None):
     давно передумал.
     """
     now = now or shop_now()
-    edge = now - timedelta(minutes=ahead_minutes(db, shop))
+
+    # Ждём с запасом после названного времени: пробки — это нормально,
+    # и выкидывать человека за десять минут опоздания нельзя
+    edge = now - timedelta(minutes=2 * min_wait_minutes(db, shop))
 
     gone = 0
     for ticket in db.query(QueueTicket).filter(

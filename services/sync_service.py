@@ -523,7 +523,7 @@ class SyncService:
 
             # Сколько постов отдано онлайн-очереди
             'queue_posts': settings.get('queue_posts'),
-            'queue_ahead_minutes': settings.get('queue_ahead_minutes'),
+            'queue_min_wait_minutes': settings.get('queue_min_wait_minutes'),
             'queue_lead_minutes': settings.get('queue_lead_minutes'),
 
             # Чем клиент подтверждает номер при первом входе в кабинет.

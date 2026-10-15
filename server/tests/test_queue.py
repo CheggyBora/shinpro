@@ -82,42 +82,48 @@ with TestClient(app) as client:
 
     NOW = shop_now()
 
-    print('=== Порядок — по времени прибытия, а не нажатия ===')
-    # Первый нажал раньше, но ехать ему час. Второй нажал позже, но
-    # будет через десять минут
-    far = queue_service.join(db, shop, people[0], 60, plate='А111АА77',
-                             now=NOW)
-    near = queue_service.join(db, shop, people[1], 10, plate='К222КК77',
-                              now=NOW + timedelta(minutes=1))
+    print('=== Время назначаем мы: не раньше чем через час ===')
+    # Человека ни о чём не спрашиваем. Он занимает место, а когда
+    # подъезжать — узнаёт из ответа
+    first = queue_service.join(db, shop, people[0], plate='А111АА77', now=NOW)
+    check('час от постановки',
+          first.eta_at == NOW + timedelta(minutes=60), str(first.eta_at))
 
-    order = [t.license_plate for t in queue_service.line(db, shop, NOW)]
-    check('ближний идёт первым', order == ['К222КК77', 'А111АА77'], str(order))
+    second = queue_service.join(db, shop, people[1], plate='К222КК77',
+                                now=NOW + timedelta(minutes=1))
 
     print()
-    print('=== Время называем каждому своё ===')
+    print('=== Порядок — в котором вставали ===')
+    order = [t.license_plate for t in queue_service.line(db, shop, NOW)]
+    check('первым встал — первым и идёт',
+          order == ['А111АА77', 'К222КК77'], str(order))
+
+    print()
+    print('=== Обоим — не раньше их часа ===')
     times = queue_service.forecast(db, shop, NOW)
-    check('ближнего зовут к его приезду',
-          times[near.id] == near.eta_at, str(times[near.id]))
-    check('дальнего — к его, а не следом за ближним',
-          times[far.id] == far.eta_at, str(times[far.id]))
+    check('первого через час', times[first.id] == first.eta_at,
+          str(times[first.id]))
+    check('второго не раньше его часа', times[second.id] >= second.eta_at,
+          str(times[second.id]))
 
     print()
     print('=== Приехавший обгоняет того, кто ещё едет ===')
-    # Дальний приехал раньше обещанного — держать его за обещание
-    # «через час» нелепо, он уже здесь
-    queue_service.arrived(db, shop, far, now=NOW + timedelta(minutes=5))
-    order = [t.license_plate for t in queue_service.line(db, shop,
-                                                         NOW + timedelta(minutes=5))]
-    check('приехавший впереди', order == ['А111АА77', 'К222КК77'], str(order))
+    # Приехал раньше названного — держать его за время нелепо, он
+    # уже здесь
+    queue_service.arrived(db, shop, second, now=NOW + timedelta(minutes=5))
+    order = [t.license_plate for t in queue_service.line(
+        db, shop, NOW + timedelta(minutes=5))]
+    check('приехавший впереди', order == ['К222КК77', 'А111АА77'], str(order))
 
     print()
     print('=== Звать можно только того, кто на месте ===')
     nobody = queue_service.next_up(db, shop, NOW + timedelta(minutes=5))
-    check('зовём приехавшего', nobody.id == far.id, str(nobody.license_plate))
+    check('зовём приехавшего', nobody.id == second.id,
+          str(nobody.license_plate))
 
     refused = None
     try:
-        queue_service.call(db, shop, near)
+        queue_service.call(db, shop, first)
     except queue_service.QueueError as e:
         refused = str(e)
     check('того, кто в пути, звать нельзя', refused is not None, str(refused))
@@ -127,26 +133,39 @@ with TestClient(app) as client:
     print('=== Не приехал — в конец очереди, и это один раз ===')
     # Смещать на позицию не стали: человеку трудно объяснить, почему
     # он то второй, то третий. Правило одно — не успел, в конец
-    queue_service.call(db, shop, far, now=NOW + timedelta(minutes=6))
-    check('позван', far.state == CALLED, far.state)
+    queue_service.call(db, shop, second, now=NOW + timedelta(minutes=6))
+    check('позван', second.state == CALLED, second.state)
 
-    was_near = near.eta_at
-    queue_service.move_back(db, shop, far, now=NOW + timedelta(minutes=6))
+    was_first = first.eta_at
+    queue_service.move_back(db, shop, second, now=NOW + timedelta(minutes=6))
 
-    check('остался в очереди', far.is_open is True, far.state)
-    check('перенос посчитан', far.moves == 1, str(far.moves))
-    check('встал за последним', far.eta_at > near.eta_at,
-          f'{far.eta_at} против {near.eta_at}')
-    check('чужое время не тронули', near.eta_at == was_near,
-          f'{near.eta_at} против {was_near}')
-    check('отметку о приезде сбросили', far.arrived_at is None)
+    check('остался в очереди', second.is_open is True, second.state)
+    check('перенос посчитан', second.moves == 1, str(second.moves))
+    check('встал за последним', second.eta_at > first.eta_at,
+          f'{second.eta_at} против {first.eta_at}')
+    check('чужое время не тронули', first.eta_at == was_first,
+          f'{first.eta_at} против {was_first}')
+    check('отметку о приезде сбросили', second.arrived_at is None)
 
     order = [t.license_plate for t in queue_service.line(
         db, shop, NOW + timedelta(minutes=6))]
-    check('и он теперь последний', order[-1] == 'А111АА77', str(order))
+    check('и он теперь последний', order[-1] == 'К222КК77', str(order))
 
-    queue_service.move_back(db, shop, far, now=NOW + timedelta(minutes=7))
-    check('второй перенос закрывает место', far.state == EXPIRED, far.state)
+    print()
+    print('=== Выпавший никого вперёд не тянет ===')
+    # Человек рассчитывал на названное время: выехать, отпроситься,
+    # отвезти ребёнка. Освободившееся берёт живая очередь
+    queue_service.remember_promise(db, shop, NOW + timedelta(minutes=6))
+    promised = first.promised_at
+
+    queue_service.move_back(db, shop, second, now=NOW + timedelta(minutes=7))
+    check('второй перенос закрывает место', second.state == EXPIRED,
+          second.state)
+
+    times = queue_service.forecast(db, shop, NOW + timedelta(minutes=7))
+    check('время оставшегося не уехало назад',
+          times[first.id] >= promised,
+          f'{times[first.id]} против {promised}')
 
     print()
     print('=== Пост заняли живой машиной — прогноз сдвигается ===')
@@ -164,7 +183,8 @@ with TestClient(app) as client:
 
     times = queue_service.forecast(db, shop, NOW)
     check('ждущего зовут после неё',
-          times[near.id] >= NOW + timedelta(minutes=40), str(times[near.id]))
+          times[first.id] >= NOW + timedelta(minutes=40),
+          str(times[first.id]))
 
     print()
     print('=== Обычная машина пост очереди не занимает ===')
@@ -183,18 +203,19 @@ with TestClient(app) as client:
     db.commit()
 
     queue_service.remember_promise(db, shop, NOW)
-    was = near.promised_at
+    was = first.promised_at
     check('время запомнили', was is not None, str(was))
 
-    # Пост заняли живой машиной на час — время ждущего уехало
+    # Пост заняли живой машиной надолго — время ждущего уехало за
+    # то, что мы ему называли
     db.add(OpenOrder(shop_id=shop.id, local_id=79, license_plate='Х555ХХ99',
-                     state='work', started_at=NOW, planned_minutes=60,
+                     state='work', started_at=NOW, planned_minutes=120,
                      on_queue_post=True, updated_at=NOW))
     db.commit()
 
     slipped = queue_service.remember_promise(db, shop, NOW)
     check('заметили сдвиг', len(slipped) == 1, str(len(slipped)))
-    check('именно у ждущего', slipped[0][0].id == near.id)
+    check('именно у ждущего', slipped[0][0].id == first.id)
     check('и видно, с какого на какое',
           slipped[0][2] > slipped[0][1], f'{slipped[0][1]} -> {slipped[0][2]}')
 
@@ -209,22 +230,10 @@ with TestClient(app) as client:
     print('=== Дважды в очередь не встать ===')
     twice = None
     try:
-        queue_service.join(db, shop, people[1], 5, now=NOW)
+        queue_service.join(db, shop, people[0], now=NOW)
     except queue_service.QueueError as e:
         twice = str(e)
     check('отказано', twice is not None, str(twice))
-
-    print()
-    print('=== Дальше часа место не занять ===')
-    # Это уже не очередь, а запись, и для неё есть запись
-    far_away = None
-    try:
-        queue_service.join(db, shop, people[2], 10 * 60, now=NOW)
-    except queue_service.QueueError as e:
-        far_away = str(e)
-    check('отказано', far_away is not None, str(far_away))
-    check('отправили в запись', 'запишитесь' in (far_away or '').lower(),
-          str(far_away))
 
     print()
     print('=== Клиенту называют время приезда, а не черёд ===')
@@ -236,13 +245,45 @@ with TestClient(app) as client:
           come == (turn - timedelta(minutes=20)).strftime('%H:%M'), come)
 
     print()
+    print('=== Приехавшего берём сразу, не дожидаясь его времени ===')
+    # Он здесь, машина у ворот. Держать его до названного часа, когда
+    # пост свободен, — это простой на ровном месте
+    from app.models import QueueTicket as T
+
+    db.query(T).delete()
+
+    # Пост очереди свободен — иначе приехавшего честно не на что
+    # поставить, и это правильно
+    db.query(OpenOrder).delete()
+    db.commit()
+
+    check('пост очереди свободен',
+          queue_service.busy_until(db, shop, NOW) is None,
+          str(queue_service.busy_until(db, shop, NOW)))
+
+    early = queue_service.join(db, shop, people[0], plate='Е777ЕЕ77', now=NOW)
+    check('время назначено через час',
+          early.eta_at == NOW + timedelta(minutes=60), str(early.eta_at))
+
+    queue_service.arrived(db, shop, early, now=NOW + timedelta(minutes=3))
+    times = queue_service.forecast(db, shop, NOW + timedelta(minutes=3))
+    check('но взять можно сразу',
+          times[early.id] <= NOW + timedelta(minutes=4), str(times[early.id]))
+
+    ready = queue_service.next_up(db, shop, NOW + timedelta(minutes=3))
+    check('он и следующий на пост', ready.id == early.id,
+          str(ready.license_plate))
+
+    queue_service.leave(db, early)
+
+    print()
     print('=== Постов под очередь нет — встать нельзя ===')
     shop_settings.set_value(db, 'queue_posts', '0', shop=shop)
     check('очередь выключена', queue_service.enabled(db, shop) is False)
 
     off = None
     try:
-        queue_service.join(db, shop, people[3], 5, now=NOW)
+        queue_service.join(db, shop, people[3], now=NOW)
     except queue_service.QueueError as e:
         off = str(e)
     check('отказано', off is not None, str(off))

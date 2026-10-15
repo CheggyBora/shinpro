@@ -27,7 +27,6 @@ router = APIRouter(prefix='/queue', tags=['Онлайн-очередь'])
 
 
 class JoinIn(BaseModel):
-    minutes_away: int = 0
     license_plate: Optional[str] = None
     wheels_assembled: Optional[bool] = None
     comment: Optional[str] = None
@@ -118,7 +117,7 @@ def join(payload: JoinIn, client: Client = Depends(current_client),
 
     try:
         ticket = queue_service.join(
-            db, chosen, client, payload.minutes_away,
+            db, chosen, client,
             plate=payload.license_plate,
             wheels_assembled=payload.wheels_assembled,
             comment=payload.comment)

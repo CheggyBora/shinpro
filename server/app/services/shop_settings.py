@@ -23,7 +23,7 @@ DEFAULTS = {
 
     # Постов, отданных онлайн-очереди. Приезжают из цеха
     'queue_posts': '1',
-    'queue_ahead_minutes': '60',
+    'queue_min_wait_minutes': '60',
     'queue_lead_minutes': '20',
 
     # Чем подтверждать номер при первом входе. Ключи приезжают из цеха:
