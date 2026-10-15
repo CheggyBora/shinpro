@@ -30,15 +30,21 @@ from app.utils import now as shop_now, normalize_plate, normalize_phone
 
 log = logging.getLogger('tire_server')
 
-# Насколько вперёд разрешаем занимать место. Полдня — уже не очередь,
-# а запись, и для неё есть запись
-MAX_AHEAD_HOURS = 6
+# Насколько вперёд разрешаем занимать место. Час — горизонт, на
+# котором ещё можно считать: работы известны, записи известны. Дальше
+# это уже не очередь, а запись на время, и для неё есть запись
+AHEAD_KEY = 'queue_ahead_minutes'
+AHEAD_DEFAULT = 60
 
-# Сколько промахов терпим, прежде чем снять талон
-MAX_MISSED = 2
+# За сколько до своего черёда человек должен быть на месте. Запас не
+# только на дорогу: приёмщику надо увидеть машину и оформить
+LEAD_KEY = 'queue_lead_minutes'
+LEAD_DEFAULT = 20
 
-# Сколько ждём человека после того, как позвали
-CALL_PATIENCE_MINUTES = 15
+# Переносов даём один. Не приехал или не успевает — уходит в конец,
+# и это единственный раз. Второй — снимаем: место держат люди, которые
+# стоят рядом, а ходить по кругу до вечера нельзя
+MAX_MOVES = 1
 
 
 class QueueError(Exception):
@@ -50,8 +56,47 @@ class QueueError(Exception):
 # ----------------------------------------------------------------------
 
 def posts_for(db, shop):
-    """Сколько постов отдано онлайн-очереди."""
+    """Сколько постов выделено онлайн-очереди. Это пол, а не потолок."""
     return max(0, shop_settings.get_int(db, 'queue_posts', shop=shop))
+
+
+def ahead_minutes(db, shop):
+    return max(10, shop_settings.get_int(db, AHEAD_KEY, shop=shop)
+               or AHEAD_DEFAULT)
+
+
+def lead_minutes(db, shop):
+    return max(0, shop_settings.get_int(db, LEAD_KEY, shop=shop))
+
+
+def posts_now(db, shop):
+    """
+    Сколько постов очередь может занять прямо сейчас.
+
+    Выделенный пост — гарантия. Но если живой очереди нет, а общие
+    посты свободны, машины из онлайна встают и туда: держать человека
+    при пустом боксе незачем.
+
+    Считаем по тому, что цех прислал последним: сколько постов открыто
+    и сколько машин в работе. Живая очередь приоритетнее онлайна на
+    общих постах, поэтому пока она есть — общие посты не наши.
+    """
+    from app.models import QueueSnapshot
+
+    mine = posts_for(db, shop)
+
+    last = db.query(QueueSnapshot).filter(
+        QueueSnapshot.shop_id == shop.id).order_by(
+        QueueSnapshot.taken_at.desc()).first()
+
+    if last is None or not last.shift_is_open:
+        return mine
+
+    if last.cars_waiting:
+        return mine        # живая очередь впереди нас на общих постах
+
+    free = (last.open_posts or 0) - (last.cars_in_work or 0)
+    return max(mine, mine + max(0, free - mine))
 
 
 def enabled(db, shop):
@@ -134,7 +179,7 @@ def forecast(db, shop, now=None):
     известно заранее, а неожиданности одинаково ломают любую формулу.
     """
     now = now or shop_now()
-    posts = max(1, posts_for(db, shop))
+    posts = max(1, posts_now(db, shop))
 
     # Пост мог быть занят машиной из живой очереди
     occupied = busy_until(db, shop, now)
@@ -246,6 +291,120 @@ def tell_slipped(db, shop, now=None):
     return told
 
 
+def _say(db, shop, ticket, text):
+    """
+    Сказать человеку. Молча проглатываем неудачу.
+
+    Уведомление — не повод уронить работу очереди: приёмщик всё равно
+    видит человека на экране и позовёт голосом.
+    """
+    from app.models import Account, KIND_QUEUE
+    from app.services import notices
+
+    if ticket.client is None:
+        return False
+
+    account = db.query(Account).filter(Account.id == shop.account_id).first()
+
+    try:
+        return bool(notices.send_now(db, ticket.client, account, KIND_QUEUE,
+                                     text, about='queue', about_id=ticket.id))
+    except Exception as e:
+        log.warning('Не сказали клиенту про очередь: %s', e)
+        return False
+
+
+def when_text(db, shop, moment):
+    """
+    Во сколько подъезжать. Называем время приезда, а не черёд.
+
+    Человеку нужно знать, когда выезжать, а не когда освободится пост:
+    разницу в двадцать минут он должен держать не в голове, а видеть
+    в сообщении.
+    """
+    lead = lead_minutes(db, shop)
+    return (moment - timedelta(minutes=lead)).strftime('%H:%M')
+
+
+def tell_joined(db, shop, ticket, now=None):
+    """Встал в очередь — сразу говорим, когда подъезжать."""
+    times = forecast(db, shop, now)
+    turn = times.get(ticket.id)
+    if turn is None:
+        return False
+
+    ticket.promised_at = turn
+    db.commit()
+
+    name = shop_settings.title(db, shop)
+    return _say(db, shop, ticket,
+                f'<b>{name}</b>\n'
+                f'Вы в очереди. Подъезжайте к {when_text(db, shop, turn)}.\n'
+                f'Время примерное — если сдвинется, сообщим.')
+
+
+def tell_moved(db, shop, ticket, now=None):
+    """Ушёл в конец — говорим новое время, а не просто «вы последний»."""
+    if not ticket.is_open:
+        return _say(db, shop, ticket,
+                    f'<b>{shop_settings.title(db, shop)}</b>\n'
+                    f'Место в очереди закрыто: перенести ещё раз нельзя. '
+                    f'Встаньте в очередь заново или запишитесь на время.')
+
+    times = forecast(db, shop, now)
+    turn = times.get(ticket.id)
+    if turn is None:
+        return False
+
+    ticket.promised_at = turn
+    db.commit()
+
+    name = shop_settings.title(db, shop)
+    return _say(db, shop, ticket,
+                f'<b>{name}</b>\n'
+                f'Вы перенесены в конец очереди. '
+                f'Подъезжайте к {when_text(db, shop, turn)}.\n'
+                f'Перенести ещё раз не получится.')
+
+
+def tell_called(db, shop, ticket):
+    """Позвали на пост."""
+    return _say(db, shop, ticket,
+                f'<b>{shop_settings.title(db, shop)}</b>\n'
+                f'Ваша очередь. Проезжайте на пост.')
+
+
+def offer_sooner(db, shop, now=None, limit=2):
+    """
+    Освободилось раньше — предложить ближайшим.
+
+    Предложить, а не передвинуть: человек мог не выехать и не смотреть
+    в телефон, и построить на нём расчёт нельзя. Кто ответит «готов» —
+    того и ждём.
+
+    Зовём несколько человек сразу: один может не ответить вовсе, и
+    пост будет стоять, пока мы его дожидаемся.
+    """
+    name = shop_settings.title(db, shop)
+    asked = 0
+
+    for ticket in line(db, shop, now):
+        if asked >= limit:
+            break
+        if ticket.is_here or ticket.offered_at is not None:
+            continue
+
+        if _say(db, shop, ticket,
+                f'<b>{name}</b>\n'
+                f'Освободилось раньше. Успеете подъехать сейчас?\n'
+                f'Ответьте в кабинете — если да, место ваше.'):
+            ticket.offered_at = shop_now()
+            asked += 1
+
+    db.commit()
+    return asked
+
+
 def place_of(db, shop, ticket, now=None):
     """Какой он по счёту. Единица — следующий."""
     for number, row in enumerate(line(db, shop, now), start=1):
@@ -276,10 +435,11 @@ def join(db, shop, client, minutes_away, plate=None, wheels_assembled=None,
 
     if minutes < 0:
         minutes = 0
-    if minutes > MAX_AHEAD_HOURS * 60:
+    limit = ahead_minutes(db, shop)
+    if minutes > limit:
         raise QueueError(
-            f'Занять место можно не больше чем за {MAX_AHEAD_HOURS} ч. '
-            f'На более дальнее время есть запись')
+            f'Занять место можно не больше чем за {limit // 60} ч. '
+            f'Хотите приехать к определённому времени — запишитесь')
 
     already = db.query(QueueTicket).filter(
         QueueTicket.shop_id == shop.id,
@@ -359,18 +519,37 @@ def call(db, shop, ticket, now=None):
     return ticket
 
 
-def miss(db, ticket):
+def move_back(db, shop, ticket, now=None):
     """
-    Не подошёл. Смещаем, а не выгоняем.
+    Не приехал или не успевает — в конец очереди.
 
-    Два промаха — снимаем: место держат люди, которые стоят рядом.
+    Смещать на одну позицию не стали намеренно: человеку трудно
+    объяснить, почему он то второй, то третий, и путаницы от этого
+    больше, чем пользы. Правило одно и понятное: не успел — в конец.
+
+    Перенос даём один. Второй раз снимаем: ходить по кругу до вечера
+    нельзя, место держат те, кто стоит рядом.
+
+    Чужое время от этого не двигается. Тому, кому назвали 14:30, так
+    и идти к 14:30: он на это рассчитывал.
     """
-    ticket.missed += 1
+    now = now or shop_now()
+
+    if ticket.moves >= MAX_MOVES:
+        return leave(db, ticket, EXPIRED)
+
+    others = [row for row in line(db, shop, now) if row.id != ticket.id]
+    last = max((row.eta_at for row in others), default=now)
+
+    ticket.moves += 1
     ticket.state = TICKET_WAITING
     ticket.called_at = None
+    ticket.arrived_at = None
 
-    if ticket.missed >= MAX_MISSED:
-        return leave(db, ticket, EXPIRED)
+    # Встаём за последним, но не раньше, чем через минуту от сейчас:
+    # «ваше время — прямо сейчас» после «вы не успели» выглядит
+    # издевательством
+    ticket.eta_at = max(last, now) + timedelta(minutes=1)
 
     db.commit()
     return ticket
@@ -395,7 +574,7 @@ def drop_stale(db, shop, now=None):
     давно передумал.
     """
     now = now or shop_now()
-    edge = now - timedelta(hours=MAX_AHEAD_HOURS)
+    edge = now - timedelta(minutes=ahead_minutes(db, shop))
 
     gone = 0
     for ticket in db.query(QueueTicket).filter(

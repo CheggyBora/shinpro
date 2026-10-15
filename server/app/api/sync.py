@@ -1232,7 +1232,7 @@ def queue_line(db: Session = Depends(get_db), shop: Shop = Mine):
             'here': row.is_here,
             'eta_at': row.eta_at,
             'about_at': times.get(row.id),
-            'missed': row.missed,
+            'moved': row.moves > 0,
         } for row in rows],
     }
 
@@ -1256,15 +1256,22 @@ def queue_call(payload: TicketActionIn, db: Session = Depends(get_db),
     return {'ok': True, 'state': ticket.state}
 
 
-@router.post('/queue/miss', summary='Не подошёл')
+@router.post('/queue/miss', summary='Не приехал — в конец очереди')
 def queue_miss(payload: TicketActionIn, db: Session = Depends(get_db),
                shop: Shop = Mine):
-    """Смещаем, а не выгоняем: два промаха — тогда снимаем."""
+    """
+    Не приехал к своему времени. Уходит в конец, и это один раз.
+
+    Чужое время при этом не двигается: тому, кому назвали 14:30, так
+    и идти к 14:30 — он на это рассчитывал.
+    """
     from app.services import queue_service
 
     ticket = _ticket(db, shop, payload.ticket_id)
-    queue_service.miss(db, ticket)
-    return {'ok': True, 'state': ticket.state, 'missed': ticket.missed}
+    queue_service.move_back(db, shop, ticket)
+    queue_service.tell_moved(db, shop, ticket)
+
+    return {'ok': True, 'state': ticket.state, 'eta_at': ticket.eta_at}
 
 
 @router.post('/queue/served', summary='Взяли в работу')

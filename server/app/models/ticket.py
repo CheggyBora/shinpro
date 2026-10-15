@@ -72,9 +72,14 @@ class QueueTicket(Base):
     promised_at = Column(DateTime, nullable=True)
     promise_told_at = Column(DateTime, nullable=True)
 
-    # Сколько раз его пропустили, потому что не было на месте. Два
-    # промаха — снимаем: место держат живые люди, которые стоят рядом
-    missed = Column(Integer, default=0, nullable=False)
+    # Когда предложили приехать раньше. Чтобы не спрашивать дважды:
+    # человек один раз не ответил — значит занят, а не оглох
+    offered_at = Column(DateTime, nullable=True)
+
+    # Сколько раз переносили в конец. Даём один: не приехал или не
+    # успевает — уходит в конец, второй раз снимаем. Ходить по кругу
+    # до вечера нельзя, место держат те, кто стоит рядом
+    moves = Column(Integer, default=0, nullable=False)
 
     state = Column(String(16), default=WAITING, nullable=False, index=True)
     called_at = Column(DateTime, nullable=True)

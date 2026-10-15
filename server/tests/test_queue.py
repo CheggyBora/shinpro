@@ -124,16 +124,29 @@ with TestClient(app) as client:
     check('сказано, почему', 'на месте' in (refused or ''), str(refused))
 
     print()
-    print('=== Позвали, не подошёл — смещаем, а не выгоняем ===')
+    print('=== Не приехал — в конец очереди, и это один раз ===')
+    # Смещать на позицию не стали: человеку трудно объяснить, почему
+    # он то второй, то третий. Правило одно — не успел, в конец
     queue_service.call(db, shop, far, now=NOW + timedelta(minutes=6))
     check('позван', far.state == CALLED, far.state)
 
-    queue_service.miss(db, far)
-    check('остался в очереди', far.is_open is True, far.state)
-    check('промах посчитан', far.missed == 1, str(far.missed))
+    was_near = near.eta_at
+    queue_service.move_back(db, shop, far, now=NOW + timedelta(minutes=6))
 
-    queue_service.miss(db, far)
-    check('после второго промаха снят', far.state == EXPIRED, far.state)
+    check('остался в очереди', far.is_open is True, far.state)
+    check('перенос посчитан', far.moves == 1, str(far.moves))
+    check('встал за последним', far.eta_at > near.eta_at,
+          f'{far.eta_at} против {near.eta_at}')
+    check('чужое время не тронули', near.eta_at == was_near,
+          f'{near.eta_at} против {was_near}')
+    check('отметку о приезде сбросили', far.arrived_at is None)
+
+    order = [t.license_plate for t in queue_service.line(
+        db, shop, NOW + timedelta(minutes=6))]
+    check('и он теперь последний', order[-1] == 'А111АА77', str(order))
+
+    queue_service.move_back(db, shop, far, now=NOW + timedelta(minutes=7))
+    check('второй перенос закрывает место', far.state == EXPIRED, far.state)
 
     print()
     print('=== Пост заняли живой машиной — прогноз сдвигается ===')
@@ -202,7 +215,7 @@ with TestClient(app) as client:
     check('отказано', twice is not None, str(twice))
 
     print()
-    print('=== На полдня вперёд место не занять ===')
+    print('=== Дальше часа место не занять ===')
     # Это уже не очередь, а запись, и для неё есть запись
     far_away = None
     try:
@@ -210,8 +223,17 @@ with TestClient(app) as client:
     except queue_service.QueueError as e:
         far_away = str(e)
     check('отказано', far_away is not None, str(far_away))
-    check('отправили в запись', 'запись' in (far_away or '').lower(),
+    check('отправили в запись', 'запишитесь' in (far_away or '').lower(),
           str(far_away))
+
+    print()
+    print('=== Клиенту называют время приезда, а не черёд ===')
+    # Разницу в двадцать минут человек должен видеть, а не держать
+    # в голове
+    turn = NOW.replace(microsecond=0) + timedelta(hours=1)
+    come = queue_service.when_text(db, shop, turn)
+    check('время со скидкой на запас',
+          come == (turn - timedelta(minutes=20)).strftime('%H:%M'), come)
 
     print()
     print('=== Постов под очередь нет — встать нельзя ===')

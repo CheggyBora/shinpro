@@ -19,6 +19,8 @@ from app.database import get_db
 from app.models import Client, QueueTicket, Shop, OPEN_STATES
 from app.security import current_client
 from app.services import queue_service, shop_settings, tenancy
+from datetime import timedelta
+
 from app.utils import format_phone, now as shop_now
 
 router = APIRouter(prefix='/queue', tags=['Онлайн-очередь'])
@@ -61,13 +63,26 @@ def _answer(db, shop, ticket, now=None):
     now = now or shop_now()
     times = queue_service.forecast(db, shop, now)
 
+    turn = times.get(ticket.id)
+    lead = queue_service.lead_minutes(db, shop)
+
     return {
         'id': ticket.id,
         'state': ticket.state,
-        'place': queue_service.place_of(db, shop, ticket, now),
-        'about_at': times.get(ticket.id),
+
+        # Человеку называем время приезда, а не черёд: разницу в
+        # двадцать минут он должен видеть, а не держать в голове
+        'come_at': turn - timedelta(minutes=lead) if turn else None,
+        'turn_at': turn,
+        'lead_minutes': lead,
+
         'arrived': ticket.is_here,
-        'eta_at': ticket.eta_at,
+        'moved': ticket.moves > 0,
+        'can_move': ticket.moves < queue_service.MAX_MOVES,
+
+        # Предложили приехать раньше и ждём ответа
+        'offered': ticket.offered_at is not None and not ticket.is_here,
+
         'license_plate': ticket.license_plate,
         'ahead': max(0, (queue_service.place_of(db, shop, ticket, now) or 1) - 1),
     }
@@ -113,6 +128,10 @@ def join(payload: JoinIn, client: Client = Depends(current_client),
     except queue_service.QueueError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(e))
 
+    # Говорим время сразу: человек закрыл кабинет и ушёл собираться,
+    # а знать, когда выезжать, ему нужно
+    queue_service.tell_joined(db, chosen, ticket)
+
     return _answer(db, chosen, ticket)
 
 
@@ -132,6 +151,56 @@ def arrived(shop: Optional[str] = Query(None),
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail='Вас нет в очереди')
 
     queue_service.arrived(db, chosen, ticket)
+    return _answer(db, chosen, ticket)
+
+
+@router.post('/sooner', summary='Успею приехать сейчас')
+def sooner(shop: Optional[str] = Query(None),
+           client: Client = Depends(current_client),
+           db: Session = Depends(get_db)):
+    """
+    Ответ на предложение приехать раньше.
+
+    Место закрепляем за ним и ждём: он сказал, что едет. Если не
+    приедет — уйдёт в конец на общих правах.
+    """
+    chosen = _shop(db, client, shop)
+    ticket = _mine(db, chosen, client)
+
+    if ticket is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail='Вас нет в очереди')
+
+    ticket.eta_at = shop_now()
+    ticket.offered_at = None
+    db.commit()
+
+    return _answer(db, chosen, ticket)
+
+
+@router.post('/later', summary='Не успеваю')
+def later(shop: Optional[str] = Query(None),
+          client: Client = Depends(current_client),
+          db: Session = Depends(get_db)):
+    """
+    Не успеваю — в конец очереди.
+
+    Перенос один. Второй раз место закрывается: ходить по кругу до
+    вечера нельзя, его держат те, кто стоит рядом.
+    """
+    chosen = _shop(db, client, shop)
+    ticket = _mine(db, chosen, client)
+
+    if ticket is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail='Вас нет в очереди')
+
+    queue_service.move_back(db, chosen, ticket)
+    queue_service.tell_moved(db, chosen, ticket)
+
+    if not ticket.is_open:
+        return {'closed': True,
+                'reason': 'Перенести ещё раз нельзя. Встаньте заново '
+                          'или запишитесь на время'}
+
     return _answer(db, chosen, ticket)
 
 
