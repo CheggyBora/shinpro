@@ -80,9 +80,6 @@ def _answer(db, shop, ticket, now=None):
         'moved': ticket.moves > 0,
         'can_move': ticket.moves < queue_service.MAX_MOVES,
 
-        # Предложили приехать раньше и ждём ответа
-        'offered': ticket.offered_at is not None and not ticket.is_here,
-
         'license_plate': ticket.license_plate,
         'ahead': max(0, (queue_service.place_of(db, shop, ticket, now) or 1) - 1),
     }
@@ -151,29 +148,6 @@ def arrived(shop: Optional[str] = Query(None),
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail='Вас нет в очереди')
 
     queue_service.arrived(db, chosen, ticket)
-    return _answer(db, chosen, ticket)
-
-
-@router.post('/sooner', summary='Успею приехать сейчас')
-def sooner(shop: Optional[str] = Query(None),
-           client: Client = Depends(current_client),
-           db: Session = Depends(get_db)):
-    """
-    Ответ на предложение приехать раньше.
-
-    Место закрепляем за ним и ждём: он сказал, что едет. Если не
-    приедет — уйдёт в конец на общих правах.
-    """
-    chosen = _shop(db, client, shop)
-    ticket = _mine(db, chosen, client)
-
-    if ticket is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail='Вас нет в очереди')
-
-    ticket.eta_at = shop_now()
-    ticket.offered_at = None
-    db.commit()
-
     return _answer(db, chosen, ticket)
 
 

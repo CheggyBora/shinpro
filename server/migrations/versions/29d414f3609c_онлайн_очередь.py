@@ -35,7 +35,6 @@ def upgrade() -> None:
     sa.Column('arrived_at', sa.DateTime(), nullable=True),
     sa.Column('promised_at', sa.DateTime(), nullable=True),
     sa.Column('promise_told_at', sa.DateTime(), nullable=True),
-    sa.Column('offered_at', sa.DateTime(), nullable=True),
     sa.Column('moves', sa.Integer(), nullable=False),
     sa.Column('state', sa.String(length=16), nullable=False),
     sa.Column('called_at', sa.DateTime(), nullable=True),

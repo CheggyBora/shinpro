@@ -139,6 +139,37 @@ class SyncService:
             'minutes': answer.get('minutes', 15),
         }
 
+    # ------------------------------------------------------------------
+    # Онлайн-очередь
+    # ------------------------------------------------------------------
+
+    def queue_line(self):
+        """Кто сейчас в онлайн-очереди."""
+        return self._call('GET', '/sync/queue')
+
+    def queue_call(self, ticket_id):
+        """Позвать на пост."""
+        return self._call('POST', '/sync/queue/call', {'ticket_id': ticket_id})
+
+    def queue_arrived(self, ticket_id):
+        """Отметить приезд за человека: он подошёл и сказал."""
+        return self._call('POST', '/sync/queue/arrived',
+                          {'ticket_id': ticket_id})
+
+    def queue_missed(self, ticket_id):
+        """Не приехал — в конец очереди."""
+        return self._call('POST', '/sync/queue/miss', {'ticket_id': ticket_id})
+
+    def queue_served(self, ticket_id, order_local_id=None):
+        """Машину взяли в работу."""
+        return self._call('POST', '/sync/queue/served',
+                          {'ticket_id': ticket_id,
+                           'order_local_id': order_local_id})
+
+    def queue_drop(self, ticket_id):
+        """Убрать из очереди."""
+        return self._call('POST', '/sync/queue/drop', {'ticket_id': ticket_id})
+
     def order_photos(self, order_local_id):
         """Что мастера прислали по этому наряду."""
         return self._call('GET', f'/sync/photos?order_local_id={order_local_id}')

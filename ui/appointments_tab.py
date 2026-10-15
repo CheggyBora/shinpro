@@ -91,8 +91,22 @@ class AppointmentsTab:
                           'fetched_at': None, 'reason': None}
         self._scrolled_once = False
 
+        # Две вкладки: лента записи и онлайн-очередь. Это соседние
+        # занятия одного человека — приёмщик смотрит, кто записан на
+        # время, и кто стоит в очереди прямо сейчас
+        self.tabs = ttk.Notebook(self.frame)
+        self.tabs.pack(fill='both', expand=True)
+
+        self.day_page = ttk.Frame(self.tabs, style='BG.TFrame')
+        self.tabs.add(self.day_page, text='  Лента записи  ')
+
         self._build_toolbar()
         self._build_timeline()
+
+        from ui.queue_panel import QueuePanel
+
+        self.queue = QueuePanel(self.tabs, db, orders_tab)
+        self.tabs.add(self.queue.frame, text='  Онлайн-очередь  ')
 
         self.load_day()
         self.schedule_refresh()
@@ -102,7 +116,7 @@ class AppointmentsTab:
     # ------------------------------------------------------------------
 
     def _build_toolbar(self):
-        card = styles.create_card_frame(self.frame)
+        card = styles.create_card_frame(self.day_page)
         card.pack(fill='x', padx=15, pady=(15, 8))
 
         inner = ttk.Frame(card, style='White.TFrame')
@@ -208,7 +222,7 @@ class AppointmentsTab:
             bg=styles.COLORS['danger'], fg='white')
 
     def _build_timeline(self):
-        card = styles.create_card_frame(self.frame)
+        card = styles.create_card_frame(self.day_page)
         card.pack(fill='both', expand=True, padx=15, pady=(0, 15))
 
         inner = ttk.Frame(card, style='White.TFrame')

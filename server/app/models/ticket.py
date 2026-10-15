@@ -72,9 +72,6 @@ class QueueTicket(Base):
     promised_at = Column(DateTime, nullable=True)
     promise_told_at = Column(DateTime, nullable=True)
 
-    # Когда предложили приехать раньше. Чтобы не спрашивать дважды:
-    # человек один раз не ответил — значит занят, а не оглох
-    offered_at = Column(DateTime, nullable=True)
 
     # Сколько раз переносили в конец. Даём один: не приехал или не
     # успевает — уходит в конец, второй раз снимаем. Ходить по кругу

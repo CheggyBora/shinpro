@@ -28,6 +28,7 @@ TESTS = [
     ('Запись клиентов', 'test_appointments.py'),
     ('Посты записи и лента времени', 'test_booking.py'),
     ('Экран записи', 'test_booking_ui.py'),
+    ('Вкладка онлайн-очереди', 'test_queue_panel.py'),
     ('Запись видна сразу с обеих сторон', 'test_booking_live.py'),
     ('Обмен с сервером приложения', 'test_sync.py'),
     ('Срочная досылка важного', 'test_sync_nudge.py'),

@@ -1231,7 +1231,14 @@ def queue_line(db: Session = Depends(get_db), shop: Shop = Mine):
             'state': row.state,
             'here': row.is_here,
             'eta_at': row.eta_at,
-            'about_at': times.get(row.id),
+
+            # Черёд и время приезда — разные вещи: человеку названо
+            # «подъезжайте к 13:40», и приёмщик должен видеть то же
+            'turn_at': times.get(row.id),
+            'come_at': (times[row.id] - timedelta(
+                minutes=queue_service.lead_minutes(db, shop))
+                if times.get(row.id) else None),
+
             'moved': row.moves > 0,
         } for row in rows],
     }
@@ -1253,7 +1260,28 @@ def queue_call(payload: TicketActionIn, db: Session = Depends(get_db),
     except queue_service.QueueError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(e))
 
+    queue_service.tell_called(db, shop, ticket)
     return {'ok': True, 'state': ticket.state}
+
+
+@router.post('/queue/arrived', summary='Отметить приезд за человека')
+def queue_arrived(payload: TicketActionIn, db: Session = Depends(get_db),
+                  shop: Shop = Mine):
+    """
+    Человек подошёл к стойке и сказал, что он здесь.
+
+    Отмечать должен уметь и приёмщик: не у всех телефон под рукой, и
+    заставлять человека искать кнопку, стоя перед приёмщиком, глупо.
+    """
+    from app.services import queue_service
+
+    ticket = _ticket(db, shop, payload.ticket_id)
+    try:
+        queue_service.arrived(db, shop, ticket)
+    except queue_service.QueueError as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+    return {'ok': True, 'here': True}
 
 
 @router.post('/queue/miss', summary='Не приехал — в конец очереди')

@@ -374,37 +374,6 @@ def tell_called(db, shop, ticket):
                 f'Ваша очередь. Проезжайте на пост.')
 
 
-def offer_sooner(db, shop, now=None, limit=2):
-    """
-    Освободилось раньше — предложить ближайшим.
-
-    Предложить, а не передвинуть: человек мог не выехать и не смотреть
-    в телефон, и построить на нём расчёт нельзя. Кто ответит «готов» —
-    того и ждём.
-
-    Зовём несколько человек сразу: один может не ответить вовсе, и
-    пост будет стоять, пока мы его дожидаемся.
-    """
-    name = shop_settings.title(db, shop)
-    asked = 0
-
-    for ticket in line(db, shop, now):
-        if asked >= limit:
-            break
-        if ticket.is_here or ticket.offered_at is not None:
-            continue
-
-        if _say(db, shop, ticket,
-                f'<b>{name}</b>\n'
-                f'Освободилось раньше. Успеете подъехать сейчас?\n'
-                f'Ответьте в кабинете — если да, место ваше.'):
-            ticket.offered_at = shop_now()
-            asked += 1
-
-    db.commit()
-    return asked
-
-
 def place_of(db, shop, ticket, now=None):
     """Какой он по счёту. Единица — следующий."""
     for number, row in enumerate(line(db, shop, now), start=1):
