@@ -31,13 +31,26 @@ TOKEN_KEY = 'telegram_bot_token'
 CHAT_KEY = 'telegram_chat_id'
 RECIPIENTS_KEY = 'telegram_recipients'
 
+# Докуда мы уже прочитали сообщения боту. Телеграм хранит их сутки и
+# отдаёт по одному разу: не запомнив, где остановились, мы бы либо
+# разбирали одно и то же, либо теряли тех, кто написал между заходами
+OFFSET_KEY = 'telegram_updates_offset'
+
 
 class TelegramError(Exception):
     pass
 
 
 class Recipient:
-    """Кому отправляем: имя для человека, номер чата для Telegram."""
+    """
+    Кому отправляем: имя для человека, номер чата для Telegram.
+
+    Номер чата руками не вводят. Человек открывает бота, нажимает
+    «Старт» — и появляется в списке сам. Раньше ему надо было найти
+    бота @userinfobot, узнать там своё число и продиктовать его тому,
+    кто сидит за компьютером: три действия и один шанс ошибиться
+    цифрой, после чего сводка молча уходила в никуда.
+    """
 
     def __init__(self, chat_id, name='', enabled=True):
         self.chat_id = str(chat_id or '').strip()
@@ -155,6 +168,81 @@ class TelegramService:
 
         active = [r for r in recipients if r.enabled and r.chat_id]
         settings.set(CHAT_KEY, active[0].chat_id if active else '')
+
+    # ------------------------------------------------------------------
+    # Кто написал боту
+    # ------------------------------------------------------------------
+
+    def fetch_people(self):
+        """
+        Забрать у бота тех, кто ему написал, и добавить в список.
+
+        Новых заводим **выключенными**: то, что человек нажал «Старт»,
+        не значит, что ему нужна сводка по смене с выручкой. Кому
+        отправлять — решает владелец галочкой.
+
+        Возвращает (сколько новых, сколько всего написавших).
+        """
+        updates = self._call('getUpdates', {
+            'offset': self._offset(),
+            'timeout': 0,
+            'allowed_updates': '["message"]',
+        }) or []
+
+        known = {r.chat_id: r for r in self.get_recipients()}
+        order = self.get_recipients()
+        added = 0
+        seen = 0
+        last = None
+
+        for update in updates:
+            last = update.get('update_id')
+            message = update.get('message') or {}
+            chat = message.get('chat') or {}
+            chat_id = str(chat.get('id') or '').strip()
+            if not chat_id:
+                continue
+
+            seen += 1
+            name = _name_of(chat)
+
+            if chat_id in known:
+                # Имя могло появиться или смениться — подтянем, но
+                # галочку «отправлять» не трогаем: её ставил человек
+                if name and not known[chat_id].name:
+                    known[chat_id].name = name
+                continue
+
+            fresh = Recipient(chat_id, name, enabled=False)
+            order.append(fresh)
+            known[chat_id] = fresh
+            added += 1
+
+        if last is not None:
+            # +1, иначе телеграм отдаст то же самое ещё раз
+            self._settings().set(OFFSET_KEY, last + 1, commit=False)
+
+        self.save_recipients(order)
+        return added, seen
+
+    def _offset(self):
+        try:
+            return int(self._settings().get(OFFSET_KEY, 0) or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    def bot_link(self):
+        """
+        Ссылка на бота — её даём человеку, чтобы он нажал «Старт».
+
+        Имя бота спрашиваем у телеграма: вводить его руками значит
+        однажды ошибиться и отправить людей к чужому боту.
+        """
+        who = self._call('getMe', {}) or {}
+        name = who.get('username')
+        if not name:
+            raise TelegramError('Телеграм не назвал имя бота')
+        return f'https://t.me/{name}'
 
     def save_settings(self, token, chat_id):
         """Токен и один получатель — короткий путь для простого случая."""
@@ -323,6 +411,20 @@ class TelegramService:
         thread = threading.Thread(target=worker, daemon=True)
         thread.start()
         return thread
+
+
+def _name_of(chat):
+    """Как показать человека в списке: имя, фамилия, иначе @логин."""
+    parts = [chat.get('first_name'), chat.get('last_name')]
+    name = ' '.join(part for part in parts if part).strip()
+
+    if name:
+        return name
+    if chat.get('username'):
+        return '@' + chat['username']
+    if chat.get('title'):
+        return chat['title']        # групповой чат
+    return ''
 
 
 def _encode_multipart(fields, files):

@@ -395,10 +395,11 @@ class SettingsDialog:
     def _build_telegram(self, content):
         self._section(content, "Отправка отчётов в Telegram")
         self._hint(content,
-                   "Создайте бота через @BotFather и вставьте его токен. "
-                   "Получателей может быть несколько — владелец, бухгалтер, "
-                   "управляющий. Свой номер чата человек узнаёт у бота "
-                   "@userinfobot, а боту нужно один раз нажать «Старт».")
+                   "Создайте бота через @BotFather и вставьте его токен.\n"
+                   "Дальше номера чатов вводить не надо: человек открывает "
+                   "вашего бота, нажимает «Старт» — и появляется в списке "
+                   "по кнопке «Кто написал боту». Останется поставить "
+                   "галочку тем, кому слать сводку.")
 
         styles.create_label(content, "Токен бота:", 'Card.TLabel').pack(anchor='w', pady=(0, 4))
         self.token_entry = styles.create_entry(content, width=60)
@@ -424,9 +425,11 @@ class SettingsDialog:
 
         recipient_buttons = ttk.Frame(content, style='White.TFrame')
         recipient_buttons.pack(fill='x', pady=(0, 8))
-        for title, command in (("Добавить", self.add_recipient),
-                               ("Изменить", self.edit_recipient),
+        for title, command in (("Кто написал боту", self.fetch_recipients),
                                ("Вкл/выкл", self.toggle_recipient),
+                               ("Ссылка на бота", self.show_bot_link),
+                               ("Добавить вручную", self.add_recipient),
+                               ("Изменить", self.edit_recipient),
                                ("Удалить", self.remove_recipient)):
             styles.create_button(recipient_buttons, title, command,
                                  'Secondary.TButton').pack(side='left', padx=(0, 6))
@@ -735,6 +738,83 @@ class SettingsDialog:
         name_entry.focus_set()
         self.dialog.wait_window(window)
         return result.get('recipient')
+
+    def fetch_recipients(self):
+        """
+        Спросить у бота, кто ему писал, и пополнить список.
+
+        Новые появляются выключенными: нажал «Старт» — ещё не значит,
+        что человеку нужна сводка по смене с выручкой.
+        """
+        token = self.token_entry.get().strip()
+        if not token:
+            messagebox.showinfo("Получатели",
+                                "Сначала вставьте токен бота",
+                                parent=self.dialog)
+            return
+
+        # Токен мог быть только что вписан и ещё не сохранён
+        self.telegram.save_token(token)
+
+        try:
+            added, seen = self.telegram.fetch_people()
+        except Exception as e:
+            messagebox.showerror("Получатели",
+                                 f"Не удалось спросить у бота:\n{e}",
+                                 parent=self.dialog)
+            return
+
+        self.recipients = self.telegram.get_recipients()
+        self._refresh_recipients()
+
+        if added:
+            messagebox.showinfo(
+                "Получатели",
+                f"Добавлено: {added}.\n\nОтметьте галочкой тех, кому "
+                f"слать сводку — кнопка «Вкл/выкл».",
+                parent=self.dialog)
+        elif seen:
+            messagebox.showinfo("Получатели",
+                                "Новых нет — все, кто писал, уже в списке.",
+                                parent=self.dialog)
+        else:
+            messagebox.showinfo(
+                "Получатели",
+                "Боту никто не написал.\n\nДайте человеку ссылку "
+                "(кнопка «Ссылка на бота») и попросите нажать «Старт».\n"
+                "Телеграм хранит сообщения сутки: если нажали давно, "
+                "пусть напишут боту ещё раз.",
+                parent=self.dialog)
+
+    def show_bot_link(self):
+        """Ссылку даём человеку — по ней он откроет бота и нажмёт «Старт»."""
+        token = self.token_entry.get().strip()
+        if not token:
+            messagebox.showinfo("Бот", "Сначала вставьте токен бота",
+                                parent=self.dialog)
+            return
+
+        self.telegram.save_token(token)
+
+        try:
+            link = self.telegram.bot_link()
+        except Exception as e:
+            messagebox.showerror("Бот", f"Не удалось узнать имя бота:\n{e}",
+                                 parent=self.dialog)
+            return
+
+        try:
+            self.dialog.clipboard_clear()
+            self.dialog.clipboard_append(link)
+            copied = "\n\nСсылка скопирована — можно вставить в переписку."
+        except Exception:
+            copied = ""
+
+        messagebox.showinfo(
+            "Ссылка на бота",
+            f"{link}\n\nОткройте её и нажмите «Старт», потом вернитесь "
+            f"сюда и нажмите «Кто написал боту».{copied}",
+            parent=self.dialog)
 
     def add_recipient(self):
         recipient = self._ask_recipient()
