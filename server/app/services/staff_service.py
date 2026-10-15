@@ -18,15 +18,18 @@
 """
 from datetime import datetime, timedelta
 
+import secrets
+
 from app.config import settings
 from app.models import (Client, LoginCode, StaffUser, StaffAction,
                         ALL_PERMISSIONS, ROLE_OWNER, ROLE_ADMIN,
                         ROLE_TITLES)
 from app.security import (generate_code, hash_secret, secrets_match,
                           is_valid_pin)
-from app.services import sms, mail, shop_settings
+from app.services import callcheck, sms, mail, shop_settings
 from app.services.auth_service import (AuthError, NeedEmail, STEP_PIN,
-                                       STEP_VERIFY, CHANNEL_EMAIL, CHANNEL_SMS)
+                                       STEP_VERIFY, CHANNEL_EMAIL,
+                                       CHANNEL_SMS, CHANNEL_CALL)
 from app.utils import normalize_phone, normalize_email, is_valid_phone, now as shop_now
 
 PURPOSE_STAFF = 'staff'
@@ -144,6 +147,95 @@ class StaffService:
             raise AuthError(f'Не удалось отправить код: {e}')
 
         return seconds, channel
+
+    # ------------------------------------------------------------------
+    # Подтверждение звонком
+    # ------------------------------------------------------------------
+    #
+    # Устроено так же, как у клиента, и с той же оговоркой: про
+    # незаведённый номер снаружи знать не должны. Поэтому чужому номеру
+    # отвечаем так же, как своему, — просто звонок не подтвердит никого.
+
+    def call_available(self):
+        return callcheck.available()
+
+    def start_call(self, phone):
+        phone = normalize_phone(phone)
+        if not is_valid_phone(phone):
+            raise AuthError('Номер телефона выглядит неправильно')
+
+        if not callcheck.available():
+            raise AuthError('Подтверждение звонком не подключено')
+
+        self._check_rate_limit(phone)
+
+        try:
+            check_id, dial, seconds = callcheck.start(phone)
+        except callcheck.CallError as e:
+            raise AuthError(f'Не удалось начать проверку: {e}')
+
+        ticket = secrets.token_urlsafe(24)
+        record = LoginCode(
+            login=phone,
+            account_id=self.account_id,
+            channel=CHANNEL_CALL,
+            code_hash=hash_secret(phone, ticket),
+            external_id=check_id,
+            purpose=PURPOSE_STAFF,
+            expires_at=shop_now() + timedelta(seconds=seconds))
+        self.db.add(record)
+        self.db.commit()
+
+        return {'dial': dial, 'ticket': ticket, 'seconds': seconds}
+
+    def check_call(self, phone, ticket):
+        """Дозвонился ли. Возвращает сотрудника или None, пока ждём."""
+        phone = normalize_phone(phone)
+
+        record = self.db.query(LoginCode).filter(
+            LoginCode.login == phone,
+            LoginCode.account_id == self.account_id,
+            LoginCode.purpose == PURPOSE_STAFF,
+            LoginCode.channel == CHANNEL_CALL,
+            LoginCode.used_at.is_(None),
+        ).order_by(LoginCode.created_at.desc()).first()
+
+        if record is None or not record.external_id:
+            raise AuthError('Начните вход заново')
+
+        if not secrets_match(phone, ticket, record.code_hash):
+            raise AuthError('Начните вход заново')
+
+        try:
+            state = callcheck.status(record.external_id)
+        except callcheck.CallError:
+            # Сеть моргнула — не повод отказывать во входе
+            return None
+
+        if state == callcheck.PENDING:
+            if record.expires_at < shop_now():
+                raise AuthError('Время вышло. Начните вход заново')
+            return None
+
+        if state == callcheck.EXPIRED:
+            raise AuthError('Звонка не было. Начните вход заново')
+
+        record.used_at = shop_now()
+
+        staff = self._staff(phone)
+        if staff is None or not staff.is_active:
+            # Номер подтверждён, но доступа у него нет. Говорим ровно
+            # то же, что при неверном коде: иначе по форме входа можно
+            # перебрать номера и узнать, кто здесь работает
+            self.db.commit()
+            raise AuthError('Доступ закрыт. Обратитесь к владельцу')
+
+        staff.phone_verified_at = shop_now()
+        staff.last_seen_at = shop_now()
+        staff.pin_failures = 0
+        self.db.commit()
+        self.db.refresh(staff)
+        return staff
 
     def _known_email(self, phone):
         client = self.db.query(Client).filter(

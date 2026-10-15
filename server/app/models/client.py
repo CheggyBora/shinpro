@@ -175,6 +175,12 @@ class LoginCode(Base):
     # Зачем запрашивали код: первый вход или забытый ПИН
     purpose = Column(String(20), default='signup', nullable=False)
 
+    # Номер проверки у сервиса звонков. При подтверждении звонком кода
+    # нет вовсе: человек звонит сам, а мы спрашиваем сервис, дозвонился
+    # ли он. В code_hash при этом лежит отпечаток билета — строки,
+    # которую знает только тот браузер, что начал вход
+    external_id = Column(String(64), nullable=True, index=True)
+
     created_at = Column(DateTime, default=shop_now, nullable=False)
     expires_at = Column(DateTime, nullable=False)
 

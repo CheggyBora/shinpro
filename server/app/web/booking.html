@@ -507,6 +507,19 @@ input.code {
         <button class="go" id="lCodeGo" type="button">Выслать код</button>
       </div>
 
+      <!-- шаг 3а: подтверждение звонком -->
+      <div id="stepCall" hidden>
+        <p class="hint" id="callHint">Позвоните на этот номер. Отвечать не
+          надо — звонок сбросится сам, и номер подтвердится.</p>
+
+        <div class="field">
+          <a class="go" id="lDial" href="tel:">Позвонить</a>
+        </div>
+
+        <p class="hint" id="callState">Ждём звонка…</p>
+        <button class="ghost" id="lCallCode" type="button">Лучше кодом из SMS</button>
+      </div>
+
       <!-- шаг 4: придумать ПИН -->
       <div id="stepNewPin" hidden>
         <div class="field">
@@ -830,10 +843,17 @@ $('goCabinet').addEventListener('click', function () {
 });
 
 function loginStep(step) {
-  ['stepPhone', 'stepPin', 'stepCode', 'stepNewPin'].forEach(function (id) {
+  ['stepPhone', 'stepPin', 'stepCode', 'stepCall',
+   'stepNewPin'].forEach(function (id) {
     $(id).hidden = (id !== step);
   });
   $('loginError').hidden = true;
+}
+
+// Уходя с экрана звонка, опрос надо прекратить: иначе он продолжит
+// ходить на сервер из-под другого шага
+function stopCall() {
+  state.callTicket = null;
 }
 
 function loginError(text) {
@@ -875,9 +895,85 @@ $('lNext').addEventListener('click', function () {
         $('loginHint').textContent = result.data.is_known
           ? 'Подтвердите номер — и придумайте новый ПИН.'
           : 'Вы здесь впервые. Подтвердим номер и придумаем ПИН.';
-        prepareCodeStep();
+
+        // Звонок быстрее и дешевле кода: нечего ждать, читать и
+        // перепутать. Кодом остаётся запасной путь — со скрытого
+        // номера и не со своего телефона звонок не подтвердится
+        state.callAvailable = result.data.call_available;
+        if (state.callAvailable) startCall();
+        else prepareCodeStep();
       }
     });
+});
+
+function startCall() {
+  loginStep('stepCall');
+  $('callState').textContent = 'Берём номер…';
+  $('lDial').removeAttribute('href');
+
+  api('/auth/call', {method: 'POST', body: {phone: state.loginPhone}})
+    .then(function (result) {
+      if (!result.ok) {
+        // Сервис звонков не ответил — не тупик: показываем код
+        prepareCodeStep();
+        loginError(reason(result));
+        return;
+      }
+
+      state.callTicket = result.data.ticket;
+      $('lDial').href = 'tel:' + result.data.dial.replace(/[^+\d]/g, '');
+      $('lDial').textContent = 'Позвонить на ' + result.data.dial;
+      $('callState').textContent = 'Ждём звонка…';
+
+      state.callUntil = Date.now() + result.data.seconds * 1000;
+      pollCall();
+    });
+}
+
+function pollCall() {
+  // Опрашиваем нечасто: звонок доходит за секунды, а чаще — значит
+  // дёргать и свой сервер, и сервис звонков без пользы
+  if (!state.callTicket) return;
+
+  if (Date.now() > state.callUntil) {
+    $('callState').textContent = 'Время вышло. Начните вход заново.';
+    state.callTicket = null;
+    return;
+  }
+
+  api('/auth/call/check', {method: 'POST', body: {
+    phone: state.loginPhone, ticket: state.callTicket
+  }}).then(function (result) {
+    if (!state.callTicket) return;      // ушли на другой шаг
+
+    if (result.status === 202) {
+      setTimeout(pollCall, 2000);
+      return;
+    }
+
+    if (!result.ok) {
+      $('callState').textContent = reason(result);
+      state.callTicket = null;
+      return;
+    }
+
+    state.callTicket = null;
+    state.token = result.data.token;
+
+    if (result.data.pin_is_set) {
+      afterLogin();
+    } else {
+      loginStep('stepNewPin');
+      $('lNewPin').focus();
+    }
+  });
+}
+
+// Запасной путь. Со скрытого номера и не со своего телефона звонок
+// не подтвердится — тогда остаётся код
+$('lCallCode').addEventListener('click', function () {
+  stopCall();
+  prepareCodeStep();
 });
 
 function prepareCodeStep() {

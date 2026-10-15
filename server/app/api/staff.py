@@ -82,6 +82,9 @@ class StartOut(BaseModel):
     step: str
     channel: str
 
+    # Можно ли подтвердить номер звонком вместо кода
+    call_available: bool = False
+
 
 class StaffOut(BaseModel):
     id: int
@@ -147,7 +150,42 @@ def start(payload: PhoneIn, db: Session = Depends(get_db),
     except AuthError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(e))
 
-    return StartOut(step=step, channel=service.channel())
+    return StartOut(step=step, channel=service.channel(),
+                    call_available=service.call_available())
+
+
+class StaffCallIn(BaseModel):
+    phone: str
+
+
+class StaffCallCheckIn(BaseModel):
+    phone: str
+    ticket: str
+
+
+@router.post('/call', summary='Начать подтверждение звонком')
+def start_call(payload: StaffCallIn, db: Session = Depends(get_db),
+               account_id: int = Depends(account_of)):
+    try:
+        return StaffService(db, account_id).start_call(payload.phone)
+    except AuthError as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.post('/call/check', response_model=TokenOut, summary='Дозвонился ли')
+def check_call(payload: StaffCallCheckIn, db: Session = Depends(get_db),
+               account_id: int = Depends(account_of)):
+    """Пока ждём — 202. Ответ 200 означает вход, в нём уже токен."""
+    try:
+        staff = StaffService(db, account_id).check_call(
+            payload.phone, payload.ticket)
+    except AuthError as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+    if staff is None:
+        raise HTTPException(status.HTTP_202_ACCEPTED, detail='Ждём звонка')
+
+    return TokenOut(token=create_staff_token(staff), staff=_out(staff))
 
 
 @router.post('/code', summary='Выслать код сотруднику')

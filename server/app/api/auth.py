@@ -10,6 +10,7 @@
 у клиента один, и заводить его дважды он не должен.
 """
 from fastapi import APIRouter, Depends, Header, HTTPException, status
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -82,7 +83,54 @@ def start(payload: StartIn, db: Session = Depends(get_db),
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(e))
 
     return StartOut(step=step, is_known=known, pin_is_blocked=blocked,
-                    channel=service.channel())
+                    channel=service.channel(),
+                    call_available=service.call_available())
+
+
+class CallStartIn(BaseModel):
+    phone: str
+
+
+class CallCheckIn(BaseModel):
+    phone: str
+    ticket: str
+
+
+@router.post('/call', summary='Начать подтверждение звонком')
+def start_call(payload: CallStartIn, db: Session = Depends(get_db),
+               account_id: int = Depends(account_of)):
+    """
+    Выдать номер, на который человек позвонит.
+
+    Код при этом не нужен: вызов сбрасывается до соединения, а номер
+    подтверждается сам. Человеку остаётся нажать «Позвонить».
+    """
+    try:
+        return AuthService(db, account_id).start_call(payload.phone)
+    except AuthError as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.post('/call/check', response_model=TokenOut,
+             summary='Дозвонился ли')
+def check_call(payload: CallCheckIn, db: Session = Depends(get_db),
+               account_id: int = Depends(account_of)):
+    """
+    Спросить, состоялся ли звонок.
+
+    Пока ждём — отвечаем 202, и страница спрашивает снова. Ответ 200
+    означает вход: в нём уже лежит токен.
+    """
+    try:
+        client = AuthService(db, account_id).check_call(
+            payload.phone, payload.ticket)
+    except AuthError as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+    if client is None:
+        raise HTTPException(status.HTTP_202_ACCEPTED, detail='Ждём звонка')
+
+    return _token_answer(client)
 
 
 @router.post('/code', response_model=CodeSentOut,

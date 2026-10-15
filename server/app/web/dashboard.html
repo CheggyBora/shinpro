@@ -248,6 +248,15 @@ input.code { letter-spacing: 8px; text-align: center; font-size: 22px; font-weig
       <button class="go" id="lCodeGo" type="button">Выслать код</button>
     </div>
 
+    <div id="stepCall" hidden>
+      <p class="note">Позвоните на этот номер. Отвечать не надо — вызов
+        сбросится сам, и номер подтвердится.</p>
+      <a class="go" id="lDial" href="tel:" style="display:block;text-align:center;
+         text-decoration:none">Позвонить</a>
+      <p class="note" id="callState">Ждём звонка…</p>
+      <button class="link" id="lCallCode" type="button">Лучше кодом из SMS</button>
+    </div>
+
     <div id="stepNewPin" hidden>
       <div class="field">
         <label for="lNewPin">Придумайте ПИН из четырёх цифр</label>
@@ -401,7 +410,8 @@ $('lPhone').addEventListener('focus', function (event) {
 });
 
 function loginStep(name) {
-  ['stepPhone', 'stepPin', 'stepCode', 'stepNewPin'].forEach(function (id) {
+  ['stepPhone', 'stepPin', 'stepCode', 'stepCall',
+   'stepNewPin'].forEach(function (id) {
     $(id).hidden = id !== name;
   });
   $('loginError').hidden = true;
@@ -418,12 +428,89 @@ $('lNext').addEventListener('click', function () {
       if (answer.step === 'pin') {
         loginStep('stepPin');
         $('lPin').focus();
+      } else if (answer.call_available) {
+        // Звонок быстрее кода и дешевле: нечего ждать и перепутать
+        startCall();
       } else {
         loginStep('stepCode');
         sendCode();
       }
     })
     .catch(function (e) { loginError(e.message); });
+});
+
+var call = { ticket: null, until: 0 };
+
+function startCall() {
+  loginStep('stepCall');
+  $('callState').textContent = 'Берём номер…';
+  $('lDial').removeAttribute('href');
+
+  api('/staff/call', { method: 'POST', body: { phone: phoneDigits } })
+    .then(function (answer) {
+      call.ticket = answer.ticket;
+      call.until = Date.now() + answer.seconds * 1000;
+
+      $('lDial').href = 'tel:' + answer.dial.replace(/[^+\d]/g, '');
+      $('lDial').textContent = 'Позвонить на ' + answer.dial;
+      $('callState').textContent = 'Ждём звонка…';
+      pollCall();
+    })
+    .catch(function (e) {
+      // Сервис звонков не ответил — не тупик: показываем код
+      loginStep('stepCode');
+      sendCode();
+      loginError(e.message);
+    });
+}
+
+function pollCall() {
+  if (!call.ticket) return;
+
+  if (Date.now() > call.until) {
+    $('callState').textContent = 'Время вышло. Начните вход заново.';
+    call.ticket = null;
+    return;
+  }
+
+  fetch('/staff/call/check', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ phone: phoneDigits, ticket: call.ticket })
+  }).then(function (answer) {
+    if (!call.ticket) return;
+
+    // 202 — ждём дальше. Это не ошибка, и показывать её нельзя
+    if (answer.status === 202) { setTimeout(pollCall, 2000); return; }
+
+    return answer.json().catch(function () { return {}; }).then(function (data) {
+      if (!answer.ok) {
+        $('callState').textContent = data.detail || 'Не получилось';
+        call.ticket = null;
+        return;
+      }
+
+      call.ticket = null;
+      token = data.token;
+      me = data.staff;
+
+      if (me.pin_is_set) {
+        start();
+      } else {
+        loginStep('stepNewPin');
+        $('lNewPin').focus();
+      }
+    });
+  }).catch(function () {
+    // Связь моргнула — пробуем снова, срок всё равно ограничен
+    setTimeout(pollCall, 3000);
+  });
+}
+
+$('lCallCode').addEventListener('click', function () {
+  call.ticket = null;
+  loginStep('stepCode');
+  sendCode();
 });
 
 function sendCode() {

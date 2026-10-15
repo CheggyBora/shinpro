@@ -100,6 +100,15 @@ class Settings:
     SMS_API_KEY = os.environ.get('SERVER_SMS_API_KEY', '')
     SMS_SENDER = os.environ.get('SERVER_SMS_SENDER', '')
 
+    # --- Подтверждение номера звонком ----------------------------------
+    # Человек звонит на выданный номер, вызов сбрасывается до соединения,
+    # и номер подтверждается сам — вводить нечего. Дешевле SMS и быстрее:
+    # нечего прочитать, продиктовать и перепутать.
+    #
+    # Пока не задан, подтверждение звонком не предлагается вовсе.
+    CALL_PROVIDER = os.environ.get('SERVER_CALL_PROVIDER', 'off')
+    CALL_TOKEN = os.environ.get('SERVER_CALL_TOKEN', '')
+
     # --- Уведомления в браузере ---------------------------------------
     # Пара ключей VAPID: ими сервер подписывает уведомления, чтобы
     # Google и Apple знали, от кого они. Пара одна на весь сервер —
@@ -169,10 +178,12 @@ class Settings:
             problems.append(
                 'SERVER_OWNER_PHONE не задан: в дашборд войти некому — '
                 'первого владельца из самого дашборда не завести')
-        if cls.SMS_PROVIDER == 'log' and cls.MAIL_PROVIDER == 'log':
+        if (cls.SMS_PROVIDER == 'log' and cls.MAIL_PROVIDER == 'log'
+                and not (cls.CALL_PROVIDER not in ('', 'off')
+                         and cls.CALL_TOKEN)):
             problems.append(
-                'SMS не настроены: коды входа пишутся в журнал сервера, '
-                'а не уходят человеку')
+                'Войти некому: ни SMS, ни почта, ни подтверждение звонком '
+                'не настроены. Коды пишутся в журнал сервера')
         return problems
 
 

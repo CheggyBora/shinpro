@@ -27,6 +27,10 @@ class StartOut(BaseModel):
     # sms или email — каким каналом придёт код
     channel: str = 'sms'
 
+    # Можно ли вместо кода подтвердить номер звонком. Решает не
+    # страница, а сервер: подключён ли сервис звонков, знает он
+    call_available: bool = False
+
 
 class CodeRequestIn(BaseModel):
     phone: str

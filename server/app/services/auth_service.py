@@ -18,13 +18,15 @@
 человеку, но стоит денег) или письмо на почту (бесплатно, но адрес
 придётся спросить).
 """
+import logging
+import secrets
 from datetime import datetime, timedelta
 
 from app.config import settings
 from app.models import Client, Device, LoginCode
 from app.security import (generate_code, hash_secret, secrets_match,
                           is_valid_pin)
-from app.services import sms, mail, shop_settings
+from app.services import callcheck, sms, mail, shop_settings
 from app.utils import (normalize_phone, normalize_email,
                        is_valid_phone, is_valid_email, now as shop_now)
 
@@ -33,6 +35,11 @@ PURPOSE_PIN_RESET = 'pin_reset'
 
 CHANNEL_SMS = 'sms'
 CHANNEL_EMAIL = 'email'
+
+# Подтверждение звонком: кода нет вовсе, человек звонит сам
+CHANNEL_CALL = 'call'
+
+log = logging.getLogger('tire_server')
 
 # Что делать приложению или странице на этом шаге
 STEP_PIN = 'pin'          # человек известен, спрашиваем ПИН
@@ -183,6 +190,110 @@ class AuthService:
             raise AuthError(
                 'Слишком много запросов кода. Попробуйте через час '
                 'или позвоните в шиномонтаж')
+
+    # ------------------------------------------------------------------
+    # Шаг второй с половиной: подтверждение звонком
+    # ------------------------------------------------------------------
+    #
+    # Вместо кода человек звонит на выданный номер, и вызов сбрасывается
+    # до соединения. Вводить нечего, ждать SMS не надо.
+    #
+    # Возвращаем билет — случайную строку, которую знает только тот
+    # браузер, что начал вход. Без него спрашивать «дозвонился ли» может
+    # кто угодно: номера проверок идут подряд, и чужой вход можно было бы
+    # подкараулить и забрать себе выданный токен.
+
+    def call_available(self):
+        return callcheck.available()
+
+    def start_call(self, phone, purpose=PURPOSE_SIGNUP):
+        """
+        Начать вход звонком. Возвращает номер, билет и срок.
+        """
+        phone = normalize_phone(phone)
+        if not is_valid_phone(phone):
+            raise AuthError('Номер телефона выглядит неправильно')
+
+        if not callcheck.available():
+            raise AuthError('Подтверждение звонком не подключено')
+
+        self._check_rate_limit(phone)
+
+        try:
+            check_id, dial, seconds = callcheck.start(phone)
+        except callcheck.CallError as e:
+            raise AuthError(f'Не удалось начать проверку: {e}')
+
+        ticket = secrets.token_urlsafe(24)
+        record = LoginCode(
+            login=phone,
+            account_id=self.account_id,
+            channel=CHANNEL_CALL,
+            code_hash=hash_secret(phone, ticket),
+            external_id=check_id,
+            purpose=purpose,
+            expires_at=shop_now() + timedelta(seconds=seconds))
+        self.db.add(record)
+        self.db.commit()
+
+        return {'dial': dial, 'ticket': ticket, 'seconds': seconds}
+
+    def check_call(self, phone, ticket):
+        """
+        Дозвонился ли. Возвращает клиента или None, пока ждём.
+
+        Просрочку отличаем от ожидания: человеку надо сказать «время
+        вышло, начните заново», а не крутить колёсико до вечера.
+        """
+        phone = normalize_phone(phone)
+        record = self._find_call(phone, ticket)
+
+        try:
+            state = callcheck.status(record.external_id)
+        except callcheck.CallError as e:
+            # Сеть моргнула — это не отказ во входе. Пусть опрашивает
+            # дальше, срок проверки всё равно ограничен
+            log.warning('Не удалось спросить о звонке: %s', e)
+            return None
+
+        if state == callcheck.PENDING:
+            if record.expires_at < shop_now():
+                raise AuthError('Время вышло. Начните вход заново')
+            return None
+
+        if state == callcheck.EXPIRED:
+            raise AuthError('Звонка не было. Начните вход заново')
+
+        client = self._client(phone)
+        if client is None:
+            client = Client(phone=phone, account_id=self.account_id)
+            self.db.add(client)
+
+        record.used_at = shop_now()
+        client.phone_verified_at = shop_now()
+        client.last_seen_at = shop_now()
+        client.pin_failures = 0
+        client.pin_blocked_at = None
+
+        self.db.commit()
+        self.db.refresh(client)
+        return client
+
+    def _find_call(self, phone, ticket):
+        record = self.db.query(LoginCode).filter(
+            LoginCode.login == phone,
+            LoginCode.account_id == self.account_id,
+            LoginCode.channel == CHANNEL_CALL,
+            LoginCode.used_at.is_(None),
+        ).order_by(LoginCode.created_at.desc()).first()
+
+        if record is None or not record.external_id:
+            raise AuthError('Начните вход заново')
+
+        if not secrets_match(phone, ticket, record.code_hash):
+            raise AuthError('Начните вход заново')
+
+        return record
 
     # ------------------------------------------------------------------
     # Шаг третий: проверка кода
