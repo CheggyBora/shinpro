@@ -84,6 +84,7 @@ class SettingsDialog:
         # строится первым, — порядок разделов менялся уже дважды
         self.numeric_fields = {}
         self.time_fields = {}
+        self.text_fields = {}
 
         if self.embedded:
             # Окно верхнего уровня всё равно нужно: к нему привязываются
@@ -119,6 +120,7 @@ class SettingsDialog:
             ('Кнопки услуг', self._build_service_buttons),
             ('Реквизиты', self._build_company),
             ('Отчёты', self._build_export_folder),
+            ('SMS и звонки', self._build_verify),
             ('Telegram', self._build_telegram),
             ('Связь с приложением', self._build_sync),
         ])
@@ -315,6 +317,80 @@ class SettingsDialog:
         if last:
             self.sync_status.config(
                 text=f"Последний обмен: {last:%d.%m.%Y %H:%M}")
+
+    def _build_verify(self, content):
+        """
+        Чем клиент подтверждает номер при первом входе в кабинет.
+
+        Ключи здесь, а не на сервере, по одной причине: менять их
+        должен владелец, а не тот, у кого есть доступ к серверу по
+        SSH. Уезжают обменом вместе с остальными настройками.
+        """
+        self._section(content, "Подтверждение номера звонком")
+        self._hint(content,
+                   "Человек видит номер и кнопку «Позвонить». Вызов "
+                   "сбрасывается до соединения, номер подтверждается сам — "
+                   "вводить нечего, и для клиента звонок бесплатный.\n"
+                   "Ключ берётся в личном кабинете flashcall.ru. "
+                   "Пока он пуст, звонок не предлагается.")
+
+        self._secret_row(content, 'call_token', "Ключ flashcall.ru:")
+
+        self._section(content, "Код в SMS — запасной путь")
+        self._hint(content,
+                   "Нужен тем, кто не может позвонить: скрытый номер, "
+                   "корпоративный тариф с запретом исходящих, роуминг.\n"
+                   "Ключ берётся в личном кабинете sms.ru, раздел «API». "
+                   "Имя отправителя необязательно и согласовывается у "
+                   "провайдера; пусто — придёт с его общего номера.")
+
+        self._secret_row(content, 'sms_key', "Ключ sms.ru:")
+
+        row = ttk.Frame(content, style='White.TFrame')
+        row.pack(fill='x', pady=(0, 10))
+        styles.create_label(row, "Имя отправителя:", 'Card.TLabel').pack(
+            side='left', padx=(0, 10))
+        entry = styles.create_entry(row, width=24)
+        entry.insert(0, self.settings.get('sms_sender', '') or '')
+        entry.pack(side='left')
+        self.text_fields['sms_sender'] = entry
+
+        self._hint(content,
+                   "Ключи уезжают на сервер при ближайшем обмене. "
+                   "Поменяли — через несколько секунд работает новый.")
+
+    def _secret_row(self, parent, key, title):
+        """
+        Поле для ключа: показано точками, с кнопкой «Показать».
+
+        Прятать его нужно не от злоумышленника — раздел и так под ПИНом,
+        а от случайного взгляда: настройки открывают при людях, а ключ
+        это деньги на счету провайдера.
+        """
+        row = ttk.Frame(parent, style='White.TFrame')
+        row.pack(fill='x', pady=(0, 10))
+
+        styles.create_label(row, title, 'Card.TLabel').pack(
+            anchor='w', pady=(0, 4))
+
+        line = ttk.Frame(row, style='White.TFrame')
+        line.pack(fill='x')
+
+        entry = styles.create_entry(line, width=52)
+        entry.insert(0, self.settings.get(key, '') or '')
+        entry.configure(show='•')
+        entry.pack(side='left', fill='x', expand=True)
+
+        def flip():
+            shown = entry.cget('show') == ''
+            entry.configure(show='•' if shown else '')
+            button.config(text="Показать" if shown else "Скрыть")
+
+        button = styles.create_button(line, "Показать", flip,
+                                      'Secondary.TButton')
+        button.pack(side='left', padx=(8, 0))
+
+        self.text_fields[key] = entry
 
     def _build_telegram(self, content):
         self._section(content, "Отправка отчётов в Telegram")
@@ -897,6 +973,22 @@ class SettingsDialog:
             self.settings.set('thermal_receipt_width', self.thermal_width.get(), commit=False)
 
             self.telegram.save_token(self.token_entry.get())
+
+            # Ключи от звонков и SMS. Провайдер включается сам, как
+            # только появился ключ: держать отдельный переключатель
+            # «включено» значит однажды вписать ключ и не понять,
+            # почему ничего не работает
+            for key, entry in self.text_fields.items():
+                self.settings.set(key, entry.get().strip(), commit=False)
+
+            self.settings.set(
+                'call_provider',
+                'flashcall' if self.text_fields['call_token'].get().strip()
+                else 'off', commit=False)
+            self.settings.set(
+                'sms_provider',
+                'smsru' if self.text_fields['sms_key'].get().strip()
+                else 'off', commit=False)
             self.telegram.save_recipients(self.recipients)
             self._save_sync_settings()
 

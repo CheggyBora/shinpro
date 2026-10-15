@@ -158,7 +158,7 @@ class AuthService:
                 mail.send_code(target, code, purpose=purpose)
                 self._remember_email(phone, target)
             else:
-                sms.send_code(phone, code)
+                sms.send_code(phone, code, self.db, self._shop())
         except (mail.MailError, sms.SmsError) as e:
             # Код уже в базе, но человек его не получит — незачем
             # оставлять мусор и занимать лимит попыток
@@ -203,8 +203,20 @@ class AuthService:
     # кто угодно: номера проверок идут подряд, и чужой вход можно было бы
     # подкараулить и забрать себе выданный токен.
 
+    def _shop(self):
+        """
+        Точка, чьи настройки берём. Первая в аккаунте.
+
+        Ключи от SMS и звонков — общее решение сети, а не свойство
+        одной точки: платит за них заказчик целиком.
+        """
+        from app.services import tenancy
+
+        shops = tenancy.shops_of(self.db, self.account_id)
+        return shops[0] if shops else None
+
     def call_available(self):
-        return callcheck.available()
+        return callcheck.available(self.db, self._shop())
 
     def start_call(self, phone, purpose=PURPOSE_SIGNUP):
         """
@@ -214,13 +226,14 @@ class AuthService:
         if not is_valid_phone(phone):
             raise AuthError('Номер телефона выглядит неправильно')
 
-        if not callcheck.available():
+        if not self.call_available():
             raise AuthError('Подтверждение звонком не подключено')
 
         self._check_rate_limit(phone)
 
         try:
-            check_id, dial, seconds = callcheck.start(phone)
+            check_id, dial, seconds = callcheck.start(
+                phone, self.db, self._shop())
         except callcheck.CallError as e:
             raise AuthError(f'Не удалось начать проверку: {e}')
 
@@ -249,7 +262,8 @@ class AuthService:
         record = self._find_call(phone, ticket)
 
         try:
-            state = callcheck.status(record.external_id)
+            state = callcheck.status(record.external_id,
+                                     self.db, self._shop())
         except callcheck.CallError as e:
             # Сеть моргнула — это не отказ во входе. Пусть опрашивает
             # дальше, срок проверки всё равно ограничен

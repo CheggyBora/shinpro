@@ -140,7 +140,7 @@ class StaffService:
             if channel == CHANNEL_EMAIL:
                 mail.send_code(target, code, purpose=PURPOSE_STAFF)
             else:
-                sms.send_code(phone, code)
+                sms.send_code(phone, code, self.db, self._shop())
         except (mail.MailError, sms.SmsError) as e:
             self.db.delete(record)
             self.db.commit()
@@ -156,21 +156,29 @@ class StaffService:
     # незаведённый номер снаружи знать не должны. Поэтому чужому номеру
     # отвечаем так же, как своему, — просто звонок не подтвердит никого.
 
+    def _shop(self):
+        """Точка, чьи настройки берём: ключи общие на всю сеть."""
+        from app.services import tenancy
+
+        shops = tenancy.shops_of(self.db, self.account_id)
+        return shops[0] if shops else None
+
     def call_available(self):
-        return callcheck.available()
+        return callcheck.available(self.db, self._shop())
 
     def start_call(self, phone):
         phone = normalize_phone(phone)
         if not is_valid_phone(phone):
             raise AuthError('Номер телефона выглядит неправильно')
 
-        if not callcheck.available():
+        if not self.call_available():
             raise AuthError('Подтверждение звонком не подключено')
 
         self._check_rate_limit(phone)
 
         try:
-            check_id, dial, seconds = callcheck.start(phone)
+            check_id, dial, seconds = callcheck.start(
+                phone, self.db, self._shop())
         except callcheck.CallError as e:
             raise AuthError(f'Не удалось начать проверку: {e}')
 
@@ -207,7 +215,8 @@ class StaffService:
             raise AuthError('Начните вход заново')
 
         try:
-            state = callcheck.status(record.external_id)
+            state = callcheck.status(record.external_id,
+                                     self.db, self._shop())
         except callcheck.CallError:
             # Сеть моргнула — не повод отказывать во входе
             return None

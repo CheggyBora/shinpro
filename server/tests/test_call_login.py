@@ -71,7 +71,7 @@ def finish():
 state = {'next_id': 1, 'answers': {}, 'started': []}
 
 
-def fake_start(phone):
+def fake_start(phone, db=None, shop=None):
     check_id = str(state['next_id'])
     state['next_id'] += 1
     state['started'].append((check_id, phone))
@@ -79,7 +79,7 @@ def fake_start(phone):
     return check_id, '+7 495 000-11-22', 60
 
 
-def fake_status(check_id):
+def fake_status(check_id, db=None, shop=None):
     return state['answers'].get(check_id, callcheck.PENDING)
 
 
@@ -180,7 +180,7 @@ with TestClient(app) as client:
     # ограничен, пусть человек дозванивается
     begun = client.post('/auth/call', json={'phone': '+7 916 000-00-03'}).json()
 
-    def broken(check_id):
+    def broken(check_id, db=None, shop=None):
         raise callcheck.CallError('сервис не ответил')
 
     auth_service.callcheck.status = broken
@@ -235,6 +235,54 @@ with TestClient(app) as client:
     nope = client.post('/auth/call', json={'phone': PHONE})
     check('и напрямую нельзя', nope.status_code == 400, str(nope.status_code))
 
+    print()
+    print('=== Ключ из программы цеха включает звонок ===')
+    # Менять ключ должен владелец из программы, а не тот, у кого есть
+    # доступ к серверу. Поэтому присланное цехом главнее окружения
+    KEY = {'X-Sync-Key': os.environ['SERVER_SYNC_KEY']}
+    client.post('/sync/push', headers=KEY, json={'settings': {
+        'call_provider': 'flashcall', 'call_token': 'ключ-из-цеха'}})
+
+    start = client.post('/auth/start', json={'phone': PHONE}).json()
+    check('звонок снова предлагается', start['call_available'] is True,
+          str(start))
+
+    print()
+    print('=== Ключ без провайдера ничего не включает ===')
+    client.post('/sync/push', headers=KEY, json={'settings': {
+        'call_provider': 'off', 'call_token': 'ключ-из-цеха'}})
+
+    start = client.post('/auth/start', json={'phone': PHONE}).json()
+    check('по-прежнему выключено', start['call_available'] is False,
+          str(start))
+
+    print()
+    print('=== Пустой ключ из цеха не затирает серверный ===')
+    # Иначе обмен со старой версией программы, которая этих настроек
+    # не шлёт, выключал бы вход всем
     settings.CALL_PROVIDER = 'flashcall'
+    client.post('/sync/push', headers=KEY, json={'settings': {
+        'call_provider': '', 'call_token': ''}})
+
+    start = client.post('/auth/start', json={'phone': PHONE}).json()
+    check('работает по серверному ключу', start['call_available'] is True,
+          str(start))
+
+    print()
+    print('=== Какой ключ в итоге уходит провайдеру ===')
+    from app.services import callcheck as real_callcheck
+    from app.database import SessionLocal as Session
+    from app.services import tenancy
+
+    client.post('/sync/push', headers=KEY, json={'settings': {
+        'call_provider': 'flashcall', 'call_token': 'ключ-из-цеха'}})
+
+    db = Session()
+    shop = tenancy.shops_of(db, 1)[0]
+    provider, token = real_callcheck.setup(db, shop)
+    db.close()
+
+    check('провайдер из цеха', provider == 'flashcall', str(provider))
+    check('и ключ из цеха', token == 'ключ-из-цеха', str(token))
 
 finish()

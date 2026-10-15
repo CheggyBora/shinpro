@@ -485,6 +485,15 @@ class SyncService:
             # отдельно. Кабинет должен обещать столько же, сколько цех
             'booking_posts': settings.get('booking_posts'),
 
+            # Чем клиент подтверждает номер при первом входе в кабинет.
+            # Ключи задаёт владелец здесь, в программе: менять их должен
+            # он, а не тот, у кого есть доступ к серверу
+            'call_provider': settings.get('call_provider'),
+            'call_token': settings.get('call_token'),
+            'sms_provider': settings.get('sms_provider'),
+            'sms_key': settings.get('sms_key'),
+            'sms_sender': settings.get('sms_sender'),
+
             # По этим числам сервер сам предупреждает владельцев: что
             # заканчивается хранение и что пора переобуваться. Считать
             # их должен цех — сроки и сезон у каждого свои

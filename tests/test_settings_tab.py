@@ -81,8 +81,8 @@ built = sd.SettingsDialog(root, db, host=tk.Frame(root))
 root.update()
 
 expected = ['Запись', 'Наряды и очередь', 'Смена', 'Хранение и сезон',
-            'Печать', 'Кнопки услуг', 'Реквизиты', 'Отчёты', 'Telegram',
-            'Связь с приложением']
+            'Печать', 'Кнопки услуг', 'Реквизиты', 'Отчёты',
+            'SMS и звонки', 'Telegram', 'Связь с приложением']
 check('все разделы заведены',
       list(built._pages.keys()) == expected,
       str(list(built._pages.keys())))
