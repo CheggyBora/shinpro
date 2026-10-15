@@ -105,6 +105,10 @@ check('поля нарядов тоже',
 check('и хранение',
       {'storage_months', 'storage_lead_days'} <= set(built.numeric_fields),
       str(sorted(built.numeric_fields)))
+check('и онлайн-очередь — её надо уметь выключить из программы',
+      {'queue_posts', 'queue_min_wait_minutes', 'queue_lead_minutes'}
+      <= set(built.numeric_fields),
+      str(sorted(built.numeric_fields)))
 
 print()
 print('=== Запись отделена от нарядов ===')
