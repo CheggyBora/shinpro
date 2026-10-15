@@ -280,12 +280,39 @@ def cmd_check(db, args):
         bad.append('В дашборд войти некому. Впишите SERVER_OWNER_PHONE '
                    'в .env и перезапустите службу')
 
-    # --- Коды входа ---------------------------------------------------
-    if settings.SMS_PROVIDER == 'log' and settings.MAIL_PROVIDER == 'log':
-        bad.append('Коды входа пишутся в журнал, а не уходят человеку. '
-                   'Задайте SERVER_SMS_PROVIDER и SERVER_SMS_API_KEY')
+    # --- Как человек подтверждает номер -------------------------------
+    #
+    # Ключи задаются в программе цеха и приезжают обменом, поэтому
+    # смотрим не только в окружение сервера, но и в настройки точек.
+    # Советовать «впишите в .env» теперь неправильно: менять их должен
+    # владелец, а не тот, у кого есть доступ по SSH
+    from app.services import callcheck, sms as sms_service
+
+    ways = []
+    for row in db.query(Shop).all():
+        if callcheck.available(db, row):
+            ways.append('звонком')
+            break
+
+    for row in db.query(Shop).all():
+        if sms_service.available(db, row):
+            ways.append('кодом в SMS')
+            break
+
+    if settings.MAIL_PROVIDER != 'log':
+        ways.append('кодом на почту')
+
+    if ways:
+        good.append(f"Вход подтверждается: {', '.join(ways)}")
+        if 'кодом в SMS' not in ways and 'кодом на почту' not in ways:
+            warn.append('Запасного пути нет: кто не может позвонить — '
+                        'скрытый номер, роуминг, запрет исходящих — не '
+                        'войдёт. Ключ sms.ru вписывается в программе цеха: '
+                        'Настройки → SMS и звонки')
     else:
-        good.append(f'Коды входа: {settings.SMS_PROVIDER}')
+        bad.append('Коды входа пишутся в журнал, а не уходят человеку. '
+                   'Впишите ключ в программе цеха: '
+                   'Настройки → SMS и звонки')
 
     # --- Напоминания клиентам -----------------------------------------
     if accounts:
