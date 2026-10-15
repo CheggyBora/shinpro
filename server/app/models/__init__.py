@@ -3,12 +3,15 @@ from app.models.account import Account, AccountPayment, Shop
 from app.models.client import Client, Car, Device, LoginCode
 from app.models.notice import (Notice, TITLES, KIND_BOOKED, KIND_REMINDER,
                                KIND_CANCELLED, KIND_MOVED, KIND_STORAGE,
-                               KIND_SEASON, KIND_READY,
+                               KIND_SEASON, KIND_READY, KIND_QUEUE,
                                ABOUT_AUTUMN, ABOUT_SPRING,
                                WAITING, SENT, FAILED, SKIPPED,
                                BY_TELEGRAM, BY_PUSH)
 from app.models.photo import MasterDevice, OpenOrder, OrderPhoto
 from app.models.push import PushSubscription
+from app.models.ticket import (QueueTicket, WAITING as TICKET_WAITING,
+                               CALLED, SERVED, CANCELLED, EXPIRED,
+                               OPEN_STATES, STATE_TITLES)
 from app.models.shop import (Appointment, BookingDay, StoredSet, Visit,
                              VisitItem, SalaryAccrual, SalaryPayout,
                              ShopEmployee, ShopShift, QueueSnapshot, ShopSetting,
@@ -25,10 +28,12 @@ __all__ = [
     'Account', 'AccountPayment', 'Shop',
     'Client', 'Car', 'Device', 'LoginCode',
     'Notice', 'TITLES', 'BY_TELEGRAM', 'BY_PUSH', 'KIND_BOOKED', 'KIND_REMINDER', 'KIND_CANCELLED', 'KIND_MOVED',
-    'KIND_STORAGE', 'KIND_SEASON', 'KIND_READY',
+    'KIND_STORAGE', 'KIND_SEASON', 'KIND_READY', 'KIND_QUEUE',
     'ABOUT_AUTUMN', 'ABOUT_SPRING',
     'WAITING', 'SENT', 'FAILED', 'SKIPPED',
     'MasterDevice', 'OpenOrder', 'OrderPhoto',
+    'QueueTicket', 'TICKET_WAITING', 'CALLED', 'SERVED', 'CANCELLED',
+    'EXPIRED', 'OPEN_STATES', 'STATE_TITLES',
     'PushSubscription',
     'Appointment', 'BookingDay', 'StoredSet', 'Visit', 'VisitItem',
     'SalaryAccrual', 'SalaryPayout', 'ShopEmployee', 'ShopShift',

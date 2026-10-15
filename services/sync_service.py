@@ -457,6 +457,11 @@ class SyncService:
                 'license_plate': plate,
                 'state': state,
                 'started_at': as_naive(order.started_at) if order.started_at else None,
+
+                # Сколько ещё займёт работа и занят ли этим пост
+                # онлайн-очереди — по этому она двигает свой прогноз
+                'planned_minutes': order.planned_minutes or 0,
+                'on_queue_post': bool(getattr(order, 'on_queue_post', False)),
             })
         return cars
 
@@ -484,6 +489,9 @@ class SyncService:
             # Постов под запись на дни, которые приёмщик не настраивал
             # отдельно. Кабинет должен обещать столько же, сколько цех
             'booking_posts': settings.get('booking_posts'),
+
+            # Сколько постов отдано онлайн-очереди
+            'queue_posts': settings.get('queue_posts'),
 
             # Чем клиент подтверждает номер при первом входе в кабинет.
             # Ключи задаёт владелец здесь, в программе: менять их должен
