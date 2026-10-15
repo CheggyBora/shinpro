@@ -98,6 +98,12 @@ class OrderService:
             self.db.add(order)
             self.db.commit()
             self.db.refresh(order)
+
+            # Машина должна появиться на телефоне мастера сразу, а не
+            # через десять минут: он подходит к ней прямо сейчас, и
+            # пустой список для него значит «не работает»
+            self._tell_server('машина заехала')
+
             return order
         except Exception as e:
             self.db.rollback()
@@ -169,6 +175,22 @@ class OrderService:
             self.db.rollback()
             raise
     
+    @staticmethod
+    def _tell_server(reason):
+        """
+        Позвать срочный обмен. Молча, если позвать не вышло.
+
+        Досылка — ускорение, а не обязанность: уронить заведение наряда
+        из-за того, что не получилось выйти на связь, было бы обменом
+        наоборот.
+        """
+        try:
+            from services import sync_nudge
+
+            sync_nudge.request(reason)
+        except Exception:
+            pass
+
     @staticmethod
     def price_for(service, diameter):
         """
@@ -488,6 +510,11 @@ class OrderService:
         order.planned_minutes = self.calculate_planned_minutes(order_id)
         order.status = 'in_progress' if order.status == 'draft' else order.status
         self.db.commit()
+
+        # Клиент смотрит очередь в кабинете: «в работе» должно стать
+        # видно тогда же, когда машина встала на пост
+        self._tell_server('машина встала на пост')
+
         return order
 
     def pause_work(self, order_id: int):

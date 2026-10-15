@@ -71,6 +71,8 @@ check('обмен выключен — не ходим', 'is_enabled()' in sourc
 print()
 print('=== События, после которых надо выйти на связь ===')
 WATCHED = [
+    ('services/order_service.py', 'машина заехала'),
+    ('services/order_service.py', 'машина встала на пост'),
     ('services/salary_service.py', 'наряд оплачен'),
     ('services/shift_service.py', 'смена открыта'),
     ('services/shift_service.py', 'изменилось число постов'),
@@ -87,7 +89,9 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 for path, reason in WATCHED:
     text = io.open(os.path.join(ROOT, path), encoding='utf-8').read()
-    check(f"{reason} → обмен", f"sync_nudge.request('{reason}')" in text)
+    check(f"{reason} → обмен",
+          f"sync_nudge.request('{reason}')" in text
+          or f"_tell_server('{reason}')" in text)
 
 sync_nudge.set_runner(None)
 finish()
