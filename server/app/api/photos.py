@@ -13,6 +13,7 @@ import os
 
 from fastapi import (APIRouter, Depends, File, Form, HTTPException, Request,
                      UploadFile, status)
+from fastapi import Response
 from fastapi.responses import FileResponse, HTMLResponse
 from sqlalchemy.orm import Session
 
@@ -59,14 +60,62 @@ def _shop_by_link(db, token):
     return db.query(Shop).filter(Shop.id == shop_id).first()
 
 
-def _device(request: Request, db: Session):
-    """Телефон, который уже заходил. Пропуск лежит у него в браузере."""
-    token = request.headers.get('X-Master-Key') or ''
+# Пропуск мастера живёт в куке, которую ставит сам сервер.
+#
+# Сначала он лежал в данных страницы, и на айфоне это не работало:
+# Safari стирает данные страницы, если её не открывали около недели.
+# Мастер, который в межсезонье неделю не слал фото, оказывался снова
+# неподключённым и шёл к приёмщику за QR. Куку, поставленную сервером,
+# эта чистка не трогает.
+#
+# Год, и продлеваем при каждом заходе: пока мастер пользуется
+# страницей, пропуск не кончается никогда
+MASTER_COOKIE = 'tire_master'
+MASTER_COOKIE_DAYS = 365
+
+
+def _token_of(request: Request):
+    """Пропуск из куки, а для старых страниц — из заголовка."""
+    return (request.cookies.get(MASTER_COOKIE)
+            or request.headers.get('X-Master-Key') or '')
+
+
+def _is_https(request: Request):
+    """
+    Пришли ли по https. Сервер стоит за nginx, и до него запрос доходит
+    уже по http — смотрим, что nginx сказал о настоящем адресе.
+    """
+    forwarded = (request.headers.get('x-forwarded-proto') or '').lower()
+    return forwarded == 'https' or request.url.scheme == 'https'
+
+
+def _keep(response: Response, token: str, request: Request):
+    """Поставить или продлить куку с пропуском."""
+    response.set_cookie(
+        MASTER_COOKIE, token,
+        max_age=MASTER_COOKIE_DAYS * 24 * 3600,
+        httponly=True,        # страница его не читает — и чужой скрипт тоже
+        # На боевом — только по https, чтобы пропуск не ушёл открытым
+        # текстом. На тестовом без https тоже должно работать
+        secure=_is_https(request),
+        samesite='lax',
+        path='/m')
+
+
+def _device(request: Request, db: Session, response: Response = None):
+    """Телефон, который уже заходил."""
+    token = _token_of(request)
     device = photos.device_by_token(db, token)
     if device is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED,
                             detail='Телефон не подключён. Отсканируйте QR-код '
                                    'в цеху ещё раз')
+
+    # Заходит — продлеваем. Иначе через год пропуск кончился бы у
+    # того, кто пользуется страницей каждый день
+    if response is not None:
+        _keep(response, token, request)
+
     return device
 
 
@@ -129,7 +178,8 @@ def page(link: str = ''):
 # ----------------------------------------------------------------------
 
 @router.post('/connect', summary='Запомнить телефон мастера')
-def connect(payload: dict, db: Session = Depends(get_db)):
+def connect(payload: dict, request: Request, response: Response,
+            db: Session = Depends(get_db)):
     """
     Обменять ключ из QR на постоянный пропуск.
 
@@ -145,6 +195,8 @@ def connect(payload: dict, db: Session = Depends(get_db)):
     _links.pop(payload.get('link'), None)
 
     device = photos.register_device(db, shop, (payload or {}).get('name'))
+    _keep(response, device.token, request)
+
     return {
         'key': device.token,
         'shop': shop_settings.title(db, shop),
@@ -153,8 +205,9 @@ def connect(payload: dict, db: Session = Depends(get_db)):
 
 
 @router.get('/cars', summary='Машины, которые сейчас в цеху')
-def cars(request: Request, db: Session = Depends(get_db)):
-    device = _device(request, db)
+def cars(request: Request, response: Response,
+         db: Session = Depends(get_db)):
+    device = _device(request, db, response)
     shop = db.query(Shop).filter(Shop.id == device.shop_id).first()
 
     return {

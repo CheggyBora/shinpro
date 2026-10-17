@@ -130,8 +130,10 @@ with TestClient(app) as client:
 
     print()
     print('=== Телефон подключился ===')
-    connected = client.post('/m/connect',
-                            json={'link': link['link'], 'name': 'Иван'})
+    # Отдельный клиент — как отдельный телефон, со своими куками
+    http_master = TestClient(app)
+    connected = http_master.post('/m/connect',
+                                 json={'link': link['link'], 'name': 'Иван'})
     check('приняли', connected.status_code == 200, str(connected.json()))
     master = {'X-Master-Key': connected.json()['key']}
     check('пропуск выдан', bool(connected.json()['key']))
@@ -273,6 +275,42 @@ with TestClient(app) as client:
 
     cars = client.get('/m/cars', headers=master).json()
     check('список пуст', cars['cars'] == [], str(cars['cars']))
+
+    print()
+    print('=== Данные страницы стёрты — телефон всё равно узнаём ===')
+    # Safari стирает данные страницы, если её не открывали около недели.
+    # Пропуск лежит в куке, которую ставит сервер, — её эта чистка не
+    # трогает. Мастер не должен идти к приёмщику за QR после отпуска
+    check('при подключении поставлена кука',
+          'tire_master' in http_master.cookies, str(dict(http_master.cookies)))
+
+    by_cookie = http_master.get('/m/cars')
+    check('без заголовка, по одной куке — пускают',
+          by_cookie.status_code == 200, str(by_cookie.status_code))
+
+    stranger = TestClient(app)
+    no_cookie = stranger.get('/m/cars')
+    check('а без куки и без заголовка — нет',
+          no_cookie.status_code == 401, str(no_cookie.status_code))
+
+    print()
+    print('=== Пропуск продлевается при каждом заходе ===')
+    # Иначе через год он кончился бы у того, кто пользуется каждый день
+    renewed = http_master.get('/m/cars')
+    cookie_header = renewed.headers.get('set-cookie', '')
+    check('кука выставлена заново', 'tire_master=' in cookie_header,
+          cookie_header[:80])
+    check('на год', 'Max-Age=31536000' in cookie_header, cookie_header[:160])
+    check('страница её не читает', 'HttpOnly' in cookie_header, cookie_header)
+
+    print()
+    print('=== Снимок отправляется и по куке ===')
+    by_cookie_photo = http_master.post(
+        '/m/photo',
+        files={'file': ('photo.jpg', JPEG, 'image/jpeg')},
+        data={'order_local_id': '101', 'license_plate': 'А123ВВ777'})
+    check('принят', by_cookie_photo.status_code == 200,
+          str(by_cookie_photo.status_code))
 
     print()
     print('=== Отозвали телефон — больше не пускаем ===')

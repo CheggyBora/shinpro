@@ -215,7 +215,9 @@ function api(path, options) {
         try { localStorage.removeItem(KEY); } catch (e) {}
         state.key = null;
       }
-      throw new Error(data.detail || 'Не получилось');
+      var error = new Error(data.detail || 'Не получилось');
+      error.status = answer.status;
+      throw error;
     });
   });
 }
@@ -263,6 +265,7 @@ $('doConnect').addEventListener('click', function () {
 // --- Машины -----------------------------------------------------------
 
 function loadCars() {
+  $('reload').hidden = false;
   api('/m/cars').then(function (data) {
     $('title').textContent = data.shop || 'Фото в наряд';
     $('who').textContent = data.name ? data.name : '';
@@ -290,7 +293,7 @@ function loadCars() {
 
     show('screenCars');
   }).catch(function (e) {
-    if (!state.key) return show('screenConnect');
+    if (e.status === 401) return showStranger();
     $('cars').innerHTML = '<div class="empty">' + escape(e.message) + '</div>';
     show('screenCars');
   });
@@ -420,11 +423,7 @@ $('doSend').addEventListener('click', function () {
 
 try { state.key = localStorage.getItem(KEY); } catch (e) {}
 
-if (state.key) {
-  loadCars();
-} else if (linkFromAddress()) {
-  show('screenConnect');
-} else {
+function showStranger() {
   // Сюда попадают и те, кто уже подключался, но открыл страницу в
   // другом браузере или почистил его. Объясняем, иначе мастер решит,
   // что всё сломалось
@@ -435,6 +434,31 @@ if (state.key) {
     + 'помнит себя только там.</p></div>';
   show('screenCars');
   $('reload').hidden = true;
+}
+
+if (linkFromAddress()) {
+  // Пришли по QR — подключаемся, даже если телефон уже знаком: значит,
+  // приёмщик решил подключить его заново
+  show('screenConnect');
+} else {
+  // Спрашиваем сервер всегда, а не решаем сами по данным страницы.
+  // Пропуск живёт в куке: Safari мог стереть данные страницы, а кука
+  // осталась — и мастер должен попасть к машинам, а не к QR
+  fetch('/m/cars', {
+    headers: state.key ? {'X-Master-Key': state.key} : {}
+  }).then(function (answer) {
+    if (answer.status === 401) {
+      try { localStorage.removeItem(KEY); } catch (e) {}
+      state.key = null;
+      showStranger();
+      return;
+    }
+    loadCars();
+  }).catch(function () {
+    // Нет сети — не повод объявлять телефон чужим. Покажем то, что
+    // получится, и кнопку «Обновить»
+    loadCars();
+  });
 }
 </script>
 </body>
