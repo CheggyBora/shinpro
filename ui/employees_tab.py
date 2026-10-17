@@ -99,6 +99,13 @@ class EmployeesTab:
         styles.create_label(reg_frame, "Имя:", 'Card.TLabel').pack(side='left', padx=(0, 8))
         self.employee_name_entry = styles.create_entry(reg_frame, width=16)
         self.employee_name_entry.pack(side='left', padx=(0, 10))
+
+        # Категорию — сразу: съёмщик, заведённый мастером, до первой
+        # смены успел бы получить процент с ремонта
+        styles.create_label(reg_frame, "Категория:", 'Card.TLabel').pack(side='left', padx=(0, 8))
+        self.employee_role_box = ttk.Combobox(reg_frame, state='readonly', width=18)
+        self.employee_role_box.pack(side='left', padx=(0, 10))
+        self.fill_role_box()
         styles.create_button(reg_frame, "Зарегистрировать", self.register_employee,
                              'Primary.TButton').pack(side='left')
 
@@ -204,7 +211,8 @@ class EmployeesTab:
         try:
             emp_id = int(self.employee_id_entry.get())
             name = self.employee_name_entry.get()
-            self.service.register_employee(emp_id, name)
+            role_id = self._role_ids.get(self.employee_role_box.get())
+            self.service.register_employee(emp_id, name, role_id=role_id)
             messagebox.showinfo("Успех", f"Сотрудник {emp_id} зарегистрирован")
             self.employee_id_entry.delete(0, tk.END)
             self.employee_name_entry.delete(0, tk.END)
@@ -519,6 +527,21 @@ class EmployeesTab:
         except ValueError as e:
             messagebox.showerror("Ошибка", str(e))
     
+    def fill_role_box(self):
+        """Категории в выпадающем списке при создании сотрудника."""
+        from services.employee_role_service import EmployeeRoleService
+        try:
+            roles = EmployeeRoleService(self.db).roles()
+        except Exception as e:
+            self.db.rollback()
+            log.error(f"Не удалось прочитать категории: {e}")
+            roles = []
+        self._role_ids = {role.title: role.id for role in roles}
+        titles = list(self._role_ids) or ['Мастер']
+        self.employee_role_box.configure(values=titles)
+        if self.employee_role_box.get() not in titles:
+            self.employee_role_box.set(titles[0])
+
     def change_role(self):
         """Сменить категорию выбранного сотрудника."""
         from services.employee_role_service import EmployeeRoleService
@@ -552,6 +575,8 @@ class EmployeesTab:
             excluded = sorted(role.excluded)
             note = (f" — не начисляется: {', '.join(excluded)}"
                     if excluded else " — начисляется со всех услуг")
+            if role.can_work_alone is False:
+                note += "; один на смене не стоит"
             ttk.Radiobutton(body, text=role.title + note, value=str(role.id),
                             variable=chosen).pack(anchor='w', pady=2)
         if not roles:
@@ -672,6 +697,8 @@ class EmployeesTab:
     def refresh_employees(self):
         for item in self.employees_tree.get_children():
             self.employees_tree.delete(item)
+        if hasattr(self, 'employee_role_box'):
+            self.fill_role_box()
         
         from services.employee_role_service import EmployeeRoleService
         roles = EmployeeRoleService(self.db)

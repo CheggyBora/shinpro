@@ -7,13 +7,24 @@ class EmployeeService:
     def __init__(self, db: Session):
         self.db = db
     
-    def register_employee(self, employee_id: int, name: str = None) -> Employee:
+    def register_employee(self, employee_id: int, name: str = None,
+                          role_id=None) -> Employee:
+        """
+        Завести сотрудника. Категорию можно выбрать сразу: новому ещё
+        ничего не начислено, и PIN тут не нужен. Менять её потом — по PIN.
+        """
         existing = self.db.query(Employee).filter(Employee.id == employee_id).first()
         if existing:
             raise ValueError(f"Сотрудник с номером {employee_id} уже существует")
 
+        if role_id is not None:
+            from services.employee_role_service import EmployeeRoleService
+            if EmployeeRoleService(self.db).get(role_id) is None:
+                raise ValueError("Такой категории уже нет")
+
         employee = Employee(id=employee_id, salary_percent=40.0,
-                            name=(name or '').strip() or None)
+                            name=(name or '').strip() or None,
+                            role_id=role_id)
         self.db.add(employee)
         self.db.commit()
         self.db.refresh(employee)
@@ -110,7 +121,18 @@ class EmployeeService:
         
         if active_shift:
             raise ValueError("У сотрудника уже есть открытая смена")
-        
+
+        # Съёмщик один на смене стоять не может: встаёт, когда мастер
+        # уже там
+        from services.employee_role_service import EmployeeRoleService
+        roles = EmployeeRoleService(self.db)
+        if not roles.can_work_alone(employee):
+            if not any(roles.can_work_alone(other)
+                       for other in self._on_shift(exclude=employee_id)):
+                raise ValueError(
+                    f"{roles.role_title(employee)} не может стоять на смене "
+                    f"один. Сначала на смену встаёт мастер")
+
         shift = WorkShift(employee_id=employee_id)
         self.db.add(shift)
         self.db.commit()
@@ -125,12 +147,33 @@ class EmployeeService:
         
         if not shift:
             raise ValueError("Открытая смена не найдена")
-        
+
+        # Последний мастер не уходит, пока на смене остаётся съёмщик:
+        # иначе съёмщик окажется на смене один
+        from services.employee_role_service import EmployeeRoleService
+        roles = EmployeeRoleService(self.db)
+        leaving = self.db.query(Employee).filter(
+            Employee.id == employee_id).first()
+        if roles.can_work_alone(leaving):
+            staying = self._on_shift(exclude=employee_id)
+            if staying and not any(roles.can_work_alone(e) for e in staying):
+                numbers = ', '.join(f'№{e.id}' for e in staying)
+                raise ValueError(
+                    f"Нельзя: на смене останется без мастера {numbers}. "
+                    f"Сначала закончите смену ему")
+
         shift.end_time = get_moscow_time()
         self.db.commit()
         self.db.refresh(shift)
         return shift
     
+    def _on_shift(self, exclude=None):
+        """Сотрудники, у которых сейчас открыта смена."""
+        rows = self.db.query(Employee).join(
+            WorkShift, WorkShift.employee_id == Employee.id).filter(
+                WorkShift.end_time.is_(None)).all()
+        return [e for e in rows if e.id != exclude]
+
     def get_active_shifts(self):
         return self.db.query(WorkShift).filter(WorkShift.end_time.is_(None)).all()
     

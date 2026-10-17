@@ -58,6 +58,12 @@ class EmployeeRolesEditor:
             foreground=styles.COLORS['text'])
         self.caption.pack(anchor='w', pady=(0, 6))
 
+        self.alone_var = tk.BooleanVar(value=True)
+        self.alone_box = ttk.Checkbutton(
+            right, text='Может стоять на смене один (без мастера)',
+            variable=self.alone_var, command=self.save_alone)
+        self.alone_box.pack(anchor='w', pady=(0, 10))
+
         self.services_frame = ttk.Frame(right, style='White.TFrame')
         self.services_frame.pack(fill='both', expand=True)
 
@@ -105,7 +111,10 @@ class EmployeeRolesEditor:
         role = self.service.get(self.role_id)
         if role is None:
             self.caption.config(text='Добавьте категорию слева')
+            self.alone_box.state(['disabled'])
             return
+        self.alone_box.state(['!disabled'])
+        self.alone_var.set(role.can_work_alone is not False)
 
         self.caption.config(
             text=f'«{role.title}»: отметьте услуги, с которых НЕ начислять')
@@ -149,6 +158,16 @@ class EmployeeRolesEditor:
             return
         # Подпись «(без N)» в списке слева
         self.refresh(select_id=self.role_id)
+
+    def save_alone(self):
+        if self.role_id is None:
+            return
+        try:
+            self.service.set_can_work_alone(self.role_id, self.alone_var.get())
+        except Exception as e:
+            self.db.rollback()
+            messagebox.showerror('Ошибка', f'Не удалось сохранить: {e}',
+                                 parent=self.window)
 
     # ------------------------------------------------------------------
 

@@ -17,8 +17,10 @@ SEEDED_KEY = 'employee_roles_seeded'
 
 # Исключений по умолчанию нет ни у кого: какие услуги считать «только
 # для мастеров», решает владелец. Пока он не отметил, считается как
-# раньше — со всего
-DEFAULT_ROLES = ['Мастер', 'Сезонный мастер', 'Сезонный съёмщик']
+# раньше — со всего.
+# (название, может ли стоять на смене один)
+DEFAULT_ROLES = [('Мастер', True), ('Сезонный мастер', True),
+                 ('Сезонный съёмщик', False)]
 
 
 class EmployeeRoleService:
@@ -32,8 +34,8 @@ class EmployeeRoleService:
         if settings.get(SEEDED_KEY) == '1':
             return
         if not self.db.query(EmployeeRole).count():
-            for title in DEFAULT_ROLES:
-                self.db.add(EmployeeRole(title=title))
+            for title, alone in DEFAULT_ROLES:
+                self.db.add(EmployeeRole(title=title, can_work_alone=alone))
         settings.set(SEEDED_KEY, '1', commit=False)
         self.db.commit()
 
@@ -116,6 +118,19 @@ class EmployeeRoleService:
                 f"Категория «{role.title}»: " + '; '.join(parts),
                 entity_type='employee_role', entity_id=role.id)
         return role
+
+    def set_can_work_alone(self, role_id, value):
+        role = self.get(role_id)
+        if role is None:
+            raise ValueError('Категория не найдена')
+        role.can_work_alone = bool(value)
+        self.db.commit()
+        return role
+
+    def can_work_alone(self, employee):
+        """Без категории — обычный мастер: может."""
+        role = self.role_of(employee)
+        return True if role is None else role.can_work_alone is not False
 
     def service_names(self):
         """

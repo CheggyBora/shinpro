@@ -1,6 +1,6 @@
 import json
 
-from sqlalchemy import Column, Integer, String, Text
+from sqlalchemy import Column, Integer, String, Text, Boolean
 from config import Base
 
 
@@ -23,6 +23,11 @@ class EmployeeRole(Base):
 
     # JSON-список названий услуг: ["Правка литого диска", ...]
     excluded_services = Column(Text, nullable=True)
+
+    # Может ли стоять на смене без мастера. Съёмщик — нет: ремонт и
+    # правку он не делает, и машину с проколом цех без мастера не
+    # обслужит. Встать на смену он может, только когда мастер уже там
+    can_work_alone = Column(Boolean, default=True, nullable=False)
 
     @property
     def excluded(self):

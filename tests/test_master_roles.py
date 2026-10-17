@@ -10,7 +10,7 @@
   · без категорий — копейка в копейку как раньше;
   · с товара не начисляется никому — раньше наценка с вентиля
     при оплате всё-таки попадала в процент;
-  · услугу некому начислить — оплата проходит, доля цеху;
+  · съёмщик один на смене не стоит, последний мастер не уходит от него;
   · разбор «за что начислено» сохранён вместе с начислением;
   · категорию меняют только по PIN, правки списков — в журнал.
 """
@@ -174,20 +174,34 @@ check('Иван 1480', got[1] == 1480, str(got))
 check('Саша 400', got[3] == 400, str(got))
 
 print()
-print('=== На смене один съёмщик, а в наряде правка ===')
+print('=== Съёмщик один на смене не стоит ===')
+check('съёмщику по умолчанию одному нельзя',
+      roles.get(loader.id).can_work_alone is False)
+check('мастеру можно', roles.get(master.id).can_work_alone is True)
+
+try:
+    people.end_shift(1)
+    check('последний мастер не уходит, пока съёмщик на смене', False)
+except ValueError as e:
+    check('последний мастер не уходит, пока съёмщик на смене',
+          '№3' in str(e), str(e))
+
+people.end_shift(3)
 people.end_shift(1)
-order = make_order('А004АА77', ['Съём+Установка', 'Правка литого диска'])
-paid, nobody = pay(order)
-got = amounts(paid)
-check('Саше — только съём: 2000 × 25% = 500', got[3] == 500, str(got))
-check('правку назвали некому начислить',
-      nobody == [{'name': 'Правка литого диска', 'base': 1500}], str(nobody))
-db.refresh(order)
-check('оплата прошла', order.status == 'paid')
+check('съёмщик ушёл первым — потом и мастер может', True)
+
+try:
+    people.start_shift(3)
+    check('на пустую смену съёмщик не встаёт', False)
+except ValueError as e:
+    check('на пустую смену съёмщик не встаёт', 'мастер' in str(e), str(e))
+
+people.start_shift(1)
+people.start_shift(3)
+check('после мастера — встаёт', True)
 
 print()
 print('=== Скидка на наряд ===')
-people.start_shift(1)
 people.start_shift(2)
 order = make_order('А005АА77', ['Ремонт жгутом', 'Балансировка'])
 orders.update_general_discount(order.id, 10)
@@ -222,9 +236,20 @@ db.refresh(first)
 check('старое начисление Саши не изменилось', first.amount == before)
 
 print()
+print('=== Новый сотрудник — сразу с категорией ===')
+people.register_employee(4, 'Петя', role_id=loader.id)
+check('Петя заведён съёмщиком',
+      roles.role_title(db.get(Employee, 4)) == 'Сезонный съёмщик')
+try:
+    people.register_employee(5, 'Никто', role_id=9999)
+    check('несуществующую категорию не ставим', False)
+except ValueError as e:
+    check('несуществующую категорию не ставим', True)
+
+print()
 print('=== Удалили категорию — люди снова получают со всего ===')
 moved = roles.delete(loader.id)
-check('Сашу освободили', moved == 1, str(moved))
+check('Сашу и Петю освободили', moved == 2, str(moved))
 db.expire_all()
 check('Саша теперь «Мастер»', roles.role_title(db.get(Employee, 3)) == 'Мастер')
 
@@ -257,6 +282,9 @@ tab = ui.employees_tab.EmployeesTab(root, ui_db)
 rows = {str(tab.employees_tree.item(r)['values'][0]):
         tab.employees_tree.item(r)['values'] for r in tab.employees_tree.get_children()}
 check('в списке есть категория', rows['1'][2] == 'Мастер', str(rows['1']))
+check('при создании категорию выбирают из списка',
+      'Мастер' in tab.employee_role_box.cget('values'),
+      str(tab.employee_role_box.cget('values')))
 
 holder = tk.Toplevel(root)
 editor = editor_module.EmployeeRolesEditor(holder, ui_db, holder)
