@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Фото в наряд</title>
+<link rel="manifest" href="/m/manifest.webmanifest">
+<meta name="theme-color" content="#2563eb">
 <style>
 /*
   Страница для телефона мастера. Всё крупное: на неё смотрят в боксе,
@@ -126,6 +128,29 @@ button.ghost { background: var(--card); color: var(--ink); border: 1.5px solid v
   <p class="note bad" id="connectError" hidden></p>
 </section>
 
+<!-- Сразу после подключения: как попадать сюда дальше. Без этого
+     мастер закроет браузер и в следующий раз не найдёт страницу —
+     а QR второй раз ему никто не покажет -->
+<section id="screenHome" hidden>
+  <div class="card">
+    <h2 style="margin:0 0 6px;font-size:19px">Телефон подключён</h2>
+    <p class="note" style="margin-top:0">Чтобы в следующий раз попадать
+      сюда одним касанием, положите страницу на экран телефона:</p>
+
+    <p style="margin:14px 0 4px"><b>Android (Chrome):</b></p>
+    <p class="note" style="margin:0">меню <b>⋮</b> справа вверху →
+      «Добавить на главный экран»</p>
+
+    <p style="margin:14px 0 4px"><b>iPhone (Safari):</b></p>
+    <p class="note" style="margin:0">кнопка «Поделиться» <b>⬆</b> внизу →
+      «На экран „Домой“»</p>
+
+    <p class="note" style="margin-top:16px">Появится значок «Фото в наряд».
+      Открывайте его — QR больше не понадобится.</p>
+  </div>
+  <button type="button" id="homeDone">Понятно</button>
+</section>
+
 <!-- Список машин -->
 <section id="screenCars" hidden>
   <div id="cars"></div>
@@ -162,7 +187,8 @@ var state = { key: null, car: null, files: [] };
 function $(id) { return document.getElementById(id); }
 
 function show(name) {
-  ['screenConnect', 'screenCars', 'screenShot'].forEach(function (id) {
+  ['screenConnect', 'screenHome', 'screenCars',
+   'screenShot'].forEach(function (id) {
     $(id).hidden = (id !== name);
   });
 }
@@ -223,7 +249,10 @@ $('doConnect').addEventListener('click', function () {
     // Убираем ключ из адреса: иначе он останется в истории браузера
     // и в закладке, а он одноразовый
     history.replaceState(null, '', '/m');
-    loadCars();
+
+    // Сначала — как сюда вернуться. Список машин подождёт полминуты,
+    // а мастер, не узнавший про ярлык, завтра страницу не найдёт
+    show('screenHome');
   }).catch(function (e) {
     $('connectError').textContent = e.message;
     $('connectError').hidden = false;
@@ -268,6 +297,7 @@ function loadCars() {
 }
 
 $('reload').addEventListener('click', loadCars);
+$('homeDone').addEventListener('click', loadCars);
 
 // --- Снимок -----------------------------------------------------------
 
@@ -395,8 +425,14 @@ if (state.key) {
 } else if (linkFromAddress()) {
   show('screenConnect');
 } else {
+  // Сюда попадают и те, кто уже подключался, но открыл страницу в
+  // другом браузере или почистил его. Объясняем, иначе мастер решит,
+  // что всё сломалось
   $('cars').innerHTML = '<div class="empty">Этот телефон ещё не подключён.<br>'
-    + 'Попросите приёмщика показать QR-код и наведите камеру.</div>';
+    + 'Попросите приёмщика показать QR-код и наведите камеру.'
+    + '<p class="note" style="margin-top:18px">Уже подключались? Откройте '
+    + 'эту страницу в том же браузере, где сканировали код, — телефон '
+    + 'помнит себя только там.</p></div>';
   show('screenCars');
   $('reload').hidden = true;
 }

@@ -74,6 +74,35 @@ def _device(request: Request, db: Session):
 # Страница
 # ----------------------------------------------------------------------
 
+@router.get('/manifest.webmanifest', include_in_schema=False)
+def manifest():
+    """
+    Ярлык «Фото в наряд» для экрана телефона мастера.
+
+    Открывается **в браузере, а не отдельным окном** — намеренно. На
+    айфоне ярлык-окно хранит данные отдельно от Safari, и телефон,
+    подключённый по QR в Safari, в таком окне оказался бы снова
+    неподключённым. А QR из ярлыка не отсканировать: камера открывает
+    ссылку в Safari. Получился бы круг, из которого мастер не выйдет.
+    """
+    from fastapi.responses import JSONResponse
+
+    return JSONResponse({
+        'name': 'Фото в наряд',
+        'short_name': 'Фото в наряд',
+        'description': 'Снять и отправить клиенту фото из цеха',
+        'start_url': '/m',
+        'scope': '/m',
+        'display': 'browser',
+        'background_color': '#f1f5f9',
+        'theme_color': '#2563eb',
+        'lang': 'ru',
+        'icons': [
+            {'src': '/z/icon.svg', 'sizes': 'any', 'type': 'image/svg+xml'},
+        ],
+    }, headers={'Cache-Control': 'public, max-age=3600'})
+
+
 @router.get('', response_class=HTMLResponse, include_in_schema=False)
 @router.get('/k/{link}', response_class=HTMLResponse, include_in_schema=False)
 def page(link: str = ''):
