@@ -110,10 +110,16 @@ class ShiftService:
                                    'orders': []}
 
             details[emp_id]['salary'] += transaction.amount
+            # С каких услуг этому человеку не начислено по категории —
+            # чтобы на вопрос «почему у меня меньше» ответ был на экране
+            from services.salary_service import read_detail
+            detail = read_detail(transaction) or {}
+
             details[emp_id]['orders'].append({
                 'order_id': order.id,
                 'license_plate': order.car.license_plate if order.car else '',
                 'amount': transaction.amount,
+                'skipped': detail.get('skipped') or [],
             })
 
         return details

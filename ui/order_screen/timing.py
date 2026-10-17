@@ -108,7 +108,10 @@ class OrderTimingMixin:
                 ).all()
                 if not transactions:
                     return '', '#64748b'
-                ids = [str(t.employee_id) for t in transactions]
+                ids = []
+                for t in transactions:
+                    if str(t.employee_id) not in ids:
+                        ids.append(str(t.employee_id))
                 return "Мастера: №" + ", №".join(ids), '#64748b'
 
             # По неоплаченному — из тех, кто был на смене при создании

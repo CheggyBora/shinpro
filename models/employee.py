@@ -17,6 +17,10 @@ class Employee(Base):
     created_at = Column(DateTime(timezone=True), default=get_moscow_time)
     is_active = Column(Boolean, default=True)
 
+    # Категория (EmployeeRole): с каких услуг ему не начисляется.
+    # Пусто — обычный мастер, начисляется со всех услуг, как раньше
+    role_id = Column(Integer, nullable=True)
+
     @property
     def title(self):
         """Как называть сотрудника там, где показываем зарплату."""

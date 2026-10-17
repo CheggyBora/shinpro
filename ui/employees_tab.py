@@ -112,14 +112,21 @@ class EmployeesTab:
         header_frame.pack(fill='x', pady=(0, 10))
         styles.create_label(header_frame, "Список сотрудников", 'CardHeading.TLabel').pack(side='left')
         styles.create_button(header_frame, "Изменить ставку", self.change_salary_percent, 'Secondary.TButton').pack(side='right')
+        # Категория решает, с каких услуг человеку начисляется: съёмщику
+        # не идёт процент с ремонта и правки. Сами списки услуг — в
+        # Настройках → Категории мастеров
+        styles.create_button(header_frame, "Категория", self.change_role,
+                             'Secondary.TButton').pack(side='right', padx=(0, 8))
         styles.create_button(header_frame, "Имя", self.change_name, 'Secondary.TButton').pack(side='right', padx=(0, 8))
         
         tree_frame = ttk.Frame(emp_inner, style='White.TFrame')
         tree_frame.pack(fill='both', expand=True)
         
-        self.employees_tree = ttk.Treeview(tree_frame, columns=('ID', 'Имя', 'Ставка %', 'Дата регистрации'), show='headings', height=6)
+        self.employees_tree = ttk.Treeview(tree_frame, columns=('ID', 'Имя', 'Категория', 'Ставка %', 'Дата регистрации'), show='headings', height=6)
         self.employees_tree.heading('ID', text='Номер')
         self.employees_tree.heading('Имя', text='Имя')
+        self.employees_tree.heading('Категория', text='Категория')
+        self.employees_tree.column('Категория', width=150)
         self.employees_tree.heading('Ставка %', text='Ставка %')
         self.employees_tree.heading('Дата регистрации', text='Дата регистрации')
         self.employees_tree.column('ID', width=80)
@@ -512,6 +519,79 @@ class EmployeesTab:
         except ValueError as e:
             messagebox.showerror("Ошибка", str(e))
     
+    def change_role(self):
+        """Сменить категорию выбранного сотрудника."""
+        from services.employee_role_service import EmployeeRoleService
+
+        selected = self.employees_tree.selection()
+        if not selected:
+            messagebox.showwarning("Предупреждение", "Выберите сотрудника")
+            return
+        emp_id = int(self.employees_tree.item(selected[0])['values'][0])
+
+        roles_service = EmployeeRoleService(self.db)
+        employee = next((e for e in self.service.get_all_employees()
+                         if e.id == emp_id), None)
+        roles = roles_service.roles()
+
+        dialog = tk.Toplevel(self.frame)
+        dialog.title("Категория сотрудника")
+        dialog.configure(bg=styles.COLORS['bg_card'])
+        dialog.resizable(False, False)
+        dialog.transient(self.frame.winfo_toplevel())
+
+        body = ttk.Frame(dialog, style='White.TFrame')
+        body.pack(fill='both', expand=True, padx=20, pady=16)
+        title = employee.title if employee else f"№{emp_id}"
+        styles.create_label(body, f"Категория: {title}",
+                            'CardHeading.TLabel').pack(anchor='w', pady=(0, 10))
+
+        current = employee.role_id if employee else None
+        chosen = tk.StringVar(value='' if current is None else str(current))
+        for role in roles:
+            excluded = sorted(role.excluded)
+            note = (f" — не начисляется: {', '.join(excluded)}"
+                    if excluded else " — начисляется со всех услуг")
+            ttk.Radiobutton(body, text=role.title + note, value=str(role.id),
+                            variable=chosen).pack(anchor='w', pady=2)
+        if not roles:
+            ttk.Label(body, text="Категорий нет. Заведите их в Настройках → "
+                                 "Категории мастеров",
+                      background=styles.COLORS['bg_card']).pack(anchor='w')
+
+        ttk.Label(body, text="Без категории — начисляется со всех услуг, "
+                             "как обычному мастеру.",
+                  font=(styles.DEFAULT_FONT, 9),
+                  background=styles.COLORS['bg_card'],
+                  foreground=styles.COLORS['text_secondary']).pack(
+                      anchor='w', pady=(8, 0))
+
+        def save():
+            value = chosen.get()
+            role_id = int(value) if value else None
+            pin = simpledialog.askstring("PIN-код", "Введите админский PIN-код:",
+                                         show='*', parent=dialog)
+            if not pin:
+                return
+            try:
+                self.service.update_role(emp_id, role_id, pin)
+            except ValueError as e:
+                messagebox.showerror("Ошибка", str(e), parent=dialog)
+                return
+            dialog.destroy()
+            self.refresh_employees()
+
+        buttons = ttk.Frame(body, style='White.TFrame')
+        buttons.pack(fill='x', pady=(14, 0))
+        styles.create_button(buttons, "Сохранить", save,
+                             'Primary.TButton').pack(side='left')
+        styles.create_button(buttons, "Отмена", dialog.destroy,
+                             'Secondary.TButton').pack(side='left', padx=(6, 0))
+        dialog.bind('<Escape>', lambda e: dialog.destroy())
+        styles.center_window(dialog, self.frame.winfo_toplevel())
+        dialog.grab_set()
+        return dialog
+
     def change_salary_percent(self):
         selected = self.employees_tree.selection()
         if not selected:
@@ -593,11 +673,15 @@ class EmployeesTab:
         for item in self.employees_tree.get_children():
             self.employees_tree.delete(item)
         
+        from services.employee_role_service import EmployeeRoleService
+        roles = EmployeeRoleService(self.db)
+
         employees = self.service.get_all_employees()
         for emp in employees:
             self.employees_tree.insert('', 'end', values=(
                 emp.id,
                 emp.name or '',
+                roles.role_title(emp),
                 f"{emp.salary_percent:.1f}",
                 emp.created_at.strftime('%d.%m.%Y')
             ))
@@ -704,7 +788,8 @@ class EmployeesTab:
         # Создаём диалог
         dialog = tk.Toplevel(self.frame)
         dialog.title("Зарплата за текущую смену")
-        dialog.geometry("450x500")
+        # Шире, чем раньше: в разборе теперь бывает «не начисляется: …»
+        dialog.geometry("640x540")
         dialog.configure(bg=styles.COLORS['bg'])
         styles.center_window(dialog, self.frame.winfo_toplevel())
         dialog.transient(self.frame.winfo_toplevel())
@@ -774,6 +859,9 @@ class EmployeesTab:
                     plate = row['license_plate'] or '—'
                     line = (f"      №{row['order_id']}   {plate}"
                             f"   {row['amount']:,.0f} руб.".replace(',', ' '))
+                    if row.get('skipped'):
+                        line += ("   · не начисляется: "
+                                 + ', '.join(row['skipped']))
                     tk.Label(employees_frame, text=line,
                              font=(styles.DEFAULT_FONT, 9),
                              fg='#64748b', bg='white', anchor='w').pack(anchor='w')
@@ -898,6 +986,9 @@ class EmployeesTab:
                     plate = row['license_plate'] or '—'
                     line = (f"      №{row['order_id']}   {plate}"
                             f"   {row['amount']:,.0f} руб.".replace(',', ' '))
+                    if row.get('skipped'):
+                        line += ("   · не начисляется: "
+                                 + ', '.join(row['skipped']))
                     tk.Label(employees_frame, text=line,
                              font=(styles.DEFAULT_FONT, 9),
                              fg='#64748b', bg='white', anchor='w').pack(anchor='w')

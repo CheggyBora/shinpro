@@ -115,6 +115,7 @@ class SettingsDialog:
             ('Запись', self._build_booking),
             ('Наряды и очередь', self._build_orders),
             ('Группы клиентов', self._build_client_groups),
+            ('Категории мастеров', self._build_employee_roles),
             ('Смена', self._build_shift),
             ('Хранение и сезон', self._build_storage),
             ('Печать', self._build_printing),
@@ -659,6 +660,21 @@ class SettingsDialog:
 
         from ui.client_groups_editor import ClientGroupsEditor
         self.client_groups = ClientGroupsEditor(content, self.db, self.dialog)
+
+    def _build_employee_roles(self, content):
+        self._section(content, "Категории мастеров")
+        self._hint(content,
+                   "Отмеченные услуги этой категории не начисляются. Их доля "
+                   "делится только между теми в наряде, кому начисляется: "
+                   "правку делал мастер — мастер и получает за неё полный "
+                   "процент. Категорию сотруднику ставят на вкладке "
+                   "«Сотрудники», кнопкой «Категория».")
+        self._hint(content,
+                   "Правки сохраняются сразу и действуют на следующие оплаты. "
+                   "Уже начисленное не пересчитывается.")
+
+        from ui.employee_roles_editor import EmployeeRolesEditor
+        self.employee_roles = EmployeeRolesEditor(content, self.db, self.dialog)
 
     def _build_storage(self, content):
         self._section(content, "Хранение и сезон")

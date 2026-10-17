@@ -54,7 +54,8 @@ class OrderPaymentMixin:
                 self.order_service.finish_work(self.order.id)
                 self.cancel_autosave()
 
-                self.salary_service.process_payment(self.order.id, payment_var.get(), total)
+                nobody = self.salary_service.process_payment(
+                    self.order.id, payment_var.get(), total) or []
                 self.db.refresh(self.order)
             except Exception as e:
                 log.error(f"Ошибка оплаты: {e}")
@@ -68,6 +69,18 @@ class OrderPaymentMixin:
             # печать и оформление — их сбой не должен выглядеть как сбой
             # оплаты и не должен давать возможность нажать "Оплатить" ещё раз.
             dialog.destroy()
+
+            # На смене не было никого, кому эти услуги начисляются (только
+            # съёмщик, а в наряде правка). Оплата прошла, доля осталась
+            # цеху — но владелец должен об этом знать, а не найти потом
+            if nobody:
+                names = ', '.join(row['name'] for row in nobody)
+                log.info(f"Наряд №{self.order.id}: некому начислить — {names}")
+                messagebox.showinfo(
+                    "Зарплата",
+                    f"За эти услуги никому в наряде не начисляется по "
+                    f"категории: {names}.\n\nОплата проведена, их доля "
+                    f"осталась цеху.")
 
             # Обновляем таблицу сотрудников (зарплату за смену)
             try:

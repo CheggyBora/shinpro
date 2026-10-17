@@ -39,6 +39,39 @@ class EmployeeService:
     def get_all_employees(self):
         return self.db.query(Employee).filter(Employee.is_active == True).all()
     
+    def update_role(self, employee_id: int, role_id, pin: str) -> Employee:
+        """
+        Сменить категорию сотрудника. От неё зависит, с каких услуг ему
+        начисляется, — поэтому, как и ставка, только по админскому PIN.
+        """
+        from services.auth_service import AuthService
+        from services.audit_service import AuditService
+        from services.employee_role_service import EmployeeRoleService
+
+        auth = AuthService(self.db)
+        audit = AuditService(self.db)
+
+        if not auth.verify_pin(pin):
+            audit.log(AuditService.PIN_FAILED,
+                      f"Неверный PIN при попытке сменить категорию "
+                      f"сотрудника №{employee_id}")
+            raise ValueError("Неверный PIN-код")
+
+        roles = EmployeeRoleService(self.db)
+        employee = self.db.query(Employee).filter(Employee.id == employee_id).first()
+        if not employee:
+            raise ValueError("Сотрудник не найден")
+
+        old_title = roles.role_title(employee)
+        roles.set_employee_role(employee_id, role_id)
+        new_title = roles.role_title(employee)
+
+        audit.log('employee.role_change',
+                  f"Сотрудник №{employee_id}: категория «{old_title}» -> "
+                  f"«{new_title}»",
+                  entity_type='employee', entity_id=employee_id)
+        return employee
+
     def update_salary_percent(self, employee_id: int, new_percent: float, pin: str) -> Employee:
         from services.auth_service import AuthService
         from services.audit_service import AuditService

@@ -21,6 +21,7 @@ TESTS = [
     ('Арифметика чека', 'test_receipt_math.py'),
     ('Расходники и база для зарплаты', 'test_consumables.py'),
     ('Имена сотрудников и разбор начислений', 'test_employee_names.py'),
+    ('Категории мастеров: кому с каких услуг', 'test_master_roles.py'),
     ('Выдача зарплаты и ведомость', 'test_payout.py'),
     ('Экран выдачи зарплаты', 'test_payout_ui.py'),
     ('Планирование времени и посты', 'test_planning.py'),

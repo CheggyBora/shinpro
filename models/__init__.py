@@ -1,4 +1,5 @@
 from .employee import Employee
+from .employee_role import EmployeeRole
 from .work_shift import WorkShift
 from .client import Client
 from .client_group import ClientGroup
@@ -19,6 +20,7 @@ from .paint import PaintOption
 __all__ = [
     'PaintOption',
     'Employee',
+    'EmployeeRole',
     'WorkShift',
     'Client',
     'ClientGroup',
