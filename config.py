@@ -86,7 +86,7 @@ def init_db():
     from models import (Employee, WorkShift, Client, Car, Service, WorkOrder,
                         WorkOrderItem, SalaryTransaction, SalaryPayout,
                         Settings, TireStorage, Shift, AuditLog, Appointment,
-                        BookingPosts, PaintOption)
+                        BookingPosts, PaintOption, ClientGroup)
     Base.metadata.create_all(bind=engine)
     add_missing_columns()
     fill_storage_deadlines()

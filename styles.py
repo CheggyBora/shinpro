@@ -214,6 +214,15 @@ def apply_modern_styles(root):
               background=[('pressed', COLORS['border']), ('active', COLORS['bg_subtle'])],
               foreground=[('disabled', COLORS['text_secondary'])])
 
+    # Значок «⋯» у имени клиента: узкий, чтобы не тянуть на себя взгляд,
+    # но той же высоты, что соседние кнопки
+    style.configure('Badge.Secondary.TButton',
+                    font=(DEFAULT_FONT, 12, 'bold'), padding=(6, 6))
+
+    # Плотные кнопки для коротких списков во всплывающих окошках
+    style.configure('Compact.Secondary.TButton', padding=(12, 5))
+    style.configure('Compact.Primary.TButton', padding=(12, 5))
+
     style.configure('TButton',
                     font=FONTS['button'],
                     padding=(14, 8),

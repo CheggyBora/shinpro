@@ -10,6 +10,7 @@ from tkinter import ttk, messagebox, simpledialog
 from models import Client
 from services import ClientService, OrderService
 from utils import format_phone, normalize_plate
+from ui.client_group_badge import create_group_badge
 import styles
 
 VEHICLE_TYPES = {
@@ -67,6 +68,10 @@ class ClientCard:
 
         styles.create_button(fields, "Сохранить", self.save_client,
                              'Primary.TButton').grid(row=0, column=4, padx=(0, 0))
+
+        # Внутренняя группа: по значку ничего не видно, пока не нажмёшь
+        create_group_badge(fields, db, client_id).grid(
+            row=0, column=5, padx=(8, 0))
 
         self.summary_label = ttk.Label(content, text="", font=(styles.DEFAULT_FONT, 9),
                                        foreground='#64748b')

@@ -114,6 +114,7 @@ class SettingsDialog:
         self._build_sections(outer, [
             ('Запись', self._build_booking),
             ('Наряды и очередь', self._build_orders),
+            ('Группы клиентов', self._build_client_groups),
             ('Смена', self._build_shift),
             ('Хранение и сезон', self._build_storage),
             ('Печать', self._build_printing),
@@ -644,6 +645,20 @@ class SettingsDialog:
             ('order_autosave_minutes',
              'Автосохранение наряда через, мин (0 — выкл.)'),
         ])
+
+    def _build_client_groups(self, content):
+        self._section(content, "Группы клиентов")
+        self._hint(content,
+                   "Кому предлагать допы, а кому — только то, за чем "
+                   "приехал. Группу ставят в наряде или в карточке клиента "
+                   "кнопкой «⋯» рядом с именем: на экране видно только "
+                   "значок, код и название — лишь когда нажмёшь. "
+                   "Группы не уходят с этого компьютера: их нет ни на "
+                   "сервере, ни в личном кабинете, ни на чеке.")
+        self._hint(content, "Правки здесь сохраняются сразу.")
+
+        from ui.client_groups_editor import ClientGroupsEditor
+        self.client_groups = ClientGroupsEditor(content, self.db, self.dialog)
 
     def _build_storage(self, content):
         self._section(content, "Хранение и сезон")

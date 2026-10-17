@@ -198,7 +198,10 @@ check('сообщает, что менять нечего',
       'Изменений не потребовалось' in (result.stdout or ''), (result.stdout or '')[-200:])
 
 print('\n=== Программа работает с мигрированной базой ===')
-from config import SessionLocal
+# Как при запуске программы: она сама дописывает колонки, появившиеся
+# в новых версиях, — скрипт миграции про них знать не обязан
+from config import SessionLocal, init_db
+init_db()
 from services import ClientService
 
 db = SessionLocal()

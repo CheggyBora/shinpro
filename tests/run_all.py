@@ -17,6 +17,7 @@ TESTS = [
     ('Нормализация номеров и телефонов', 'test_normalization.py'),
     ('Время смены и защита от двойной оплаты', 'test_timezone_and_payment.py'),
     ('Клиенты, машины и поиск', 'test_clients.py'),
+    ('Группы клиентов: кому предлагать допы', 'test_client_groups.py'),
     ('Арифметика чека', 'test_receipt_math.py'),
     ('Расходники и база для зарплаты', 'test_consumables.py'),
     ('Имена сотрудников и разбор начислений', 'test_employee_names.py'),

@@ -17,6 +17,12 @@ class Client(Base):
 
     created_at = Column(DateTime(timezone=True), default=get_moscow_time)
 
+    # Внутренняя группа (ClientGroup): насколько с человеком можно
+    # говорить о допах. Пустая — группу ещё никто не ставил.
+    # Не уходит с компьютера цеха: в обмен с сервером её не кладём
+    group_id = Column(Integer, nullable=True)
+    group_set_at = Column(DateTime(timezone=True), nullable=True)
+
     # Машины клиента: один клиент может обслуживать несколько автомобилей
     cars = relationship("Car", back_populates="client")
 

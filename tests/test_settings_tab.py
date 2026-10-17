@@ -80,7 +80,7 @@ import ui.settings_dialog as sd
 built = sd.SettingsDialog(root, db, host=tk.Frame(root))
 root.update()
 
-expected = ['Запись', 'Наряды и очередь', 'Смена', 'Хранение и сезон',
+expected = ['Запись', 'Наряды и очередь', 'Группы клиентов', 'Смена', 'Хранение и сезон',
             'Печать', 'Кнопки услуг', 'Реквизиты', 'Отчёты',
             'SMS и звонки', 'Telegram', 'Связь с приложением']
 check('все разделы заведены',

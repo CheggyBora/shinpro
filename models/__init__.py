@@ -1,6 +1,7 @@
 from .employee import Employee
 from .work_shift import WorkShift
 from .client import Client
+from .client_group import ClientGroup
 from .car import Car
 from .service import Service
 from .work_order import WorkOrder
@@ -20,6 +21,7 @@ __all__ = [
     'Employee',
     'WorkShift',
     'Client',
+    'ClientGroup',
     'Car',
     'Service',
     'WorkOrder',

@@ -95,6 +95,12 @@ class OrderWidget(OrderItemsMixin, OrderPaymentMixin, OrderTimingMixin):
                       foreground=styles.COLORS['success'] if order.auto_discount
                       else styles.COLORS['text']).pack(side='left')
 
+            # Группа клиента — кому предлагать допы. Значок одинаковый
+            # у всех, пока не нажмёшь: клиент у стойки ничего не прочтёт
+            from ui.client_group_badge import create_group_badge
+            create_group_badge(client_row, self.db,
+                               order.client_id).pack(side='left', padx=(8, 0))
+
             # Из наряда сразу в карточку: поправить телефон или добавить
             # ещё одну машину, не выходя из работы
             styles.create_button(client_row, "Карточка клиента",
