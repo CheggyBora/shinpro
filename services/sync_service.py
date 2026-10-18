@@ -165,37 +165,6 @@ class SyncService:
                 'rejected': queue.rejected}))
         return added
 
-    # ------------------------------------------------------------------
-    # Онлайн-очередь
-    # ------------------------------------------------------------------
-
-    def queue_line(self):
-        """Кто сейчас в онлайн-очереди."""
-        return self._call('GET', '/sync/queue')
-
-    def queue_call(self, ticket_id):
-        """Позвать на пост."""
-        return self._call('POST', '/sync/queue/call', {'ticket_id': ticket_id})
-
-    def queue_arrived(self, ticket_id):
-        """Отметить приезд за человека: он подошёл и сказал."""
-        return self._call('POST', '/sync/queue/arrived',
-                          {'ticket_id': ticket_id})
-
-    def queue_missed(self, ticket_id):
-        """Не приехал — в конец очереди."""
-        return self._call('POST', '/sync/queue/miss', {'ticket_id': ticket_id})
-
-    def queue_served(self, ticket_id, order_local_id=None):
-        """Машину взяли в работу."""
-        return self._call('POST', '/sync/queue/served',
-                          {'ticket_id': ticket_id,
-                           'order_local_id': order_local_id})
-
-    def queue_drop(self, ticket_id):
-        """Убрать из очереди."""
-        return self._call('POST', '/sync/queue/drop', {'ticket_id': ticket_id})
-
     def order_photos(self, order_local_id):
         """Что мастера прислали по этому наряду."""
         return self._call('GET', f'/sync/photos?order_local_id={order_local_id}')
@@ -515,12 +484,16 @@ class SyncService:
                 'state': state,
                 'started_at': as_naive(order.started_at) if order.started_at else None,
 
-                # Сколько ещё займёт работа и занят ли этим пост
-                # онлайн-очереди — по этому она двигает свой прогноз
+                # Сколько ещё займёт работа — по этому видно, когда
+                # освободится пост
                 'planned_minutes': order.planned_minutes or 0,
-                'on_queue_post': bool(getattr(order, 'on_queue_post', False)),
             })
         return cars
+
+    def _live_queue_on(self):
+        """Посты и живая очередь сейчас — с учётом «по сезону»."""
+        from services.live_queue_service import LiveQueueService
+        return LiveQueueService(self.db).enabled()
 
     def _collect_settings(self):
         """Настройки, по которым приложение должно считать так же, как цех."""
@@ -547,11 +520,6 @@ class SyncService:
             # отдельно. Кабинет должен обещать столько же, сколько цех
             'booking_posts': settings.get('booking_posts'),
 
-            # Сколько постов отдано онлайн-очереди
-            'queue_posts': settings.get('queue_posts'),
-            'queue_min_wait_minutes': settings.get('queue_min_wait_minutes'),
-            'queue_lead_minutes': settings.get('queue_lead_minutes'),
-
             # Чем клиент подтверждает номер при первом входе в кабинет.
             # Ключи задаёт владелец здесь, в программе: менять их должен
             # он, а не тот, у кого есть доступ к серверу
@@ -567,7 +535,7 @@ class SyncService:
             'booking_enabled': settings.get('booking_enabled'),
             # Посты и живая очередь на сезон: выключено — по QR не встать,
             # «Я на месте» в кабинете не показывается
-            'live_queue_enabled': settings.get('live_queue_enabled'),
+            'live_queue_enabled': '1' if self._live_queue_on() else '0',
             'storage_warn_days': settings.get('storage_warn_days'),
             'storage_lead_days': settings.get('storage_lead_days'),
             'season_autumn_at': settings.get('season_autumn_at'),

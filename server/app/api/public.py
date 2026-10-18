@@ -164,31 +164,6 @@ def shops(db: Session = Depends(get_db)):
     } for row in tenancy.shops_of(db, account_id) if row.takes_bookings]
 
 
-@router.get('/queue', summary='Работает ли онлайн-очередь')
-def queue_open(shop: Optional[str] = Query(None, description='Короткое имя точки'),
-               db: Session = Depends(get_db)):
-    """
-    Показывать ли кнопку «Встать в онлайн-очередь».
-
-    Без входа: кнопка стоит на главном экране, рядом с записью. Если
-    постов под очередь не выделено, её лучше не показывать вовсе, чем
-    показать и отказать по нажатию.
-
-    Здесь же отдаём числа для экрана правил — через сколько зовём и
-    за сколько надо быть на месте. Человек должен прочитать их до того,
-    как встанет, а не узнать потом.
-    """
-    from app.services import queue_service
-
-    chosen = _shop(db, shop)
-    return {
-        'enabled': queue_service.enabled(db, chosen),
-        'min_wait_minutes': queue_service.min_wait_minutes(db, chosen),
-        'lead_minutes': queue_service.lead_minutes(db, chosen),
-        'moves': queue_service.MAX_MOVES,
-    }
-
-
 @router.get('/paint', summary='Калькулятор покраски дисков')
 def paint(shop: Optional[str] = Query(None, description='Короткое имя точки'),
           db: Session = Depends(get_db)):

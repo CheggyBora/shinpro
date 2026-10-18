@@ -142,25 +142,6 @@ body {
 .big.main .ic { background: #eff6ff; }
 .big.store .ic { background: #f0fdf4; }
 .big.paint .ic { background: #fffbeb; }
-.big.line .ic { background: #f5f3ff; }
-
-/* Правила онлайн-очереди: читаются до того, как человек встанет,
-   поэтому крупно и пунктами, а не абзацем мелким шрифтом */
-.rules { margin: 0; padding: 0; list-style: none; }
-.rules li { padding: 10px 0; border-bottom: 1px solid var(--line, #e2e8f0);
-  font-size: 15px; line-height: 1.45; }
-.rules li:last-child { border-bottom: 0; }
-.rules b { color: var(--ink, #0f172a); }
-
-/* Время, к которому подъезжать, — главное на экране */
-.come { font-size: 40px; font-weight: 800; letter-spacing: -.02em;
-  margin: 6px 0 2px; color: var(--ink, #0f172a); }
-.come-note { font-size: 14px; color: var(--muted, #64748b); }
-.here { display: inline-block; margin-top: 10px; padding: 6px 12px;
-  border-radius: 999px; background: #dcfce7; color: #14532d;
-  font-weight: 700; font-size: 14px; }
-.warn-box { background: #fef3c7; color: #78350f; border-radius: 12px;
-  padding: 12px 14px; font-size: 14px; line-height: 1.45; margin: 12px 0 0; }
 
 /* --- Поля --- */
 label { display: block; font-size: 13px; color: var(--ink-soft); margin: 0 0 5px; }
@@ -375,6 +356,7 @@ input.code {
 
 [hidden] { display: none !important; }
 .mine .here { font: inherit; font-weight: 700; padding: 10px 14px; border: 0;
+  margin-top: 10px;
   border-radius: 10px; background: #e3262f; color: #fff; cursor: pointer; }
 .mine { flex-wrap: wrap; }
 .mine .arrived-wait, .mine .arrived-call { flex: 1 0 100%; }
@@ -423,22 +405,6 @@ input.code {
       <span>
         <b>Записаться на шиномонтаж</b>
         <span>Приеду со своими колёсами. Без регистрации, минута времени</span>
-      </span>
-    </button>
-
-    <!-- онлайн-очередь: место занимают из дома, время назначаем мы.
-         Показывается, только если под неё выделены посты: лучше не
-         показать кнопку, чем показать и отказать по нажатию -->
-    <button class="big line" id="goQueue" type="button" hidden>
-      <span class="ic">
-        <svg viewBox="0 0 26 26" fill="none" aria-hidden="true">
-          <circle cx="13" cy="13" r="10.5" stroke="#7c3aed" stroke-width="2"/>
-          <path d="M13 7v6l4 3" stroke="#7c3aed" stroke-width="2" stroke-linecap="round"/>
-        </svg>
-      </span>
-      <span>
-        <b>Встать в онлайн-очередь</b>
-        <span id="goQueueNote">Займите место из дома — назовём, когда подъезжать</span>
       </span>
     </button>
 
@@ -517,67 +483,6 @@ input.code {
   </div>
 
   <!-- ================================================ вход -->
-  <!-- ============================================ онлайн-очередь -->
-  <div id="screenQueue" hidden>
-    <button class="back" type="button" data-back>← Назад</button>
-
-    <!-- Правила — до того, как встать. Человек должен понять их
-         сейчас, а не узнать потом, стоя у ворот -->
-    <div class="card" id="qRules">
-      <h2>Как работает онлайн-очередь</h2>
-      <ul class="rules">
-        <li><b>Это не запись на время.</b> Вы занимаете место в общей
-          очереди, а время назначаем мы.</li>
-        <li>В пустую очередь зовём <b>не раньше чем через <span
-          id="qWait">час</span></b>, если впереди есть люди — после них.</li>
-        <li><b>Подъезжайте за <span id="qLead">20</span> минут</b> до
-          названного времени и нажмите «Я приехал» — или скажите
-          приёмщику.</li>
-        <li>Время может сдвинуться, если работы окажутся дольше.
-          <b>Обо всех изменениях сообщим.</b> Раньше названного не
-          позовём — можете на него рассчитывать.</li>
-        <li>Не успеваете — нажмите «Не успеваю», <b>перенесём в конец
-          очереди</b>. Перенос один: второй раз место закроется.</li>
-      </ul>
-
-      <div class="warn-box">
-        Нужно приехать к точному времени? <a href="#" id="qToBooking">Запишитесь</a>
-        — это другое: время закрепляется за вами.
-      </div>
-    </div>
-
-    <!-- Сюда переезжает блок «Напоминать» с экрана записи: тот же
-         самый, чтобы не было двух разных способов подключить одно -->
-    <div id="qRemindSlot"></div>
-    <div class="warn-box" id="qNoRemind" hidden>
-      <b>Подключите уведомления.</b> Без них вы не узнаете, если время
-      сдвинется или подойдёт ваша очередь.
-    </div>
-
-    <div class="card" id="qJoinCard">
-      <button class="go" id="qJoin" type="button">Встать в очередь</button>
-      <p class="error" id="qError" hidden></p>
-    </div>
-
-    <!-- Когда человек уже в очереди -->
-    <div class="card" id="qMine" hidden>
-      <h2>Вы в очереди</h2>
-      <div class="come-note" id="qComeLabel">Подъезжайте к</div>
-      <div class="come" id="qCome">—</div>
-      <div class="come-note" id="qTurn"></div>
-      <div class="here" id="qHere" hidden>Вы отметились — ждите приглашения</div>
-
-      <div style="margin-top:18px">
-        <button class="go" id="qArrived" type="button">Я приехал</button>
-        <button class="ghost" id="qLater" type="button"
-                style="margin-top:8px;width:100%">Не успеваю</button>
-        <button class="link" id="qLeave" type="button"
-                style="margin-top:8px">Уйти из очереди</button>
-      </div>
-      <p class="error" id="qMineError" hidden></p>
-    </div>
-  </div>
-
   <div id="screenLogin" hidden>
     <button class="back" type="button" data-back>← Назад</button>
 
@@ -831,10 +736,6 @@ var state = {
 var $ = function (id) { return document.getElementById(id); };
 
 // ------------------------------------------------------------------ экраны
-// Где блок «Напоминать» живёт по умолчанию — на экран очереди он
-// переезжает, а потом должен вернуться на своё место
-var REMIND_HOME = { parent: null, next: null };
-
 function show(name) {
   if (name !== 'screenBook') {
     $('historyCard').hidden = true;
@@ -843,21 +744,10 @@ function show(name) {
   }
 
   ['screenPick', 'screenLogin', 'screenBook', 'screenDone',
-   'screenPaint', 'screenShop', 'screenQueue'].forEach(function (id) {
+   'screenPaint', 'screenShop'].forEach(function (id) {
     $(id).hidden = (id !== name);
   });
 
-  // Блок «Напоминать» один на весь кабинет. На экране очереди он
-  // нужнее всего: без уведомлений человек не узнает, что время
-  // сдвинулось. Переносим его туда, а не рисуем второй — иначе два
-  // способа подключить одно разойдутся на первой же правке
-  if (name === 'screenQueue') {
-    $('qRemindSlot').appendChild($('tgCard'));
-  } else if (REMIND_HOME.parent && $('tgCard').parentNode !== REMIND_HOME.parent) {
-    REMIND_HOME.parent.insertBefore($('tgCard'), REMIND_HOME.next);
-  }
-
-  if (name !== 'screenQueue') stopQueueRefresh();
   window.scrollTo(0, 0);
 }
 
@@ -1202,13 +1092,6 @@ function afterLogin() {
     if (!result.ok) { loginError(reason(result)); return; }
     state.profile = result.data;
 
-    // Вошёл ради очереди — туда и возвращаем, а не на экран записи:
-    // человек нажимал «Встать в очередь», и ждёт именно его
-    if (state.mode === 'queue') {
-      openQueue();
-      return;
-    }
-
     return api('/storage').then(function (answer) {
       state.storage = answer.ok ? answer.data : [];
       prepareBooking();
@@ -1275,11 +1158,6 @@ function loadReminders() {
 
 function showRemindCard() {
   $('tgCard').hidden = $('tgRow').hidden && $('pushRow').hidden;
-
-  // На экране очереди от этого зависит предупреждение «подключите
-  // уведомления». Считать его надо после того, как узнали, что
-  // подключено, — иначе оно мигнёт тому, у кого всё включено
-  if (!$('screenQueue').hidden) remindWarning();
 }
 
 function drawTelegram(info) {
@@ -1514,262 +1392,6 @@ document.addEventListener('visibilitychange', function () {
     loadReminders();
   }
 });
-
-// ===================================================== ОНЛАЙН-ОЧЕРЕДЬ
-// Место занимают из дома, время назначаем мы. Человек ни на что не
-// отвечает: нажал «встать» — получил время, к которому подъезжать.
-
-var queueTimer = null;
-
-function loadQueueButton() {
-  api('/public/queue').then(function (answer) {
-    var data = answer.ok ? answer.data : null;
-
-    // Постов под очередь нет — кнопки нет. Показать и отказать по
-    // нажатию хуже, чем не показать вовсе
-    if (!data || !data.enabled) { $('goQueue').hidden = true; return; }
-
-    state.queueRules = data;
-    $('goQueue').hidden = false;
-
-    var wait = data.min_wait_minutes || 60;
-    $('qWait').textContent = wait >= 60 && wait % 60 === 0
-      ? (wait === 60 ? 'час' : (wait / 60) + ' ч')
-      : wait + ' мин';
-    $('qLead').textContent = data.lead_minutes;
-  });
-}
-
-$('goQueue').addEventListener('click', function () {
-  state.mode = 'queue';
-
-  // Сначала правила, и только потом телефон. Человек должен понять,
-  // во что встаёт, до того как назовёт номер, — а не узнать это,
-  // уже стоя в очереди
-  openQueue();
-});
-
-$('qToBooking').addEventListener('click', function (event) {
-  event.preventDefault();
-  $('goQuick').click();
-});
-
-function openQueue() {
-  show('screenQueue');
-
-  if (!state.token) {
-    // Не вошёл — показываем правила и кнопку. Уведомления подключить
-    // пока нельзя: они привязываются к человеку, а его мы ещё не знаем
-    drawQueueJoin({enabled: !!(state.queueRules && state.queueRules.enabled)});
-    $('qJoin').textContent = 'Встать в очередь';
-    $('qNoRemind').hidden = true;
-    return;
-  }
-
-  loadReminders();
-  refreshQueue();
-  startQueueRefresh();
-}
-
-function refreshQueue() {
-  api('/queue/online').then(function (answer) {
-    if (!answer.ok) {
-      $('qError').textContent = reason(answer);
-      $('qError').hidden = false;
-      return;
-    }
-
-    var data = answer.data;
-    if (data.mine) drawQueueMine(data.mine);
-    else drawQueueJoin(data);
-  });
-}
-
-function drawQueueJoin(data) {
-  $('qRules').hidden = false;
-  $('qJoinCard').hidden = false;
-  $('qMine').hidden = true;
-  $('qError').hidden = true;
-
-  if (!data.enabled) {
-    $('qJoin').disabled = true;
-    $('qError').textContent = 'Онлайн-очередь сейчас не работает. '
-      + 'Запишитесь на время или подъезжайте.';
-    $('qError').hidden = false;
-    return;
-  }
-
-  $('qJoin').disabled = false;
-  remindWarning();
-}
-
-// Без уведомлений вся очередь держится на удаче: человек не узнает,
-// что время сдвинулось. Говорим об этом прямо, рядом с кнопкой
-function remindWarning() {
-  var tgOn = !$('tgOff').hidden;
-  var pushOn = !$('pushOff').hidden;
-
-  // Подключить нечем: ни бота у шиномонтажа, ни уведомлений в этом
-  // браузере. Звать «подключите» тогда — это тупик: человек ищет
-  // кнопку, которой нет. Говорим правду и что делать вместо этого
-  var nothing = $('tgRow').hidden && $('pushRow').hidden;
-
-  // Приехал — сдвиги времени ему уже не важны: он у ворот, и позовёт
-  // его приёмщик голосом. Тревожить его советами про выезд незачем
-  if (state.queueArrived) { $('qNoRemind').hidden = true; return; }
-
-  if (nothing) {
-    $('qNoRemind').innerHTML = '<b>Уведомления здесь не работают.</b> '
-      + 'Чтобы не пропустить сдвиг времени, заглядывайте на эту '
-      + 'страницу перед выездом.';
-    $('qNoRemind').hidden = false;
-    return;
-  }
-
-  $('qNoRemind').innerHTML = '<b>Подключите уведомления.</b> Без них '
-    + 'вы не узнаете, если время сдвинется или подойдёт ваша очередь.';
-  $('qNoRemind').hidden = tgOn || pushOn;
-}
-
-function queueTime(iso) {
-  if (!iso) return '—';
-  return String(iso).slice(11, 16);
-}
-
-function drawQueueMine(mine) {
-  $('qRules').hidden = true;
-  $('qJoinCard').hidden = true;
-  $('qMine').hidden = false;
-  $('qMineError').hidden = true;
-
-  // Приехал — «подъезжайте к» уже бессмыслица, он здесь. Главное
-  // для него теперь — когда позовут
-  if (mine.arrived) {
-    $('qComeLabel').textContent = 'Вас позовут примерно в';
-    $('qCome').textContent = queueTime(mine.turn_at);
-    $('qTurn').textContent = mine.ahead ? 'Впереди ' + mine.ahead : '';
-  } else {
-    $('qComeLabel').textContent = 'Подъезжайте к';
-    $('qCome').textContent = queueTime(mine.come_at);
-    $('qTurn').textContent = mine.turn_at
-      ? 'Ваша очередь примерно в ' + queueTime(mine.turn_at)
-        + (mine.ahead ? ' · впереди ' + mine.ahead : '')
-      : '';
-  }
-
-  $('qHere').hidden = !mine.arrived;
-  $('qArrived').hidden = mine.arrived;
-  state.queueArrived = mine.arrived;
-
-  // «Не успеваю» — тому, кто ещё едет. Приехавшему не успевать
-  // некуда. И перенос один: после него кнопки нет, вместо неё честно
-  // объясняем, что будет дальше
-  $('qLater').hidden = mine.arrived || !mine.can_move;
-  if (mine.moved && !mine.can_move) {
-    $('qMineError').textContent = 'Вы уже переносились. Если не успеете '
-      + 'снова, место закроется.';
-    $('qMineError').hidden = false;
-  }
-
-  remindWarning();
-}
-
-$('qJoin').addEventListener('click', function () {
-  // Встать без входа нельзя: сказать, что время сдвинулось, можно
-  // только тому, кого мы знаем. Вход — и возвращаемся сюда же,
-  // уже с блоком уведомлений
-  if (!state.token) {
-    state.mode = 'queue';
-    loginStep('stepPhone');
-    show('screenLogin');
-    return;
-  }
-
-  // Вернулся после входа без подключённых уведомлений — спросим ещё
-  // раз. Без них человек не узнает, что время сдвинулось, и вся
-  // очередь для него превратится в лотерею
-  if (!$('qNoRemind').hidden && !state.queueRemindAsked) {
-    state.queueRemindAsked = true;
-    if (!confirm('Уведомления не подключены — вы не узнаете, если время '
-                 + 'сдвинется или подойдёт ваша очередь.\n\n'
-                 + 'Всё равно встать в очередь?')) return;
-  }
-
-  var button = $('qJoin');
-  button.disabled = true;
-  button.textContent = 'Занимаем место…';
-
-  // Машина — если она у человека одна, подставляем сами. Спрашивать,
-  // какая, когда выбор из одной, незачем
-  var cars = (state.profile && state.profile.cars) || [];
-  var body = {};
-  if (cars.length === 1) body.license_plate = cars[0].license_plate;
-
-  api('/queue/join', {method: 'POST', body: body}).then(function (answer) {
-    button.disabled = false;
-    button.textContent = 'Встать в очередь';
-
-    if (!answer.ok) {
-      $('qError').textContent = reason(answer);
-      $('qError').hidden = false;
-      return;
-    }
-    drawQueueMine(answer.data);
-  });
-});
-
-$('qArrived').addEventListener('click', function () {
-  api('/queue/arrived', {method: 'POST'}).then(function (answer) {
-    if (!answer.ok) {
-      $('qMineError').textContent = reason(answer);
-      $('qMineError').hidden = false;
-      return;
-    }
-    drawQueueMine(answer.data);
-  });
-});
-
-$('qLater').addEventListener('click', function () {
-  if (!confirm('Перенести вас в конец очереди? Перенос один: '
-               + 'второй раз место закроется.')) return;
-
-  api('/queue/later', {method: 'POST'}).then(function (answer) {
-    if (!answer.ok) {
-      $('qMineError').textContent = reason(answer);
-      $('qMineError').hidden = false;
-      return;
-    }
-
-    if (answer.data.closed) {
-      refreshQueue();
-      $('qError').textContent = answer.data.reason;
-      $('qError').hidden = false;
-      return;
-    }
-    drawQueueMine(answer.data);
-  });
-});
-
-$('qLeave').addEventListener('click', function () {
-  if (!confirm('Уйти из очереди? Место освободится.')) return;
-
-  api('/queue/leave', {method: 'POST'}).then(function () {
-    refreshQueue();
-  });
-});
-
-// Пока экран открыт, время перечитываем: его могли сдвинуть, пока
-// человек смотрел. Уведомление придёт тоже — но экран врать не должен
-function startQueueRefresh() {
-  stopQueueRefresh();
-  queueTimer = setInterval(function () {
-    if (!$('screenQueue').hidden) refreshQueue();
-  }, 30000);
-}
-
-function stopQueueRefresh() {
-  if (queueTimer) { clearInterval(queueTimer); queueTimer = null; }
-}
 
 // ========================================================== ПОКРАСКА
 // Считаем у себя, по ценам, присланным цехом. Отдельного расчёта на
@@ -2476,9 +2098,6 @@ api('/public/info').then(function (result) {
 loadPaint();
 // Онлайн-очередь «из дома» отменена (docs/live_queue.md): встать в
 // очередь можно только на месте, по QR у въезда — /z/<точка>/q
-
-REMIND_HOME.parent = $('tgCard').parentNode;
-REMIND_HOME.next = $('tgCard').nextSibling;
 
 // Ярлык должен называться той точкой, ссылку на которую человек
 // открыл, а не сетью вообще

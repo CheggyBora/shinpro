@@ -11,9 +11,6 @@ from app.models.notice import (Notice, TITLES, KIND_BOOKED, KIND_REMINDER,
 from app.models.photo import MasterDevice, OpenOrder, OrderPhoto
 from app.models.push import PushSubscription
 from app.models.live import LiveTicket
-from app.models.ticket import (QueueTicket, WAITING as TICKET_WAITING,
-                               CALLED, SERVED, CANCELLED, EXPIRED,
-                               OPEN_STATES, STATE_TITLES)
 from app.models.shop import (Appointment, BookingDay, StoredSet, Visit,
                              VisitItem, SalaryAccrual, SalaryPayout,
                              ShopEmployee, ShopShift, QueueSnapshot, ShopSetting,
@@ -34,8 +31,6 @@ __all__ = [
     'ABOUT_AUTUMN', 'ABOUT_SPRING',
     'WAITING', 'SENT', 'FAILED', 'SKIPPED',
     'MasterDevice', 'OpenOrder', 'OrderPhoto',
-    'QueueTicket', 'TICKET_WAITING', 'CALLED', 'SERVED', 'CANCELLED',
-    'EXPIRED', 'OPEN_STATES', 'STATE_TITLES',
     'PushSubscription', 'LiveTicket',
     'Appointment', 'BookingDay', 'StoredSet', 'Visit', 'VisitItem',
     'SalaryAccrual', 'SalaryPayout', 'ShopEmployee', 'ShopShift',

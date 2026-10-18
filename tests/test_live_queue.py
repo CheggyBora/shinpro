@@ -45,6 +45,8 @@ EmployeeService(db).register_employee(1)
 EmployeeService(db).start_shift(1)
 
 queue = LiveQueueService(db)
+# По умолчанию — «по сезону»: проверки не должны зависеть от даты прогона
+queue.set_mode('on')
 orders = OrderService(db)
 
 print('=== Встать в очередь ===')
@@ -406,6 +408,24 @@ check('сама не зовёт', queue.auto_call() == 0)
 for e in queue.line():
     queue.leave(e.id)
 SettingsService(db).set('live_queue_enabled', '1')
+
+print()
+print('=== По сезону: включается само ===')
+from datetime import date
+queue.set_mode('season')
+check('режим «по сезону»', queue.mode() == 'season')
+check('2 октября — сезон', queue.enabled(date(2026, 10, 2)) is True)
+check('14 ноября — ещё сезон (45 дней с 01.10)', queue.enabled(date(2026, 11, 14)) is True)
+check('20 ноября — уже нет', queue.enabled(date(2026, 11, 20)) is False)
+check('январь — нет', queue.enabled(date(2027, 1, 15)) is False)
+check('весной с 01.04 — да', queue.enabled(date(2027, 4, 20)) is True)
+SettingsService(db).set('live_queue_autumn_from', '15.12')
+check('сезон через Новый год', queue.enabled(date(2027, 1, 10)) is True)
+SettingsService(db).set('live_queue_autumn_from', '01.10')
+queue.set_mode('off')
+check('выключено — никогда', queue.enabled(date(2026, 10, 2)) is False)
+queue.set_mode('on')
+check('всегда — всегда', queue.enabled(date(2027, 1, 15)) is True)
 
 db.close()
 

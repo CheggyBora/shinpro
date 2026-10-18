@@ -75,6 +75,9 @@ check('есть точки и аккаунты', {'shops', 'accounts'} <= tables
 check('есть наряды и начисления', {'visits', 'salary_accruals'} <= tables)
 check('есть персонал дашборда', 'staff_users' in tables)
 check('alembic отметил версию базы', 'alembic_version' in tables)
+# Онлайн-очередь «из дома» убрана шагом 3c6b1e9a7d42: таблица её
+# талонов на свежей базе появиться не должна
+check('талонов старой онлайн-очереди нет', 'queue_tickets' not in tables)
 
 print('\n=== Схема совпадает с моделями ===')
 # Тот же расчёт, что делает autogenerate: если он находит отличия,

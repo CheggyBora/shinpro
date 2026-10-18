@@ -59,6 +59,24 @@ def _shop(db, slug):
     return shop
 
 
+# Ключ в ссылке QR. Перевыпустили QR в цеху — старая табличка (или её
+# фото, пересланное знакомым) больше не ставит в очередь
+QR_KEY = 'live_qr_key'
+
+
+def _qr_key(db, shop):
+    return shop_settings.get(db, QR_KEY, shop=shop) or ''
+
+
+def _qr_ok(db, shop, given):
+    key = _qr_key(db, shop)
+    return not key or secrets.compare_digest(key, given or '')
+
+
+def _qr_path(shop, key):
+    return f'/z/{shop.slug}/q?k={key}'
+
+
 def _online(shop):
     if not shop.last_sync_at:
         return False
@@ -130,6 +148,7 @@ class JoinIn(BaseModel):
 
 @router.get('/state', summary='Моё место в очереди')
 def state(request: Request, shop: Optional[str] = Query(None),
+          k: Optional[str] = Query(None),
           authorization: str = Header(default=''),
           db: Session = Depends(get_db)):
     place = _shop(db, shop)
@@ -140,6 +159,8 @@ def state(request: Request, shop: Optional[str] = Query(None),
         'online': _online(place),
         # Не сезон — очередь не ведётся, встать нельзя
         'enabled': shop_settings.live_queue_on(db, place),
+        # Отсканировал старый QR — встать нельзя, нужен код у въезда
+        'qr_ok': _qr_ok(db, place, k),
         # Ушёл сам — места для него больше нет, даже если цех ещё не узнал
         'ticket': view(mine) if mine and mine.state != LEFT
         and not mine.left_by_client else None,
@@ -152,9 +173,15 @@ def state(request: Request, shop: Optional[str] = Query(None),
 @router.post('/join', summary='Встать в очередь')
 def join(payload: JoinIn, request: Request, response: Response,
          shop: Optional[str] = Query(None),
+         k: Optional[str] = Query(None),
          authorization: str = Header(default=''),
          db: Session = Depends(get_db)):
     place = _shop(db, shop)
+    if not _qr_ok(db, place, k):
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            detail='Этот QR-код устарел. Отсканируйте код у въезда '
+                   'или подойдите к приёмщику')
     if not shop_settings.live_queue_on(db, place):
         raise HTTPException(
             status.HTTP_409_CONFLICT,
@@ -371,3 +398,25 @@ def exchange(payload: LiveIn, shop: Shop = Depends(require_sync_key),
                  'joined_at': t.created_at.isoformat()} for t in fresh],
         'left': left_ids,
     }
+
+
+@sync_router.get('/live/qr', summary='Ссылка для QR у въезда')
+def qr_link(shop: Shop = Depends(require_sync_key), db: Session = Depends(get_db)):
+    key = _qr_key(db, shop)
+    if not key:
+        key = secrets.token_urlsafe(6)
+        shop_settings.set_value(db, QR_KEY, key, shop=shop)
+    return {'path': _qr_path(shop, key)}
+
+
+@sync_router.post('/live/qr', summary='Перевыпустить QR у въезда')
+def qr_reissue(shop: Shop = Depends(require_sync_key), db: Session = Depends(get_db)):
+    """
+    Новый ключ — старая табличка перестаёт ставить в очередь. Тех, кто
+    уже стоит, это не трогает: место держится кукой, а не ключом.
+    """
+    key = secrets.token_urlsafe(6)
+    while key == _qr_key(db, shop):
+        key = secrets.token_urlsafe(6)
+    shop_settings.set_value(db, QR_KEY, key, shop=shop)
+    return {'path': _qr_path(shop, key)}

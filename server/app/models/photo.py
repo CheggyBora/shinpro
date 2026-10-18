@@ -76,14 +76,8 @@ class OpenOrder(Base):
     state = Column(String(16), default='waiting', nullable=False)
     started_at = Column(DateTime, nullable=True)
 
-    # Сколько займёт работа. Нужно, чтобы сказать онлайн-очереди, когда
-    # освободится пост
+    # Сколько займёт работа: по нему видно, когда освободится пост
     planned_minutes = Column(Integer, default=0, nullable=False)
-
-    # Машина встала на пост, отданный онлайн-очереди. Так бывает, когда
-    # из онлайна никого нет: пост не должен простаивать. Приёмщик это
-    # отмечает, и прогноз очереди сдвигается на время её работ
-    on_queue_post = Column(Boolean, default=False, nullable=False)
     updated_at = Column(DateTime, default=shop_now, nullable=False)
 
     shop = relationship('Shop')

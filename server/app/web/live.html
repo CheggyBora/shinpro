@@ -67,6 +67,12 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
     <button class="ghost" type="button" id="retry">Проверить снова</button>
   </section>
 
+  <section class="card" id="screenStale" hidden>
+    <h1>Этот QR-код устарел</h1>
+    <p>Отсканируйте, пожалуйста, код на табличке у въезда — или подойдите
+      к приёмщику, он поставит вас в очередь.</p>
+  </section>
+
   <section class="card" id="screenOff" hidden>
     <h1>Живая очередь сейчас не ведётся</h1>
     <p>Подойдите, пожалуйста, к приёмщику — он примет машину.</p>
@@ -137,15 +143,32 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 
   function $(id) { return document.getElementById(id); }
   function show(id) {
-    ['screenLoading', 'screenOffline', 'screenOff', 'screenJoin', 'screenWait', 'screenCalled',
+    ['screenLoading', 'screenOffline', 'screenStale', 'screenOff', 'screenJoin', 'screenWait', 'screenCalled',
      'screenServing', 'screenDone'].forEach(function (s) { $(s).hidden = s !== id; });
   }
+  // Ключ из QR. Человек может уйти войти в кабинет и вернуться уже без
+  // него в ссылке — помним пару часов на этом телефоне
+  var QR_KEY = (function () {
+    var name = 'tire_live_k_' + SLUG;
+    var given = new URLSearchParams(location.search).get('k');
+    try {
+      if (given) {
+        localStorage.setItem(name, JSON.stringify({k: given, at: Date.now()}));
+        return given;
+      }
+      var kept = JSON.parse(localStorage.getItem(name) || 'null');
+      if (kept && Date.now() - kept.at < 2 * 3600 * 1000) return kept.k;
+    } catch (e) {}
+    return given || '';
+  })();
+
   function api(path, options) {
     options = options || {};
     var headers = {'Content-Type': 'application/json'};
     if (token) headers['Authorization'] = 'Bearer ' + token;
     var sep = path.indexOf('?') < 0 ? '?' : '&';
-    return fetch(path + sep + 'shop=' + encodeURIComponent(SLUG), {
+    return fetch(path + sep + 'shop=' + encodeURIComponent(SLUG)
+                 + (QR_KEY ? '&k=' + encodeURIComponent(QR_KEY) : ''), {
       method: options.method || 'GET', headers: headers, credentials: 'same-origin',
       body: options.body ? JSON.stringify(options.body) : undefined
     }).then(function (answer) {
@@ -175,6 +198,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
     var t = data.ticket;
     if (!t) {
       if (data.enabled === false) return show('screenOff');
+      if (data.qr_ok === false) return show('screenStale');
       if (!data.online) return show('screenOffline');
       prepareForm(data);
       return show('screenJoin');

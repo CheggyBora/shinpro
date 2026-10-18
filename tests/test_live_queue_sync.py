@@ -69,6 +69,7 @@ with TestClient(server_app) as server:
     sync = SyncService(db)
     sync._call = call
     queue = LiveQueueService(db)
+    queue.set_mode('on')       # не зависеть от даты прогона
 
     print('=== Цех на связи — по QR можно встать ===')
     sync.live_exchange()
@@ -189,6 +190,63 @@ with TestClient(server_app) as server:
     mine = next(a for a in anna.get('/booking/my', headers=auth).json() if a['id'] == visit_id)
     check('в кабинете — пост и схема', mine['called_post'] == first['post'] and mine['scene'],
           str(mine))
+
+    print()
+    print('=== Табличка с QR и перевыпуск ===')
+    import tempfile as _tmp
+    from services.queue_poster_service import QueuePosterService, PosterError
+    import services.sync_service as sync_module
+    real_sync_call = sync_module.SyncService._call
+    real_enabled = sync_module.SyncService.is_enabled
+    real_url = sync_module.SyncService.get_url
+    sync_module.SyncService._call = lambda self, method, path, payload=None: call(method, path, payload)
+    sync_module.SyncService.is_enabled = lambda self: True
+    sync_module.SyncService.get_url = lambda self: 'https://lk.example'
+    try:
+        poster = QueuePosterService(db)
+        poster.out_dir = _tmp.mkdtemp()
+        first_url = poster.url()
+        check('ссылка с ключом точки', first_url.startswith(f'https://lk.example/z/{slug}/q?k='), first_url)
+        check('повторно — та же', poster.url() == first_url)
+        pdf = poster.make(first_url, 'РИФ')
+        with open(pdf, 'rb') as f:
+            head = f.read(5)
+        check('табличка — PDF', head == b'%PDF-' and os.path.getsize(pdf) > 2000, str(os.path.getsize(pdf)))
+
+        old_key = first_url.split('k=')[1]
+        stranger = TestClient(server_app)
+        state = stranger.get('/live/state' + q + '&k=' + old_key).json()
+        check('по табличке можно встать', state['qr_ok'] is True, str(state))
+
+        new_url = poster.url(reissue=True)
+        new_key = new_url.split('k=')[1]
+        check('перевыпустили — новый ключ', new_key != old_key, new_url)
+        check('и запомнили', poster.cached_url() == new_url)
+        state = stranger.get('/live/state' + q + '&k=' + old_key).json()
+        check('старая табличка — «устарел»', state['qr_ok'] is False, str(state))
+        refused = stranger.post('/live/join' + q + '&k=' + old_key, json={
+            'license_plate': 'К100КК77', 'phone': '79160000123',
+            'wheel_diameter': 'R16', 'wheels_assembled': True})
+        check('встать по старой нельзя', refused.status_code == 403, refused.text)
+        ok = stranger.post('/live/join' + q + '&k=' + new_key, json={
+            'license_plate': 'К100КК77', 'phone': '79160000123',
+            'wheel_diameter': 'R16', 'wheels_assembled': True})
+        check('по новой — можно', ok.status_code == 200, ok.text)
+
+        # Связи нет — печатаем последнюю, а перевыпустить нельзя
+        def offline(self, method, path, payload=None):
+            raise SyncError('нет сети')
+        sync_module.SyncService._call = offline
+        check('без связи — прежняя ссылка', poster.url() == new_url)
+        try:
+            poster.url(reissue=True)
+            check('без связи не перевыпустить', False)
+        except PosterError:
+            check('без связи не перевыпустить', True)
+    finally:
+        sync_module.SyncService._call = real_sync_call
+        sync_module.SyncService.is_enabled = real_enabled
+        sync_module.SyncService.get_url = real_url
 
     db.close()
 

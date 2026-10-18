@@ -183,10 +183,10 @@ class OpenCarIn(BaseModel):
     state: str = 'waiting'
     started_at: Optional[datetime] = None
 
-    # Старая программа цеха этого не шлёт — тогда считаем, что пост
-    # очереди свободен, а время работ неизвестно
+    # Старая программа цеха этого не шлёт — тогда время работ неизвестно.
+    # Прежнее поле on_queue_post (пост онлайн-очереди) старые версии ещё
+    # присылают: лишнее pydantic молча отбрасывает
     planned_minutes: int = 0
-    on_queue_post: bool = False
 
 
 class QueueIn(BaseModel):
@@ -561,7 +561,6 @@ def push(payload: PushIn, db: Session = Depends(get_db),
                 state=car.state if car.state in ('work', 'waiting') else 'waiting',
                 started_at=car.started_at,
                 planned_minutes=max(0, car.planned_minutes),
-                on_queue_post=car.on_queue_post,
                 updated_at=shop_now()))
 
     # --- Настройки ------------------------------------------------------
@@ -1270,146 +1269,3 @@ def order_photos(order_local_id: int, db: Session = Depends(get_db),
         'channel': row.channel,
         'error': row.last_error,
     } for row in rows]
-
-
-# ----------------------------------------------------------------------
-# Онлайн-очередь со стороны цеха
-# ----------------------------------------------------------------------
-
-@router.get('/queue', summary='Кто в онлайн-очереди')
-def queue_line(db: Session = Depends(get_db), shop: Shop = Mine):
-    """
-    Очередь, как её видит приёмщик.
-
-    Главное на экране — кто уже на месте. Звать можно только их:
-    машины у ворот нет, и пост простоит, пока человек едет.
-    """
-    from app.services import queue_service
-
-    now = shop_now()
-    queue_service.drop_stale(db, shop, now)
-
-    # Заодно говорим тем, у кого время уехало: человек построил на нём
-    # планы, и молча сдвигать его нельзя
-    queue_service.tell_slipped(db, shop, now)
-
-    times = queue_service.forecast(db, shop, now)
-    rows = queue_service.line(db, shop, now)
-
-    return {
-        'posts': queue_service.posts_for(db, shop),
-        'post_busy_until': queue_service.busy_until(db, shop, now),
-        'people': [{
-            'id': row.id,
-            'license_plate': row.license_plate,
-            'name': row.client_name,
-            'phone': row.client_phone,
-            'wheels_assembled': row.wheels_assembled,
-            'comment': row.comment,
-            'state': row.state,
-            'here': row.is_here,
-            'eta_at': row.eta_at,
-
-            # Черёд и время приезда — разные вещи: человеку названо
-            # «подъезжайте к 13:40», и приёмщик должен видеть то же
-            'turn_at': times.get(row.id),
-            'come_at': (times[row.id] - timedelta(
-                minutes=queue_service.lead_minutes(db, shop))
-                if times.get(row.id) else None),
-
-            'moved': row.moves > 0,
-        } for row in rows],
-    }
-
-
-class TicketActionIn(BaseModel):
-    ticket_id: int
-    order_local_id: Optional[int] = None
-
-
-@router.post('/queue/call', summary='Позвать на пост')
-def queue_call(payload: TicketActionIn, db: Session = Depends(get_db),
-               shop: Shop = Mine):
-    from app.services import queue_service
-
-    ticket = _ticket(db, shop, payload.ticket_id)
-    try:
-        queue_service.call(db, shop, ticket)
-    except queue_service.QueueError as e:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(e))
-
-    queue_service.tell_called(db, shop, ticket)
-    return {'ok': True, 'state': ticket.state}
-
-
-@router.post('/queue/arrived', summary='Отметить приезд за человека')
-def queue_arrived(payload: TicketActionIn, db: Session = Depends(get_db),
-                  shop: Shop = Mine):
-    """
-    Человек подошёл к стойке и сказал, что он здесь.
-
-    Отмечать должен уметь и приёмщик: не у всех телефон под рукой, и
-    заставлять человека искать кнопку, стоя перед приёмщиком, глупо.
-    """
-    from app.services import queue_service
-
-    ticket = _ticket(db, shop, payload.ticket_id)
-    try:
-        queue_service.arrived(db, shop, ticket)
-    except queue_service.QueueError as e:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(e))
-
-    return {'ok': True, 'here': True}
-
-
-@router.post('/queue/miss', summary='Не приехал — в конец очереди')
-def queue_miss(payload: TicketActionIn, db: Session = Depends(get_db),
-               shop: Shop = Mine):
-    """
-    Не приехал к своему времени. Уходит в конец, и это один раз.
-
-    Чужое время при этом не двигается: тому, кому назвали 14:30, так
-    и идти к 14:30 — он на это рассчитывал.
-    """
-    from app.services import queue_service
-
-    ticket = _ticket(db, shop, payload.ticket_id)
-    queue_service.move_back(db, shop, ticket)
-    queue_service.tell_moved(db, shop, ticket)
-
-    return {'ok': True, 'state': ticket.state, 'eta_at': ticket.eta_at}
-
-
-@router.post('/queue/served', summary='Взяли в работу')
-def queue_served(payload: TicketActionIn, db: Session = Depends(get_db),
-                 shop: Shop = Mine):
-    from app.services import queue_service
-
-    ticket = _ticket(db, shop, payload.ticket_id)
-    queue_service.served(db, ticket, payload.order_local_id)
-    return {'ok': True}
-
-
-@router.post('/queue/drop', summary='Убрать из очереди')
-def queue_drop(payload: TicketActionIn, db: Session = Depends(get_db),
-               shop: Shop = Mine):
-    from app.models import CANCELLED
-    from app.services import queue_service
-
-    ticket = _ticket(db, shop, payload.ticket_id)
-    queue_service.leave(db, ticket, CANCELLED)
-    return {'ok': True}
-
-
-def _ticket(db, shop, ticket_id):
-    from app.models import QueueTicket
-
-    ticket = db.query(QueueTicket).filter(
-        QueueTicket.id == ticket_id,
-        QueueTicket.shop_id == shop.id).first()
-
-    if ticket is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND,
-                            detail='Этого места в очереди нет')
-
-    return ticket

@@ -34,6 +34,15 @@ AUTO_CALL_KEY = 'live_queue_auto_call'          # звать самой прог
 # Посты и живая очередь — на сезон. Выключено: наряды открываются как
 # раньше, без постов, программа никого не зовёт, по QR встать нельзя
 ENABLED_KEY = 'live_queue_enabled'
+# «1» — всегда, «0» — выключено, «season» — сама включается на ажиотаж:
+# с этих дат столько-то дней
+SEASON = 'season'
+AUTUMN_FROM_KEY = 'live_queue_autumn_from'
+AUTUMN_FROM_DEFAULT = '01.10'
+SPRING_FROM_KEY = 'live_queue_spring_from'
+SPRING_FROM_DEFAULT = '01.04'
+SEASON_DAYS_KEY = 'live_queue_season_days'
+SEASON_DAYS_DEFAULT = 45
 # Наряд старше этого считается забытым черновиком, а не машиной на посту:
 # иначе вчерашний неоплаченный наряд держал бы пост вечно
 STALE_HOURS = 18
@@ -46,6 +55,16 @@ KIT_ASSEMBLED_DEFAULT = ['Съем+Установка', 'Мойка', 'Бала�
 KIT_TIRES_DEFAULT = ['Съем+Установка', 'Мойка', 'Балансировка', 'Шиномонтаж']
 
 DIAMETERS = [f'R{n}' for n in range(13, 25)]
+
+
+def _day_month(text, year):
+    """«дд.мм» → дата этого года; непонятное — None."""
+    from datetime import date
+    try:
+        day, month = (int(part) for part in str(text).strip().split('.')[:2])
+        return date(year, month, day)
+    except (TypeError, ValueError):
+        return None
 
 
 class QueueError(ValueError):
@@ -641,8 +660,40 @@ class LiveQueueService:
         self.db.commit()
         return order
 
-    def enabled(self):
-        return self._settings().is_on(ENABLED_KEY)
+    def mode(self):
+        """'on', 'off' или 'season'."""
+        raw = str(self._settings().get(ENABLED_KEY) or '').strip().lower()
+        if raw == SEASON:
+            return SEASON
+        return 'on' if self._settings().is_on(ENABLED_KEY) else 'off'
+
+    def set_mode(self, mode):
+        self._settings().set(ENABLED_KEY, {'on': '1', 'off': '0'}.get(mode, SEASON))
+
+    def enabled(self, today=None):
+        mode = self.mode()
+        if mode == SEASON:
+            return self.in_season(today)
+        return mode == 'on'
+
+    def season_windows(self, today=None):
+        """Окна ажиотажа вокруг сегодняшнего дня: [(с, по), ...]."""
+        today = today or as_naive(get_moscow_time()).date()
+        settings = self._settings()
+        days = max(1, settings.get_int(SEASON_DAYS_KEY, SEASON_DAYS_DEFAULT))
+        windows = []
+        for key, default in ((AUTUMN_FROM_KEY, AUTUMN_FROM_DEFAULT),
+                             (SPRING_FROM_KEY, SPRING_FROM_DEFAULT)):
+            raw = settings.get(key, default) or default
+            # Прошлогоднее окно тоже: осенний сезон может перейти через Новый год
+            for year in (today.year - 1, today.year):
+                start = _day_month(raw, year) or _day_month(default, year)
+                windows.append((start, start + timedelta(days=days - 1)))
+        return sorted(windows)
+
+    def in_season(self, today=None):
+        today = today or as_naive(get_moscow_time()).date()
+        return any(start <= today <= end for start, end in self.season_windows(today))
 
     def auto_call_enabled(self):
         return self._settings().is_on(AUTO_CALL_KEY)

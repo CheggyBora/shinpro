@@ -76,6 +76,10 @@ class LiveQueuePanel:
         self.state_label.pack(side='left', padx=(14, 0))
         styles.create_button(top, "Обновить", self.load,
                              'Secondary.TButton').pack(side='right')
+        styles.create_button(top, "Перевыпустить QR", self.reissue_qr,
+                             'Secondary.TButton').pack(side='right', padx=(0, 8))
+        styles.create_button(top, "Печать QR", self.print_qr,
+                             'Secondary.TButton').pack(side='right', padx=(0, 8))
 
         # Посты
         self.posts_frame = ttk.Frame(inner, style='White.TFrame')
@@ -112,6 +116,48 @@ class LiveQueuePanel:
     # ------------------------------------------------------------------
     # Данные
     # ------------------------------------------------------------------
+
+    # ------------------------------------------------------------------
+    # Табличка с QR у въезда
+    # ------------------------------------------------------------------
+
+    def print_qr(self, reissue=False):
+        from services.queue_poster_service import QueuePosterService, PosterError
+        poster = QueuePosterService(self.db)
+        try:
+            url = poster.url(reissue=reissue)
+            path = poster.make(url)
+        except PosterError as e:
+            messagebox.showerror("QR", str(e), parent=self.frame)
+            return None
+        except Exception as e:
+            log.error(f"Табличка с QR не сделана: {e}")
+            messagebox.showerror("QR", f"Не удалось сделать табличку: {e}", parent=self.frame)
+            return None
+        self._send_to_printer(path)
+        return path
+
+    def _send_to_printer(self, path):
+        import os
+        try:
+            os.startfile(path, "print")
+        except Exception:
+            # Принтер не настроен — откроем, распечатают из просмотрщика
+            try:
+                os.startfile(path)
+            except Exception as e:
+                messagebox.showinfo("QR", f"Табличка сохранена: {path}\n({e})",
+                                    parent=self.frame)
+
+    def reissue_qr(self):
+        if not messagebox.askyesno(
+                "Перевыпустить QR",
+                "Старая табличка перестанет ставить в очередь — "
+                "её нужно будет заменить новой.\n"
+                "Те, кто уже стоит, останутся на своих местах.\n\n"
+                "Перевыпустить и напечатать?", parent=self.frame):
+            return None
+        return self.print_qr(reissue=True)
 
     def load(self):
         if not self.service.enabled():
