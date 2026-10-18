@@ -39,7 +39,9 @@ class MainWindow:
         # и окно, без пересборки программы
         from services.company_service import get_company
         company_name = get_company(self.db).name or 'Шиномонтаж'
-        self.root.title(f"{company_name} — учёт работ")
+        from config import offline_test_mode
+        self.root.title(f"{company_name} — учёт работ"
+                        + (" — ТЕСТ БЕЗ СВЯЗИ" if offline_test_mode() else ""))
 
         # Верхняя полоса с названием
         self.app_bar = styles.create_app_bar(self.root, company_name.upper())

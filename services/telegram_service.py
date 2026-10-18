@@ -265,6 +265,9 @@ class TelegramService:
 
     def _call(self, method, fields, files=None):
         """Выполнить запрос к боту. Возвращает разобранный ответ."""
+        from config import offline_test_mode
+        if offline_test_mode():
+            raise TelegramError("Тестовый режим без связи")
         token = self.get_token()
         if not token:
             raise TelegramError("Не задан токен бота")

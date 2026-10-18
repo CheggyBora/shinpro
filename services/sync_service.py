@@ -70,6 +70,9 @@ class SyncService:
         return (self._settings().get(KEY_KEY, '') or '').strip()
 
     def is_enabled(self):
+        from config import offline_test_mode
+        if offline_test_mode():
+            return False
         settings = self._settings()
         return (settings.get(ENABLED_KEY, '0') == '1'
                 and bool(self.get_url()) and bool(self.get_key()))
@@ -92,6 +95,9 @@ class SyncService:
     # ------------------------------------------------------------------
 
     def _call(self, method, path, payload=None):
+        from config import offline_test_mode
+        if offline_test_mode():
+            raise SyncError('Тестовый режим без связи')
         url = self.get_url()
         if not url:
             raise SyncError('Не задан адрес сервера')

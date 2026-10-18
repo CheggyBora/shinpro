@@ -18,6 +18,18 @@ def get_app_dir():
     return os.path.dirname(os.path.abspath(__file__))
 
 
+# Тестовый запуск на копии рабочей базы. Файл с этим именем рядом с
+# программой — и она ничего не отправляет наружу: ни на сервер (иначе
+# пробные наряды ушли бы в кабинет и клиентам), ни в Telegram. Рабочая
+# программа и клиенты такой копии не замечают
+OFFLINE_MARKER = 'ТЕСТ_БЕЗ_СВЯЗИ.txt'
+
+
+def offline_test_mode():
+    return (os.getenv('TIRE_OFFLINE') == '1'
+            or os.path.exists(os.path.join(get_app_dir(), OFFLINE_MARKER)))
+
+
 def get_database_path():
     db_path = os.path.join(get_app_dir(), 'tire_shop.db')
     return f'sqlite:///{db_path}'
