@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, Float, Text, Boolean, ForeignKey
+from sqlalchemy import Column, Integer, Float, Text, Boolean, ForeignKey, String
 from sqlalchemy.orm import relationship
 from config import Base
 
@@ -29,5 +29,9 @@ class WorkOrderItem(Base):
     # и затирать его автоматикой нельзя.
     discount_manual = Column(Boolean, default=False, nullable=False)
     
+    # На каких колёсах делали ремонт или правку: «ПЛ,ЗП». Пусто — услуга
+    # колесо не спрашивает или наряд старый. См. services/wheel_service.py
+    wheels = Column(String(100), nullable=True)
+
     work_order = relationship("WorkOrder", backref="items")
     service = relationship("Service", backref="order_items")

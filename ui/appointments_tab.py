@@ -91,7 +91,7 @@ class AppointmentsTab:
                           'fetched_at': None, 'reason': None}
         self._scrolled_once = False
 
-        # Две вкладки: лента записи и онлайн-очередь. Это соседние
+        # Две вкладки: лента записи и живая очередь. Это соседние
         # занятия одного человека — приёмщик смотрит, кто записан на
         # время, и кто стоит в очереди прямо сейчас
         self.tabs = ttk.Notebook(self.frame)
@@ -103,10 +103,10 @@ class AppointmentsTab:
         self._build_toolbar()
         self._build_timeline()
 
-        from ui.queue_panel import QueuePanel
+        from ui.live_queue_panel import LiveQueuePanel
 
-        self.queue = QueuePanel(self.tabs, db, orders_tab)
-        self.tabs.add(self.queue.frame, text='  Онлайн-очередь  ')
+        self.queue = LiveQueuePanel(self.tabs, db, orders_tab)
+        self.tabs.add(self.queue.frame, text='  Живая очередь  ')
 
         self.load_day()
         self.schedule_refresh()

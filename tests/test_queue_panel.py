@@ -120,7 +120,9 @@ root.update()
 titles = [tab.tabs.tab(i, 'text').strip() for i in range(len(tab.tabs.tabs()))]
 check('вкладки две', len(titles) == 2, str(titles))
 check('лента первая', titles[0] == 'Лента записи', str(titles))
-check('очередь второй', titles[1] == 'Онлайн-очередь', str(titles))
+# Онлайн-очередь сменила живая (docs/live_queue.md); сам старый раздел
+# пока проверяется ниже, пока его не убрали с сервера
+check('очередь второй', titles[1] == 'Живая очередь', str(titles))
 check('лента никуда не делась', tab.canvas.winfo_exists())
 check('очередь на месте', tab.queue.frame.winfo_exists())
 

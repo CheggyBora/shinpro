@@ -87,7 +87,7 @@ def init_db():
                         WorkOrderItem, SalaryTransaction, SalaryPayout,
                         Settings, TireStorage, Shift, AuditLog, Appointment,
                         BookingPosts, PaintOption, ClientGroup,
-                        EmployeeRole)
+                        EmployeeRole, LiveQueueEntry)
     Base.metadata.create_all(bind=engine)
     add_missing_columns()
     fill_storage_deadlines()

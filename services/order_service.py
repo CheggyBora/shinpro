@@ -109,7 +109,19 @@ class OrderService:
             self.db.rollback()
             raise
     
-    def add_service_to_order(self, order_id: int, service_id: int) -> WorkOrderItem:
+    def add_service_to_order(self, order_id: int, service_id: int,
+                             wheels=None) -> WorkOrderItem:
+        """
+        Добавить услугу в наряд.
+
+        wheels — колёса, отмеченные на схеме (ремонт, правка). Сколько
+        колёс отмечено, столько и выполнений: правка двух дисков — это
+        две правки. Повтор той же услуги дописывает колёса к строке.
+        """
+        from services.wheel_service import parse, join
+
+        wheels = parse(join(wheels or []))
+        count = len(wheels) or 1
         try:
             order = self.db.query(WorkOrder).filter(WorkOrder.id == order_id).first()
             service = self.db.query(Service).filter(Service.id == service_id).first()
@@ -125,7 +137,10 @@ class OrderService:
             
             if existing_item:
                 # Увеличиваем количество
-                existing_item.quantity += 1
+                existing_item.quantity += count
+                if wheels:
+                    existing_item.wheels = join(
+                        parse(existing_item.wheels) + wheels)
                 self.db.commit()
                 self.db.refresh(existing_item)
                 return existing_item
@@ -156,7 +171,8 @@ class OrderService:
             item = WorkOrderItem(
                 work_order_id=order_id,
                 service_id=service_id,
-                quantity=1,
+                quantity=count,
+                wheels=join(wheels),
                 price=price,
                 discount_percent=initial_discount,
                 # Снимок себестоимости: подорожание закупки не должно
@@ -190,6 +206,27 @@ class OrderService:
             sync_nudge.request(reason)
         except Exception:
             pass
+
+    def set_item_wheels(self, item_id: int, wheels) -> WorkOrderItem:
+        """
+        Переотметить колёса у строки. Количество — по числу колёс:
+        ошиблись колесом — поправили, лишнее не оплачивается.
+
+        Пустой список — «не знаем, какое колесо»: отметки снимаются,
+        количество остаётся, как было.
+        """
+        from services.wheel_service import parse, join
+
+        item = self.db.query(WorkOrderItem).filter(
+            WorkOrderItem.id == item_id).first()
+        if item is None:
+            raise ValueError('Позиция не найдена')
+        wheels = parse(join(wheels or []))
+        item.wheels = join(wheels)
+        if wheels:
+            item.quantity = len(wheels)
+        self.db.commit()
+        return item
 
     @staticmethod
     def price_for(service, diameter):
@@ -467,7 +504,11 @@ class OrderService:
         services_minutes = sum(
             (item.service.duration_minutes or 0) * item.quantity for item in items
         )
-        return int(base + services_minutes)
+        # Машина из очереди или записи пришла с пакетом: на дисках —
+        # полчаса, только шины — час. Меньше пакета план не бывает
+        order = self.db.query(WorkOrder).filter(WorkOrder.id == order_id).first()
+        package = (order.package_minutes or 0) if order else 0
+        return int(max(base + services_minutes, package))
 
     def has_unsaved_time_changes(self, order_id: int) -> bool:
         """Отличается ли текущий состав от того, по которому считается очередь."""

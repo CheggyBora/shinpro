@@ -186,6 +186,11 @@ class SalaryService:
 
         self.db.commit()
 
+        # Оплачен — машина ушла с поста: место в живой очереди закрыто,
+        # пост свободен для следующего
+        from services.live_queue_service import LiveQueueService
+        LiveQueueService(self.db).order_closed(order_id)
+
         # Владелец смотрит в дашборд сразу после оплаты, и ждать
         # десять минут ему незачем
         from services import sync_nudge

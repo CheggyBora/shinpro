@@ -8,6 +8,8 @@ from reportlab.lib.utils import ImageReader
 from reportlab.platypus import Table, TableStyle
 from reportlab.lib import colors
 from datetime import datetime
+
+from services.wheel_service import item_title
 import os
 import sys
 from utils import get_moscow_time, money_round
@@ -145,7 +147,7 @@ class PrintService:
             item_total = OrderService.item_total(item)
             subtotal += OrderService.item_total_without_discount(item)
 
-            name = item.service.name
+            name = item_title(item)
             while stringWidth(name, self.font_name, 7.5) > inner and len(name) > 4:
                 name = name[:-2]
             line(name, size=7.5)
@@ -319,7 +321,7 @@ class PrintService:
             lines_total += item_total
 
             table_data.append([
-                item.service.name,
+                item_title(item),
                 str(item.quantity),
                 f"{display_price:.0f} ₽",  # Целое число
                 f"{item_total:.0f} ₽"      # Целое число

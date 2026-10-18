@@ -1,0 +1,756 @@
+<title>Парковка РИФ</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;700;800&display=swap">
+<style>
+/* Слой: сцена на весь экран, поверх — бренд сверху и карточка поста снизу */
+:root {
+  --bg: #e9ecef;
+  --sheet: #ffffff;
+  --ink: #16181d;
+  --muted: #5d6470;
+  --line: #d9dde3;
+  --accent: #e3262f;
+  --accent-ink: #ffffff;
+  --chip: #f1f3f6;
+  --font: "Golos Text", "Segoe UI", Roboto, Arial, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #14171c; --sheet: #1d2128; --ink: #eef0f3; --muted: #9aa2ae;
+    --line: #2d333c; --accent: #ff4a52; --accent-ink: #ffffff; --chip: #262b33;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #14171c; --sheet: #1d2128; --ink: #eef0f3; --muted: #9aa2ae;
+  --line: #2d333c; --accent: #ff4a52; --accent-ink: #ffffff; --chip: #262b33;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--font);
+  overflow: hidden; display: flex; flex-direction: column;
+}
+.stage { position: relative; flex: 1; min-height: 0; }
+#scene { position: absolute; inset: 0; display: block; width: 100%; height: 100%; touch-action: none; }
+.brand {
+  position: absolute; top: 12px; left: max(16px, env(safe-area-inset-left, 0px));
+  display: flex; align-items: center; gap: 10px; pointer-events: none;
+}
+.logo {
+  background: var(--accent); color: var(--accent-ink); font-weight: 800;
+  font-size: 15px; letter-spacing: .04em; padding: 6px 9px; border-radius: 6px;
+}
+.brand-text { font-weight: 700; font-size: 15px; color: #16181d; background: rgba(255,255,255,.82); padding: 5px 9px; border-radius: 6px; }
+.views {
+  position: absolute; top: 12px; right: max(16px, env(safe-area-inset-right, 0px));
+  display: flex; gap: 6px;
+}
+.views button, .chips button {
+  font: 500 13px/1 var(--font); border: 1px solid var(--line); background: var(--sheet);
+  color: var(--ink); border-radius: 999px; padding: 9px 13px; cursor: pointer;
+}
+.views button[aria-pressed="true"] { background: var(--ink); color: var(--sheet); border-color: var(--ink); }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.sheet {
+  background: var(--sheet); border-top: 1px solid var(--line);
+  padding-block: 16px 18px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; gap: 12px; grid-template-columns: minmax(0, 1fr);
+}
+.post-row { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.post-badge {
+  flex: none; width: 64px; height: 64px; border-radius: 12px; background: var(--accent);
+  color: var(--accent-ink); display: grid; place-items: center; text-align: center; line-height: 1;
+}
+.post-badge small { display: block; font-size: 11px; font-weight: 500; letter-spacing: .08em; text-transform: uppercase; opacity: .9; }
+.post-badge b { display: block; font-size: 30px; font-weight: 800; margin-top: 3px; }
+.post-copy { min-width: 0; }
+.post-copy h1 { margin: 0 0 4px; font-size: 18px; font-weight: 700; text-wrap: balance; }
+.post-copy p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.45; }
+.demo { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.demo span { font-size: 12px; color: var(--muted); letter-spacing: .04em; text-transform: uppercase; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chips button { background: var(--chip); }
+.chips button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.loading[hidden] { display: none; }
+.loading { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: 14px; }
+@media (max-width: 599px) {
+  .stage { flex: none; height: min(96vw, 60vh); }
+  .sheet { flex: 1; align-content: start; }
+}
+@media (min-width: 760px) {
+  .sheet { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
+}
+</style>
+
+<div class="stage">
+  <canvas id="scene" aria-label="Трёхмерная схема площадки шиномонтажа РИФ"></canvas>
+  <div class="loading" id="loading">Загружаем схему площадки…</div>
+  <div class="brand"><span class="logo">РИФ</span><span class="brand-text">Шиномонтаж</span></div>
+  <div class="views" role="group" aria-label="Вид">
+    <button type="button" id="view3d" aria-pressed="true">3D</button>
+    <button type="button" id="viewTop" aria-pressed="false">Сверху</button>
+  </div>
+</div>
+
+<section class="sheet" aria-live="polite">
+  <div class="post-row">
+    <div class="post-badge"><div><small>пост</small><b id="postNum">2</b></div></div>
+    <div class="post-copy">
+      <h1 id="postTitle">Встаньте на пост 2</h1>
+      <p id="postText"></p>
+    </div>
+  </div>
+  <div class="demo">
+    <span>Пример</span>
+    <div class="chips" role="group" aria-label="Показать пост">
+      <button type="button" data-post="1" id="chip1">Пост 1</button>
+      <button type="button" data-post="2" id="chip2">Пост 2</button>
+      <button type="button" data-post="3" id="chip3">Пост 3</button>
+      <button type="button" data-post="4" id="chip4">Пост 4</button>
+    </div>
+  </div>
+</section>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+function startScene() {
+  // Всё в метрах. x — вдоль фасада слева направо (0 — левый край помоста),
+  // z — от стены здания (0) к дороге (10), y — вверх
+  var DEPTH = 10;
+  var SLOPE_X0 = 8.5, SLOPE_X1 = 9.5;     // скос шириной 1 м
+  var RISE = 0.2;                         // перепад: справа от скоса площадка выше
+  var ENTRY_X0 = 4.5, ENTRY_X1 = 7.0;     // въезд напротив поста 1
+  var LEFT = -14, RIGHT = 38;             // площадка и здание уходят в дымку
+  var CURB = 0.12;
+
+  // Приямок вдоль стены сразу после окна: слева спуск в 3 ступеньки,
+  // дальше нижняя площадка с двумя дверями в полуподвал
+  var STEPS = 3, RISER = 0.17, TREAD = 0.35;
+  var PIT_X0 = 24.7;                                // верхняя ступенька, у окна
+  var LAND_X0 = PIT_X0 + STEPS * TREAD;             // начало нижней площадки
+  var PIT_X1 = LAND_X0 + 4.4;                       // конец площадки: две двери, между ними 2 м
+  var PIT_W = 1.3;                                  // ширина от стены
+
+  // Высота площадки в точке x: слева низ, на скосе — подъём, справа верх
+  function groundY(x) {
+    if (x <= SLOPE_X0) return 0;
+    if (x >= SLOPE_X1) return RISE;
+    return RISE * (x - SLOPE_X0) / (SLOPE_X1 - SLOPE_X0);
+  }
+
+  // Посты: сначала два угла у стены, потом два у дороги
+  var POSTS = {
+    1: { corners: [[4.5, 0.65], [7.0, 0.65], [7.0, 5.65], [4.5, 5.65]],
+         title: 'Встаньте на пост 1' },
+    2: { corners: [[13.7, 0.17], [15.61, 1.78], [12.4, 5.61], [10.49, 4.0]],
+         title: 'Встаньте на пост 2' },
+    3: { corners: [[19.6, 0.47], [21.51, 2.08], [18.3, 5.91], [16.39, 4.3]],
+         title: 'Встаньте на пост 3' },
+    4: { corners: [[26.53, 2.0], [27.96, 4.05], [23.87, 6.92], [22.44, 4.87]],
+         title: 'Встаньте на пост 4' }
+  };
+
+  var canvas = document.getElementById('scene');
+  var loading = document.getElementById('loading');
+  if (!window.THREE) { loading.textContent = 'Не удалось загрузить 3D. Обновите страницу.'; return; }
+
+  var renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.outputEncoding = THREE.sRGBEncoding;
+  var maxAniso = renderer.capabilities.getMaxAnisotropy();
+
+  var SKY = 0xd6dee8;
+  var scene = new THREE.Scene();
+  scene.background = new THREE.Color(SKY);
+  scene.fog = new THREE.Fog(SKY, 38, 95);
+
+  var camera = new THREE.PerspectiveCamera(40, 1, 0.1, 400);
+  var controls = new THREE.OrbitControls(camera, canvas);
+  controls.enableDamping = true;
+  controls.maxPolarAngle = Math.PI * 0.46;
+  controls.minDistance = 5;
+  controls.maxDistance = 70;
+
+  // --- Свет ---------------------------------------------------------
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x9a9890, 0.85));
+  var sun = new THREE.DirectionalLight(0xfff6e8, 0.9);
+  sun.position.set(-14, 26, 20);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.bias = -0.0004;
+  var sc = sun.shadow.camera;
+  sc.left = -24; sc.right = 24; sc.top = 24; sc.bottom = -24; sc.near = 1; sc.far = 90;
+  sun.target.position.set(12, 0, 4);
+  scene.add(sun); scene.add(sun.target);
+
+  // --- Помощники ----------------------------------------------------
+  function mat(color, opts) {
+    return new THREE.MeshStandardMaterial(Object.assign({ color: color, roughness: 0.9, metalness: 0 }, opts || {}));
+  }
+  function box(w, h, d, material, x, y, z) {
+    var m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material);
+    m.position.set(x, y, z);
+    m.castShadow = true; m.receiveShadow = true;
+    scene.add(m);
+    return m;
+  }
+  function textCanvas(draw, w, h) {
+    var c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    draw(c.getContext('2d'), w, h);
+    var t = new THREE.CanvasTexture(c);
+    t.anisotropy = maxAniso;
+    t.encoding = THREE.sRGBEncoding;
+    return t;
+  }
+  // Гранитная плитка 60×30 см вразбежку. Одна текстура — 2,4 × 2,4 м
+  function paving(base, joint) {
+    var tex = textCanvas(function (g, w, h) {
+      g.fillStyle = base; g.fillRect(0, 0, w, h);
+      var cols = 4, rows = 8, cw = w / cols, rh = h / rows;
+      for (var r = 0; r < rows; r++) {
+        var off = (r % 2) * cw / 2;
+        for (var c = -1; c <= cols; c++) {
+          var x = c * cw + off;
+          var shade = (Math.random() - 0.5) * 14;
+          g.fillStyle = 'rgba(' + (shade > 0 ? '255,255,255,' : '0,0,0,') + (Math.abs(shade) / 255) + ')';
+          g.fillRect(x + 2, r * rh + 2, cw - 4, rh - 4);
+          g.strokeStyle = joint; g.lineWidth = 3;
+          g.strokeRect(x, r * rh, cw, rh);
+        }
+      }
+      for (var i = 0; i < 2500; i++) {
+        g.fillStyle = 'rgba(0,0,0,' + (Math.random() * 0.06) + ')';
+        g.fillRect(Math.random() * w, Math.random() * h, 2, 2);
+      }
+    }, 512, 512);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    return tex;
+  }
+
+  // --- Площадка: нижняя плоскость, скос, верхняя плоскость ----------
+  function slab(x0, x1, y, z0, z1) {
+    z0 = z0 || 0; z1 = z1 || DEPTH;
+    var tex = paving('#bdbab3', '#9b988f');
+    tex.repeat.set((x1 - x0) / 2.4, (z1 - z0) / 2.4);
+    var m = new THREE.Mesh(new THREE.PlaneGeometry(x1 - x0, z1 - z0),
+                           new THREE.MeshStandardMaterial({ map: tex, roughness: 1 }));
+    m.rotation.x = -Math.PI / 2;
+    m.position.set((x0 + x1) / 2, y, (z0 + z1) / 2);
+    m.receiveShadow = true;
+    scene.add(m);
+  }
+  slab(LEFT, SLOPE_X0, 0);
+  // Верхняя плоскость — с вырезом под приямок у стены
+  slab(SLOPE_X1, PIT_X0, RISE);
+  slab(PIT_X0, PIT_X1, RISE, PIT_W, DEPTH);
+  slab(PIT_X1, RIGHT, RISE);
+
+  // Скос — наклонная полоса между плоскостями, плитка уложена поперёк
+  (function () {
+    var tex = paving('#aeaba3', '#8e8b83');
+    tex.repeat.set(1 / 1.2, DEPTH / 1.2);
+    var g = new THREE.BufferGeometry();
+    var v = [SLOPE_X0, 0, 0,  SLOPE_X1, RISE, 0,  SLOPE_X1, RISE, DEPTH,  SLOPE_X0, 0, DEPTH];
+    g.setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute([0, 1, 1, 1, 1, 0, 0, 0], 2));
+    g.setIndex([0, 3, 1, 1, 3, 2]);
+    g.computeVertexNormals();
+    var m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ map: tex, roughness: 1, side: THREE.DoubleSide }));
+    m.receiveShadow = true;
+    scene.add(m);
+    // Ребро перелома сверху — светлая кромка, чтобы перепад читался
+    box(0.04, 0.01, DEPTH, mat(0xe2dfd8), SLOPE_X1, RISE + 0.003, DEPTH / 2);
+    box(0.04, 0.01, DEPTH, mat(0x8a877f), SLOPE_X0, 0.003, DEPTH / 2);
+  })();
+
+  // --- Бордюр и дорога ----------------------------------------------
+  var curbMat = mat(0xa3a19b);
+  var ENTRY_LIP = 0.03;   // заниженный бордюр въезда — почти вровень с дорогой
+
+  // Бордюр, у которого верх идёт от h0 (слева) до h1 (справа)
+  function curb(x0, x1, h0, h1) {
+    var w = x1 - x0;
+    var g = new THREE.BoxGeometry(w, 1, 0.2);
+    var pos = g.attributes.position;
+    for (var i = 0; i < pos.count; i++) {
+      var x = pos.getX(i);
+      pos.setY(i, pos.getY(i) > 0 ? h0 + (h1 - h0) * (x + w / 2) / w : 0);
+    }
+    g.computeVertexNormals();
+    var m = new THREE.Mesh(g, curbMat);
+    m.position.set((x0 + x1) / 2, 0, DEPTH + 0.1);
+    m.castShadow = true; m.receiveShadow = true;
+    scene.add(m);
+  }
+  // Слева от въезда поребрика нет — поверхность ровная, как на въезде
+  curb(LEFT, ENTRY_X0, ENTRY_LIP, ENTRY_LIP);
+  // Линия въезда: от въезда до скоса вровень, без ступеньки
+  curb(ENTRY_X0, SLOPE_X0, ENTRY_LIP, ENTRY_LIP);
+  // Скос: подъём к верхней площадке
+  curb(SLOPE_X0, SLOPE_X1, ENTRY_LIP, RISE);
+  // Верхняя часть: вровень с верхней площадкой
+  curb(SLOPE_X1, RIGHT, RISE, RISE);
+
+  (function () {
+    var tex = textCanvas(function (g, w, h) {
+      g.fillStyle = '#45484d'; g.fillRect(0, 0, w, h);
+      for (var i = 0; i < 6000; i++) {
+        g.fillStyle = 'rgba(255,255,255,' + (Math.random() * 0.07) + ')';
+        g.fillRect(Math.random() * w, Math.random() * h, 2, 2);
+      }
+    }, 256, 256);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(16, 3);
+    var road = new THREE.Mesh(new THREE.PlaneGeometry(RIGHT - LEFT + 40, 10),
+                              new THREE.MeshStandardMaterial({ map: tex, roughness: 1 }));
+    road.rotation.x = -Math.PI / 2;
+    road.position.set((LEFT + RIGHT) / 2, -0.01, DEPTH + 0.2 + 5);
+    road.receiveShadow = true;
+    scene.add(road);
+    var paint = mat(0xf0f0ec);
+    for (var x = LEFT - 20; x < RIGHT + 20; x += 6) {
+      box(3, 0.005, 0.12, paint, x, 0.0, DEPTH + 3.6);
+      box(3, 0.005, 0.12, paint, x, 0.0, DEPTH + 6.9);
+    }
+    // Стрелка одностороннего движения на асфальте не рисуем: направление уточняется
+  })();
+
+  // --- Здание под эстакадой ------------------------------------------
+  var WALL_H = 3.6;
+  box(RIGHT - LEFT, WALL_H, 6, mat(0xeeece6), (LEFT + RIGHT) / 2, WALL_H / 2, -3);
+  // Гранитный цоколь
+  box(RIGHT - LEFT, 0.95, 0.08, mat(0x34363b, { roughness: 0.45, metalness: 0.1 }), (LEFT + RIGHT) / 2, 0.475, 0.04);
+  // Швы облицовочных панелей
+  var seam = mat(0xd6d4cd);
+  for (var px = LEFT; px < RIGHT; px += 1.25) box(0.025, WALL_H - 0.95, 0.03, seam, px, 0.95 + (WALL_H - 0.95) / 2, 0.02);
+  box(RIGHT - LEFT, 0.025, 0.03, seam, (LEFT + RIGHT) / 2, 2.25, 0.02);
+
+  // Эстакада: плита дороги наверху и ограждение
+  box(RIGHT - LEFT, 0.4, 7, mat(0x8e9096), (LEFT + RIGHT) / 2, WALL_H + 0.2, -3.2);
+  box(RIGHT - LEFT, 0.28, 0.12, mat(0xdedcd5), (LEFT + RIGHT) / 2, WALL_H + 0.14, 0.02);
+  var railMat = mat(0x2c2e31, { roughness: 0.45, metalness: 0.6 });
+  box(RIGHT - LEFT, 0.07, 0.07, railMat, (LEFT + RIGHT) / 2, WALL_H + 1.45, -0.05);
+  box(RIGHT - LEFT, 0.05, 0.05, railMat, (LEFT + RIGHT) / 2, WALL_H + 0.55, -0.05);
+  for (var rx = LEFT; rx < RIGHT; rx += 0.3) box(0.03, 0.9, 0.03, railMat, rx, WALL_H + 1.0, -0.05);
+  for (var sx = LEFT; sx < RIGHT; sx += 2.4) box(0.08, 1.1, 0.08, railMat, sx, WALL_H + 0.95, -0.05);
+
+  // Окна с рамами
+  var glass = mat(0x1f2933, { roughness: 0.15, metalness: 0.5 });
+  var frameMat = mat(0xf7f7f5, { roughness: 0.5 });
+  function windowAt(x0, w, h) {
+    var y0 = groundY(x0 + w / 2) + 1.0;
+    box(w + 0.12, h + 0.12, 0.05, frameMat, x0 + w / 2, y0 + h / 2, 0.04);
+    box(w, h, 0.06, glass, x0 + w / 2, y0 + h / 2, 0.06);
+    for (var mx = x0 + w / 3; mx < x0 + w - 0.1; mx += w / 3) box(0.05, h, 0.07, frameMat, mx, y0 + h / 2, 0.07);
+  }
+  windowAt(-2.6, 2.0, 1.25);
+  windowAt(0.3, 2.2, 1.25);
+  windowAt(3.4, 1.4, 1.25);
+  windowAt(6.2, 2.0, 1.25);
+  windowAt(12.3, 1.8, 1.25);
+  // Маленькое окно — ориентир: на нём кончаются 15 м постов
+  windowAt(23.6, 0.9, 0.9);
+
+  // Двери с наличником: 24/7 у поста 2, дверь 2 перед постом 3, дверь 3
+  var doorMat = mat(0x4a4e54, { roughness: 0.55, metalness: 0.2 });
+  function doorAt(x) {
+    var y0 = groundY(x);
+    box(1.15, 2.3, 0.05, mat(0x2b2d31), x, y0 + 1.15, 0.05);
+    box(1.0, 2.15, 0.08, doorMat, x, y0 + 1.075, 0.08);
+    box(0.04, 0.22, 0.05, mat(0xcfd2d6, { metalness: 0.6, roughness: 0.3 }), x + 0.36, y0 + 1.05, 0.14);
+    return y0;
+  }
+  var y247 = doorAt(10.7);
+  doorAt(15.4);
+  // Приямок: слева спуск, внизу площадка с двумя дверями,
+  // справа — каменное ограждение
+  (function () {
+    var stone = mat(0xa6a39c), concrete = mat(0x9a9891);
+    var floorY = RISE - STEPS * RISER;
+    var depth = RISE - floorY;
+    // Спуск слева: ступенька у окна — самая высокая
+    for (var k = 0; k < STEPS; k++) {
+      var top = RISE - RISER * (k + 1);
+      var h = top - floorY + 0.001;
+      box(TREAD, h, PIT_W, stone, PIT_X0 + TREAD * (k + 0.5), floorY + h / 2, PIT_W / 2);
+    }
+    // Нижняя площадка
+    box(PIT_X1 - LAND_X0, 0.04, PIT_W, stone, (LAND_X0 + PIT_X1) / 2, floorY - 0.02, PIT_W / 2);
+    // Стенки: у дороги, в правом торце и стена здания ниже земли
+    box(PIT_X1 - PIT_X0 + 0.2, depth, 0.2, concrete, (PIT_X0 + PIT_X1) / 2, floorY + depth / 2, PIT_W + 0.1);
+    box(0.2, depth, PIT_W + 0.2, concrete, PIT_X1 + 0.1, floorY + depth / 2, PIT_W / 2 + 0.1);
+    box(PIT_X1 - PIT_X0, depth, 0.1, mat(0x34363b, { roughness: 0.45 }), (PIT_X0 + PIT_X1) / 2, floorY + depth / 2, -0.05);
+    // Две двери в полуподвал
+    // Двери шириной около метра, просвет между ними 2 м
+    [LAND_X0 + 0.7, LAND_X0 + 3.7].forEach(function (dx) {
+      box(1.0, 2.05, 0.05, mat(0x2b2d31), dx, floorY + 1.025, 0.07);
+      box(0.88, 1.95, 0.08, doorMat, dx, floorY + 0.975, 0.1);
+      box(0.04, 0.2, 0.05, mat(0xcfd2d6, { metalness: 0.6, roughness: 0.3 }), dx + 0.3, floorY + 1.0, 0.16);
+    });
+    // Каменное ограждение с двух сторон: вдоль дороги и справа.
+    // Слева открыто — там начинаются ступеньки
+    var H = 0.3, T = 0.3;
+    var wallStone = mat(0x8f8c85), capStone = mat(0xb3b0a9);
+    var fz = PIT_W + T / 2, len = PIT_X1 + T - PIT_X0;
+    box(len, H, T, wallStone, PIT_X0 + len / 2, RISE + H / 2, fz);
+    box(len + 0.06, 0.07, T + 0.08, capStone, PIT_X0 + len / 2, RISE + H + 0.035, fz);
+    var sx = PIT_X1 + T / 2, side = PIT_W + T;
+    box(T, H, side, wallStone, sx, RISE + H / 2, side / 2);
+    box(T + 0.08, 0.07, side + 0.06, capStone, sx, RISE + H + 0.035, side / 2);
+  })();
+
+  (function () {
+    var t = textCanvas(function (g, w, h) {
+      g.fillStyle = '#121418'; g.fillRect(0, 0, w, h);
+      g.fillStyle = '#ff3b3b'; g.font = '800 92px Arial'; g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillText('24/7', w / 2, h / 2 + 4);
+    }, 256, 160);
+    var m = new THREE.Mesh(new THREE.PlaneGeometry(0.42, 0.26), new THREE.MeshBasicMaterial({ map: t }));
+    m.position.set(10.7, y247 + 1.6, 0.13); scene.add(m);
+  })();
+
+  // Вывески: тёмные объёмные буквы прямо на фасаде, логотип РИФ красный
+  function sign(parts, cx, letterH) {
+    var PX = 260;                                      // высота строки в пикселях
+    var font = '700 ' + Math.round(PX * 0.78) + 'px "Golos Text", Arial, sans-serif';
+    var probe = document.createElement('canvas').getContext('2d');
+    probe.font = font;
+    var LOGO = Math.round(PX * 0.92), GAP = Math.round(PX * 0.16);
+    var width = GAP;
+    parts.forEach(function (part) {
+      width += (part === '#logo' ? LOGO : probe.measureText(part).width) + GAP;
+    });
+    width = Math.ceil(width);
+    var t = textCanvas(function (g, w, h) {
+      var x = GAP;
+      g.textBaseline = 'middle';
+      parts.forEach(function (part) {
+        if (part === '#logo') {
+          var r = 18, y = (h - LOGO) / 2;
+          g.fillStyle = '#e3262f';
+          g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + LOGO, y, x + LOGO, y + LOGO, r);
+          g.arcTo(x + LOGO, y + LOGO, x, y + LOGO, r); g.arcTo(x, y + LOGO, x, y, r);
+          g.arcTo(x, y, x + LOGO, y, r); g.fill();
+          g.fillStyle = '#fff'; g.textAlign = 'center';
+          g.font = '800 ' + Math.round(LOGO * 0.36) + 'px Arial';
+          g.fillText('РИФ', x + LOGO / 2, h / 2 + LOGO * 0.18);
+          g.beginPath(); g.arc(x + LOGO / 2, h / 2 - LOGO * 0.14, LOGO * 0.2, Math.PI, 0); g.lineWidth = 12;
+          g.strokeStyle = '#fff'; g.stroke();
+          g.textAlign = 'left';
+          x += LOGO + GAP;
+        } else {
+          g.font = font;
+          g.fillStyle = 'rgba(0,0,0,.18)'; g.fillText(part, x + 5, h / 2 + 9);
+          g.fillStyle = '#23262b'; g.fillText(part, x, h / 2 + 4);
+          x += g.measureText(part).width + GAP;
+        }
+      });
+    }, width, PX);
+    var heightM = letterH / 0.78, widthM = heightM * width / PX;
+    var m = new THREE.Mesh(new THREE.PlaneGeometry(widthM, heightM),
+                           new THREE.MeshBasicMaterial({ map: t, transparent: true }));
+    m.position.set(cx, 2.95, 0.07);
+    scene.add(m);
+    return widthM;
+  }
+  sign(['ШИНОМОНТАЖ', '#logo', 'ПОКРАСКА ДИСКОВ'], 4.6, 0.42);
+  sign(['ШИНЫ'], 13.2, 0.42);
+
+  // --- Помост со столбом ---------------------------------------------
+  // Щит: деревянный помост со столбом, в 1,5 м от стены
+  var SHIELD_Z = 1.5;
+  var wood = mat(0xa39985);
+  box(3, 0.45, 3.35, wood, 1.5, 0.225, SHIELD_Z + 1.85);
+  for (var wz = 0.3; wz < 3.5; wz += 0.22) box(3.0, 0.012, 0.015, mat(0x7f7665), 1.5, 0.456, SHIELD_Z + wz);
+  var steel = mat(0x5c6168, { roughness: 0.45, metalness: 0.6 });
+  box(0.7, 0.04, 0.7, steel, 2.1, 0.47, SHIELD_Z + 1.6);
+  box(0.28, 7.2, 0.28, steel, 2.1, 4.05, SHIELD_Z + 1.6);
+
+  // --- Столб у дороги: ⌀ 40 см, 2 м от скоса, 20 см от дороги ------
+  (function () {
+    var x = SLOPE_X1 + 2 + 0.2, z = DEPTH - 0.2 - 0.2, y = groundY(x);
+    var pm = mat(0xdfe3e7, { roughness: 0.55 });
+    var base = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.36, 1.5, 28), pm);
+    base.position.set(x, y + 0.75, z); base.castShadow = true; scene.add(base);
+    var ring = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.12, 28), pm);
+    ring.position.set(x, y + 1.55, z); scene.add(ring);
+    var pole = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.2, 9, 24), mat(0xa6abb2, { roughness: 0.5, metalness: 0.35 }));
+    pole.position.set(x, y + 6.0, z); pole.castShadow = true; scene.add(pole);
+    var signTex = textCanvas(function (g, w, h) {
+      g.fillStyle = '#1f5fbf'; g.beginPath(); g.arc(w / 2, h / 2, w / 2 - 6, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = '#fff'; g.lineWidth = 12; g.stroke();
+      g.fillStyle = '#fff'; g.beginPath();
+      g.moveTo(w / 2, 34); g.lineTo(w / 2 + 40, 96); g.lineTo(w / 2 + 14, 96); g.lineTo(w / 2 + 14, h - 34);
+      g.lineTo(w / 2 - 14, h - 34); g.lineTo(w / 2 - 14, 96); g.lineTo(w / 2 - 40, 96); g.closePath(); g.fill();
+    }, 256, 256);
+    var s = new THREE.Mesh(new THREE.CircleGeometry(0.35, 40), new THREE.MeshBasicMaterial({ map: signTex }));
+    s.position.set(x, y + 3.3, z + 0.21); scene.add(s);
+  })();
+
+  // --- Посты ----------------------------------------------------------
+  function mid(a, b) { return [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]; }
+  var postMeshes = {};
+  var lineMat = new THREE.MeshBasicMaterial({ color: 0xf6f6f2 });
+  Object.keys(POSTS).forEach(function (n) {
+    var c = POSTS[n].corners;
+    var y = groundY((c[0][0] + c[2][0]) / 2) + 0.015;
+
+    // Заливка выбранного поста
+    var shape = new THREE.Shape();
+    shape.moveTo(c[0][0], -c[0][1]);
+    for (var i = 1; i < 4; i++) shape.lineTo(c[i][0], -c[i][1]);
+    shape.closePath();
+    var fill = new THREE.Mesh(new THREE.ShapeGeometry(shape),
+      new THREE.MeshBasicMaterial({ color: 0xe3262f, transparent: true, opacity: 0, depthWrite: false }));
+    fill.rotation.x = -Math.PI / 2;
+    fill.position.y = y;
+    scene.add(fill);
+
+    // Разметка: белая линия по трём сторонам, со стороны заезда открыто
+    for (var k = 0; k < 3; k++) {
+      var a = c[k], b = c[(k + 1) % 4];
+      if (k === 2) { a = c[3]; b = c[0]; }
+      var len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      var line = new THREE.Mesh(new THREE.BoxGeometry(len + 0.12, 0.012, 0.12), lineMat);
+      line.position.set((a[0] + b[0]) / 2, y + 0.004, (a[1] + b[1]) / 2);
+      line.rotation.y = -Math.atan2(b[1] - a[1], b[0] - a[0]);
+      scene.add(line);
+    }
+
+    // Номер у въездного края, повёрнут вдоль поста: читается при заезде
+    var wall = mid(c[0], c[1]), road = mid(c[2], c[3]);
+    var dx = wall[0] - road[0], dz = wall[1] - road[1];
+    var L = Math.hypot(dx, dz);
+    var pos = [road[0] + dx / L * 1.25, road[1] + dz / L * 1.25];
+    var numTex = textCanvas(function (g, w, h) {
+      g.fillStyle = '#f6f6f2'; g.font = '800 230px Arial'; g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillText(n, w / 2, h / 2 + 12);
+    }, 256, 256);
+    var holder = new THREE.Group();
+    var num = new THREE.Mesh(new THREE.PlaneGeometry(1.3, 1.3),
+      new THREE.MeshBasicMaterial({ map: numTex, transparent: true, depthWrite: false }));
+    num.rotation.x = -Math.PI / 2;
+    holder.add(num);
+    holder.position.set(pos[0], y + 0.006, pos[1]);
+    holder.rotation.y = Math.atan2(-dx, -dz);
+    scene.add(holder);
+
+    postMeshes[n] = { fill: fill, center: mid(wall, road), y: y, wall: wall, road: road };
+  });
+
+  // Метка над выбранным постом
+  var pinTex = textCanvas(function () {}, 512, 256);
+  var pin = new THREE.Sprite(new THREE.SpriteMaterial({ map: pinTex, depthTest: false }));
+  pin.scale.set(3.0, 1.5, 1);
+  pin.renderOrder = 10;
+  scene.add(pin);
+  function drawPin(n) {
+    var c = pinTex.image, g = c.getContext('2d');
+    g.clearRect(0, 0, c.width, c.height);
+    g.fillStyle = '#e3262f';
+    g.beginPath();
+    var r = 26, x = 36, y = 20, w = 440, h = 150;
+    g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r);
+    g.lineTo(256 + 26, y + h); g.lineTo(256, 236); g.lineTo(256 - 26, y + h);
+    g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); g.fill();
+    g.fillStyle = '#fff'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.font = '800 92px "Golos Text", Arial, sans-serif';
+    g.fillText('ПОСТ ' + n, 256, 98);
+    pinTex.needsUpdate = true;
+  }
+
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var clock = new THREE.Clock();
+
+  // --- Маршрут от дороги: стрелки -----------------------------------
+  // Стрелки бегут от дороги к въездной стороне поста и там гаснут.
+  // Каждая лежит на поверхности: на скосе наклоняется вместе с плиткой
+  function surfaceY(x, z) {
+    if (z > DEPTH + 0.2) return 0;                     // дорога
+    if (z > DEPTH - 0.05) return Math.max(groundY(x), ENTRY_LIP);
+    return groundY(x);
+  }
+
+  var arrowGeo = new THREE.ShapeGeometry((function () {
+    var sh = new THREE.Shape();
+    sh.moveTo(0, 0.42); sh.lineTo(0.42, -0.12); sh.lineTo(0.2, -0.12); sh.lineTo(0, 0.12);
+    sh.lineTo(-0.2, -0.12); sh.lineTo(-0.42, -0.12); sh.closePath();
+    return sh;
+  })());
+  // Остриём вдоль +z: так стрелку разворачивает lookAt
+  arrowGeo.rotateX(Math.PI / 2);
+  var arrows = [];
+  for (var ai = 0; ai < 48; ai++) {
+    var am = new THREE.Mesh(arrowGeo, new THREE.MeshBasicMaterial({
+      color: 0xe3262f, transparent: true, depthWrite: false, side: THREE.DoubleSide }));
+    am.renderOrder = 5;
+    am.visible = false;
+    scene.add(am);
+    arrows.push(am);
+  }
+  var STEP = 1.15, SPEED = 1.6, FADE = 1.2;   // метры, м/с, метры
+  var route = null, routeLength = 1;
+
+  function makeRoute(n) {
+    var post = postMeshes[n];
+    var ex = (ENTRY_X0 + ENTRY_X1) / 2;
+    // Ось поста: от въездной стороны к стене
+    var ax = post.wall[0] - post.road[0], az = post.wall[1] - post.road[1];
+    var al = Math.hypot(ax, az); ax /= al; az /= al;
+    var entry = post.road;
+    // Перед постом выравниваемся по его оси — заезд ровный, не наискось
+    var before = [entry[0] - ax * 2.4, entry[1] - az * 2.4];
+    var pts = [[ex, DEPTH + 4.2], [ex, DEPTH + 0.4]];
+    if (n === '1') {
+      pts.push([entry[0], entry[1] + 1.6]);
+    } else if (before[0] < SLOPE_X1 + 2) {
+      // Пост сразу за скосом: плавная дуга без крюка
+      pts.push([ex + 0.9, 7.4]);
+      pts.push(before);
+    } else {
+      pts.push([ex + 0.8, 8.0]);
+      pts.push([SLOPE_X1 + 0.6, 8.0]);
+      if (before[0] > SLOPE_X1 + 4) pts.push([before[0] - 2.4, 7.9]);
+      pts.push(before);
+    }
+    pts.push(entry);
+    route = new THREE.CatmullRomCurve3(pts.map(function (q) { return new THREE.Vector3(q[0], 0, q[1]); }),
+                                       false, 'centripetal');
+    routeLength = route.getLength();
+  }
+
+  var tmp = new THREE.Vector3();
+  function placeArrows(t) {
+    if (!route) return;
+    var shift = reduce ? 0 : (t * SPEED) % STEP;
+    var count = Math.floor(routeLength / STEP) + 1;
+    for (var i = 0; i < arrows.length; i++) {
+      var m = arrows[i];
+      var d = i * STEP + shift;
+      if (i >= count || d > routeLength) { m.visible = false; continue; }
+      var u = d / routeLength;
+      var p = route.getPointAt(u);
+      var q = route.getPointAt(Math.min(u + 0.15 / routeLength, 1));
+      if (u >= 0.999) q = p.clone().add(route.getTangentAt(1));
+      m.position.set(p.x, surfaceY(p.x, p.z) + 0.035, p.z);
+      tmp.set(q.x, surfaceY(q.x, q.z) + 0.035, q.z);
+      m.lookAt(tmp);
+      m.material.opacity = Math.max(0, Math.min(1, d / FADE, (routeLength - d) / FADE));
+      m.visible = m.material.opacity > 0.01;
+    }
+  }
+
+  // --- Выбор поста ---------------------------------------------------
+  var current = '2';
+  var postNum = document.getElementById('postNum');
+  var postTitle = document.getElementById('postTitle');
+  var postText = document.getElementById('postText');
+  function choose(n) {
+    current = String(n);
+    var p = POSTS[current];
+    postNum.textContent = current;
+    postTitle.textContent = p.title;
+    postText.textContent = 'Двигайтесь согласно стрелкам';
+    var ct = postMeshes[current].center;
+    pin.position.set(ct[0], postMeshes[current].y + 3.0, ct[1]);
+    drawPin(current);
+    makeRoute(current);
+    document.querySelectorAll('.chips button').forEach(function (b) {
+      b.setAttribute('aria-pressed', b.dataset.post === current ? 'true' : 'false');
+    });
+  }
+  document.querySelectorAll('.chips button').forEach(function (b) {
+    b.addEventListener('click', function () { choose(b.dataset.post); });
+  });
+
+  // --- Камера: 3D и сверху -------------------------------------------
+  var target = new THREE.Vector3(12, 0, 5);
+  var viewMode = '3d';
+  function setView(mode) {
+    viewMode = mode;
+    var narrow = window.innerWidth < 600;
+    // Смотрим между въездом и выбранным постом: весь маршрут в кадре
+    var ct = postMeshes[current] ? postMeshes[current].center : [12, 5];
+    var mid = ((ENTRY_X0 + ENTRY_X1) / 2 + ct[0]) / 2;
+    var tx = narrow ? mid : Math.max(12, mid);
+    if (narrow) {
+      // Телефон: тот же вид, что на компьютере, но мельче и широким
+      // объективом — от въезда до поста 4 всё помещается в узкий экран
+      var hfov = 58 * Math.PI / 180;
+      camera.fov = 2 * Math.atan(Math.tan(hfov / 2) / camera.aspect) * 180 / Math.PI;
+      camera.updateProjectionMatrix();
+      target.set(14.2, 0, 6.6);
+      if (mode === 'top') camera.position.set(14.2, 26, 6.61);
+      else camera.position.set(14.2, 19, 22);
+    } else {
+      camera.fov = 40;
+      camera.updateProjectionMatrix();
+      target.set(tx, 0, 5);
+      if (mode === 'top') camera.position.set(tx, 32, 5.6);
+      else camera.position.set(tx - 7, 13, 29);
+    }
+    controls.target.copy(target);
+    controls.update();
+    document.getElementById('view3d').setAttribute('aria-pressed', mode === 'top' ? 'false' : 'true');
+    document.getElementById('viewTop').setAttribute('aria-pressed', mode === 'top' ? 'true' : 'false');
+  }
+  document.getElementById('view3d').addEventListener('click', function () { setView('3d'); });
+  document.getElementById('viewTop').addEventListener('click', function () { setView('top'); });
+
+  function resize() {
+    var w = canvas.clientWidth, h = canvas.clientHeight;
+    if (!w || !h) return;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    if (typeof viewMode !== 'undefined' && window.innerWidth < 600) setView(viewMode);
+  }
+  window.addEventListener('resize', resize);
+
+  function frame() {
+    var t = clock.getElapsedTime();
+    Object.keys(postMeshes).forEach(function (n) {
+      postMeshes[n].fill.material.opacity = n === current
+        ? (reduce ? 0.42 : 0.3 + 0.12 * Math.sin(t * 3)) : 0;
+    });
+    pin.position.y = postMeshes[current].y + 3.0 + (reduce ? 0 : 0.12 * Math.sin(t * 2.2));
+    placeArrows(t);
+    controls.update();
+    renderer.render(scene, camera);
+    requestAnimationFrame(frame);
+  }
+
+  // Ссылка из кабинета открывает сцену сразу на нужном посту: …#post3.
+  // #top — сразу вид сверху
+  var hash = (location.hash || '').replace('#', '');
+  var start = /^post[1-4]$/.test(hash) ? hash.slice(4) : '2';
+  resize();
+  choose(start);
+  setView(hash === 'top' ? 'top' : '3d');
+  window.addEventListener('hashchange', function () {
+    var h = (location.hash || '').replace('#', '');
+    if (/^post[1-4]$/.test(h)) choose(h.slice(4));
+    if (h === 'top') setView('top');
+  });
+  loading.hidden = true;
+  frame();
+}
+
+// Вывески и метка рисуются шрифтом — ждём его, но не дольше полутора секунд
+(function () {
+  var started = false;
+  function go() { if (!started) { started = true; startScene(); } }
+  try {
+    document.fonts.load('700 120px "Golos Text"').then(go, go);
+  } catch (e) { go(); }
+  setTimeout(go, 1500);
+})();
+</script>

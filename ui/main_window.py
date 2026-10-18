@@ -75,6 +75,9 @@ class MainWindow:
         self.nav.add('Прайс-лист', self.price_list_tab.frame)
         self.nav.add('Настройки', self.settings_tab.frame)
 
+        # Наряд из живой очереди открылся — показываем «Наряды»
+        self.appointments_tab.queue.on_order_opened = lambda: self.nav.select(1)
+
         self.nav.select(1)  # открываем сразу на нарядах — основная работа
         self.refresh_shift_status()
 

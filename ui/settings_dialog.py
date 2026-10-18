@@ -116,6 +116,8 @@ class SettingsDialog:
             ('Наряды и очередь', self._build_orders),
             ('Группы клиентов', self._build_client_groups),
             ('Категории мастеров', self._build_employee_roles),
+            ('Выбор колеса', self._build_wheel_services),
+            ('Живая очередь', self._build_live_queue),
             ('Смена', self._build_shift),
             ('Хранение и сезон', self._build_storage),
             ('Печать', self._build_printing),
@@ -675,6 +677,39 @@ class SettingsDialog:
 
         from ui.employee_roles_editor import EmployeeRolesEditor
         self.employee_roles = EmployeeRolesEditor(content, self.db, self.dialog)
+
+    def _build_wheel_services(self, content):
+        self._section(content, "Выбор колеса")
+        self._hint(content,
+                   "Когда в наряд пробивают услугу из списка, открывается "
+                   "схема машины сверху: приёмщик отмечает колёса, на "
+                   "которых делали работу. Количество в наряде встаёт по "
+                   "числу колёс, а сами колёса видны в строке наряда, в чеке "
+                   "и в истории машины — «Ремонт жгутом (ПЛ, ЗП)». "
+                   "Не знают, какое колесо, — «Пропустить».")
+        self._hint(content, "Правки здесь сохраняются сразу.")
+
+        from ui.wheel_services_editor import WheelServicesEditor
+        self.wheel_services = WheelServicesEditor(content, self.db, self.dialog)
+
+    def _build_live_queue(self, content):
+        self._section(content, "Живая очередь")
+        self._hint(content,
+                   "Освободившийся пост сначала идёт записанным. Машину из "
+                   "очереди программа зовёт, только если ближайшая запись "
+                   "останется обеспечена постами: её работа вместе с запасом "
+                   "на допы закончится раньше, чем пост понадобится. Чем больше "
+                   "запас, тем реже записанные ждут, но тем чаще посты "
+                   "простаивают перед часом записи.")
+        self._hint(content,
+                   "Наряд из очереди открывается сразу с услугами за комплект — "
+                   "по тому, что клиент выбрал: колёса в сборе или только шины. "
+                   "Время пакетов (на дисках — 30 минут, только шины — час) "
+                   "общее с записью и задаётся в разделе «Запись». "
+                   "Правки здесь сохраняются сразу.")
+
+        from ui.queue_settings_editor import QueueSettingsEditor
+        self.queue_settings = QueueSettingsEditor(content, self.db, self.dialog)
 
     def _build_storage(self, content):
         self._section(content, "Хранение и сезон")

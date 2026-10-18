@@ -44,6 +44,17 @@ class WorkOrder(Base):
     # дважды или не зовут вовсе — каждый думает, что это сделал другой
     client_told_at = Column(DateTime(timezone=True), nullable=True)
 
+    # На каком посту стоит машина (1, 2, 3…). По нему программа знает,
+    # какие посты заняты и когда освободятся, и раздаёт их записи и
+    # живой очереди. Пусто — старые наряды и наряды без поста
+    post_number = Column(Integer, nullable=True)
+
+    # Время пакета, с которым машина пришла из очереди или записи:
+    # на дисках 30 минут, только шины — час (настройки booking_minutes_*).
+    # Плановое время наряда не меньше пакета, даже если у услуг в прайсе
+    # длительность не заполнена
+    package_minutes = Column(Integer, nullable=True)
+
     # Фактическое время: нужно, чтобы уточнять нормативы по реальным данным
     started_at = Column(DateTime(timezone=True), nullable=True)
     finished_at = Column(DateTime(timezone=True), nullable=True)

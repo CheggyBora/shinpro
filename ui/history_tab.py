@@ -4,6 +4,7 @@ from models import Car, WorkOrder, WorkOrderItem
 from sqlalchemy import or_
 from sqlalchemy.orm import joinedload
 from services import ClientService
+from services.wheel_service import item_title
 from utils import normalize_plate, format_phone
 import styles
 from logger import log
@@ -367,7 +368,7 @@ class HistoryTab:
         for item in items:
             item_total = item.price * item.quantity * (1 - item.discount_percent / 100)
             items_tree.insert('', 'end', values=(
-                item.service.name,
+                item_title(item),
                 item.quantity,
                 item.discount_percent,
                 f"{item.price:.2f}",

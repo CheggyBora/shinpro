@@ -9,7 +9,10 @@ import tkinter as tk
 from tkinter import messagebox, simpledialog
 
 from services import OrderService
+from services.wheel_service import WheelSettings, item_title
+from services.wheel_service import parse as parse_wheels
 from utils import retry_after_rollback
+from ui import wheel_picker
 
 class OrderItemsMixin:
     """Работа со списком услуг наряда."""
@@ -44,8 +47,28 @@ class OrderItemsMixin:
             messagebox.showerror("Ошибка", f"Услуга '{service_name}' не найдена")
 
     def add_service(self, service):
+        # Ремонт и правка: сначала — на каком колесе. «Пропустить» —
+        # добавить без колеса, «Отмена» — не добавлять: пробили по ошибке
+        wheels = None
+        try:
+            asks = retry_after_rollback(
+                self.db, lambda: WheelSettings(self.db).asks(service.name))
+        except Exception:
+            asks = False
+        if asks:
+            already = []
+            for item in self.order_service.get_order_items(self.order.id):
+                if item.service_id == service.id:
+                    already = parse_wheels(item.wheels)
+            wheels = wheel_picker.pick_wheels(
+                self.frame, self.order.vehicle_type, service.name,
+                already=already)
+            if wheels is None:
+                return
+
         def add():
-            self.order_service.add_service_to_order(self.order.id, service.id)
+            self.order_service.add_service_to_order(self.order.id, service.id,
+                                                    wheels=wheels)
             self.refresh_items()
 
         try:
@@ -64,13 +87,40 @@ class OrderItemsMixin:
         if not selected:
             return
         
+        # Название (#1) у ремонта и правки — переотметить колёса.
         # Редактируем "Кол-во" (#2), "Цена" (#3) или "Скидка %" (#4)
-        if column == '#2':
+        if column == '#1':
+            self.edit_wheels(selected[0])
+        elif column == '#2':
             self.edit_quantity_inline(selected[0], event)
         elif column == '#3':
             self.edit_price_inline(selected[0], event)
         elif column == '#4':
             self.edit_discount(selected[0])
+
+    def edit_wheels(self, item_id_str):
+        """Ошиблись колесом — двойной клик по названию и отметить заново."""
+        from models import WorkOrderItem
+
+        item_id = int(self.items_tree.item(item_id_str)['tags'][0])
+        item = self.db.query(WorkOrderItem).filter(
+            WorkOrderItem.id == item_id).first()
+        if item is None or item.service is None:
+            return
+        if not item.wheels and not WheelSettings(self.db).asks(item.service.name):
+            return
+
+        wheels = wheel_picker.pick_wheels(
+            self.frame, self.order.vehicle_type, item.service.name,
+            initial=parse_wheels(item.wheels))
+        if wheels is None:
+            return
+        try:
+            self.order_service.set_item_wheels(item_id, wheels)
+        except ValueError as e:
+            messagebox.showerror("Ошибка", str(e))
+            return
+        self.refresh_items()
 
     def edit_quantity_inline(self, item_id_str, event):
         # Получаем данные позиции
@@ -263,7 +313,7 @@ class OrderItemsMixin:
                 discount_display += " *"
 
             self.items_tree.insert('', 'end', values=(
-                item.service.name,
+                item_title(item),
                 item.quantity,
                 f"{item.price:.2f}",
                 discount_display,
