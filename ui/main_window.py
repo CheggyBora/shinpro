@@ -77,6 +77,12 @@ class MainWindow:
 
         # Наряд из живой очереди открылся — показываем «Наряды»
         self.appointments_tab.queue.on_order_opened = lambda: self.nav.select(1)
+        # Приёмщик позвал, открыл наряд, убрал — сервер узнаёт сразу:
+        # человек у въезда смотрит на свою страницу
+        self.appointments_tab.queue.on_changed =             lambda: self.root.after(1500, self._start_live_sync)
+        self.live_running = None
+        self.live_result = 0
+        self.root.after(5 * 1000, self._live_tick)
 
         self.nav.select(1)  # открываем сразу на нарядах — основная работа
         self.refresh_shift_status()
@@ -98,6 +104,66 @@ class MainWindow:
         from services import sync_nudge
 
         sync_nudge.set_runner(self.sync_soon_after)
+
+    # ------------------------------------------------------------------
+    # Живая очередь: места по QR (docs/live_queue.md)
+    # ------------------------------------------------------------------
+
+    LIVE_SECONDS = 20
+
+    def _live_tick(self):
+        self._start_live_sync()
+        self.root.after(self.LIVE_SECONDS * 1000, self._live_tick)
+
+    def _start_live_sync(self):
+        """
+        Обмен очередью — часто и в своём потоке со своей сессией базы:
+        вызов на пост не должен ждать большого обмена раз в 10 минут,
+        а окно — замирать, пока сервер отвечает.
+        """
+        if self.live_running is not None:
+            return
+        try:
+            from services.sync_service import SyncService
+            if not SyncService(self.db).is_enabled():
+                return
+        except Exception:
+            return
+
+        import threading
+
+        def worker():
+            from config import SessionLocal
+            from services.sync_service import SyncService
+            db = SessionLocal()
+            try:
+                self.live_result = SyncService(db).live_exchange()
+            except Exception as e:
+                log.warning(f"Обмен очередью не удался: {e}")
+                self.live_result = 0
+            finally:
+                db.close()
+
+        self.live_running = threading.Thread(target=worker, daemon=True)
+        self.live_running.start()
+        self.root.after(500, self._live_poll)
+
+    def _live_poll(self):
+        # Ждём поток здесь, в главном: окна трогать можно только отсюда
+        if self.live_running is not None and self.live_running.is_alive():
+            self.root.after(500, self._live_poll)
+            return
+        self.live_running = None
+        try:
+            from models import LiveQueueEntry
+            for obj in list(self.db.identity_map.values()):
+                if isinstance(obj, LiveQueueEntry):
+                    self.db.expire(obj)
+            panel = self.appointments_tab.queue
+            if self.live_result or panel.frame.winfo_ismapped():
+                panel.load()
+        except Exception as e:
+            log.warning(f"Не удалось обновить очередь после обмена: {e}")
 
     def schedule_shift_check(self):
         self.root.after(10 * 60 * 1000, self._periodic_shift_check)

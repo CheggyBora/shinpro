@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Boolean
 from sqlalchemy.orm import relationship
 from config import Base
 from utils import get_moscow_time
@@ -80,6 +80,11 @@ class Appointment(Base):
 
     # Что собираются делать — свободным текстом со слов клиента
     services_note = Column(Text, nullable=True)
+
+    # Что клиент указал при онлайн-записи: колёса в сборе или только
+    # шины и диаметр. По приезду наряд открывается сразу по пакету
+    wheels_assembled = Column(Boolean, nullable=True)
+    wheel_diameter = Column(String(10), nullable=True)
     comment = Column(Text, nullable=True)
 
     status = Column(String(20), default=STATUS_SCHEDULED, nullable=False, index=True)

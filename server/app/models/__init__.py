@@ -9,6 +9,7 @@ from app.models.notice import (Notice, TITLES, KIND_BOOKED, KIND_REMINDER,
                                BY_TELEGRAM, BY_PUSH)
 from app.models.photo import MasterDevice, OpenOrder, OrderPhoto
 from app.models.push import PushSubscription
+from app.models.live import LiveTicket
 from app.models.ticket import (QueueTicket, WAITING as TICKET_WAITING,
                                CALLED, SERVED, CANCELLED, EXPIRED,
                                OPEN_STATES, STATE_TITLES)
@@ -34,7 +35,7 @@ __all__ = [
     'MasterDevice', 'OpenOrder', 'OrderPhoto',
     'QueueTicket', 'TICKET_WAITING', 'CALLED', 'SERVED', 'CANCELLED',
     'EXPIRED', 'OPEN_STATES', 'STATE_TITLES',
-    'PushSubscription',
+    'PushSubscription', 'LiveTicket',
     'Appointment', 'BookingDay', 'StoredSet', 'Visit', 'VisitItem',
     'SalaryAccrual', 'SalaryPayout', 'ShopEmployee', 'ShopShift',
     'QueueSnapshot',

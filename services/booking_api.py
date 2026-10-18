@@ -175,6 +175,8 @@ class BookingApi:
                 status=item.get('status') or 'scheduled',
                 source=item.get('source') or 'phone',
                 comment=item.get('comment'),
+                wheels_assembled=item.get('wheels_assembled'),
+                wheel_diameter=item.get('wheel_diameter'),
                 post_column=item.get('column', 0),
                 fetched_at=now)
             self.db.add(row)

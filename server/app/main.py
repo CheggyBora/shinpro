@@ -108,7 +108,7 @@ if settings.CORS_ORIGINS:
     )
 
 from app.api import (auth, booking, storage, history, queue, sync, public,  # noqa: E402
-                     photos, tickets,
+                     photos, tickets, live,
                      staff, dashboard, telegram, push)
 
 app.include_router(auth.router)
@@ -124,6 +124,8 @@ app.include_router(push.router)
 app.include_router(public.router)
 app.include_router(photos.router)
 app.include_router(tickets.router)
+app.include_router(live.router)
+app.include_router(live.sync_router)
 
 
 # ----------------------------------------------------------------------
@@ -250,6 +252,25 @@ def booking_icon():
     path = os.path.join(WEB_DIR, 'icon.svg')
     return FileResponse(path, media_type='image/svg+xml',
                         headers={'Cache-Control': 'public, max-age=86400'})
+
+
+@app.get('/z/{slug}/q', response_class=HTMLResponse, include_in_schema=False)
+def live_queue_page(slug: str):
+    """
+    Живая очередь по QR у въезда: /z/shinomontazh-rif/q. Встать в очередь,
+    видеть своё место и узнать, на какой пост ехать.
+    """
+    path = os.path.join(WEB_DIR, 'live.html')
+    with open(path, encoding='utf-8') as page:
+        return HTMLResponse(page.read(), headers={'Cache-Control': 'no-cache'})
+
+
+@app.get('/parking', response_class=HTMLResponse, include_in_schema=False)
+def parking_page():
+    """3D-схема площадки со стрелками до поста: /parking?client=1#post2."""
+    path = os.path.join(WEB_DIR, 'parking.html')
+    with open(path, encoding='utf-8') as page:
+        return HTMLResponse(page.read(), headers={'Cache-Control': 'no-cache'})
 
 
 @app.get('/z/{slug}', response_class=HTMLResponse, include_in_schema=False)

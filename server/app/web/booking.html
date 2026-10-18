@@ -726,6 +726,12 @@ input.code {
           </button>
         </div>
       </div>
+
+      <!-- Диаметр: по приезду наряд открывается сразу с ценами пакета -->
+      <div class="field" style="margin:14px 0 0">
+        <label for="bookDiameter">Диаметр колёс</label>
+        <select id="bookDiameter"><option value="">Выберите</option><option value="R13">R13</option><option value="R14">R14</option><option value="R15">R15</option><option value="R16">R16</option><option value="R17">R17</option><option value="R18">R18</option><option value="R19">R19</option><option value="R20">R20</option><option value="R21">R21</option><option value="R22">R22</option><option value="R23">R23</option><option value="R24">R24</option></select>
+      </div>
     </div>
 
     <!-- хранение: только для вошедших -->
@@ -920,6 +926,13 @@ function remember(token) {
 // Имя точки из адреса страницы: /z/имя-точки. Пусто, когда кабинет
 // открыт с корня — так бывает, пока точка на сервере одна
 var SHOP = (location.pathname.match(/^\/z\/([^\/?#]+)/) || [])[1] || '';
+
+// Пришли со страницы живой очереди («Войти и встать») — после входа
+// возвращаем туда же: человек стоит у въезда и ждёт место, а не запись
+var NEXT_LIVE = /[?&]next=q(&|$)/.test(location.search);
+function backToLiveQueue() {
+  location.href = '/z/' + SHOP + '/q';
+}
 
 function api(path, options) {
   options = options || {};
@@ -1175,6 +1188,7 @@ $('lNewPinGo').addEventListener('click', function () {
 
 function afterLogin() {
   remember(state.token);
+  if (NEXT_LIVE) { backToLiveQueue(); return; }
 
   api('/auth/me').then(function (result) {
     if (!result.ok) { loginError(reason(result)); return; }
@@ -2278,6 +2292,12 @@ $('screenBook').addEventListener('submit', function (event) {
   event.preventDefault();
   $('error').hidden = true;
 
+  if (!$('bookDiameter').value) {
+    showError('Выберите диаметр колёс — по нему посчитаем стоимость');
+    $('bookDiameter').focus();
+    return;
+  }
+
   var button = $('go');
   button.disabled = true;
   button.textContent = 'Записываем…';
@@ -2286,10 +2306,12 @@ $('screenBook').addEventListener('submit', function (event) {
   var path = inCabinet ? '/booking' : '/public/book';
   var body = inCabinet
     ? {at: state.slot, license_plate: plateValue(),
-       wheels_assembled: state.wheels, storage_ids: state.picked}
+       wheels_assembled: state.wheels, storage_ids: state.picked,
+       wheel_diameter: $('bookDiameter').value}
     : {at: state.slot, license_plate: plateValue(),
        client_phone: digitsOf($('phone').value),
-       client_name: $('name').value, wheels_assembled: state.wheels};
+       client_name: $('name').value, wheels_assembled: state.wheels,
+       wheel_diameter: $('bookDiameter').value};
 
   api(path, {method: 'POST', body: body}).then(function (result) {
     if (!result.ok) {
@@ -2397,7 +2419,8 @@ api('/public/info').then(function (result) {
 
 // Калькулятор покраски: показываем кнопку, только если цех прислал цены
 loadPaint();
-loadQueueButton();
+// Онлайн-очередь «из дома» отменена (docs/live_queue.md): встать в
+// очередь можно только на месте, по QR у въезда — /z/<точка>/q
 
 REMIND_HOME.parent = $('tgCard').parentNode;
 REMIND_HOME.next = $('tgCard').nextSibling;
@@ -2417,24 +2440,14 @@ if (state.token) {
     if (!result.ok) { remember(null); state.token = null; return; }
 
     state.profile = result.data;
+    if (NEXT_LIVE) { backToLiveQueue(); return; }
 
-    // Стоит в очереди — открываем его место, а не запись. Человек
-    // открыл страницу, подъезжая к шиномонтажу: ему нужна кнопка
-    // «Я приехал» и время, а не календарь записи
-    return api('/queue/online').then(function (line) {
-      if (line.ok && line.data && line.data.mine) {
-        state.mode = 'queue';
-        openQueue();
-        return;
-      }
-
-      return api('/storage').then(function (answer) {
-        state.storage = answer.ok ? answer.data : [];
-        prepareBooking();
-        show('screenBook');
-        loadHistory();
-        loadReminders();
-      });
+    return api('/storage').then(function (answer) {
+      state.storage = answer.ok ? answer.data : [];
+      prepareBooking();
+      show('screenBook');
+      loadHistory();
+      loadReminders();
     });
   });
 }

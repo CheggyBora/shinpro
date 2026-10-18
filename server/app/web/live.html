@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Очередь — шиномонтаж</title>
+<link rel="icon" href="/z/icon.svg">
+<style>
+/* Одна колонка под телефон у въезда: форма, место в очереди, вызов */
+:root {
+  --bg: #f2f4f7; --card: #ffffff; --ink: #15181d; --muted: #5d6470;
+  --line: #d9dde3; --accent: #e3262f; --accent-ink: #ffffff; --ok: #0f7a4f;
+  --font: "Segoe UI", Roboto, Arial, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #14171c; --card: #1d2128; --ink: #eef0f3; --muted: #9aa2ae;
+          --line: #2d333c; --accent: #ff4a52; --ok: #3ccf8e; color-scheme: dark; }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--ink); font: 16px/1.45 var(--font);
+       padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+                max(24px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); }
+[hidden] { display: none !important; }
+main { max-width: 460px; margin: 0 auto; display: grid; gap: 14px; }
+.brand { display: flex; align-items: center; gap: 10px; }
+.logo { background: var(--accent); color: var(--accent-ink); font-weight: 800; padding: 6px 9px;
+        border-radius: 6px; letter-spacing: .04em; }
+.brand b { font-size: 17px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px; display: grid; gap: 12px; }
+h1 { margin: 0; font-size: 22px; line-height: 1.25; }
+p { margin: 0; color: var(--muted); }
+label { display: grid; gap: 6px; font-weight: 600; font-size: 14px; }
+input, select { font: inherit; padding: 12px; border: 1px solid var(--line); border-radius: 10px;
+                background: var(--card); color: var(--ink); width: 100%; }
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.pick { font: inherit; padding: 12px 8px; border: 1px solid var(--line); border-radius: 10px;
+        background: var(--card); color: var(--ink); cursor: pointer; }
+.pick[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); font-weight: 700; }
+.go { font: 700 17px var(--font); padding: 14px; border: 0; border-radius: 12px;
+      background: var(--accent); color: var(--accent-ink); cursor: pointer; width: 100%; }
+.ghost { font: inherit; padding: 12px; border: 1px solid var(--line); border-radius: 12px;
+         background: transparent; color: var(--ink); cursor: pointer; width: 100%; text-align: center;
+         text-decoration: none; display: block; }
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.error { color: var(--accent); font-size: 14px; margin: 0; }
+.big { font-size: 56px; font-weight: 800; line-height: 1; color: var(--ink); }
+.post { background: var(--accent); color: var(--accent-ink); border-radius: 14px; padding: 18px; text-align: center; }
+.post h1 { color: var(--accent-ink); font-size: 26px; }
+.post .big { color: var(--accent-ink); font-size: 72px; margin: 6px 0; }
+.scene { width: 100%; height: 58vh; border: 0; border-radius: 14px; background: var(--card); }
+.row { display: flex; justify-content: space-between; gap: 10px; }
+.row span { color: var(--muted); }
+.note { font-size: 13px; }
+</style>
+</head>
+<body>
+<main>
+  <div class="brand"><span class="logo">РИФ</span><b id="shopName">Шиномонтаж</b></div>
+
+  <section class="card" id="screenLoading"><p>Загружаем очередь…</p></section>
+
+  <section class="card" id="screenOffline" hidden>
+    <h1>Нет связи с шиномонтажом</h1>
+    <p>Встать в очередь с телефона сейчас не получится. Подойдите,
+      пожалуйста, к приёмщику — он поставит вас в очередь.</p>
+    <button class="ghost" type="button" id="retry">Проверить снова</button>
+  </section>
+
+  <form class="card" id="screenJoin" hidden novalidate>
+    <h1>Встать в очередь</h1>
+    <p>Вы на месте — займите очередь. Когда подойдёт ваша, здесь появится
+      номер поста и схема, куда ехать.</p>
+    <label for="plate">Номер машины
+      <input id="plate" autocomplete="off" autocapitalize="characters" placeholder="А123ВВ777" required>
+    </label>
+    <label for="phone" id="phoneLabel">Телефон
+      <input id="phone" type="tel" autocomplete="tel" placeholder="+7 900 000-00-00" required>
+    </label>
+    <p id="signedIn" class="note" hidden></p>
+    <label for="diameter">Диаметр колёс
+      <select id="diameter" required><option value="">Выберите</option></select>
+    </label>
+    <div>
+      <div style="font-weight:600;font-size:14px;margin-bottom:6px">Что привезли</div>
+      <div class="pair">
+        <button class="pick" type="button" id="wAssembled" aria-pressed="false">Колёса в сборе</button>
+        <button class="pick" type="button" id="wTires" aria-pressed="false">Только шины</button>
+      </div>
+    </div>
+    <p class="error" id="joinError" hidden></p>
+    <button class="go" type="submit" id="joinButton">Встать в очередь</button>
+    <a class="ghost" id="signIn" href="#">Войти и встать</a>
+    <p class="note">Войдя, вы получите вызов в Telegram или уведомлением,
+      даже если закроете эту страницу.</p>
+  </form>
+
+  <section class="card" id="screenWait" hidden>
+    <p>Вы в очереди</p>
+    <div class="row"><b id="waitPlate"></b><span id="waitState"></span></div>
+    <div><div class="big" id="waitPlace"></div><p id="waitPlaceText"></p></div>
+    <p id="waitEta"></p>
+    <p class="note">Не закрывайте страницу — когда позовут, здесь появится пост.
+      Если закроете, откройте снова по тому же QR: место сохранится.</p>
+    <button class="ghost" type="button" id="leave">Выйти из очереди</button>
+  </section>
+
+  <section id="screenCalled" hidden>
+    <div class="post"><h1>Проезжайте на пост</h1><div class="big" id="calledPost"></div>
+      <div id="calledPlate"></div></div>
+    <iframe class="scene" id="scene" title="Схема площадки: куда ехать" style="margin-top:14px"></iframe>
+  </section>
+
+  <section class="card" id="screenServing" hidden>
+    <h1>Вы на посту <span id="servingPost"></span></h1>
+    <p>Мастер уже работает. Спасибо, что подождали!</p>
+  </section>
+
+  <section class="card" id="screenDone" hidden>
+    <h1>Готово, спасибо!</h1>
+    <p>Будем рады видеть вас снова.</p>
+    <button class="ghost" type="button" id="again">Встать в очередь ещё раз</button>
+  </section>
+</main>
+
+<script>
+(function () {
+  var SLUG = (location.pathname.match(/^\/z\/([^\/?#]+)/) || [])[1] || '';
+  var token = null;
+  try { token = localStorage.getItem('clientToken'); } catch (e) {}
+  var wheels = null, timer = null, lastState = null;
+
+  function $(id) { return document.getElementById(id); }
+  function show(id) {
+    ['screenLoading', 'screenOffline', 'screenJoin', 'screenWait', 'screenCalled',
+     'screenServing', 'screenDone'].forEach(function (s) { $(s).hidden = s !== id; });
+  }
+  function api(path, options) {
+    options = options || {};
+    var headers = {'Content-Type': 'application/json'};
+    if (token) headers['Authorization'] = 'Bearer ' + token;
+    var sep = path.indexOf('?') < 0 ? '?' : '&';
+    return fetch(path + sep + 'shop=' + encodeURIComponent(SLUG), {
+      method: options.method || 'GET', headers: headers, credentials: 'same-origin',
+      body: options.body ? JSON.stringify(options.body) : undefined
+    }).then(function (answer) {
+      return answer.json().catch(function () { return {}; }).then(function (data) {
+        if (!answer.ok) {
+          var error = new Error(data.detail || 'Не получилось, попробуйте ещё раз');
+          error.status = answer.status;
+          throw error;
+        }
+        return data;
+      });
+    });
+  }
+
+  function pickWheels(value) {
+    wheels = value;
+    $('wAssembled').setAttribute('aria-pressed', value === true ? 'true' : 'false');
+    $('wTires').setAttribute('aria-pressed', value === false ? 'true' : 'false');
+  }
+  $('wAssembled').addEventListener('click', function () { pickWheels(true); });
+  $('wTires').addEventListener('click', function () { pickWheels(false); });
+  $('signIn').href = '/z/' + SLUG + '?next=q';
+
+  function draw(data) {
+    if (data.shop) $('shopName').textContent = data.shop;
+    var t = data.ticket;
+    if (!t) {
+      if (!data.online) return show('screenOffline');
+      prepareForm(data);
+      return show('screenJoin');
+    }
+    if (t.state === 'called' && t.post) {
+      $('calledPost').textContent = t.post;
+      $('calledPlate').textContent = t.license_plate;
+      var src = t.scene;
+      if ($('scene').getAttribute('src') !== src) $('scene').setAttribute('src', src);
+      if (lastState !== 'called' && navigator.vibrate) navigator.vibrate([300, 150, 300]);
+      lastState = 'called';
+      return show('screenCalled');
+    }
+    lastState = t.state;
+    if (t.state === 'serving') { $('servingPost').textContent = t.post || ''; return show('screenServing'); }
+    if (t.state === 'done') return show('screenDone');
+    $('waitPlate').textContent = t.license_plate;
+    if (!t.seen_by_shop) {
+      $('waitPlace').textContent = '…';
+      $('waitPlaceText').textContent = 'Передаём в шиномонтаж, пара секунд';
+      $('waitEta').textContent = '';
+      $('waitState').textContent = '';
+    } else {
+      $('waitPlace').textContent = t.place || '—';
+      $('waitPlaceText').textContent = t.place === 1 ? 'вы следующий' : 'ваше место в очереди';
+      $('waitEta').textContent = t.eta ? 'Примерно в ' + t.eta : '';
+      $('waitState').textContent = 'ждёт';
+    }
+    show('screenWait');
+  }
+
+  var formReady = false;
+  function prepareForm(data) {
+    if (formReady) return;
+    formReady = true;
+    (data.diameters || []).forEach(function (d) {
+      var option = document.createElement('option');
+      option.value = d; option.textContent = d;
+      $('diameter').appendChild(option);
+    });
+    if (data.signed_in) {
+      $('phoneLabel').hidden = true;
+      $('signedIn').hidden = false;
+      $('signedIn').textContent = 'Вы вошли с номером ' + (data.phone || '') +
+        '. Вызов придёт и в Telegram или уведомлением.';
+      $('signIn').hidden = true;
+    }
+  }
+
+  function refresh() {
+    return api('/live/state').then(draw).catch(function (e) {
+      if (lastState === null) {
+        $('screenLoading').querySelector('p').textContent = e.message;
+      }
+    });
+  }
+
+  $('screenJoin').addEventListener('submit', function (event) {
+    event.preventDefault();
+    var error = '';
+    if (!$('plate').value.trim()) error = 'Укажите номер машины';
+    else if (!$('phoneLabel').hidden && !$('phone').value.trim()) error = 'Укажите телефон';
+    else if (!$('diameter').value) error = 'Выберите диаметр колёс';
+    else if (wheels === null) error = 'Отметьте: колёса в сборе или только шины';
+    $('joinError').hidden = !error;
+    $('joinError').textContent = error;
+    if (error) return;
+    $('joinButton').disabled = true;
+    api('/live/join', {method: 'POST', body: {
+      license_plate: $('plate').value, phone: $('phone').value || null,
+      wheel_diameter: $('diameter').value, wheels_assembled: wheels
+    }}).then(function () { return refresh(); }).catch(function (e) {
+      $('joinError').hidden = false;
+      $('joinError').textContent = e.message;
+    }).then(function () { $('joinButton').disabled = false; });
+  });
+  ['plate', 'phone', 'diameter'].forEach(function (id) {
+    $(id).addEventListener('input', function () { $('joinError').hidden = true; });
+  });
+
+  $('leave').addEventListener('click', function () {
+    api('/live/leave', {method: 'POST'}).then(refresh);
+  });
+  $('again').addEventListener('click', function () {
+    api('/live/leave', {method: 'POST'}).catch(function () {}).then(function () {
+      lastState = null; show('screenJoin');
+    });
+  });
+  $('retry').addEventListener('click', refresh);
+
+  refresh();
+  // Пока страница открыта, спрашиваем часто: вызов должен появиться сразу
+  timer = setInterval(function () { if (!document.hidden) refresh(); }, 8000);
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) refresh(); });
+})();
+</script>
+</body>
+</html>

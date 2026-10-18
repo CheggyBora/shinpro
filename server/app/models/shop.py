@@ -73,6 +73,8 @@ class Appointment(Base):
 
     # Колёса в сборе или россыпью: от этого считается время
     wheels_assembled = Column(Boolean, nullable=True)
+    # Диаметр — чтобы по приезду наряд открылся сразу с ценами пакета
+    wheel_diameter = Column(String(10), nullable=True)
     comment = Column(Text, nullable=True)
 
     # Те же состояния, что в цеху: scheduled / arrived / cancelled / no_show

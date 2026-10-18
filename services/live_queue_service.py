@@ -492,6 +492,48 @@ class LiveQueueService:
         self.db.commit()
         return order
 
+    def booking_diameter(self, appointment):
+        """Диаметр для наряда по записи: из записи, иначе из карточки машины."""
+        if appointment.wheel_diameter:
+            return appointment.wheel_diameter
+        from models import Car
+        car = self.db.query(Car).filter(
+            Car.license_plate == normalize_plate(appointment.license_plate or '')).first()
+        return car.wheel_diameter if car is not None else None
+
+    def open_booking_order(self, appointment, post=None):
+        """
+        Записанный приехал — наряд так же, как из очереди: свободный пост,
+        клиент, диаметр, услуги и время пакета. Записанные идут первыми,
+        поэтому пост берём любой свободный.
+        """
+        from services.order_service import OrderService
+
+        diameter = self.booking_diameter(appointment)
+        if not diameter:
+            raise QueueError('В записи нет диаметра')
+        if post is None:
+            free = [s['post'] for s in self.posts() if s['state'] == 'free']
+            post = free[0] if free else None
+
+        wheels = appointment.wheels_assembled
+        orders = OrderService(self.db)
+        order = orders.create_order(
+            appointment.license_plate, diameter, 'car',
+            client_name=appointment.client_name,
+            client_phone=appointment.client_phone,
+            wheels_assembled=wheels)
+        order.post_number = post
+        order.package_minutes = self.package_minutes(wheels)
+        self.db.commit()
+        for name in self.kit(wheels):
+            service = self._service(name, order.vehicle_type)
+            if service is not None:
+                orders.add_service_to_order(order.id, service.id)
+        order.planned_minutes = orders.calculate_planned_minutes(order.id)
+        self.db.commit()
+        return order
+
     def order_closed(self, order_id):
         """Наряд оплачен — место в очереди закрыто."""
         entry = self.db.query(LiveQueueEntry).filter(
@@ -508,3 +550,75 @@ class LiveQueueService:
         if entry is None:
             raise QueueError('Машина в очереди не найдена')
         return entry
+
+    # ------------------------------------------------------------------
+    # Обмен с сервером: места по QR
+    # ------------------------------------------------------------------
+
+    def server_payload(self, now=None):
+        """
+        Что сказать серверу о местах, взятых по QR: какой по счёту,
+        примерно когда, позвали ли и на какой пост. Закрытые недавно —
+        тоже, чтобы страница у человека показала «готово» или «ушёл».
+        """
+        now = now or as_naive(get_moscow_time())
+        recent = now - timedelta(hours=3)
+        rows = self.db.query(LiveQueueEntry).filter(
+            LiveQueueEntry.server_id.isnot(None)).all()
+        rows = [e for e in rows if e.status in ACTIVE or e.status == SERVING
+                or (e.closed_at and as_naive(e.closed_at) >= recent)]
+        etas = self.estimates(now)
+        places = {e.id: i for i, e in enumerate(self.waiting(), start=1)}
+        result = []
+        for entry in rows:
+            eta = etas.get(entry.id)
+            result.append({
+                'local_id': entry.id,
+                'server_id': entry.server_id,
+                'state': entry.status,
+                'place': places.get(entry.id),
+                'eta_at': eta.replace(microsecond=0).isoformat() if eta else None,
+                'post_number': entry.post_number if entry.status in (CALLED, SERVING) else None,
+            })
+        return result
+
+    def apply_server(self, answer):
+        """
+        Принять от сервера новые места по QR и тех, кто ушёл сам.
+        Возвращает, сколько новых мест добавилось.
+        """
+        from datetime import datetime as _dt
+        from logger import log
+
+        added = 0
+        for item in answer.get('new') or []:
+            server_id = item.get('server_id')
+            if server_id is None:
+                continue
+            if self.db.query(LiveQueueEntry).filter(
+                    LiveQueueEntry.server_id == server_id).first() is not None:
+                continue        # уже взяли, просто сервер ещё не узнал
+            joined = None
+            try:
+                joined = _dt.fromisoformat(item.get('joined_at') or '')
+            except ValueError:
+                pass
+            try:
+                entry = self.add(item.get('license_plate'), item.get('phone'),
+                                 item.get('wheel_diameter'), item.get('wheels_assembled'),
+                                 source='qr', server_id=server_id, joined_at=joined)
+            except QueueError as e:
+                log.warning(f"Место по QR не принято: {e}")
+                continue
+            if entry.server_id is None:
+                # Приёмщик уже поставил эту машину вручную — связываем
+                entry.server_id = server_id
+                self.db.commit()
+            added += 1
+
+        for server_id in answer.get('left') or []:
+            entry = self.db.query(LiveQueueEntry).filter(
+                LiveQueueEntry.server_id == server_id).first()
+            if entry is not None and entry.status in ACTIVE:
+                self.leave(entry.id)
+        return added

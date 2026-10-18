@@ -33,6 +33,7 @@ TESTS = [
     ('Экран записи', 'test_booking_ui.py'),
     ('Вкладка онлайн-очереди', 'test_queue_panel.py'),
     ('Живая очередь и раздача постов', 'test_live_queue.py'),
+    ('Живая очередь: телефон, сервер и цех', 'test_live_queue_sync.py'),
     ('Запись видна сразу с обеих сторон', 'test_booking_live.py'),
     ('Обмен с сервером приложения', 'test_sync.py'),
     ('Срочная досылка важного', 'test_sync_nudge.py'),

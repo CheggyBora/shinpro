@@ -133,6 +133,8 @@ class BookingIn(BaseModel):
     at: datetime
     license_plate: str
     wheels_assembled: Optional[bool] = None
+    # Диаметр: по приезду наряд открывается сразу с ценами пакета
+    wheel_diameter: Optional[str] = None
     comment: Optional[str] = None
     # Комплекты со склада, которые достать к приезду. Доступно только
     # вошедшему: что у кого лежит — закрытые сведения

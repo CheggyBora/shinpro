@@ -30,6 +30,15 @@ STATUS_TITLES = {
 }
 
 
+
+DIAMETERS = [f'R{n}' for n in range(13, 25)]
+
+
+def clean_diameter(value):
+    """«R16» — или None, если пусто или не из списка."""
+    value = (value or '').strip().upper()
+    return value if value in DIAMETERS else None
+
 class BookingError(Exception):
     """Понятная клиенту причина, почему записаться не вышло."""
 
@@ -258,7 +267,7 @@ class BookingService:
         return True
 
     def book(self, client, at, license_plate, wheels_assembled=None,
-             comment=None, now=None, storage_ids=None):
+             comment=None, now=None, storage_ids=None, wheel_diameter=None):
         """Принять заявку на запись. Проверяет всё, что может пойти не так."""
         now = now or shop_now()
         stored = self.storage_sets(client, storage_ids)
@@ -318,6 +327,7 @@ class BookingService:
             client_phone=client.phone,
             wheels_assembled=wheels_assembled,
             comment=(comment or '').strip() or None,
+            wheel_diameter=clean_diameter(wheel_diameter),
             status='scheduled',
             source='app',
             sync_state=PENDING,

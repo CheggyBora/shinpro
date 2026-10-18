@@ -464,12 +464,30 @@ class AppointmentDetailsDialog:
             if messagebox.askyesno("Создать наряд",
                                    f"Отмечено. Создать наряд на {plate}?"):
                 try:
-                    self.orders_tab.license_entry.delete(0, tk.END)
-                    self.orders_tab.license_entry.insert(0, plate)
-                    self.orders_tab.prefilled_data = None
-                    self.orders_tab.create_new_order()
+                    self._open_order(appointment, plate)
                 except Exception as e:
+                    self.db.rollback()
                     messagebox.showerror("Ошибка", f"Не удалось открыть наряд: {e}")
+
+    def _open_order(self, appointment, plate):
+        """
+        Наряд по записи — так же, как из живой очереди: пост, клиент,
+        диаметр и услуги пакета (docs/live_queue.md). Нет диаметра —
+        прежний путь: приёмщик укажет его сам.
+        """
+        from services.live_queue_service import LiveQueueService
+
+        queue = LiveQueueService(self.db)
+        if queue.booking_diameter(appointment):
+            order = queue.open_booking_order(appointment)
+            self.orders_tab.open_order_tab(order)
+            return order
+
+        self.orders_tab.license_entry.delete(0, tk.END)
+        self.orders_tab.license_entry.insert(0, plate)
+        self.orders_tab.prefilled_data = None
+        self.orders_tab.create_new_order()
+        return None
 
     def mark_no_show(self):
         if not messagebox.askyesno("Не приехал", "Отметить, что клиент не приехал?",

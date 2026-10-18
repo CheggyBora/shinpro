@@ -25,7 +25,7 @@ from app.database import get_db
 from app.models import Appointment, Car, Client, StoredSet, PENDING
 from app.schemas import DayOut, SlotOut
 from app.services import shop_settings, notify, tenancy
-from app.services.booking_service import (BookingService, BookingError,
+from app.services.booking_service import (clean_diameter, BookingService, BookingError,
                                            SLOT_TAKEN)
 from app.utils import normalize_plate, normalize_phone, format_phone, now as shop_now
 
@@ -76,6 +76,7 @@ class PublicBookingIn(BaseModel):
     client_phone: str
     client_name: Optional[str] = None
     wheels_assembled: Optional[bool] = None
+    wheel_diameter: Optional[str] = None
 
 
 class PublicBookingOut(BaseModel):
@@ -354,6 +355,7 @@ def book(payload: PublicBookingIn, request: Request,
         client_name=name or client.name,
         client_phone=phone,
         wheels_assembled=wheels,
+        wheel_diameter=clean_diameter(payload.wheel_diameter),
         status='scheduled',
         source=SOURCE_LINK)
 

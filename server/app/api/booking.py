@@ -82,7 +82,8 @@ def book(payload: BookingIn,
             db, _shop(db, client, payload.shop or shop)).book(
             client, payload.at, payload.license_plate,
             payload.wheels_assembled, payload.comment,
-            storage_ids=payload.storage_ids)
+            storage_ids=payload.storage_ids,
+            wheel_diameter=payload.wheel_diameter)
     except BookingError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(e))
 

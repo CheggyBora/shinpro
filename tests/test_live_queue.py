@@ -211,6 +211,39 @@ queue.leave(third.id)
 db.refresh(third)
 check('ушёл — убран', third.status == LEFT)
 
+print()
+print('=== Записанный приехал — наряд по пакету ===')
+booked = Appointment(scheduled_at=as_naive(get_moscow_time()), duration_minutes=30,
+                     license_plate='Р888РР77', client_name='Ольга',
+                     client_phone='79160000088', status='arrived',
+                     wheels_assembled=True, wheel_diameter='R18')
+db.add(booked)
+db.commit()
+border = queue.open_booking_order(booked)
+check('наряд на свободном посту', border.post_number is not None, str(border.post_number))
+check('диаметр из записи', border.wheel_diameter == 'R18')
+check('клиент из записи', border.client and border.client.phone == '79160000088')
+check('пакет на дисках — 30 минут', border.package_minutes == 30)
+bnames = sorted(i.service.name for i in orders.get_order_items(border.id))
+check('услуги пакета', bnames == ['Балансировка', 'Мойка', 'Съем+Установка'], str(bnames))
+
+no_diameter = Appointment(scheduled_at=as_naive(get_moscow_time()), duration_minutes=60,
+                          license_plate='Е555КХ77', status='arrived',
+                          wheels_assembled=False)
+db.add(no_diameter)
+db.commit()
+check('без диаметра в записи — берём из карточки машины',
+      queue.booking_diameter(no_diameter) == 'R18', str(queue.booking_diameter(no_diameter)))
+unknown = Appointment(scheduled_at=as_naive(get_moscow_time()), duration_minutes=60,
+                      license_plate='Ж000ЖЖ77', status='arrived')
+db.add(unknown)
+db.commit()
+try:
+    queue.open_booking_order(unknown)
+    check('совсем без диаметра — честный отказ', False)
+except QueueError:
+    check('совсем без диаметра — честный отказ', True)
+
 db.close()
 
 print()

@@ -1,3 +1,9 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>[hidden]{display:none!important} body{margin:0}</style>
 <title>Парковка РИФ</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -77,6 +83,8 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .chips button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
 .loading[hidden] { display: none; }
 .loading { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: 14px; }
+html.embedded .brand, html.embedded .sheet { display: none; }
+html.embedded .stage { flex: 1 !important; height: auto !important; }
 @media (max-width: 599px) {
   .stage { flex: none; height: min(96vw, 60vh); }
   .sheet { flex: 1; align-content: start; }
@@ -733,6 +741,12 @@ function startScene() {
   var hash = (location.hash || '').replace('#', '');
   var start = /^post[1-4]$/.test(hash) ? hash.slice(4) : '2';
   resize();
+  // Внутри страницы очереди: пост и номер уже крупно написаны над
+  // схемой — здесь только сама схема со стрелками
+  if (/[?&]client=1/.test(location.search)) {
+    document.documentElement.classList.add('embedded');
+    resize();
+  }
   choose(start);
   setView(hash === 'top' ? 'top' : '3d');
   window.addEventListener('hashchange', function () {

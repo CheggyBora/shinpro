@@ -36,6 +36,9 @@ class LiveQueuePanel:
         # Вызывается после открытия наряда — главное окно переключает
         # на «Наряды»
         self.on_order_opened = None
+        # Вызывается после любого изменения очереди — главное окно
+        # отдаёт его серверу, чтобы человек у въезда увидел сразу
+        self.on_changed = None
 
         self._build()
         self.load()
@@ -203,6 +206,8 @@ class LiveQueuePanel:
             messagebox.showerror("Очередь", f"Не вышло: {e}", parent=self.frame)
             return None
         self.load()
+        if self.on_changed:
+            self.on_changed()
         return result
 
     def _call(self, entry_id, post):
@@ -254,7 +259,11 @@ class LiveQueuePanel:
             self._run(lambda: self.service.leave(entry_id))
 
     def add(self):
-        dialog = AddDialog(self.frame, self.service, on_added=self.load)
+        def added():
+            self.load()
+            if self.on_changed:
+                self.on_changed()
+        dialog = AddDialog(self.frame, self.service, on_added=added)
         return dialog.window
 
     # ------------------------------------------------------------------
