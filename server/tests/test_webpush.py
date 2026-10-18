@@ -209,7 +209,7 @@ with TestClient(app) as client:
     pushed.clear()
     made = notices.plan_for_appointment(db, person, 'Шиномонтаж «РИФ»',
                                         appointment)
-    check('уведомления поставлены в очередь', len(made) == 2, str(len(made)))
+    check('уведомления поставлены в очередь', len(made) == 4, str(len(made)))
 
     result = notices.send_due(db)
     check('ушло одно', result['sent'] == 1, str(result))

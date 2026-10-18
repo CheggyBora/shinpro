@@ -25,6 +25,7 @@ import re
 from datetime import timedelta
 
 from app.models import (Account, Notice, TITLES, KIND_BOOKED, KIND_REMINDER,
+                        KIND_ARRIVE, KIND_LATE,
                         KIND_CANCELLED, KIND_MOVED, KIND_STORAGE,
                         BY_TELEGRAM, BY_PUSH,
                         WAITING, SENT, FAILED, SKIPPED)
@@ -284,6 +285,39 @@ def reminder_text(shop_name, appointment):
               'другому.')
 
 
+# Когда напомнить «подъезжайте»: за полчаса — таймер рассылки ходит раз в
+# пять минут, и сообщение должно успеть до выезда
+ARRIVE_BEFORE_MINUTES = 30
+# Приезжать за столько минут до записи
+ARRIVE_EARLY_MINUTES = 10
+LATE_MINUTES_DEFAULT = 10
+
+
+def arrive_text(shop_name, appointment):
+    come = appointment.scheduled_at - timedelta(minutes=ARRIVE_EARLY_MINUTES)
+    return (f'<b>{shop_name}</b>\n'
+            f'Ждём вас в {appointment.scheduled_at.strftime("%H:%M")} — '
+            f'подъезжайте к {come.strftime("%H:%M")}.'
+            + (f'\nМашина: {appointment.license_plate}'
+               if appointment.license_plate else '')
+            + '\n\nНа месте нажмите «Я на месте» в личном кабинете — '
+              'дадим первый свободный пост.')
+
+
+def late_text(shop_name, appointment, minutes):
+    return (f'<b>{shop_name}</b>\n'
+            f'Запись на {appointment.scheduled_at.strftime("%H:%M")}: вы '
+            f'опаздываете больше чем на {minutes} мин, и пост отдали очереди.'
+            f'\nПодъезжайте — встанете первым на ближайший свободный пост.')
+
+
+def called_text(shop_name, plate, post):
+    return (f'<b>{shop_name}</b>\n'
+            f'Проезжайте на пост {post}.'
+            + (f'\n{plate}' if plate else '')
+            + '\nСхема, куда ехать, — в личном кабинете.')
+
+
 def ready_text(shop_name, plate=None):
     """
     Машина готова.
@@ -329,4 +363,31 @@ def plan_for_appointment(db, client, shop_name, appointment):
                         send_at=remind_at,
                         about='appointment', about_id=appointment.id))
 
+    # Перед самой записью — «подъезжайте за 10 минут», и на случай
+    # опоздания — что пост отдали очереди. Нажмёт «Я на месте» или цех
+    # отметит приезд — второе отменится
+    arrive_at = appointment.scheduled_at - timedelta(minutes=ARRIVE_BEFORE_MINUTES)
+    if arrive_at > shop_now():
+        made.append(add(db, client, KIND_ARRIVE,
+                        arrive_text(shop_name, appointment),
+                        send_at=arrive_at,
+                        about='appointment', about_id=appointment.id))
+
+    late = late_minutes(db, appointment.shop_id)
+    made.append(add(db, client, KIND_LATE,
+                    late_text(shop_name, appointment, late),
+                    send_at=appointment.scheduled_at + timedelta(minutes=late),
+                    about='appointment', about_id=appointment.id))
+
     return made
+
+
+def late_minutes(db, shop_id):
+    """Через сколько минут опоздания запись перестаёт держать пост."""
+    from app.services import shop_settings
+    try:
+        value = int(shop_settings.get(db, 'booking_late_minutes', shop=shop_id)
+                    or LATE_MINUTES_DEFAULT)
+    except (TypeError, ValueError):
+        value = LATE_MINUTES_DEFAULT
+    return max(1, value)

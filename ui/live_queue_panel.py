@@ -80,6 +80,7 @@ class LiveQueuePanel:
             self.tree.heading(column, text=title)
             self.tree.column(column, width=width, anchor='w')
         self.tree.tag_configure('called', background='#fde2e2')
+        self.tree.tag_configure('booking', background='#e0ecff')
         self.tree.pack(fill='both', expand=True)
         self.tree.bind('<Double-1>', lambda e: self.open_order())
 
@@ -106,6 +107,9 @@ class LiveQueuePanel:
             posts = self.service.posts()
             self.plan = self.service.suggestion()
             self.entries = self.service.line()
+            self.bookings = [a for a in self.service._today_bookings()
+                             if a.status == 'scheduled' and (a.on_site or a.called_post)]
+            self.bookings.sort(key=lambda a: (not a.called_post, as_naive(a.scheduled_at)))
             etas = self.service.estimates()
         except Exception as e:
             self.db.rollback()
@@ -118,6 +122,17 @@ class LiveQueuePanel:
         for row in self.tree.get_children():
             self.tree.delete(row)
         now = as_naive(get_moscow_time())
+        # Записанные на месте идут первыми — показываем их сверху
+        for booking in self.bookings:
+            state = (f"позван на пост {booking.called_post}" if booking.called_post
+                     else 'на месте, ждёт пост')
+            self.tree.insert('', 'end', iid=f"b{booking.id}", values=(
+                'З', booking.license_plate or '—',
+                format_phone(booking.client_phone) if booking.client_phone else '—',
+                booking.wheel_diameter or '—',
+                WHEELS_TITLES.get(booking.wheels_assembled, '—'),
+                '', '', f"запись {as_naive(booking.scheduled_at).strftime('%H:%M')}",
+                state), tags=('booking',))
         place = 0
         for entry in self.entries:
             waited = int((now - as_naive(entry.joined_at)).total_seconds() // 60)
@@ -162,11 +177,18 @@ class LiveQueuePanel:
                 line = f"{plate} · до ≈ {state['free_at'].strftime('%H:%M')}"
                 colour = styles.COLORS['text']
             elif state['state'] == 'called':
-                line = f"едет {state['entry'].license_plate}"
+                who = state['entry'] or state.get('booking')
+                prefix = 'едет (запись) ' if state.get('booking') else 'едет '
+                line = prefix + (who.license_plate or '—')
                 colour = styles.COLORS['danger']
             else:
                 suggestion = plan.get(state['post'])
-                if suggestion and suggestion['entry'] is not None:
+                if suggestion and suggestion.get('booking') is not None:
+                    booking = suggestion['booking']
+                    line = f"свободен → запись {booking.license_plate}"
+                    colour = styles.COLORS['success']
+                    action = ('b', booking.id, state['post'])
+                elif suggestion and suggestion['entry'] is not None:
                     entry = suggestion['entry']
                     line = f"свободен → {entry.license_plate}"
                     colour = styles.COLORS['success']
@@ -181,15 +203,40 @@ class LiveQueuePanel:
                      font=(styles.DEFAULT_FONT, 10)).pack(anchor='w', padx=10, pady=(0, 6))
             if action:
                 styles.create_button(box, "Позвать",
-                                     lambda a=action: self._call(*a),
+                                     lambda a=action: self._call_any(a),
                                      'Compact.Primary.TButton').pack(anchor='w', padx=10, pady=(0, 8))
 
     def _selected(self):
+        """Номер места в очереди или ('b', номер записи)."""
         chosen = self.tree.selection()
         if not chosen:
             messagebox.showinfo("Очередь", "Выберите машину в списке", parent=self.frame)
             return None
-        return int(chosen[0])
+        key = chosen[0]
+        if key.startswith('b'):
+            return ('b', int(key[1:]))
+        return int(key)
+
+    def _booking(self, booking_id):
+        from models import Appointment
+        return self.db.query(Appointment).filter(Appointment.id == booking_id).first()
+
+    def _call_any(self, action):
+        if action[0] == 'b':
+            return self._call_booking(action[1], action[2])
+        return self._call(*action)
+
+    def _call_booking(self, booking_id, post):
+        booking = self._booking(booking_id)
+        if booking is None:
+            return None
+        problem = self._run(lambda: self.service.call_booking(booking, post))
+        if problem:
+            messagebox.showwarning(
+                "Нет связи",
+                f"Записанного позвали на пост {post}, но сообщение ему не ушло: "
+                f"{problem}\n\nСкажите ему голосом.", parent=self.frame)
+        return problem
 
     # ------------------------------------------------------------------
     # Действия
@@ -222,14 +269,21 @@ class LiveQueuePanel:
             messagebox.showinfo("Очередь", "Свободных постов нет", parent=self.frame)
             return
         post = ask_post(self.frame, free)
-        if post:
+        if not post:
+            return
+        if isinstance(entry_id, tuple):
+            self._call_booking(entry_id[1], post)
+        else:
             self._call(entry_id, post)
 
     def open_order(self):
         entry_id = self._selected()
         if entry_id is None:
             return
-        order = self._run(lambda: self.service.open_order(entry_id))
+        if isinstance(entry_id, tuple):
+            order = self._open_booking(entry_id[1])
+        else:
+            order = self._run(lambda: self.service.open_order(entry_id))
         if order is None:
             return
         if self.orders_tab is not None:
@@ -242,9 +296,26 @@ class LiveQueuePanel:
         if self.on_order_opened:
             self.on_order_opened()
 
+    def _open_booking(self, booking_id):
+        """Записанный подъехал: наряд по пакету, запись — «приехал»."""
+        from services.booking_gateway import get_booking
+
+        booking = self._booking(booking_id)
+        if booking is None:
+            return None
+        order = self._run(lambda: self.service.open_booking_order(booking))
+        if order is None:
+            return None
+        try:
+            gateway = get_booking(self.db)
+            gateway.mark_arrived(gateway.key_of(booking))
+        except Exception as e:
+            log.warning(f"Запись не отмечена приехавшей: {e}")
+        return order
+
     def missed(self):
         entry_id = self._selected()
-        if entry_id is None:
+        if entry_id is None or isinstance(entry_id, tuple):
             return
         if messagebox.askyesno("Не подъехал",
                                "Отправить в конец очереди? Второй пропуск — "
@@ -253,7 +324,7 @@ class LiveQueuePanel:
 
     def leave(self):
         entry_id = self._selected()
-        if entry_id is None:
+        if entry_id is None or isinstance(entry_id, tuple):
             return
         if messagebox.askyesno("Ушёл", "Убрать машину из очереди?", parent=self.frame):
             self._run(lambda: self.service.leave(entry_id))

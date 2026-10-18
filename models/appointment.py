@@ -85,6 +85,11 @@ class Appointment(Base):
     # шины и диаметр. По приезду наряд открывается сразу по пакету
     wheels_assembled = Column(Boolean, nullable=True)
     wheel_diameter = Column(String(10), nullable=True)
+
+    # Клиент нажал «Я на месте» — первый на свободный пост. И на какой
+    # пост его позвали. Хранит сервер, здесь — копия
+    on_site = Column(Boolean, default=False, nullable=False)
+    called_post = Column(Integer, nullable=True)
     comment = Column(Text, nullable=True)
 
     status = Column(String(20), default=STATUS_SCHEDULED, nullable=False, index=True)

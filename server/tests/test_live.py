@@ -226,4 +226,64 @@ with TestClient(app) as http:
     check('диаметр в обмене', row.get('wheel_diameter') == 'R18', str(row))
     check('колёса в обмене', row.get('wheels_assembled') is True, str(row))
 
+    print()
+    print('=== Запись: «подъезжайте», «Я на месте», вызов на пост ===')
+    from app.models import Notice, KIND_ARRIVE, KIND_LATE
+    from app.services import notices as notices_service
+    db = SessionLocal()
+    soon = (shop_now() + timedelta(minutes=40)).replace(second=0, microsecond=0)
+    person = db.query(Client).filter(Client.phone == '79160000001').first()
+    visit = Appointment(shop_id=shop_id, client_id=person.id, scheduled_at=soon,
+                        duration_minutes=30, license_plate='Т555ТТ77',
+                        wheels_assembled=True, wheel_diameter='R16', status='scheduled')
+    db.add(visit)
+    db.commit()
+    notices_service.plan_for_appointment(db, person, 'РИФ', visit)
+    kinds = sorted(n.kind for n in db.query(Notice).filter(
+        Notice.about_id == visit.id, Notice.about == 'appointment').all())
+    check('будет «подъезжайте за 10 минут»', KIND_ARRIVE in kinds, str(kinds))
+    check('и на случай опоздания', KIND_LATE in kinds, str(kinds))
+    arrive = db.query(Notice).filter(Notice.about_id == visit.id, Notice.kind == KIND_ARRIVE).first()
+    check('«подъезжайте» — за полчаса', arrive.send_at == soon - timedelta(minutes=30), str(arrive.send_at))
+    check('в тексте — к какому времени', (soon - timedelta(minutes=10)).strftime('%H:%M') in arrive.text, arrive.text)
+    late = db.query(Notice).filter(Notice.about_id == visit.id, Notice.kind == KIND_LATE).first()
+    check('«опоздали» — через 10 минут после записи', late.send_at == soon + timedelta(minutes=10), str(late.send_at))
+    visit_id = visit.id
+    person_id = person.id
+    db.close()
+
+    mine = cabinet.get('/booking/my', headers=auth).json()
+    row = next(a for a in mine if a['id'] == visit_id)
+    check('за 40 минут уже можно «Я на месте»', row['can_check_in'] is True, str(row))
+    here = cabinet.post(f'/booking/{visit_id}/here', headers=auth)
+    check('отметился', here.status_code == 200 and here.json()['on_site'] is True, here.text)
+    db = SessionLocal()
+    waiting = [n.kind for n in db.query(Notice).filter(
+        Notice.about_id == visit_id, Notice.state == 'waiting').all()]
+    db.close()
+    check('«подъезжайте» и «опоздали» отменены', KIND_ARRIVE not in waiting and KIND_LATE not in waiting, str(waiting))
+
+    day = http.get(f'/sync/appointments?day={soon.date().isoformat()}', headers=KEY).json()
+    synced = next(a for a in day['appointments'] if a['id'] == visit_id)
+    check('цех видит «на месте»', synced['on_site'] is True, str(synced))
+
+    before = len(told)
+    called = http.post(f'/sync/appointments/{visit_id}/call', headers=KEY, json={'post': 4})
+    check('цех позвал', called.status_code == 200, called.text)
+    check('клиенту ушло «проезжайте на пост 4»',
+          len(told) == before + 1 and 'пост 4' in told[-1][1], str(told[-1:]))
+    row = next(a for a in cabinet.get('/booking/my', headers=auth).json() if a['id'] == visit_id)
+    check('в кабинете — пост и схема', row['called_post'] == 4 and row['scene'] == '/parking?client=1#post4', str(row))
+
+    db = SessionLocal()
+    far = Appointment(shop_id=shop_id, client_id=person_id,
+                      scheduled_at=shop_now() + timedelta(hours=5), duration_minutes=30,
+                      license_plate='Т666ТТ77', status='scheduled')
+    db.add(far)
+    db.commit()
+    far_id = far.id
+    db.close()
+    early = cabinet.post(f'/booking/{far_id}/here', headers=auth)
+    check('за 5 часов «Я на месте» не нажать', early.status_code == 400, str(early.status_code))
+
 finish()

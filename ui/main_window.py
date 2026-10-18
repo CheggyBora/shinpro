@@ -141,6 +141,14 @@ class MainWindow:
             except Exception as e:
                 log.warning(f"Обмен очередью не удался: {e}")
                 self.live_result = 0
+            try:
+                # Записи на сегодня: «Я на месте» с телефона должно
+                # появиться в цеху сразу, а не при следующем открытии ленты
+                from datetime import date
+                from services.booking_api import BookingApi
+                BookingApi(db).get_day(date.today())
+            except Exception as e:
+                log.warning(f"Записи на сегодня не обновились: {e}")
             finally:
                 db.close()
 
@@ -155,9 +163,13 @@ class MainWindow:
             return
         self.live_running = None
         try:
-            from models import LiveQueueEntry
+            from models import LiveQueueEntry, Appointment
             for obj in list(self.db.identity_map.values()):
-                if isinstance(obj, LiveQueueEntry):
+                if isinstance(obj, Appointment):
+                    # Копию дня перезаписали целиком — старые строки
+                    # отпускаем, иначе сессия держала бы удалённые
+                    self.db.expunge(obj)
+                elif isinstance(obj, LiveQueueEntry):
                     self.db.expire(obj)
             panel = self.appointments_tab.queue
             if self.live_result or panel.frame.winfo_ismapped():

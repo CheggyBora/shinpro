@@ -374,6 +374,14 @@ input.code {
 .total b { font-size: 26px; font-weight: 800; color: var(--brand); }
 
 [hidden] { display: none !important; }
+.mine .here { font: inherit; font-weight: 700; padding: 10px 14px; border: 0;
+  border-radius: 10px; background: #e3262f; color: #fff; cursor: pointer; }
+.mine { flex-wrap: wrap; }
+.mine .arrived-wait, .mine .arrived-call { flex: 1 0 100%; }
+.mine .arrived-wait { color: #0f7a4f; font-weight: 600; font-size: 14px; }
+.mine .arrived-call { display: grid; gap: 4px; background: #e3262f; color: #fff;
+  border-radius: 10px; padding: 10px 12px; }
+.mine .arrived-call a { color: #fff; text-decoration: underline; }
 </style>
 </head>
 <body>
@@ -2058,7 +2066,29 @@ function drawMine() {
       ' · ' + escapeText(item.status_title) +
       ' · ' + item.duration_minutes + ' мин</div></div>';
 
-    if (item.status === 'scheduled') {
+    // Живая очередь (docs/live_queue.md): подъехал — «Я на месте»,
+    // ждёт — «позовём», позвали — пост и схема, куда ехать
+    if (item.called_post) {
+      var called = document.createElement('div');
+      called.className = 'arrived-call';
+      called.innerHTML = '<b>Проезжайте на пост ' + item.called_post + '</b>' +
+        '<a href="' + item.scene + '" target="_blank" rel="noopener">Схема — куда ехать</a>';
+      row.appendChild(called);
+    } else if (item.on_site) {
+      var wait = document.createElement('div');
+      wait.className = 'arrived-wait';
+      wait.textContent = 'Вы на месте — позовём на первый свободный пост';
+      row.appendChild(wait);
+    } else if (item.can_check_in) {
+      var here = document.createElement('button');
+      here.type = 'button';
+      here.className = 'here';
+      here.textContent = 'Я на месте';
+      here.addEventListener('click', function () { checkIn(item, here); });
+      row.appendChild(here);
+    }
+
+    if (item.status === 'scheduled' && !item.on_site && !item.called_post) {
       var drop = document.createElement('button');
       drop.type = 'button';
       drop.className = 'drop';
@@ -2069,6 +2099,30 @@ function drawMine() {
     list.appendChild(row);
   });
 }
+
+function checkIn(item, button) {
+  button.disabled = true;
+  button.textContent = 'Отмечаем…';
+  api('/booking/' + item.id + '/here', {method: 'POST'}).then(function (result) {
+    if (!result.ok) {
+      button.disabled = false;
+      button.textContent = 'Я на месте';
+      alert(reason(result));
+      return;
+    }
+    loadMine();
+  });
+}
+
+// Пока человек на месте и ждёт поста, «Мои записи» обновляются сами:
+// вызов должен появиться без нажатий
+setInterval(function () {
+  if (document.hidden || !state.mine) return;
+  var waiting = state.mine.some(function (item) {
+    return item.on_site || item.can_check_in || item.called_post;
+  });
+  if (waiting) loadMine();
+}, 10000);
 
 function cancelMine(item, button) {
   button.disabled = true;

@@ -75,6 +75,11 @@ class Appointment(Base):
     wheels_assembled = Column(Boolean, nullable=True)
     # Диаметр — чтобы по приезду наряд открылся сразу с ценами пакета
     wheel_diameter = Column(String(10), nullable=True)
+    # Клиент нажал «Я на месте» — цех даст ему первый свободный пост
+    on_site_at = Column(DateTime, nullable=True)
+    # Цех позвал на пост: номер и когда (docs/live_queue.md)
+    called_post = Column(Integer, nullable=True)
+    called_at = Column(DateTime, nullable=True)
     comment = Column(Text, nullable=True)
 
     # Те же состояния, что в цеху: scheduled / arrived / cancelled / no_show

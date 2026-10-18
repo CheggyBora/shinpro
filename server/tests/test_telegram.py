@@ -181,7 +181,9 @@ with TestClient(app) as client:
 
     made = notices.plan_for_appointment(db, person, 'Шиномонтаж «РИФ»',
                                          appointment)
-    check('сделано два уведомления', len(made) == 2, str(len(made)))
+    # Подтверждение, напоминание накануне, «подъезжайте за 10 минут»
+    # и «вы опоздали» на случай опоздания (docs/live_queue.md)
+    check('сделано четыре уведомления', len(made) == 4, str(len(made)))
 
     kinds = {notice.kind: notice for notice in made}
     check('подтверждение уходит сразу',
@@ -196,8 +198,8 @@ with TestClient(app) as client:
     print('\n=== Отправляем созревшее ===')
     result = notices.send_due(db)
     check('ушло одно', result['sent'] == 1, str(result))
-    check('напоминание осталось ждать',
-          db.query(Notice).filter(Notice.state == WAITING).count() == 1)
+    check('напоминание, «подъезжайте» и «опоздали» ждут своего часа',
+          db.query(Notice).filter(Notice.state == WAITING).count() == 3)
 
     print('\n=== Повторный запуск не шлёт то же самое дважды ===')
     before_count = len(sent)
@@ -217,9 +219,8 @@ with TestClient(app) as client:
           notice not in notices.due(db))
 
     print('\n=== Запись отменили — напоминание не уйдёт ===')
-    cancelled = notices.cancel_about(db, 'appointment', appointment.id,
-                                      kinds=[KIND_REMINDER])
-    check('снято одно', cancelled == 1, str(cancelled))
+    cancelled = notices.cancel_about(db, 'appointment', appointment.id)
+    check('сняты все три ждущих', cancelled == 3, str(cancelled))
     check('в очереди пусто',
           db.query(Notice).filter(Notice.state == WAITING).count() == 0)
 

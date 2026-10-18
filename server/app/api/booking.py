@@ -90,6 +90,36 @@ def book(payload: BookingIn,
     return AppointmentOut(**to_public(appointment))
 
 
+@router.post('/{appointment_id}/here', response_model=AppointmentOut,
+             summary='Я на месте')
+def here(appointment_id: int, client: Client = Depends(current_client),
+         db: Session = Depends(get_db)):
+    """
+    Записанный подъехал. Цех даст ему первый свободный пост — раньше
+    живой очереди (docs/live_queue.md). Сообщение «вы опоздали» больше
+    не нужно.
+    """
+    from app.models import Appointment, KIND_ARRIVE, KIND_LATE
+    from app.services import notices
+    from app.services.booking_service import can_check_in
+    from app.utils import now as shop_now
+
+    row = db.query(Appointment).filter(
+        Appointment.id == appointment_id,
+        Appointment.client_id == client.id).first()
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail='Запись не найдена')
+    if row.on_site_at is None:
+        if not can_check_in(row):
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                detail='Отметиться можно за час до записи и в течение часа после')
+        row.on_site_at = shop_now()
+        db.commit()
+        notices.cancel_about(db, 'appointment', row.id, kinds=[KIND_ARRIVE, KIND_LATE])
+    return AppointmentOut(**to_public(row))
+
+
 @router.get('/my', response_model=List[AppointmentOut],
             summary='Мои записи')
 def my_appointments(include_past: bool = False,

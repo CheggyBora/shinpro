@@ -670,6 +670,8 @@ def day_appointments(day: str, db: Session = Depends(get_db),
             'client_phone': row.client_phone or (row.client.phone if row.client else None),
             'wheels_assembled': row.wheels_assembled,
             'wheel_diameter': row.wheel_diameter,
+            'on_site': row.on_site_at is not None,
+            'called_post': row.called_post,
             'status': row.status,
             'source': row.source,
             'comment': row.comment,
@@ -833,10 +835,56 @@ def patch_appointment(appointment_id: int, payload: AppointmentPatchIn,
 
     db.commit()
 
+    # Приезд отмечен, запись отменена или перенесена — «подъезжайте» и
+    # «вы опоздали» по старому времени уходить не должны
+    if row.status != 'scheduled' or row.scheduled_at != was_time:
+        from app.models import KIND_ARRIVE, KIND_LATE
+        from app.services import notices as _notices
+        _notices.cancel_about(db, 'appointment', row.id, kinds=[KIND_ARRIVE, KIND_LATE])
+
     # Приёмщик перенёс или отменил запись — человек должен узнать об
     # этом от нас, а не обнаружить у закрытых ворот
     _tell_client(db, row, was_time, was_status)
     return {'ok': True, 'id': row.id, 'status': row.status}
+
+
+class CallIn(BaseModel):
+    post: int
+
+
+@router.post('/appointments/{appointment_id}/call', summary='Позвать записанного на пост')
+def call_appointment(appointment_id: int, payload: CallIn,
+                     db: Session = Depends(get_db), shop: Shop = Mine):
+    """
+    Цех позвал записанного на пост: в кабинете у него «Проезжайте на
+    пост N» и схема, в Telegram или браузер — сообщение.
+    """
+    from app.models import KIND_LATE, KIND_QUEUE
+    from app.services import notices as _notices, shop_settings
+
+    row = db.query(Appointment).filter(
+        Appointment.id == appointment_id,
+        Appointment.shop_id == shop.id).first()
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail='Запись не найдена')
+
+    row.called_post = payload.post
+    row.called_at = shop_now()
+    db.commit()
+    _notices.cancel_about(db, 'appointment', row.id, kinds=[KIND_LATE])
+
+    channel = None
+    client = row.client
+    if client is not None:
+        name = shop_settings.get(db, 'shop_name', shop=shop.id) or 'Шиномонтаж'
+        try:
+            channel = _notices.send_now(db, client, shop.account, KIND_QUEUE,
+                                        _notices.called_text(name, row.license_plate,
+                                                             payload.post),
+                                        about='appointment', about_id=row.id)
+        except Exception:
+            channel = None
+    return {'ok': True, 'channel': channel}
 
 
 def _tell_client(db, appointment, was_time, was_status):

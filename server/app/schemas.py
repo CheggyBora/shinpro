@@ -152,6 +152,10 @@ class AppointmentOut(BaseModel):
     # Пока цех не забрал заявку, клиент видит «подтверждаем»
     is_confirmed: bool
     comment: Optional[str] = None
+    on_site: bool = False
+    can_check_in: bool = False
+    called_post: Optional[int] = None
+    scene: Optional[str] = None
 
 
 # ----------------------------------------------------------------------

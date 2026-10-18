@@ -141,6 +141,55 @@ with TestClient(server_app) as server:
     check('телефон видит своё место',
           third.get('/live/state' + q).json()['ticket']['seen_by_shop'])
 
+    print()
+    print('=== Запись: «Я на месте» с телефона → цех → вызов ===')
+    from datetime import date, timedelta as _td
+    from app.models import Appointment as ServerAppointment, Client as ServerClient
+    from app.security import create_token
+    from app.utils import now as server_now
+    from services.booking_api import BookingApi
+
+    sdb = ServerSession()
+    shop_row = sdb.query(Shop).first()
+    person = ServerClient(account_id=shop_row.account_id, phone='79160000900', name='Анна')
+    sdb.add(person)
+    sdb.commit()
+    visit = ServerAppointment(shop_id=shop_row.id, client_id=person.id,
+                              scheduled_at=(server_now() + _td(minutes=20)).replace(second=0, microsecond=0),
+                              duration_minutes=30, license_plate='Р888РР77', client_phone='79160000900',
+                              wheels_assembled=True, wheel_diameter='R18', status='scheduled')
+    sdb.add(visit)
+    sdb.commit()
+    visit_id = visit.id
+    auth = {'Authorization': 'Bearer ' + create_token(person.id)}
+    sdb.close()
+
+    anna = TestClient(server_app)
+    pressed = anna.post(f'/booking/{visit_id}/here', headers=auth)
+    check('нажала «Я на месте»', pressed.status_code == 200, pressed.text)
+
+    api = BookingApi(db)
+    api._call = call
+    api.get_day(date.today())
+    waiting = queue.bookings_on_site()
+    check('цех видит её на месте', [a.license_plate for a in waiting] == ['Р888РР77'],
+          str([a.license_plate for a in waiting]))
+    plan = queue.suggestion()
+    first = plan[0]
+    check('первый свободный пост — ей', first.get('booking') is not None, str(first))
+
+    import services.booking_api as booking_api_module
+    real_call = booking_api_module.BookingApi._call
+    booking_api_module.BookingApi._call = lambda self, method, path, payload=None: call(method, path, payload)
+    try:
+        problem = queue.call_booking(waiting[0], first['post'])
+    finally:
+        booking_api_module.BookingApi._call = real_call
+    check('позвали без ошибок', problem is None, str(problem))
+    mine = next(a for a in anna.get('/booking/my', headers=auth).json() if a['id'] == visit_id)
+    check('в кабинете — пост и схема', mine['called_post'] == first['post'] and mine['scene'],
+          str(mine))
+
     db.close()
 
 finish()

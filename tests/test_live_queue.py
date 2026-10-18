@@ -244,6 +244,56 @@ try:
 except QueueError:
     check('совсем без диаметра — честный отказ', True)
 
+print()
+print('=== Записанный на месте — первым на свободный пост ===')
+# Закрываем всё, что открыто, чтобы посты были свободны
+for o in db.query(WorkOrder).filter(WorkOrder.status != 'paid').all():
+    o.status = 'paid'
+    o.paid_at = get_moscow_time()
+db.commit()
+now = as_naive(get_moscow_time())
+waiting_car = queue.add('Ф100ФФ77', '79160000100', 'R16', True)
+here = Appointment(scheduled_at=now + timedelta(minutes=5), duration_minutes=30,
+                   license_plate='З200ЗЗ77', client_phone='79160000200',
+                   status='scheduled', wheels_assembled=True, wheel_diameter='R16',
+                   on_site=True)
+db.add(here)
+db.commit()
+plan = queue.suggestion(now)
+check('первый свободный пост — записанному на месте',
+      plan[0].get('booking') is not None and plan[0]['booking'].id == here.id, str(plan[0]))
+check('остальные посты — очереди, ни один не держим зря',
+      all(p['entry'] is not None for p in plan[1:]), str(plan))
+
+problem = queue.call_booking(here, plan[0]['post'])
+check('позван (без сервера — молча)', problem is None and here.called_post == plan[0]['post'])
+states = {s['post']: s for s in queue.posts(now)}
+check('его пост — «едет»', states[here.called_post]['state'] == 'called'
+      and states[here.called_post].get('booking') is not None)
+check('больше не в списке ждущих на месте', here not in queue.bookings_on_site(now))
+order = queue.open_booking_order(here)
+check('наряд — на тот пост, куда позвали', order.post_number == here.called_post)
+
+print()
+print('=== Опоздавший больше чем на 10 минут пост не держит ===')
+for o in db.query(WorkOrder).filter(WorkOrder.status != 'paid').all():
+    o.status = 'paid'
+    o.paid_at = get_moscow_time()
+for a in db.query(Appointment).all():
+    a.status = 'arrived'
+db.commit()
+late = Appointment(scheduled_at=now - timedelta(minutes=15), duration_minutes=60,
+                   license_plate='П300ПП77', status='scheduled')
+db.add(late)
+db.commit()
+ok, _ = queue.booking_allows(50, 1, now)
+check('опоздал на 15 минут — пост очереди отдать можно', ok)
+check('в держании поста его нет', queue._bookings_ahead(now, now + timedelta(hours=2)) == {},
+      str(queue._bookings_ahead(now, now + timedelta(hours=2))))
+late.on_site = True
+db.commit()
+check('а если он на месте — снова первый', queue.bookings_on_site(now)[0].id == late.id)
+
 db.close()
 
 print()

@@ -510,4 +510,24 @@ def to_public(appointment):
         'status_title': STATUS_TITLES.get(appointment.status, appointment.status),
         'is_confirmed': appointment.sync_state == TAKEN,
         'comment': appointment.comment,
+        # Живая очередь: нажал «Я на месте», позвали ли на пост
+        'on_site': appointment.on_site_at is not None,
+        'can_check_in': can_check_in(appointment),
+        'called_post': appointment.called_post,
+        'scene': (f'/parking?client=1#post{appointment.called_post}'
+                  if appointment.called_post else None),
     }
+
+
+# «Я на месте» можно нажать незадолго до записи и пока она не прошла
+CHECK_IN_BEFORE_MINUTES = 60
+CHECK_IN_AFTER_MINUTES = 60
+
+
+def can_check_in(appointment, now=None):
+    if appointment.status != 'scheduled' or appointment.on_site_at is not None:
+        return False
+    now = now or shop_now()
+    at = appointment.scheduled_at
+    return (at - timedelta(minutes=CHECK_IN_BEFORE_MINUTES) <= now
+            <= at + timedelta(minutes=CHECK_IN_AFTER_MINUTES))

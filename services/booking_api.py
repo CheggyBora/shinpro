@@ -177,6 +177,8 @@ class BookingApi:
                 comment=item.get('comment'),
                 wheels_assembled=item.get('wheels_assembled'),
                 wheel_diameter=item.get('wheel_diameter'),
+                on_site=bool(item.get('on_site')),
+                called_post=item.get('called_post'),
                 post_column=item.get('column', 0),
                 fetched_at=now)
             self.db.add(row)
@@ -252,6 +254,10 @@ class BookingApi:
 
     def cancel(self, server_id):
         return self.update(server_id, status='cancelled')
+
+    def call_to_post(self, server_id, post):
+        """Позвать записанного на пост: сервер скажет ему и покажет схему."""
+        return self._call('POST', f'/sync/appointments/{server_id}/call', {'post': post})
 
     def mark_arrived(self, server_id):
         return self.update(server_id, status='arrived')

@@ -28,6 +28,8 @@ from utils import get_moscow_time, as_naive, normalize_plate, normalize_phone
 BUFFER_KEY = 'live_queue_buffer_minutes'        # запас на допы
 BUFFER_DEFAULT = 20
 CALL_WAIT_KEY = 'live_queue_call_wait_minutes'  # позвали — сколько ждём
+LATE_KEY = 'booking_late_minutes'               # опоздал — пост не держим
+LATE_DEFAULT = 10
 CALL_WAIT_DEFAULT = 5
 MAX_MISSES = 2                                  # второй пропуск — выбывает
 
@@ -57,6 +59,9 @@ class LiveQueueService:
 
     def buffer_minutes(self):
         return max(0, self._settings().get_int(BUFFER_KEY, BUFFER_DEFAULT))
+
+    def late_minutes(self):
+        return max(1, self._settings().get_int(LATE_KEY, LATE_DEFAULT))
 
     def call_wait_minutes(self):
         return max(1, self._settings().get_int(CALL_WAIT_KEY, CALL_WAIT_DEFAULT))
@@ -139,6 +144,8 @@ class LiveQueueService:
         called = {e.post_number: e for e in self.db.query(LiveQueueEntry).filter(
             LiveQueueEntry.status == CALLED,
             LiveQueueEntry.post_number.isnot(None)).all()}
+        booked = {a.called_post: a for a in self._today_bookings(now)
+                  if a.called_post and a.status == Appointment.STATUS_SCHEDULED}
 
         result = []
         for post in range(1, self.posts_total() + 1):
@@ -153,6 +160,13 @@ class LiveQueueService:
                                'entry': entry,
                                'free_at': now + timedelta(
                                    minutes=self.expected_minutes(entry))})
+            elif post in booked:
+                appointment = booked[post]
+                result.append({'post': post, 'state': 'called', 'order': None,
+                               'entry': None, 'booking': appointment,
+                               'free_at': now + timedelta(minutes=(
+                                   self.package_minutes(appointment.wheels_assembled)
+                                   + self.buffer_minutes()))})
             else:
                 result.append({'post': post, 'state': 'free', 'order': None,
                                'entry': None, 'free_at': now})
@@ -177,10 +191,19 @@ class LiveQueueService:
             Appointment.scheduled_at <= horizon,
             Appointment.status == Appointment.STATUS_SCHEDULED).all()
         need = {}
+        late = timedelta(minutes=self.late_minutes())
         for row in rows:
             at = as_naive(row.scheduled_at)
             end = at + timedelta(minutes=row.duration_minutes or 60)
             if end <= now:
+                continue
+            if row.called_post:
+                continue        # уже позвали — его пост занят и так
+            if row.on_site:
+                continue        # на месте — получит пост первым и без держания
+            # Опоздал больше чем на N минут и не на месте — пост отдаём
+            # очереди; приедет — встанет первым на ближайший свободный
+            if not row.on_site and now > at + late:
                 continue
             at = max(at, now)
             need[at] = need.get(at, 0) + 1
@@ -321,6 +344,17 @@ class LiveQueueService:
         result = []
         taken = set()
         planned = {}
+
+        # Записанные, которые уже на месте, — первыми, по времени записи
+        for appointment in self.bookings_on_site(now):
+            if not free:
+                break
+            post = free.pop(0)
+            result.append({'post': post, 'entry': None, 'booking': appointment,
+                           'hold_for': None})
+            planned[post] = now + timedelta(minutes=self.package_minutes(
+                appointment.wheels_assembled) + self.buffer_minutes())
+
         for post in free:
             chosen, hold = None, None
             for entry in queue:
@@ -335,7 +369,7 @@ class LiveQueueService:
                 hold = hold or at
             if chosen is not None:
                 taken.add(chosen.id)
-            result.append({'post': post, 'entry': chosen,
+            result.append({'post': post, 'entry': chosen, 'booking': None,
                            'hold_for': None if chosen else hold})
         return result
 
@@ -492,6 +526,40 @@ class LiveQueueService:
         self.db.commit()
         return order
 
+    def _today_bookings(self, now=None):
+        now = now or as_naive(get_moscow_time())
+        start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        return self.db.query(Appointment).filter(
+            Appointment.scheduled_at >= start,
+            Appointment.scheduled_at < start + timedelta(days=1)).all()
+
+    def bookings_on_site(self, now=None):
+        """Записанные, что нажали «Я на месте» и ещё ждут поста."""
+        rows = [a for a in self._today_bookings(now)
+                if a.on_site and not a.called_post
+                and a.status == Appointment.STATUS_SCHEDULED]
+        return sorted(rows, key=lambda a: as_naive(a.scheduled_at))
+
+    def call_booking(self, appointment, post):
+        """
+        Позвать записанного на пост. Сервер скажет ему (Telegram или
+        браузер) и покажет схему в кабинете. Без связи — копию отметим
+        всё равно, а сказать придётся голосом: вернём причину.
+        """
+        state = next((s for s in self.posts() if s['post'] == post), None)
+        if state is None or state['state'] != 'free':
+            raise QueueError(f'Пост {post} занят')
+        appointment.called_post = post
+        self.db.commit()
+        if not appointment.server_id:
+            return None
+        from services.booking_api import BookingApi
+        try:
+            BookingApi(self.db).call_to_post(appointment.server_id, post)
+        except Exception as e:
+            return str(e)
+        return None
+
     def booking_diameter(self, appointment):
         """Диаметр для наряда по записи: из записи, иначе из карточки машины."""
         if appointment.wheel_diameter:
@@ -512,6 +580,8 @@ class LiveQueueService:
         diameter = self.booking_diameter(appointment)
         if not diameter:
             raise QueueError('В записи нет диаметра')
+        if post is None:
+            post = appointment.called_post
         if post is None:
             free = [s['post'] for s in self.posts() if s['state'] == 'free']
             post = free[0] if free else None
