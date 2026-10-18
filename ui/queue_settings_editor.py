@@ -8,7 +8,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 
 from models import Service
-from services.live_queue_service import (LiveQueueService, BUFFER_KEY, BUFFER_DEFAULT,
+from services.live_queue_service import (LiveQueueService, ENABLED_KEY, BUFFER_KEY, BUFFER_DEFAULT,
                                          CALL_WAIT_KEY, CALL_WAIT_DEFAULT)
 import styles
 
@@ -18,6 +18,17 @@ class QueueSettingsEditor:
         self.db = db
         self.window = window
         self.service = LiveQueueService(db)
+
+        self.enabled_var = tk.BooleanVar(value=self.service.enabled())
+        ttk.Checkbutton(parent, text='Вести посты и живую очередь (сезон)',
+                        variable=self.enabled_var,
+                        command=lambda: self.service._settings().set(
+                            ENABLED_KEY, '1' if self.enabled_var.get() else '0')
+                        ).pack(anchor='w', pady=(0, 4))
+        styles.create_label(
+            parent, 'Выключено — наряды открываются как обычно, без постов; '
+                    'по QR встать нельзя, «Я на месте» в кабинете не показывается.',
+            'Card.TLabel').pack(anchor='w', pady=(0, 12))
 
         grid = ttk.Frame(parent, style='White.TFrame')
         grid.pack(fill='x', pady=(0, 12))
@@ -33,6 +44,13 @@ class QueueSettingsEditor:
             entry.bind('<FocusOut>', lambda e, k=key, v=var: self.save_number(k, v))
             entry.bind('<Return>', lambda e, k=key, v=var: self.save_number(k, v))
             self.numbers[key] = var
+
+        self.auto_var = tk.BooleanVar(value=self.service.auto_call_enabled())
+        ttk.Checkbutton(parent, text='Звать на освободившийся пост автоматически',
+                        variable=self.auto_var,
+                        command=lambda: self.service._settings().set(
+                            'live_queue_auto_call', '1' if self.auto_var.get() else '0')
+                        ).pack(anchor='w', pady=(0, 12))
 
         lists = ttk.Frame(parent, style='White.TFrame')
         lists.pack(fill='x', pady=(0, 10))

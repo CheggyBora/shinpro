@@ -77,10 +77,14 @@ def add(db, client, kind, text, send_at=None, about=None, about_id=None):
     """
     Положить уведомление в очередь.
 
-    Человеку, до которого не дотянуться ни одним каналом, кладём сразу
-    помеченным как пропущенное: строка остаётся — по ней видно, что
-    напомнить было нечем, — но отправлять некуда.
+    Человеку, до которого не дотянуться ни одним каналом, срочное кладём
+    сразу помеченным как пропущенное: строка остаётся — по ней видно,
+    что сказать было нечем. Отложенное — ждёт: обычно человек
+    записывается и тут же подключает Telegram, и напоминание накануне
+    должно до него дойти. Канал проверяется ещё раз при отправке.
     """
+    send_at = send_at or shop_now()
+    later = send_at > shop_now()
     notice = Notice(
         account_id=client.account_id,
         client_id=client.id,
@@ -88,8 +92,8 @@ def add(db, client, kind, text, send_at=None, about=None, about_id=None):
         text=text,
         about=about,
         about_id=about_id,
-        send_at=send_at or shop_now(),
-        state=WAITING if reachable(db, client) else SKIPPED)
+        send_at=send_at,
+        state=WAITING if (later or reachable(db, client)) else SKIPPED)
 
     db.add(notice)
     db.commit()
@@ -212,6 +216,16 @@ def send_now(db, client, account, kind, text, about=None, about_id=None):
     return channel
 
 
+def _out_of_season(db, notice):
+    """«Пост отдали очереди» — неправда, если очередь выключили."""
+    if notice.kind != KIND_LATE or notice.about != 'appointment':
+        return False
+    from app.models import Appointment
+    from app.services import shop_settings
+    row = db.get(Appointment, notice.about_id)
+    return row is not None and not shop_settings.live_queue_on(db, row.shop_id)
+
+
 def send_due(db, limit=100):
     """
     Отправить созревшие. Возвращает сводку.
@@ -234,7 +248,7 @@ def send_due(db, limit=100):
             accounts[notice.account_id] = account
 
         channel = channel_for(db, client, account)
-        if channel is None:
+        if channel is None or _out_of_season(db, notice):
             notice.state = SKIPPED
             result['skipped'] += 1
             continue
@@ -293,15 +307,15 @@ ARRIVE_EARLY_MINUTES = 10
 LATE_MINUTES_DEFAULT = 10
 
 
-def arrive_text(shop_name, appointment):
+def arrive_text(shop_name, appointment, queue_on=True):
     come = appointment.scheduled_at - timedelta(minutes=ARRIVE_EARLY_MINUTES)
     return (f'<b>{shop_name}</b>\n'
             f'Ждём вас в {appointment.scheduled_at.strftime("%H:%M")} — '
             f'подъезжайте к {come.strftime("%H:%M")}.'
             + (f'\nМашина: {appointment.license_plate}'
                if appointment.license_plate else '')
-            + '\n\nНа месте нажмите «Я на месте» в личном кабинете — '
-              'дадим первый свободный пост.')
+            + ('\n\nНа месте нажмите «Я на месте» в личном кабинете — '
+               'дадим первый свободный пост.' if queue_on else ''))
 
 
 def late_text(shop_name, appointment, minutes):
@@ -363,22 +377,34 @@ def plan_for_appointment(db, client, shop_name, appointment):
                         send_at=remind_at,
                         about='appointment', about_id=appointment.id))
 
-    # Перед самой записью — «подъезжайте за 10 минут», и на случай
-    # опоздания — что пост отдали очереди. Нажмёт «Я на месте» или цех
-    # отметит приезд — второе отменится
+    made.extend(plan_arrival(db, client, shop_name, appointment))
+    return made
+
+
+def plan_arrival(db, client, shop_name, appointment):
+    """
+    Перед самой записью — «подъезжайте за 10 минут», и на случай
+    опоздания — что пост отдали очереди. Нажмёт «Я на месте» или цех
+    отметит приезд — второе отменится. При переносе — ставится заново.
+    """
+    from app.services import shop_settings
+    made = []
+    queue_on = shop_settings.live_queue_on(db, appointment.shop_id)
     arrive_at = appointment.scheduled_at - timedelta(minutes=ARRIVE_BEFORE_MINUTES)
     if arrive_at > shop_now():
         made.append(add(db, client, KIND_ARRIVE,
-                        arrive_text(shop_name, appointment),
+                        arrive_text(shop_name, appointment, queue_on),
                         send_at=arrive_at,
                         about='appointment', about_id=appointment.id))
 
     late = late_minutes(db, appointment.shop_id)
-    made.append(add(db, client, KIND_LATE,
-                    late_text(shop_name, appointment, late),
-                    send_at=appointment.scheduled_at + timedelta(minutes=late),
-                    about='appointment', about_id=appointment.id))
-
+    late_at = appointment.scheduled_at + timedelta(minutes=late)
+    # «Пост отдали очереди» — только когда очередь ведётся
+    if queue_on and late_at > shop_now():
+        made.append(add(db, client, KIND_LATE,
+                        late_text(shop_name, appointment, late),
+                        send_at=late_at,
+                        about='appointment', about_id=appointment.id))
     return made
 
 

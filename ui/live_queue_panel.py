@@ -52,8 +52,20 @@ class LiveQueuePanel:
         card = styles.create_card_frame(self.frame)
         card.pack(fill='both', expand=True, padx=15, pady=15)
 
+        # Не сезон: очередь выключена, наряды открываются как обычно
+        self.off = ttk.Frame(card, style='White.TFrame')
+        styles.create_label(self.off, "Живая очередь выключена",
+                            'CardHeading.TLabel').pack(anchor='w')
+        styles.create_label(
+            self.off,
+            "Сейчас не сезон: наряды открываются как обычно, без постов, "
+            "встать в очередь по QR нельзя.\n"
+            "Включается в «Настройки» → «Живая очередь».",
+            'Card.TLabel').pack(anchor='w', pady=(8, 0))
+
         inner = ttk.Frame(card, style='White.TFrame')
         inner.pack(fill='both', expand=True, padx=16, pady=14)
+        self.inner = inner
 
         top = ttk.Frame(inner, style='White.TFrame')
         top.pack(fill='x')
@@ -102,6 +114,13 @@ class LiveQueuePanel:
     # ------------------------------------------------------------------
 
     def load(self):
+        if not self.service.enabled():
+            self.inner.pack_forget()
+            self.off.pack(fill='both', expand=True, padx=16, pady=14)
+            return
+        if not self.inner.winfo_manager():
+            self.off.pack_forget()
+            self.inner.pack(fill='both', expand=True, padx=16, pady=14)
         try:
             self.service.expire_calls()
             posts = self.service.posts()

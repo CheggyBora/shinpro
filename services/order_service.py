@@ -691,6 +691,9 @@ class OrderService:
             # Сохраняем изменения
             self.db.commit()
 
+            from services.live_queue_service import LiveQueueService
+            LiveQueueService(self.db).order_removed(order_id)
+
             from services.audit_service import AuditService
             AuditService(self.db).log(
                 AuditService.ORDER_DELETE,
@@ -898,6 +901,9 @@ class OrderService:
 
             # Сохраняем изменения
             self.db.commit()
+
+            from services.live_queue_service import LiveQueueService
+            LiveQueueService(self.db).order_removed(order_id)
 
             from services.audit_service import AuditService
             AuditService(self.db).log(

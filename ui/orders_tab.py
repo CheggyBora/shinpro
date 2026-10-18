@@ -422,6 +422,16 @@ class OrdersTab:
                     client_id=client_id,
                     wheels_assembled=wheels_options.get(wheels_var.get())
                 )
+                # Машина встаёт на пост: без номера поста программа
+                # считала бы его свободным и позвала бы туда очередь
+                from services.live_queue_service import LiveQueueService
+                queue = LiveQueueService(self.db)
+                wheels = wheels_options.get(wheels_var.get())
+                if queue.enabled():
+                    order.post_number = queue.first_free_post()
+                    if wheels is not None:
+                        order.package_minutes = queue.package_minutes(wheels)
+                    self.db.commit()
                 self.open_order_tab(order)
                 self.license_entry.delete(0, tk.END)
                 self.update_license_plates_list()

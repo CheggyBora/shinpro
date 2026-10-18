@@ -136,6 +136,7 @@ class BookingApi:
             return self._from_cache(day, reason=str(e))
 
         rows = self._store(day, answer)
+        self.flush_pending(rows)
         return {
             'day': day,
             'posts': answer.get('posts', DEFAULT_POSTS),
@@ -152,6 +153,14 @@ class BookingApi:
 
         start = datetime(day.year, day.month, day.day)
         end = start + timedelta(days=1)
+        # Отметки, которые сервер ещё не знает, переносим в новую копию
+        kept = {}
+        for old in self.db.query(Appointment).filter(
+                Appointment.scheduled_at >= start, Appointment.scheduled_at < end,
+                Appointment.pending.isnot(None)).all():
+            if old.server_id:
+                kept[old.server_id] = (old.pending, old.on_site,
+                                       old.called_post, old.called_at)
         self.db.query(Appointment).filter(
             Appointment.scheduled_at >= start,
             Appointment.scheduled_at < end).delete(synchronize_session=False)
@@ -179,8 +188,11 @@ class BookingApi:
                 wheel_diameter=item.get('wheel_diameter'),
                 on_site=bool(item.get('on_site')),
                 called_post=item.get('called_post'),
+                called_at=_decode_time(item['called_at']) if item.get('called_at') else None,
                 post_column=item.get('column', 0),
                 fetched_at=now)
+            if row.server_id in kept and row.status == 'scheduled':
+                row.pending, row.on_site, row.called_post, row.called_at = kept[row.server_id]
             self.db.add(row)
             rows.append(row)
 
@@ -244,7 +256,8 @@ class BookingApi:
     def update(self, server_id, **fields):
         payload = {}
         for key in ('scheduled_at', 'duration_minutes', 'license_plate',
-                    'client_name', 'client_phone', 'status', 'comment'):
+                    'client_name', 'client_phone', 'status', 'comment',
+                    'on_site'):
             if key in fields:
                 value = fields[key]
                 if key == 'scheduled_at' and value is not None:
@@ -254,6 +267,38 @@ class BookingApi:
 
     def cancel(self, server_id):
         return self.update(server_id, status='cancelled')
+
+    def remember(self, appointment, **fields):
+        """Отметку не удалось отдать серверу — досылать при обмене."""
+        import json
+        try:
+            waiting = json.loads(appointment.pending or '{}')
+        except ValueError:
+            waiting = {}
+        waiting.update(fields)
+        appointment.pending = json.dumps(waiting)
+        self.db.commit()
+
+    def flush_pending(self, rows):
+        """Дослать отметки, сделанные без связи."""
+        import json
+        for row in rows:
+            if not row.pending or not row.server_id:
+                continue
+            try:
+                waiting = json.loads(row.pending)
+            except ValueError:
+                waiting = {}
+            try:
+                if 'on_site' in waiting:
+                    self.update(row.server_id, on_site=waiting['on_site'])
+                if 'call' in waiting:
+                    self.call_to_post(row.server_id, waiting['call'])
+            except Exception as e:
+                log.warning(f"Отметка по записи №{row.server_id} не дослана: {e}")
+                return
+            row.pending = None
+            self.db.commit()
 
     def call_to_post(self, server_id, post):
         """Позвать записанного на пост: сервер скажет ему и покажет схему."""

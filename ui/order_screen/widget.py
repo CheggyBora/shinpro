@@ -80,6 +80,20 @@ class OrderWidget(OrderItemsMixin, OrderPaymentMixin, OrderTimingMixin):
                   background=styles.COLORS['bg_card'],
                   foreground=styles.COLORS['text_secondary']).pack(side='left', padx=(14, 0))
 
+        # Пост: по нему программа знает, что он занят, и раздаёт посты
+        # записи и живой очереди (docs/live_queue.md)
+        from services.live_queue_service import LiveQueueService
+        if order.status != 'paid' and (order.post_number
+                                       or LiveQueueService(self.db).enabled()):
+            self.post_label = ttk.Label(
+                header_row, text=self._post_text(),
+                font=(styles.DEFAULT_FONT, 10, 'bold'),
+                background=styles.COLORS['bg_card'],
+                foreground=styles.COLORS['text'])
+            self.post_label.pack(side='left', padx=(14, 0))
+            styles.create_button(header_row, "Сменить пост", self.change_post,
+                                 'Compact.Secondary.TButton').pack(side='left', padx=(6, 0))
+
         if order.client:
             client_row = ttk.Frame(info_frame, style='White.TFrame')
             client_row.pack(anchor='w', fill='x', pady=(6, 0))
@@ -310,6 +324,31 @@ class OrderWidget(OrderItemsMixin, OrderPaymentMixin, OrderTimingMixin):
 
         messagebox.showinfo("Отправлено",
                             f"Клиенту сообщили {where}, что машина готова.")
+
+    def _post_text(self):
+        post = getattr(self.order, 'post_number', None)
+        return f"Пост {post}" if post else "Пост не выбран"
+
+    def change_post(self):
+        """Переставить машину на другой свободный пост."""
+        from services.live_queue_service import LiveQueueService, QueueError
+        from ui.live_queue_panel import ask_post
+
+        queue = LiveQueueService(self.db)
+        free = [s['post'] for s in queue.posts() if s['state'] == 'free']
+        if not free:
+            messagebox.showinfo("Пост", "Свободных постов нет", parent=self.frame)
+            return
+        post = ask_post(self.frame, free)
+        if not post:
+            return
+        try:
+            queue.set_order_post(self.order.id, post)
+        except QueueError as e:
+            messagebox.showwarning("Пост", str(e), parent=self.frame)
+            return
+        self.db.refresh(self.order)
+        self.post_label.config(text=self._post_text())
 
     def open_client_card(self):
         """Открыть карточку клиента этого наряда."""

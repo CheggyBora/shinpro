@@ -112,8 +112,31 @@ class MainWindow:
     LIVE_SECONDS = 20
 
     def _live_tick(self):
-        self._start_live_sync()
+        if not self._start_live_sync():
+            # Обмена нет (не настроен или идёт) — очередь всё равно
+            # живёт: без интернета она тоже должна звать и снимать вызовы
+            if self.live_running is None:
+                self._queue_housekeeping()
         self.root.after(self.LIVE_SECONDS * 1000, self._live_tick)
+
+    def _queue_housekeeping(self, refresh=False):
+        """
+        Следить за постами некому: сгоревшие вызовы снимаем и
+        следующего зовём сами, даже если раздел очереди закрыт.
+        Возвращает, изменилось ли что-нибудь.
+        """
+        try:
+            from services.live_queue_service import LiveQueueService
+            queue = LiveQueueService(self.db)
+            changed = len(queue.expire_calls()) + queue.auto_call()
+            panel = self.appointments_tab.queue
+            if refresh or changed or panel.frame.winfo_ismapped():
+                panel.load()
+            return bool(changed)
+        except Exception as e:
+            self.db.rollback()
+            log.warning(f"Очередь не обслужилась: {e}")
+            return False
 
     def _start_live_sync(self):
         """
@@ -122,13 +145,13 @@ class MainWindow:
         а окно — замирать, пока сервер отвечает.
         """
         if self.live_running is not None:
-            return
+            return False
         try:
             from services.sync_service import SyncService
             if not SyncService(self.db).is_enabled():
-                return
+                return False
         except Exception:
-            return
+            return False
 
         import threading
 
@@ -155,6 +178,7 @@ class MainWindow:
         self.live_running = threading.Thread(target=worker, daemon=True)
         self.live_running.start()
         self.root.after(500, self._live_poll)
+        return True
 
     def _live_poll(self):
         # Ждём поток здесь, в главном: окна трогать можно только отсюда
@@ -171,9 +195,11 @@ class MainWindow:
                     self.db.expunge(obj)
                 elif isinstance(obj, LiveQueueEntry):
                     self.db.expire(obj)
-            panel = self.appointments_tab.queue
-            if self.live_result or panel.frame.winfo_ismapped():
-                panel.load()
+
+            changed = self._queue_housekeeping(refresh=bool(self.live_result))
+            if changed:
+                # Позванные должны узнать сразу, а не через 20 секунд
+                self.root.after(1000, self._start_live_sync)
         except Exception as e:
             log.warning(f"Не удалось обновить очередь после обмена: {e}")
 

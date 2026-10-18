@@ -937,7 +937,7 @@ var SHOP = (location.pathname.match(/^\/z\/([^\/?#]+)/) || [])[1] || '';
 
 // Пришли со страницы живой очереди («Войти и встать») — после входа
 // возвращаем туда же: человек стоит у въезда и ждёт место, а не запись
-var NEXT_LIVE = /[?&]next=q(&|$)/.test(location.search);
+var NEXT_LIVE = !!SHOP && /[?&]next=q(&|$)/.test(location.search);
 function backToLiveQueue() {
   location.href = '/z/' + SHOP + '/q';
 }
@@ -2068,7 +2068,7 @@ function drawMine() {
 
     // Живая очередь (docs/live_queue.md): подъехал — «Я на месте»,
     // ждёт — «позовём», позвали — пост и схема, куда ехать
-    if (item.called_post) {
+    if (item.called_post && item.status === 'scheduled') {
       var called = document.createElement('div');
       called.className = 'arrived-call';
       called.innerHTML = '<b>Проезжайте на пост ' + item.called_post + '</b>' +
@@ -2119,7 +2119,8 @@ function checkIn(item, button) {
 setInterval(function () {
   if (document.hidden || !state.mine) return;
   var waiting = state.mine.some(function (item) {
-    return item.on_site || item.can_check_in || item.called_post;
+    return item.status === 'scheduled' &&
+      (item.on_site || item.can_check_in || item.called_post);
   });
   if (waiting) loadMine();
 }, 10000);

@@ -30,6 +30,13 @@ BUFFER_DEFAULT = 20
 CALL_WAIT_KEY = 'live_queue_call_wait_minutes'  # позвали — сколько ждём
 LATE_KEY = 'booking_late_minutes'               # опоздал — пост не держим
 LATE_DEFAULT = 10
+AUTO_CALL_KEY = 'live_queue_auto_call'          # звать самой программе
+# Посты и живая очередь — на сезон. Выключено: наряды открываются как
+# раньше, без постов, программа никого не зовёт, по QR встать нельзя
+ENABLED_KEY = 'live_queue_enabled'
+# Наряд старше этого считается забытым черновиком, а не машиной на посту:
+# иначе вчерашний неоплаченный наряд держал бы пост вечно
+STALE_HOURS = 18
 CALL_WAIT_DEFAULT = 5
 MAX_MISSES = 2                                  # второй пропуск — выбывает
 
@@ -107,10 +114,12 @@ class LiveQueueService:
 
     def _open_orders_on_posts(self):
         """Наряды, которые сейчас стоят на постах: {пост: наряд}."""
+        since = as_naive(get_moscow_time()) - timedelta(hours=STALE_HOURS)
         rows = self.db.query(WorkOrder).filter(
             WorkOrder.post_number.isnot(None),
             WorkOrder.status != 'paid',
-            WorkOrder.is_deleted.isnot(True)).all()
+            WorkOrder.is_deleted.isnot(True),
+            WorkOrder.created_at >= since).all()
         busy = {}
         for order in rows:
             # На один пост двое не встают; если вдруг так — считаем
@@ -477,6 +486,12 @@ class LiveQueueService:
                 LiveQueueEntry.status == CALLED).all():
             if entry.called_at and now - as_naive(entry.called_at) >= limit:
                 expired.append(self.missed(entry.id))
+        for appointment in self._today_bookings():
+            if (appointment.status == 'scheduled' and appointment.called_post
+                    and appointment.called_at
+                    and now - as_naive(appointment.called_at) >= limit):
+                self.release_booking(appointment)
+                expired.append(appointment)
         return expired
 
     def leave(self, entry_id):
@@ -550,15 +565,37 @@ class LiveQueueService:
         if state is None or state['state'] != 'free':
             raise QueueError(f'Пост {post} занят')
         appointment.called_post = post
+        appointment.called_at = get_moscow_time()
         self.db.commit()
         if not appointment.server_id:
             return None
         from services.booking_api import BookingApi
+        api = BookingApi(self.db)
         try:
-            BookingApi(self.db).call_to_post(appointment.server_id, post)
+            api.call_to_post(appointment.server_id, post)
         except Exception as e:
+            api.remember(appointment, call=post)
             return str(e)
         return None
+
+    def release_booking(self, appointment):
+        """
+        Позвали записанного, а он не подъехал: пост отдаём дальше.
+        «На месте» снимаем тоже — иначе программа звала бы его снова и
+        снова, держа пост. Приедет — нажмёт «Я на месте» ещё раз.
+        """
+        appointment.called_post = None
+        appointment.called_at = None
+        appointment.on_site = False
+        self.db.commit()
+        if not appointment.server_id:
+            return
+        from services.booking_api import BookingApi
+        api = BookingApi(self.db)
+        try:
+            api.update(appointment.server_id, on_site=False)
+        except Exception:
+            api.remember(appointment, on_site=False)
 
     def booking_diameter(self, appointment):
         """Диаметр для наряда по записи: из записи, иначе из карточки машины."""
@@ -603,6 +640,69 @@ class LiveQueueService:
         order.planned_minutes = orders.calculate_planned_minutes(order.id)
         self.db.commit()
         return order
+
+    def enabled(self):
+        return self._settings().is_on(ENABLED_KEY)
+
+    def auto_call_enabled(self):
+        return self._settings().is_on(AUTO_CALL_KEY)
+
+    def auto_call(self, now=None):
+        """
+        Позвать самой: следить за постами физически некому. Свободный
+        пост — тому, кому его предлагает подсказка: записанному на месте
+        или первому в очереди, если запись это позволяет. Возвращает,
+        скольких позвали.
+        """
+        if not self.enabled() or not self.auto_call_enabled():
+            return 0
+        called = 0
+        for item in self.suggestion(now):
+            try:
+                if item.get('booking') is not None:
+                    self.call_booking(item['booking'], item['post'])
+                    called += 1
+                elif item.get('entry') is not None:
+                    self.call(item['entry'].id, item['post'])
+                    called += 1
+            except QueueError:
+                continue
+        return called
+
+    def first_free_post(self):
+        free = [s['post'] for s in self.posts() if s['state'] == 'free']
+        return free[0] if free else None
+
+    def set_order_post(self, order_id, post):
+        """Переставить наряд на другой пост — только на свободный."""
+        order = self.db.query(WorkOrder).filter(WorkOrder.id == order_id).first()
+        if order is None:
+            raise QueueError('Наряд не найден')
+        if post is not None:
+            state = next((s for s in self.posts() if s['post'] == post), None)
+            if state is None:
+                raise QueueError(f'Поста {post} нет — работает {self.posts_total()}')
+            if state['state'] != 'free' and not (
+                    state['state'] == 'busy' and state['order'].id == order.id):
+                raise QueueError(f'Пост {post} занят')
+        order.post_number = post
+        self.db.commit()
+        entry = self.db.query(LiveQueueEntry).filter(
+            LiveQueueEntry.order_id == order_id).first()
+        if entry is not None:
+            entry.post_number = post
+            self.db.commit()
+        return order
+
+    def order_removed(self, order_id):
+        """Наряд удалили — место в очереди закрываем, пост свободен."""
+        entry = self.db.query(LiveQueueEntry).filter(
+            LiveQueueEntry.order_id == order_id).first()
+        if entry is not None and entry.status == SERVING:
+            entry.status = LEFT
+            entry.closed_at = get_moscow_time()
+            self.db.commit()
+        return entry
 
     def order_closed(self, order_id):
         """Наряд оплачен — место в очереди закрыто."""
@@ -661,6 +761,10 @@ class LiveQueueService:
         from logger import log
 
         added = 0
+        # Не приняли (та же машина с другим телефоном) — сервер закроет
+        # место, человеку на странице скажут подойти к приёмщику
+        self.rejected = []
+        today = as_naive(get_moscow_time()).date()
         for item in answer.get('new') or []:
             server_id = item.get('server_id')
             if server_id is None:
@@ -673,12 +777,15 @@ class LiveQueueService:
                 joined = _dt.fromisoformat(item.get('joined_at') or '')
             except ValueError:
                 pass
+            if joined is not None and joined.date() != today:
+                joined = None   # вчерашнее время не ставит его первым
             try:
                 entry = self.add(item.get('license_plate'), item.get('phone'),
                                  item.get('wheel_diameter'), item.get('wheels_assembled'),
                                  source='qr', server_id=server_id, joined_at=joined)
             except QueueError as e:
                 log.warning(f"Место по QR не принято: {e}")
+                self.rejected.append(server_id)
                 continue
             if entry.server_id is None:
                 # Приёмщик уже поставил эту машину вручную — связываем

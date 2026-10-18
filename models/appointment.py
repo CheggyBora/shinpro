@@ -90,6 +90,11 @@ class Appointment(Base):
     # пост его позвали. Хранит сервер, здесь — копия
     on_site = Column(Boolean, default=False, nullable=False)
     called_post = Column(Integer, nullable=True)
+    called_at = Column(DateTime(timezone=True), nullable=True)
+    # Что цех отметил без связи («на месте», вызов на пост) и ещё не
+    # отдал серверу — JSON. Копию дня перезаписывают целиком при каждом
+    # обмене, и без этого отметка пропала бы с первым же обновлением
+    pending = Column(Text, nullable=True)
     comment = Column(Text, nullable=True)
 
     status = Column(String(20), default=STATUS_SCHEDULED, nullable=False, index=True)

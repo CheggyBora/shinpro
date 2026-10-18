@@ -67,6 +67,11 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
     <button class="ghost" type="button" id="retry">Проверить снова</button>
   </section>
 
+  <section class="card" id="screenOff" hidden>
+    <h1>Живая очередь сейчас не ведётся</h1>
+    <p>Подойдите, пожалуйста, к приёмщику — он примет машину.</p>
+  </section>
+
   <form class="card" id="screenJoin" hidden novalidate>
     <h1>Встать в очередь</h1>
     <p>Вы на месте — займите очередь. Когда подойдёт ваша, здесь появится
@@ -132,7 +137,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 
   function $(id) { return document.getElementById(id); }
   function show(id) {
-    ['screenLoading', 'screenOffline', 'screenJoin', 'screenWait', 'screenCalled',
+    ['screenLoading', 'screenOffline', 'screenOff', 'screenJoin', 'screenWait', 'screenCalled',
      'screenServing', 'screenDone'].forEach(function (s) { $(s).hidden = s !== id; });
   }
   function api(path, options) {
@@ -166,8 +171,10 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 
   function draw(data) {
     if (data.shop) $('shopName').textContent = data.shop;
+    if (!formReady && data.diameters) prepareForm(data);
     var t = data.ticket;
     if (!t) {
+      if (data.enabled === false) return show('screenOff');
       if (!data.online) return show('screenOffline');
       prepareForm(data);
       return show('screenJoin');
@@ -199,8 +206,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
     show('screenWait');
   }
 
-  var formReady = false;
+  var formReady = false, lastData = null;
   function prepareForm(data) {
+    lastData = data;
     if (formReady) return;
     formReady = true;
     (data.diameters || []).forEach(function (d) {
@@ -253,7 +261,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   });
   $('again').addEventListener('click', function () {
     api('/live/leave', {method: 'POST'}).catch(function () {}).then(function () {
-      lastState = null; show('screenJoin');
+      lastState = null;
+      return refresh();
     });
   });
   $('retry').addEventListener('click', refresh);

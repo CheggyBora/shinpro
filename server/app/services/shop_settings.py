@@ -63,6 +63,9 @@ DEFAULTS = {
     # не прислал свои, приложение должно считать так же, как он
     # Принимает ли точка запись через интернет. Присылает цех
     'booking_enabled': '1',
+    # Посты и живая очередь на сезон. Выключено — по QR встать нельзя,
+    # «Я на месте» в кабинете не показывается. Присылает цех
+    'live_queue_enabled': '1',
 
     'storage_warn_days': '7',
 
@@ -161,6 +164,11 @@ OFF = ('0', 'false', 'no', 'нет', 'выкл')
 def is_on(value):
     """Включено ли. Непонятное считаем включённым, а не наоборот."""
     return str(value).strip().lower() not in OFF
+
+
+def live_queue_on(db, shop):
+    """Ведёт ли точка посты и живую очередь (сезон)."""
+    return is_on(get(db, 'live_queue_enabled', shop=shop))
 
 
 def updated_at(db, key, shop=None):

@@ -106,9 +106,11 @@ check('поля нарядов тоже',
 check('и хранение',
       {'storage_months', 'storage_lead_days'} <= set(built.numeric_fields),
       str(sorted(built.numeric_fields)))
-check('и онлайн-очередь — её надо уметь выключить из программы',
-      {'queue_posts', 'queue_min_wait_minutes', 'queue_lead_minutes'}
-      <= set(built.numeric_fields),
+# Онлайн-очередь «из дома» отменена (docs/live_queue.md) — её полей
+# в настройках быть не должно, чтобы не путать с живой очередью
+check('старой онлайн-очереди в настройках нет',
+      not ({'queue_posts', 'queue_min_wait_minutes', 'queue_lead_minutes'}
+           & set(built.numeric_fields)),
       str(sorted(built.numeric_fields)))
 
 print()

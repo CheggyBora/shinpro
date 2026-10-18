@@ -294,6 +294,119 @@ late.on_site = True
 db.commit()
 check('а если он на месте — снова первый', queue.bookings_on_site(now)[0].id == late.id)
 
+print()
+print('=== Забытый вчерашний наряд пост не держит ===')
+for o in db.query(WorkOrder).filter(WorkOrder.status != 'paid').all():
+    o.status = 'paid'
+    o.paid_at = get_moscow_time()
+for a in db.query(Appointment).all():
+    a.status = 'arrived'
+db.commit()
+stale = orders.create_order('Ш999ШШ77', 'R16', 'car', create_client=False)
+stale.post_number = 1
+stale.created_at = get_moscow_time() - timedelta(days=1)
+db.commit()
+check('вчерашний черновик — пост 1 свободен',
+      {s['post']: s['state'] for s in queue.posts()}[1] == 'free')
+stale.is_deleted = True
+db.commit()
+
+print()
+print('=== Удалили наряд — место в очереди закрыто ===')
+gone = queue.add('Ю111ЮЮ77', '79160000111', 'R16', True)
+gone_order = queue.open_order(gone.id)
+ok, _ = orders.hard_delete_unpaid_order(gone_order.id) if hasattr(orders, 'hard_delete_unpaid_order') else (False, '')
+db.refresh(gone)
+check('удалили черновик — место закрыто', gone.status == LEFT, gone.status)
+
+print()
+print('=== Программа зовёт сама ===')
+for e in queue.line():
+    queue.leave(e.id)
+auto = queue.add('А001АА77', '79160000301', 'R16', True)
+called_count = queue.auto_call()
+db.refresh(auto)
+check('позвала первого в очереди', called_count >= 1 and auto.status == CALLED, auto.status)
+SettingsService(db).set('live_queue_auto_call', '0')
+next_one = queue.add('А002АА77', '79160000302', 'R16', True)
+check('выключили — не зовёт', queue.auto_call() == 0)
+SettingsService(db).set('live_queue_auto_call', '1')
+
+print()
+print('=== Сменить пост у наряда ===')
+moved = queue.open_order(auto.id)
+free_now = [s['post'] for s in queue.posts() if s['state'] == 'free']
+target = free_now[0]
+queue.set_order_post(moved.id, target)
+check('наряд на новом посту', moved.post_number == target)
+other_busy = queue.open_order(next_one.id, post=[p for p in free_now if p != target][0])
+try:
+    queue.set_order_post(moved.id, other_busy.post_number)
+    check('на занятый не переставить', False)
+except QueueError:
+    check('на занятый не переставить', True)
+for o in db.query(WorkOrder).filter(WorkOrder.status != 'paid').all():
+    o.status = 'paid'
+    o.paid_at = get_moscow_time()
+for e in queue.line():
+    queue.leave(e.id)
+db.commit()
+
+print()
+print('=== Позвали записанного — не подъехал, пост отдаём дальше ===')
+for a in db.query(Appointment).all():
+    a.status = 'arrived'
+db.commit()
+gone_booking = Appointment(scheduled_at=as_naive(get_moscow_time()), duration_minutes=30,
+                           license_plate='Л100ЛЛ77', status='scheduled', on_site=True)
+db.add(gone_booking)
+db.commit()
+queue.call_booking(gone_booking, 1)
+check('позвали', gone_booking.called_post == 1 and gone_booking.called_at is not None)
+queue.expire_calls(now=as_naive(get_moscow_time()) + timedelta(minutes=6))
+db.refresh(gone_booking)
+check('через 5 минут вызов снят', gone_booking.called_post is None, str(gone_booking.called_post))
+check('и «на месте» тоже — не зовём по кругу', gone_booking.on_site is False)
+gone_booking.status = 'arrived'
+db.commit()
+
+print()
+print('=== Отметка без связи переживает обновление копии ===')
+from services.booking_api import BookingApi
+from datetime import date as _date
+api = BookingApi(db)
+today = _date.today()
+offline_row = Appointment(server_id=501, scheduled_at=as_naive(get_moscow_time()),
+                          duration_minutes=30, license_plate='Л200ЛЛ77', status='scheduled')
+db.add(offline_row)
+db.commit()
+offline_row.on_site = True
+api.remember(offline_row, on_site=True)
+rows = api._store(today, {'appointments': [{
+    'id': 501, 'scheduled_at': as_naive(get_moscow_time()).isoformat(),
+    'duration_minutes': 30, 'license_plate': 'Л200ЛЛ77', 'status': 'scheduled',
+    'on_site': False, 'called_post': None}]})
+kept = next(r for r in rows if r.server_id == 501)
+check('«на месте» не стёрлось', kept.on_site is True)
+check('и ждёт досылки', kept.pending and 'on_site' in kept.pending, str(kept.pending))
+sent = []
+api.update = lambda server_id, **fields: sent.append((server_id, fields))
+api.flush_pending(rows)
+check('дослали на сервер', sent == [(501, {'on_site': True})], str(sent))
+check('больше не ждёт', kept.pending is None)
+kept.status = 'arrived'
+db.commit()
+
+print()
+print('=== Не сезон: очередь выключена ===')
+SettingsService(db).set('live_queue_enabled', '0')
+check('выключено', queue.enabled() is False)
+queue.add('Л300ЛЛ77', '79160000777', 'R16', True)
+check('сама не зовёт', queue.auto_call() == 0)
+for e in queue.line():
+    queue.leave(e.id)
+SettingsService(db).set('live_queue_enabled', '1')
+
 db.close()
 
 print()
@@ -342,6 +455,60 @@ order = next(w.order for w in app.orders_tab.active_orders.values() if w.order.p
 names = sorted(i.service.name for i in OrderService(app.db).get_order_items(order.id))
 check('в наряде шиномонтаж — только шины',
       names == ['Балансировка', 'Мойка', 'Съем+Установка', 'Шиномонтаж'], str(names))
+
+print()
+print('=== Обычный наряд — на свободный пост ===')
+app.orders_tab.license_entry.delete(0, 'end')
+app.orders_tab.license_entry.insert(0, 'Н555НН77')
+app.orders_tab.prefilled_data = {'diameter': 'R16', 'vehicle_type': 'car'}
+app.orders_tab.create_new_order()
+root.update()
+
+def all_widgets(widget):
+    yield widget
+    for child in widget.winfo_children():
+        yield from all_widgets(child)
+
+dialog = next(w for w in all_widgets(root)
+              if isinstance(w, tk.Toplevel) and w.title() == 'Детали наряда')
+
+def buttons(widget):
+    for child in widget.winfo_children():
+        if isinstance(child, tk.ttk.Button):
+            yield child
+        yield from buttons(child)
+
+next(b for b in buttons(dialog) if b.cget('text') == 'Создать наряд').invoke()
+root.update()
+made = next(w.order for w in app.orders_tab.active_orders.values()
+            if w.order.car.license_plate == 'Н555НН77')
+check('у обычного наряда есть пост', made.post_number is not None, str(made.post_number))
+
+print()
+print('=== Не сезон: наряд как обычно, раздел очереди выключен ===')
+from services.settings_service import SettingsService as _Settings
+_Settings(app.db).set('live_queue_enabled', '0')
+panel.load()
+root.update()
+check('раздел говорит, что выключено', panel.off.winfo_manager() == 'pack'
+      and not panel.inner.winfo_manager())
+app.orders_tab.license_entry.delete(0, 'end')
+app.orders_tab.license_entry.insert(0, 'Н666НН77')
+app.orders_tab.prefilled_data = {'diameter': 'R16', 'vehicle_type': 'car'}
+app.orders_tab.create_new_order()
+root.update()
+dialog = next(w for w in all_widgets(root)
+              if isinstance(w, tk.Toplevel) and w.title() == 'Детали наряда')
+next(b for b in buttons(dialog) if b.cget('text') == 'Создать наряд').invoke()
+root.update()
+plain = next(w for w in app.orders_tab.active_orders.values()
+             if w.order.car.license_plate == 'Н666НН77')
+check('у наряда нет поста', plain.order.post_number is None, str(plain.order.post_number))
+check('и в шапке нет «Сменить пост»', not hasattr(plain, 'post_label'))
+_Settings(app.db).set('live_queue_enabled', '1')
+panel.load()
+root.update()
+check('включили — раздел снова рабочий', panel.inner.winfo_manager() == 'pack')
 
 root.destroy()
 finish()

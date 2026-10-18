@@ -672,6 +672,7 @@ def day_appointments(day: str, db: Session = Depends(get_db),
             'wheel_diameter': row.wheel_diameter,
             'on_site': row.on_site_at is not None,
             'called_post': row.called_post,
+            'called_at': row.called_at,
             'status': row.status,
             'source': row.source,
             'comment': row.comment,
@@ -788,6 +789,8 @@ class AppointmentPatchIn(BaseModel):
     client_phone: Optional[str] = None
     status: Optional[str] = None
     comment: Optional[str] = None
+    # Приёмщик отметил «на месте»: приехал, а свободного поста нет
+    on_site: Optional[bool] = None
 
 
 @router.patch('/appointments/{appointment_id}', summary='Изменить запись')
@@ -832,8 +835,20 @@ def patch_appointment(appointment_id: int, payload: AppointmentPatchIn,
         row.status = payload.status
     if payload.comment is not None:
         row.comment = payload.comment.strip() or None
+    if payload.on_site is not None:
+        row.on_site_at = (row.on_site_at or shop_now()) if payload.on_site else None
+        if not payload.on_site:
+            # Позвали и не дождались — вызов снят, пост отдали дальше
+            row.called_post = None
+            row.called_at = None
 
     db.commit()
+
+    if payload.on_site:
+        from app.models import KIND_ARRIVE, KIND_LATE
+        from app.services import notices as _on_site_notices
+        _on_site_notices.cancel_about(db, 'appointment', row.id,
+                                      kinds=[KIND_ARRIVE, KIND_LATE])
 
     # Приезд отмечен, запись отменена или перенесена — «подъезжайте» и
     # «вы опоздали» по старому времени уходить не должны
@@ -842,6 +857,17 @@ def patch_appointment(appointment_id: int, payload: AppointmentPatchIn,
         from app.services import notices as _notices
         _notices.cancel_about(db, 'appointment', row.id, kinds=[KIND_ARRIVE, KIND_LATE])
 
+        # Перенесли на другое время — «на месте» и вызов на пост были про
+        # прежний приезд; новое время — свои «подъезжайте» и «опоздали»
+        if row.status == 'scheduled' and row.scheduled_at != was_time:
+            row.on_site_at = None
+            row.called_post = None
+            row.called_at = None
+            db.commit()
+            if row.client is not None:
+                name = shop_settings.get(db, 'shop_name', shop=shop.id) or 'Шиномонтаж'
+                _notices.plan_arrival(db, row.client, name, row)
+
     # Приёмщик перенёс или отменил запись — человек должен узнать об
     # этом от нас, а не обнаружить у закрытых ворот
     _tell_client(db, row, was_time, was_status)
@@ -849,7 +875,8 @@ def patch_appointment(appointment_id: int, payload: AppointmentPatchIn,
 
 
 class CallIn(BaseModel):
-    post: int
+    # Пусто — вызов снят: записанный не подъехал, пост отдали другому
+    post: Optional[int] = None
 
 
 @router.post('/appointments/{appointment_id}/call', summary='Позвать записанного на пост')
@@ -869,8 +896,10 @@ def call_appointment(appointment_id: int, payload: CallIn,
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail='Запись не найдена')
 
     row.called_post = payload.post
-    row.called_at = shop_now()
+    row.called_at = shop_now() if payload.post else None
     db.commit()
+    if payload.post is None:
+        return {'ok': True, 'channel': None}
     _notices.cancel_about(db, 'appointment', row.id, kinds=[KIND_LATE])
 
     channel = None

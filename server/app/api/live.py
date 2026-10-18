@@ -22,14 +22,23 @@ from app.database import get_db
 from app.models import Client, Shop, KIND_QUEUE
 from app.models.live import LiveTicket, WAITING, CALLED, SERVING, DONE, LEFT, ACTIVE
 from app.security import decode_token, require_sync_key
-from app.services import notices, tenancy
+from app.services import notices, shop_settings, tenancy
 from app.utils import normalize_phone, normalize_plate, now as shop_now
 
 router = APIRouter(prefix='/live', tags=['Живая очередь'])
 sync_router = APIRouter(prefix='/sync', tags=['Обмен с цехом'])
 
-COOKIE = 'tire_live'
+COOKIE = 'tire_live'           # + номер точки: у каждой своё место
 COOKIE_HOURS = 12
+# Защита от заваливания очереди: ссылка на QR статична, её могут
+# переслать. С одного адреса — не больше стольких мест в час,
+# и не больше стольких непринятых цехом мест на точку
+JOINS_PER_HOUR = 8
+UNSEEN_LIMIT = 15
+# Место, которое цех так и не забрал (компьютер выключили на ночь),
+# через столько минут закрываем — утром оно не встанет первым
+UNSEEN_MINUTES = 30
+_joins = {}
 # Цех молчит дольше — считаем, что у него нет связи: место по QR
 # не даём, иначе человек будет ждать в очереди, которую никто не видит
 ONLINE_MINUTES = 3
@@ -74,14 +83,18 @@ def _is_https(request: Request):
     return forwarded == 'https' or request.url.scheme == 'https'
 
 
-def _keep(response: Response, token: str, request: Request):
-    response.set_cookie(COOKIE, token, max_age=COOKIE_HOURS * 3600,
+def _cookie(shop):
+    return f'{COOKIE}_{shop.id}'
+
+
+def _keep(response: Response, token: str, request: Request, shop):
+    response.set_cookie(_cookie(shop), token, max_age=COOKIE_HOURS * 3600,
                         httponly=True, secure=_is_https(request),
                         samesite='lax', path='/')
 
 
 def _mine(db, shop, request):
-    token = request.cookies.get(COOKIE) or ''
+    token = request.cookies.get(_cookie(shop)) or ''
     if not token:
         return None
     return db.query(LiveTicket).filter(LiveTicket.token == token,
@@ -125,7 +138,11 @@ def state(request: Request, shop: Optional[str] = Query(None),
     return {
         'shop': place.name,
         'online': _online(place),
-        'ticket': view(mine) if mine and mine.state != LEFT else None,
+        # Не сезон — очередь не ведётся, встать нельзя
+        'enabled': shop_settings.live_queue_on(db, place),
+        # Ушёл сам — места для него больше нет, даже если цех ещё не узнал
+        'ticket': view(mine) if mine and mine.state != LEFT
+        and not mine.left_by_client else None,
         'diameters': DIAMETERS,
         'signed_in': client is not None,
         'phone': client.phone if client else None,
@@ -138,6 +155,10 @@ def join(payload: JoinIn, request: Request, response: Response,
          authorization: str = Header(default=''),
          db: Session = Depends(get_db)):
     place = _shop(db, shop)
+    if not shop_settings.live_queue_on(db, place):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail='Живая очередь сейчас не ведётся. Подойдите к приёмщику')
     if not _online(place):
         raise HTTPException(
             status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -145,6 +166,12 @@ def join(payload: JoinIn, request: Request, response: Response,
                    'к приёмщику — он поставит вас в очередь')
 
     client = _client(db, authorization, place)
+
+    # У этого телефона уже есть место — отдаём его, а не заводим второе
+    mine = _mine(db, place, request)
+    if mine is not None and mine.state in ACTIVE and not mine.left_by_client:
+        return view(mine)
+
     plate = normalize_plate(payload.license_plate)
     if not plate:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -168,8 +195,36 @@ def join(payload: JoinIn, request: Request, response: Response,
                 status.HTTP_409_CONFLICT,
                 detail='Эта машина уже в очереди с другим телефоном. '
                        'Подойдите к приёмщику')
-        _keep(response, existing.token, request)
+        _keep(response, existing.token, request, place)
         return view(existing)
+
+    # Тот же телефон с другой машиной — одно место на человека
+    same_phone = db.query(LiveTicket).filter(
+        LiveTicket.shop_id == place.id, LiveTicket.phone == phone,
+        LiveTicket.state.in_(ACTIVE), LiveTicket.left_by_client.is_(False)).first()
+    if same_phone is not None:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail=f'С этого телефона уже стоит в очереди {same_phone.license_plate}. '
+                   f'Вторую машину поставит приёмщик')
+
+    # Не даём завалить очередь: ссылку на QR могут переслать
+    address = request.client.host if request.client else ''
+    moment = shop_now()
+    recent = [t for t in _joins.get(address, []) if moment - t < timedelta(hours=1)]
+    if len(recent) >= JOINS_PER_HOUR:
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            detail='Слишком много мест с одного телефона. Подойдите к приёмщику')
+    unseen = db.query(LiveTicket).filter(
+        LiveTicket.shop_id == place.id, LiveTicket.local_id.is_(None),
+        LiveTicket.state == WAITING).count()
+    if unseen >= UNSEEN_LIMIT:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail='Шиномонтаж сейчас не успевает принимать очередь. '
+                   'Подойдите к приёмщику')
+    _joins[address] = recent + [moment]
 
     ticket = LiveTicket(
         shop_id=place.id, client_id=client.id if client else None,
@@ -178,7 +233,7 @@ def join(payload: JoinIn, request: Request, response: Response,
         wheels_assembled=payload.wheels_assembled, state=WAITING)
     db.add(ticket)
     db.commit()
-    _keep(response, ticket.token, request)
+    _keep(response, ticket.token, request, place)
     return view(ticket)
 
 
@@ -190,7 +245,7 @@ def leave(request: Request, response: Response,
     if mine is None or mine.state not in ACTIVE:
         # Место уже закрыто (обслужили) — забываем его, чтобы можно
         # было встать снова
-        response.delete_cookie(COOKIE, path='/')
+        response.delete_cookie(_cookie(place), path='/')
         return {'left': False}
     mine.left_by_client = True
     if mine.local_id is None:
@@ -215,6 +270,11 @@ class EntryIn(BaseModel):
 
 class LiveIn(BaseModel):
     entries: List[EntryIn] = []
+    # Места, которые цех не принял (та же машина с другим телефоном) —
+    # закрываем, человеку на странице предложат подойти к приёмщику
+    rejected: List[int] = []
+    # Цех ведёт очередь (сезон). Пусто — старая программа, не трогаем
+    enabled: Optional[bool] = None
 
 
 def _parse(moment):
@@ -248,6 +308,10 @@ def _tell(db, shop, ticket):
 @sync_router.post('/live', summary='Живая очередь: обмен с цехом')
 def exchange(payload: LiveIn, shop: Shop = Depends(require_sync_key),
              db: Session = Depends(get_db)):
+    if payload.enabled is not None:
+        shop_settings.set_value(db, 'live_queue_enabled',
+                                '1' if payload.enabled else '0', shop=shop)
+    left_now = []
     for entry in payload.entries:
         if entry.server_id is None or entry.state not in STATES:
             continue
@@ -258,7 +322,12 @@ def exchange(payload: LiveIn, shop: Shop = Depends(require_sync_key),
             continue
         ticket.local_id = entry.local_id
         if ticket.left_by_client and entry.state in ACTIVE:
-            continue        # ушёл сам — цех сейчас узнает и закроет
+            # Ушёл сам, а цех ещё держит место — скажем ему прямо сейчас,
+            # что бы ни стояло у нас: иначе в цеху останется «призрак»
+            left_now.append(ticket.id)
+            continue
+        if ticket.post_number != entry.post_number:
+            ticket.told_at = None       # позвали на другой пост — сказать снова
         ticket.state = entry.state
         ticket.place = entry.place
         ticket.eta_at = _parse(entry.eta_at)
@@ -270,18 +339,35 @@ def exchange(payload: LiveIn, shop: Shop = Depends(require_sync_key),
             # Не подъехал и снова ждёт: следующий вызов — снова сказать
             ticket.called_at = None
             ticket.told_at = None
+    for server_id in payload.rejected:
+        ticket = db.query(LiveTicket).filter(
+            LiveTicket.id == server_id, LiveTicket.shop_id == shop.id).first()
+        if ticket is not None and ticket.state in ACTIVE:
+            ticket.state = LEFT
+    db.commit()
+
+    # Цех не забирал место полчаса (выключен) — закрываем: утром оно не
+    # должно встать первым со вчерашним временем
+    stale_before = shop_now() - timedelta(minutes=UNSEEN_MINUTES)
+    for ticket in db.query(LiveTicket).filter(
+            LiveTicket.shop_id == shop.id, LiveTicket.local_id.is_(None),
+            LiveTicket.state == WAITING, LiveTicket.created_at < stale_before).all():
+        ticket.state = LEFT
     db.commit()
 
     fresh = db.query(LiveTicket).filter(
         LiveTicket.shop_id == shop.id, LiveTicket.local_id.is_(None),
         LiveTicket.state == WAITING, LiveTicket.left_by_client.is_(False)).all()
+    if payload.enabled is False:
+        fresh = []
     left = db.query(LiveTicket).filter(
         LiveTicket.shop_id == shop.id, LiveTicket.left_by_client.is_(True),
         LiveTicket.local_id.isnot(None), LiveTicket.state.in_(ACTIVE)).all()
+    left_ids = sorted(set(left_now) | {t.id for t in left})
     return {
         'new': [{'server_id': t.id, 'license_plate': t.license_plate,
                  'phone': t.phone, 'wheel_diameter': t.wheel_diameter,
                  'wheels_assembled': t.wheels_assembled,
                  'joined_at': t.created_at.isoformat()} for t in fresh],
-        'left': [t.id for t in left],
+        'left': left_ids,
     }

@@ -155,12 +155,14 @@ class SyncService:
         from services.live_queue_service import LiveQueueService
 
         queue = LiveQueueService(self.db)
+        enabled = queue.enabled()
         answer = self._call('POST', '/sync/live',
-                            {'entries': queue.server_payload()})
+                            {'entries': queue.server_payload(), 'enabled': enabled})
         added = queue.apply_server(answer)
-        if added:
-            queue.apply_server(self._call('POST', '/sync/live',
-                                          {'entries': queue.server_payload()}))
+        if added or queue.rejected:
+            queue.apply_server(self._call('POST', '/sync/live', {
+                'entries': queue.server_payload(), 'enabled': enabled,
+                'rejected': queue.rejected}))
         return added
 
     # ------------------------------------------------------------------
@@ -563,6 +565,9 @@ class SyncService:
             # заканчивается хранение и что пора переобуваться. Считать
             # их должен цех — сроки и сезон у каждого свои
             'booking_enabled': settings.get('booking_enabled'),
+            # Посты и живая очередь на сезон: выключено — по QR не встать,
+            # «Я на месте» в кабинете не показывается
+            'live_queue_enabled': settings.get('live_queue_enabled'),
             'storage_warn_days': settings.get('storage_warn_days'),
             'storage_lead_days': settings.get('storage_lead_days'),
             'season_autumn_at': settings.get('season_autumn_at'),

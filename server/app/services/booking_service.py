@@ -512,7 +512,8 @@ def to_public(appointment):
         'comment': appointment.comment,
         # Живая очередь: нажал «Я на месте», позвали ли на пост
         'on_site': appointment.on_site_at is not None,
-        'can_check_in': can_check_in(appointment),
+        # Не сезон — постов не раздаём, «Я на месте» не нужно
+        'can_check_in': can_check_in(appointment) and _queue_on(appointment),
         'called_post': appointment.called_post,
         'scene': (f'/parking?client=1#post{appointment.called_post}'
                   if appointment.called_post else None),
@@ -522,6 +523,12 @@ def to_public(appointment):
 # «Я на месте» можно нажать незадолго до записи и пока она не прошла
 CHECK_IN_BEFORE_MINUTES = 60
 CHECK_IN_AFTER_MINUTES = 60
+
+
+def _queue_on(appointment):
+    from sqlalchemy.orm import object_session
+    db = object_session(appointment)
+    return db is None or shop_settings.live_queue_on(db, appointment.shop_id)
 
 
 def can_check_in(appointment, now=None):

@@ -448,6 +448,27 @@ class AppointmentDetailsDialog:
 
     def mark_arrived(self):
         appointment = self.service.get(self.appointment_id)
+
+        # Приехал, а свободного поста нет: не открываем наряд «в никуда»,
+        # а отмечаем «на месте» — программа позовёт его первым на
+        # ближайший освободившийся пост (docs/live_queue.md)
+        from services.live_queue_service import LiveQueueService
+        queue = LiveQueueService(self.db)
+        if queue.enabled() and queue.first_free_post() is None:
+            try:
+                self._mark_on_site(appointment)
+            except Exception as e:
+                self.db.rollback()
+                messagebox.showerror("Ошибка", f"Не удалось отметить: {e}",
+                                     parent=self.dialog)
+                return
+            self._done()
+            messagebox.showinfo(
+                "Свободных постов нет",
+                f"{appointment.license_plate or 'Клиент'} отмечен «на месте». "
+                f"Он первый на ближайший пост — программа позовёт его сама.")
+            return
+
         try:
             self.service.mark_arrived(self.appointment_id)
         except Exception as e:
@@ -468,6 +489,17 @@ class AppointmentDetailsDialog:
                 except Exception as e:
                     self.db.rollback()
                     messagebox.showerror("Ошибка", f"Не удалось открыть наряд: {e}")
+
+    def _mark_on_site(self, appointment):
+        appointment.on_site = True
+        self.db.commit()
+        if getattr(self.service, 'is_remote', False) and appointment.server_id:
+            # Нет связи — отметка остаётся в цеху и уйдёт при обмене
+            try:
+                self.service.update(appointment.server_id, on_site=True)
+            except Exception:
+                from services.booking_api import BookingApi
+                BookingApi(self.db).remember(appointment, on_site=True)
 
     def _open_order(self, appointment, plate):
         """

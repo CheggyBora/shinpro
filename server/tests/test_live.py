@@ -104,7 +104,7 @@ with TestClient(app) as http:
     joined = http.post('/live/join' + q, json=FORM)
     check('принято', joined.status_code == 200, joined.text)
     check('номер приведён к виду', joined.json()['license_plate'] == 'А123ВВ777')
-    check('кука с местом', 'tire_live' in joined.cookies or 'tire_live' in http.cookies)
+    check('кука с местом', any(name.startswith('tire_live_') for name in list(joined.cookies) + list(http.cookies)))
     check('цех ещё не видел', joined.json()['seen_by_shop'] is False)
 
     mine = http.get('/live/state' + q).json()['ticket']
@@ -285,5 +285,157 @@ with TestClient(app) as http:
     db.close()
     early = cabinet.post(f'/booking/{far_id}/here', headers=auth)
     check('за 5 часов «Я на месте» не нажать', early.status_code == 400, str(early.status_code))
+
+    print()
+    print('=== Приёмщик отметил «на месте» — свободного поста нет ===')
+    db = SessionLocal()
+    walkin = Appointment(shop_id=shop_id, client_id=person_id,
+                         scheduled_at=shop_now() + timedelta(minutes=5), duration_minutes=30,
+                         license_plate='Х777ХХ77', status='scheduled')
+    db.add(walkin)
+    db.commit()
+    notices_service.plan_for_appointment(db, db.get(Client, person_id), 'РИФ', walkin)
+    walkin_id = walkin.id
+    db.close()
+    marked = http.patch(f'/sync/appointments/{walkin_id}', headers=KEY, json={'on_site': True})
+    check('принято', marked.status_code == 200, marked.text)
+    db = SessionLocal()
+    row = db.get(Appointment, walkin_id)
+    check('на месте', row.on_site_at is not None)
+    pending = [n.kind for n in db.query(Notice).filter(
+        Notice.about_id == walkin_id, Notice.state == 'waiting').all()]
+    check('«опоздали» не уйдёт', KIND_LATE not in pending, str(pending))
+    db.close()
+
+    print()
+    print('=== Не дождались — вызов снят, «на месте» тоже ===')
+    released = http.patch(f'/sync/appointments/{visit_id}', headers=KEY, json={'on_site': False})
+    check('принято', released.status_code == 200, released.text)
+    row = next(a for a in cabinet.get('/booking/my', headers=auth).json() if a['id'] == visit_id)
+    check('поста больше нет, можно снова «Я на месте»',
+          row['called_post'] is None and row['on_site'] is False and row['can_check_in'] is True, str(row))
+
+    print()
+    print('=== Перенос записи — «на месте» сброшен, напоминания заново ===')
+    later = (shop_now() + timedelta(hours=3)).replace(second=0, microsecond=0)
+    http.patch(f'/sync/appointments/{walkin_id}', headers=KEY, json={'on_site': True})
+    moved = http.patch(f'/sync/appointments/{walkin_id}', headers=KEY,
+                       json={'scheduled_at': later.isoformat()})
+    check('перенесли', moved.status_code == 200, moved.text)
+    db = SessionLocal()
+    row = db.get(Appointment, walkin_id)
+    check('«на месте» и вызов сброшены', row.on_site_at is None and row.called_post is None)
+    planned = {n.kind: n.send_at for n in db.query(Notice).filter(
+        Notice.about_id == walkin_id, Notice.state == 'waiting').all()}
+    check('«подъезжайте» по новому времени',
+          planned.get(KIND_ARRIVE) == later - timedelta(minutes=30), str(planned))
+    check('«опоздали» по новому времени',
+          planned.get(KIND_LATE) == later + timedelta(minutes=10), str(planned))
+    db.close()
+
+    print()
+    print('=== Напоминание в будущем ждёт, даже если канала пока нет ===')
+    db = SessionLocal()
+    nobody = Client(account_id=account_id, phone='79160000999', name='Без канала')
+    db.add(nobody)
+    db.commit()
+    future = notices_service.add(db, nobody, KIND_ARRIVE, 'тест',
+                                 send_at=shop_now() + timedelta(hours=2))
+    now_one = notices_service.add(db, nobody, KIND_ARRIVE, 'тест')
+    check('отложенное — ждёт', future.state == 'waiting', future.state)
+    check('срочное без канала — пропущено', now_one.state == 'skipped', now_one.state)
+    db.close()
+
+    print()
+    print('=== Цех не принял место — оно закрыто ===')
+    live_api._joins.clear()
+    first = http.post('/live/join' + q, json={**FORM, 'license_plate': 'Р100РР77',
+                                              'phone': '79160000500'})
+    check('встал', first.status_code == 200, first.text)
+    ticket_id = http.post('/sync/live', headers=KEY, json={'entries': []}).json()['new'][-1]['server_id']
+    http.post('/sync/live', headers=KEY, json={'entries': [], 'rejected': [ticket_id]})
+    db = SessionLocal()
+    check('закрыто', db.get(LiveTicket, ticket_id).state == 'left')
+    db.close()
+
+    print()
+    print('=== Одно место на телефон и защита от заваливания ===')
+    live_api._joins.clear()
+    one = http.post('/live/join' + q, json={**FORM, 'license_plate': 'Р200РР77',
+                                            'phone': '79160000600'})
+    again = http.post('/live/join' + q, json={**FORM, 'license_plate': 'Р201РР77',
+                                              'phone': '79160000601'})
+    check('с той же кукой — то же место', again.json().get('license_plate') == 'Р200РР77', again.text)
+    http.cookies.clear()
+    same_phone = http.post('/live/join' + q, json={**FORM, 'license_plate': 'Р202РР77',
+                                                   'phone': '79160000600'})
+    check('тот же телефон, другая машина — отказ', same_phone.status_code == 409, same_phone.text)
+    answers = []
+    for n in range(10):
+        http.cookies.clear()
+        answers.append(http.post('/live/join' + q, json={
+            **FORM, 'license_plate': f'С{300 + n}СС77', 'phone': f'791600007{n:02d}'}).status_code)
+    check('с одного адреса — не больше 8 в час', 429 in answers, str(answers))
+    live_api._joins.clear()
+
+    print()
+    print('=== Цех ушёл сам, а место у цеха ещё живо — цеху скажут ===')
+    http.cookies.clear()
+    mine = http.post('/live/join' + q, json={**FORM, 'license_plate': 'У100УУ77',
+                                             'phone': '79160000800'})
+    sid = mine.json()['id'] if 'id' in mine.json() else None
+    fresh = http.post('/sync/live', headers=KEY, json={'entries': []}).json()['new']
+    sid = next(t['server_id'] for t in fresh if t['license_plate'] == 'У100УУ77')
+    http.post('/live/leave' + q)
+    answer = http.post('/sync/live', headers=KEY, json={'entries': [{
+        'local_id': 77, 'server_id': sid, 'state': 'waiting', 'place': 1,
+        'eta_at': None, 'post_number': None}]}).json()
+    check('в ответе — «ушёл»', sid in answer['left'], str(answer))
+    state = http.get('/live/state' + q).json()
+    check('на странице места уже нет', state['ticket'] is None, str(state))
+
+    print()
+    print('=== Не забранное цехом полчаса — закрыто ===')
+    live_api._joins.clear()
+    http.cookies.clear()
+    old_one = http.post('/live/join' + q, json={**FORM, 'license_plate': 'Ф100ФФ77',
+                                                'phone': '79160000900'})
+    db = SessionLocal()
+    stale = db.query(LiveTicket).filter(LiveTicket.license_plate == 'Ф100ФФ77').first()
+    stale.created_at = shop_now() - timedelta(hours=10)
+    stale_id = stale.id
+    db.commit()
+    db.close()
+    answer = http.post('/sync/live', headers=KEY, json={'entries': []}).json()
+    check('цеху не отдано', stale_id not in [t['server_id'] for t in answer['new']], str(answer))
+    db = SessionLocal()
+    check('закрыто', db.get(LiveTicket, stale_id).state == 'left')
+    db.close()
+
+    print()
+    print('=== Не сезон: очередь выключена ===')
+    http.post('/sync/live', headers=KEY, json={'entries': [], 'enabled': False})
+    state = http.get('/live/state' + q).json()
+    check('страница знает', state['enabled'] is False, str(state))
+    http.cookies.clear()
+    refused = http.post('/live/join' + q, json={**FORM, 'license_plate': 'Ц100ЦЦ77',
+                                                'phone': '79160000950'})
+    check('встать нельзя', refused.status_code == 409, refused.text)
+    row = next(a for a in cabinet.get('/booking/my', headers=auth).json() if a['id'] == visit_id)
+    check('«Я на месте» не показываем', row['can_check_in'] is False, str(row))
+    db = SessionLocal()
+    off_visit = Appointment(shop_id=shop_id, client_id=person_id,
+                            scheduled_at=shop_now() + timedelta(hours=2), duration_minutes=30,
+                            license_plate='Ц200ЦЦ77', status='scheduled')
+    db.add(off_visit)
+    db.commit()
+    made = notices_service.plan_for_appointment(db, db.get(Client, person_id), 'РИФ', off_visit)
+    kinds = [n.kind for n in made]
+    check('«опоздали — пост отдали очереди» не планируем', KIND_LATE not in kinds, str(kinds))
+    arrive = next(n for n in made if n.kind == KIND_ARRIVE)
+    check('и про «Я на месте» не пишем', 'Я на месте' not in arrive.text, arrive.text)
+    db.close()
+    http.post('/sync/live', headers=KEY, json={'entries': [], 'enabled': True})
+    check('включили — снова можно', http.get('/live/state' + q).json()['enabled'] is True)
 
 finish()
