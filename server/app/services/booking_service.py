@@ -361,9 +361,28 @@ class BookingService:
                 'Напоминание не запланировано: %s', e)
 
         if stored:
+            self._task_for_storage(appointment, stored, client)
             self._tell_the_shop(appointment, stored, client)
 
         return appointment
+
+    def _task_for_storage(self, appointment, stored, client):
+        """
+        Задача кладовщику в календарь: привезти комплекты к записи.
+
+        Сообщение в Telegram пролистают, а задача висит в ленте цеха,
+        пока её не отметят. Не вышло — запись всё равно состоялась.
+        """
+        try:
+            from app.services import tasks
+
+            tasks.for_appointment(self.db, appointment, stored, client)
+            self.db.commit()
+        except Exception as e:
+            self.db.rollback()
+            import logging
+            logging.getLogger('tire_server').warning(
+                'Задача на комплект не поставлена: %s', e)
 
     @staticmethod
     def _tell_the_shop(appointment, stored, client):
@@ -374,18 +393,12 @@ class BookingService:
         быть меньше суток, а комплект надо найти на складе.
         """
         from app.services import notify
+        from app.services.tasks import set_number, set_title
         from app.utils import format_phone
 
-        def title(row):
-            parts = [row.storage_type or 'Комплект']
-            for value in (row.diameter, row.brand):
-                if value:
-                    parts.append(value)
-            if row.wheel_type:
-                parts.append(row.wheel_type.lower())
-            return ' · '.join(parts)
-
-        sets = '\n'.join(f'• № {row.id} — {title(row)}' for row in stored)
+        # Номер — тот, под которым комплект лежит на полке в цеху
+        sets = '\n'.join(f'• № {set_number(row)} — {set_title(row)}'
+                         for row in stored)
 
         notify.send_in_background(
             f'<b>Достать комплект со склада</b>\n\n'
@@ -393,7 +406,8 @@ class BookingService:
             f'{appointment.scheduled_at:%H:%M}\n'
             f'{appointment.license_plate} · {client.name or "без имени"} · '
             f'{format_phone(client.phone)}\n\n'
-            f'{sets}')
+            f'{sets}',
+            shop=appointment.shop_id, kind=notify.KIND_STORAGE)
 
     def _ensure_car(self, client, plate, wheels_assembled):
         # Машина принадлежит аккаунту: в сети из трёх точек это одна и
@@ -492,6 +506,12 @@ class BookingService:
             notices.cancel_about(self.db, 'appointment', appointment.id)
         except Exception:
             pass
+        # Комплект со склада к этой записи больше не нужен — задача
+        # кладовщику снимается вместе с записью
+        from app.services import tasks
+
+        tasks.follow_appointment(self.db, appointment)
+
         # Цех должен узнать об отмене так же, как узнаёт о записи
         appointment.sync_state = PENDING
         self.db.commit()

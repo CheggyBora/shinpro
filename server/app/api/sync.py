@@ -841,6 +841,12 @@ def patch_appointment(appointment_id: int, payload: AppointmentPatchIn,
             row.called_post = None
             row.called_at = None
 
+    # Задача кладовщику по записи из кабинета: отменили запись — задача
+    # снимается, перенесли — едет следом (docs/calendar.md)
+    if row.status != was_status or row.scheduled_at != was_time:
+        from app.services import tasks as _tasks
+        _tasks.follow_appointment(db, row)
+
     db.commit()
 
     if payload.on_site:
@@ -1028,7 +1034,9 @@ def storage_requests(db: Session = Depends(get_db),
     Это единственное, что до сих пор ходит очередью: комплект лежит
     на складе в цеху, и сервер про него ничего решить не может.
     """
-    rows = db.query(StoredSet).filter(StoredSet.request_state == PENDING).all()
+    # Только свои: у другой точки свои клиенты и свой склад
+    rows = db.query(StoredSet).filter(StoredSet.request_state == PENDING,
+                                      StoredSet.shop_id == shop.id).all()
     return [StorageRequestOut(
         server_id=row.id,
         storage_local_id=row.local_id,
@@ -1052,6 +1060,9 @@ def ack_storage(payload: AckIn, db: Session = Depends(get_db),
         row.request_state = TAKEN if item.accepted else REJECTED
         if not item.accepted:
             row.requested_for = None
+            # Цех отказал — задача «привезти» из кабинета больше не нужна
+            from app.services import tasks as _tasks
+            _tasks.drop_storage_request(db, row)
         taken += 1
 
     db.commit()

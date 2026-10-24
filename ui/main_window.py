@@ -58,6 +58,10 @@ class MainWindow:
         self.employees_tab = EmployeesTab(self.content, self.db)
         self.orders_tab = OrdersTab(self.content, self.db, self.employees_tab)
         self.appointments_tab = AppointmentsTab(self.content, self.db, self.orders_tab)
+        from ui.calendar_tab import CalendarTab
+        self.calendar_tab = CalendarTab(self.content, self.db)
+        self.calendar_tab.on_changed = lambda: self._calendar_refresh()
+        self.orders_tab.app = self
         self.clients_tab = ClientsTab(self.content, self.db)
         # История нарядов теперь подраздел внутри «Клиентов»
         self.history_tab = self.clients_tab.history_tab
@@ -70,6 +74,7 @@ class MainWindow:
         self.nav.add('Сотрудники', self.employees_tab.frame)
         self.nav.add('Наряды', self.orders_tab.frame)
         self.nav.add('Запись', self.appointments_tab.frame)
+        self.nav.add('Календарь', self.calendar_tab.frame)
         self.nav.add('Клиенты', self.clients_tab.frame)
         self.nav.add('Хранение шин', self.tire_storage_tab.frame)
         self.nav.add('Покраска', self.paint_tab.frame)
@@ -85,6 +90,11 @@ class MainWindow:
         self.live_running = None
         self.live_result = 0
         self.root.after(5 * 1000, self._live_tick)
+
+        # «Всё по машине» → «Создать наряд»
+        import ui.car_info
+        ui.car_info.ON_NEW_ORDER = self.orders_tab.open_plate
+        self._calendar_badge()
 
         self.nav.select(1)  # открываем сразу на нарядах — основная работа
         self.refresh_shift_status()
@@ -107,6 +117,12 @@ class MainWindow:
 
         sync_nudge.set_runner(self.sync_soon_after)
 
+        # Календарь и Telegram: правка в цеху уходит сразу, без ожидания
+        from services import calendar_service, telegram_outbox
+        self.telegram_running = None
+        calendar_service.ON_CHANGE = lambda: self.root.after(1500, self._start_live_sync)
+        telegram_outbox.ON_QUEUED = lambda: self.root.after(300, self._start_telegram)
+
     # ------------------------------------------------------------------
     # Живая очередь: места по QR (docs/live_queue.md)
     # ------------------------------------------------------------------
@@ -119,7 +135,77 @@ class MainWindow:
             # живёт: без интернета она тоже должна звать и снимать вызовы
             if self.live_running is None:
                 self._queue_housekeeping()
+                self._calendar_refresh()
+        self._start_telegram()
         self.root.after(self.LIVE_SECONDS * 1000, self._live_tick)
+
+    def _start_telegram(self):
+        """Дослать сообщения о складе и покраске — в своём потоке."""
+        if self.telegram_running is not None and self.telegram_running.is_alive():
+            return False
+        try:
+            from services import telegram_outbox
+            if not telegram_outbox.pending(self.db):
+                return False
+        except Exception:
+            self.db.rollback()
+            return False
+
+        import threading
+
+        def worker():
+            from config import SessionLocal
+            from services import telegram_outbox
+            db = SessionLocal()
+            try:
+                telegram_outbox.flush(db)
+            except Exception as e:
+                log.warning(f"Сообщения в Telegram не дослались: {e}")
+            finally:
+                db.close()
+
+        self.telegram_running = threading.Thread(target=worker, daemon=True)
+        self.telegram_running.start()
+        return True
+
+    def _calendar_refresh(self):
+        """Лента задач над нарядами, календарь и счётчик в меню."""
+        try:
+            from models import CalendarTask
+            for obj in list(self.db.identity_map.values()):
+                if isinstance(obj, CalendarTask):
+                    self.db.expire(obj)
+            self.orders_tab.refresh_tasks()
+            if self.calendar_tab.frame.winfo_ismapped():
+                self.calendar_tab.load()
+            self._calendar_badge()
+        except Exception as e:
+            self.db.rollback()
+            log.warning(f"Календарь не обновился: {e}")
+
+    def show_orders(self):
+        self.nav.select_frame(self.orders_tab.frame)
+
+    def show_calendar(self):
+        self.nav.select_frame(self.calendar_tab.frame)
+        self.calendar_tab.go_today()
+
+    def storage_from_order(self, order, release=False):
+        """
+        Хранение из наряда: открыть вкладку «Хранение шин» с формой,
+        заполненной из наряда и карточки клиента (docs/calendar.md).
+        """
+        self.nav.select_frame(self.tire_storage_tab.frame)
+        if release:
+            self.tire_storage_tab.prefill_release(order)
+        else:
+            self.tire_storage_tab.prefill_accept(order)
+
+    def _calendar_badge(self):
+        from services.calendar_service import CalendarService
+        count = CalendarService(self.db).overdue_count()
+        self.nav.set_title(self.calendar_tab.frame,
+                           f'Календарь ({count})' if count else 'Календарь')
 
     def _queue_housekeeping(self, refresh=False):
         """
@@ -167,6 +253,10 @@ class MainWindow:
                 log.warning(f"Обмен очередью не удался: {e}")
                 self.live_result = 0
             try:
+                SyncService(db).tasks_exchange()
+            except Exception as e:
+                log.warning(f"Задачи календаря не обменялись: {e}")
+            try:
                 # Записи на сегодня: «Я на месте» с телефона должно
                 # появиться в цеху сразу, а не при следующем открытии ленты
                 from datetime import date
@@ -198,6 +288,7 @@ class MainWindow:
                 elif isinstance(obj, LiveQueueEntry):
                     self.db.expire(obj)
 
+            self._calendar_refresh()
             changed = self._queue_housekeeping(refresh=bool(self.live_result))
             if changed:
                 # Позванные должны узнать сразу, а не через 20 секунд

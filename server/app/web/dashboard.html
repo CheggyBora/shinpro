@@ -204,6 +204,96 @@ input.code { letter-spacing: 8px; text-align: center; font-size: 22px; font-weig
 .danger { background: none; border: 1.5px solid var(--line); color: var(--bad);
   width: 100%; padding: 12px; border-radius: 12px; font-size: 15px; margin-top: 10px; }
 
+/* --- Календарь задач ---
+   Цвет раздела один и тот же везде: в цеху, в ленте над нарядами и
+   здесь. По нему задачу узнают раньше, чем прочтут */
+:root {
+  --work: #2563eb; --work-bg: #dbeafe;
+  --storage: #0f766e; --storage-bg: #ccfbf1;
+  --tires: #c2410c; --tires-bg: #ffedd5;
+  --paint: #7c3aed; --paint-bg: #ede9fe;
+}
+.cal-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  margin-bottom: 10px; }
+.cal-head h2 { margin: 0 auto 0 0; font-size: 15px; }
+.cal-head .chip { padding: 7px 12px; }
+.cal-add { border: 0; background: var(--brand); color: #fff; font-weight: 600;
+  padding: 8px 14px; border-radius: 999px; font-size: 14px; }
+.week { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.week button {
+  border: 1.5px solid var(--line); background: var(--card); border-radius: 12px;
+  padding: 6px 0 5px; display: flex; flex-direction: column; align-items: center;
+  font-size: 11.5px; color: var(--ink-soft); min-width: 0;
+}
+.week button b { font-size: 16px; color: var(--ink); line-height: 1.2; }
+.week button.today b { color: var(--brand); }
+.week button[aria-pressed="true"] { border-color: var(--brand); background: #eff6ff; }
+.week .dots { display: flex; gap: 2px; height: 6px; margin-top: 3px; }
+.week .dots i { width: 6px; height: 6px; border-radius: 50%; display: block; }
+.week .dots i.late { background: var(--bad); }
+.dot-work { background: var(--work); } .dot-storage { background: var(--storage); }
+.dot-tires { background: var(--tires); } .dot-paint { background: var(--paint); }
+.cat { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 7px;
+  border-radius: 6px; white-space: nowrap; }
+.cat.work { background: var(--work-bg); color: var(--work); }
+.cat.storage { background: var(--storage-bg); color: var(--storage); }
+.cat.tires { background: var(--tires-bg); color: var(--tires); }
+.cat.paint { background: var(--paint-bg); color: var(--paint); }
+.chip.f-work[aria-pressed="true"] { background: var(--work); border-color: var(--work); }
+.chip.f-storage[aria-pressed="true"] { background: var(--storage); border-color: var(--storage); }
+.chip.f-tires[aria-pressed="true"] { background: var(--tires); border-color: var(--tires); }
+.chip.f-paint[aria-pressed="true"] { background: var(--paint); border-color: var(--paint); }
+.day-title { font-size: 14px; font-weight: 700; margin: 4px 0 2px; }
+.task { display: flex; align-items: flex-start; gap: 8px;
+  border-bottom: 1px solid var(--line); padding: 2px 0; }
+.task:last-child { border-bottom: 0; }
+.task .open { flex: 1; min-width: 0; display: flex; gap: 8px; align-items: flex-start;
+  background: none; border: 0; padding: 9px 0; text-align: left; color: var(--ink);
+  font-size: 14.5px; }
+.task .tm { width: 42px; flex: 0 0 auto; font-weight: 600; color: var(--ink-soft);
+  font-variant-numeric: tabular-nums; }
+.task .tt { flex: 1; min-width: 0; }
+.task .tt b { font-weight: 600; display: block; overflow-wrap: anywhere; }
+.task .tt span { display: block; font-size: 12.5px; color: var(--ink-soft);
+  overflow-wrap: anywhere; }
+.task .tt .cat { display: inline-block; margin: 0 0 2px; }
+.task input[type="checkbox"] { width: 22px; height: 22px; margin: 10px 2px 0;
+  accent-color: var(--ok); flex: 0 0 auto; }
+.task.late { background: #fef2f2; border-left: 3px solid var(--bad);
+  padding-left: 6px; border-radius: 6px; }
+.task.late .tm { color: var(--bad); }
+.task.done .tt b { text-decoration: line-through; color: var(--muted); }
+.task.done .tm { color: var(--muted); }
+.segs { display: flex; gap: 6px; flex-wrap: wrap; }
+.segs .chip { padding: 8px 12px; }
+.moves { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.moves button { border: 1.5px solid var(--line); background: var(--card);
+  border-radius: 10px; padding: 8px 11px; font-size: 14px; color: var(--ink); }
+.moves input { padding: 7px 9px; border: 1.5px solid var(--line); border-radius: 10px;
+  font-size: 14px; font-family: inherit; color: var(--ink); background: var(--card); }
+.two { display: flex; gap: 10px; }
+.two > div { flex: 1; min-width: 0; }
+.confirm { background: #fef2f2; border-radius: 12px; padding: 12px; margin-top: 10px;
+  font-size: 14px; }
+.confirm .moves { margin-top: 8px; }
+.confirm .yes { background: var(--bad); color: #fff; border-color: var(--bad); }
+.form textarea { width: 100%; padding: 12px 13px; border: 1.5px solid var(--line);
+  border-radius: 12px; font-size: 16px; font-family: inherit; color: var(--ink);
+  background: var(--card); min-height: 70px; resize: vertical; }
+.form input[type="date"], .form input[type="time"] {
+  width: 100%; padding: 11px 12px; border: 1.5px solid var(--line);
+  border-radius: 12px; font-size: 16px; font-family: inherit; color: var(--ink);
+  background: var(--card); }
+.form textarea:focus { outline: none; border-color: var(--brand); }
+
+/* Разделов стало больше, чем помещается в ширину телефона: полоса
+   прокручивается, а не сжимает подписи до нечитаемых */
+@media (max-width: 759px) {
+  .tabs { overflow-x: auto; }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tabs button { flex: 1 0 auto; min-width: 62px; }
+}
+
 @media (min-width: 760px) {
   body { padding-bottom: 20px; }
   .tiles { grid-template-columns: repeat(4, 1fr); }
@@ -600,17 +690,20 @@ var ICONS = {
   salary: '<rect x="2" y="6" width="20" height="12" rx="2"/>'
         + '<circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/>',
   booking: '<rect x="3" y="5" width="18" height="16" rx="2"/>'
-         + '<path d="M8 3v4M16 3v4M3 11h18"/><path d="M8 15h3"/>'
+         + '<path d="M8 3v4M16 3v4M3 11h18"/><path d="M8 15h3"/>',
+  calendar: '<rect x="3" y="5" width="18" height="16" rx="2"/>'
+          + '<path d="M8 3v4M16 3v4M3 11h18"/><path d="M8 16l2 2 4-4"/>'
 };
 
 function sections() {
   var list = [];
   var can = function (name) { return me.permissions.indexOf(name) >= 0; };
 
-  if (can('revenue')) {
-    list.push({ key: 'summary', title: 'Сводка' });
-    list.push({ key: 'services', title: 'Услуги' });
-  }
+  if (can('revenue')) list.push({ key: 'summary', title: 'Сводка' });
+  // Задачи нужны всем, кто заходит в дашборд: владелец ставит их из
+  // дома, админ отмечает. Отдельного права под них нет
+  list.push({ key: 'calendar', title: 'Календарь' });
+  if (can('revenue')) list.push({ key: 'services', title: 'Услуги' });
   if (can('salary_all')) list.push({ key: 'masters', title: 'Мастера' });
   if (can('orders')) list.push({ key: 'orders', title: 'Наряды' });
   if (can('salary_all')) list.push({ key: 'shifts', title: 'Смены' });
@@ -749,10 +842,11 @@ function load() {
 
   // На экране доступа период ни при чём: люди не относятся к месяцу
   var aboutPeople = section === 'staff' || section === 'salary'
-                 || section === 'booking';
+                 || section === 'booking' || section === 'calendar';
   $('period').style.display = aboutPeople ? 'none' : '';
   $('dates').style.display = aboutPeople ? 'none' : '';
 
+  if (section === 'calendar') return loadCalendar();
   if (section === 'booking') return loadBooking();
   if (section === 'staff') return loadStaff();
   if (section === 'salary') return loadSalary();
@@ -1515,6 +1609,466 @@ function openShift(id) {
       });
     });
   }).catch(function (e) { fail(e.message); });
+}
+
+// ------------------------------------------------------------------
+// Календарь задач
+// ------------------------------------------------------------------
+//
+// Тот же календарь, что в цеху (docs/calendar.md): неделя сверху,
+// задачи выбранного дня ниже. Задача, поставленная здесь, уезжает в цех
+// ближайшим обменом. Неотмеченные прошлых дней висят красными сверху
+// сегодняшнего дня, пока их не отметят.
+
+var CATS = [
+  { key: 'work', title: 'Рабочая' },
+  { key: 'storage', title: 'Хранение' },
+  { key: 'tires', title: 'Шины' },
+  { key: 'paint', title: 'Покраска' }
+];
+var CAT_TITLES = { work: 'Рабочая', storage: 'Хранение', tires: 'Шины', paint: 'Покраска' };
+var SOURCE_TITLES = { shop: 'в цеху', dashboard: 'в дашборде', auto: 'программой',
+                      cabinet: 'из кабинета клиента' };
+var WEEKDAYS = ['пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'вс'];
+var WEEKDAYS_FULL = ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница',
+                     'Суббота', 'Воскресенье'];
+var MONTHS = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля',
+              'августа', 'сентября', 'октября', 'ноября', 'декабря'];
+
+var cal = { start: null, day: null, today: null, filter: [], data: null,
+            people: [] };
+
+// Фильтр запоминаем на этом устройстве: владелец, которому нужен только
+// склад, не должен выбирать его заново при каждом входе
+try {
+  var savedFilter = JSON.parse(localStorage.getItem('calFilter') || '[]');
+  if (Array.isArray(savedFilter)) {
+    cal.filter = savedFilter.filter(function (key) { return CAT_TITLES[key]; });
+  }
+} catch (e) {}
+
+function pad(n) { return (n < 10 ? '0' : '') + n; }
+
+// Даты считаем строками «2026-10-27» и собираем из частей, а не через
+// toISOString: тот отдаёт всемирное время, и поздно вечером «сегодня»
+// превращалось бы во «вчера»
+function isoDay(date) {
+  return date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate());
+}
+function parseDay(text) {
+  var parts = String(text).split('-');
+  return new Date(+parts[0], +parts[1] - 1, +parts[2]);
+}
+function addDays(text, count) {
+  var date = parseDay(text);
+  date.setDate(date.getDate() + count);
+  return isoDay(date);
+}
+function mondayOf(text) {
+  var date = parseDay(text);
+  date.setDate(date.getDate() - (date.getDay() + 6) % 7);
+  return isoDay(date);
+}
+function weekdayIndex(text) { return (parseDay(text).getDay() + 6) % 7; }
+function shortDay(text) { return text.slice(8, 10) + '.' + text.slice(5, 7); }
+function longDay(text) {
+  var date = parseDay(text);
+  return WEEKDAYS_FULL[weekdayIndex(text)] + ', ' + date.getDate() + ' ' + MONTHS[date.getMonth()];
+}
+// Время с сервера — московское без пояса: показываем как есть, не
+// пересчитывая в пояс браузера
+function stampText(iso) {
+  return iso ? shortDay(iso.slice(0, 10)) + ' ' + iso.slice(11, 16) : '';
+}
+function attr(text) { return escape(text).replace(/"/g, '&quot;'); }
+
+function calShown(task) {
+  return !cal.filter.length || cal.filter.indexOf(task.category) >= 0;
+}
+
+function calShopName(id) {
+  var shop = shops.filter(function (row) { return String(row.id) === String(id); })[0];
+  return shop ? shop.name : '';
+}
+
+function loadCalendar() {
+  var local = isoDay(new Date());
+  cal.today = cal.today || local;
+  cal.day = cal.day || cal.today;
+  cal.start = mondayOf(cal.day);
+
+  var path = '/dashboard/tasks?from=' + cal.start + '&to=' + addDays(cal.start, 6);
+  Promise.all([api(withShop(path)), api(withShop('/dashboard/counterparties'))])
+    .then(function (answers) {
+      if (section !== 'calendar') return;
+      cal.data = answers[0];
+      cal.people = answers[1] || [];
+      // «Сегодня» — по часам сервера: он считает по Москве, а телефон
+      // владельца может быть где угодно
+      if (cal.data.today) cal.today = cal.data.today;
+      drawCalendar();
+    })
+    .catch(function (e) { show(''); fail(e.message); });
+}
+
+function calAll() {
+  var data = cal.data || { tasks: [], overdue: [] };
+  return data.tasks.concat(data.overdue);
+}
+
+function calFind(uid) {
+  return calAll().filter(function (task) { return task.uid === uid; })[0];
+}
+
+function drawCalendar() {
+  var data = cal.data;
+  var end = addDays(cal.start, 6);
+  var startDate = parseDay(cal.start), endDate = parseDay(end);
+  var range = startDate.getDate()
+    + (startDate.getMonth() !== endDate.getMonth() ? ' ' + MONTHS[startDate.getMonth()] : '')
+    + ' – ' + endDate.getDate() + ' ' + MONTHS[endDate.getMonth()];
+
+  var html = '<div class="card"><div class="cal-head"><h2>' + range + '</h2>'
+    + '<button class="chip" type="button" id="calPrev" aria-label="Прошлая неделя">‹</button>'
+    + '<button class="chip" type="button" id="calToday">Сегодня</button>'
+    + '<button class="chip" type="button" id="calNext" aria-label="Следующая неделя">›</button>'
+    + '<button class="cal-add" type="button" id="calAdd">+ Задача</button></div>';
+
+  html += '<div class="week" id="calWeek">';
+  for (var i = 0; i < 7; i++) {
+    var day = addDays(cal.start, i);
+    var ofDay = data.tasks.filter(function (task) {
+      return task.due_date === day && calShown(task);
+    });
+    var dots = ofDay.slice(0, 4).map(function (task) {
+      var late = !task.done_at && day < cal.today;
+      return '<i class="' + (late ? 'late' : 'dot-' + task.category) + '"></i>';
+    }).join('');
+    html += '<button type="button" data-day="' + day + '" aria-pressed="' + (day === cal.day)
+      + '" class="' + (day === cal.today ? 'today' : '') + '">' + WEEKDAYS[i]
+      + '<b>' + parseDay(day).getDate() + '</b><span class="dots">' + dots + '</span></button>';
+  }
+  html += '</div>';
+
+  html += '<div class="period" id="calFilters" style="padding:10px 0 0;flex-wrap:wrap">'
+    + CATS.map(function (item) {
+      return '<button class="chip f-' + item.key + '" type="button" data-cat="' + item.key
+        + '" aria-pressed="' + (cal.filter.indexOf(item.key) >= 0) + '">' + item.title + '</button>';
+    }).join('')
+    + '<button class="chip" type="button" data-cat="" aria-pressed="' + !cal.filter.length
+    + '">Все</button></div></div>';
+
+  var rows = '';
+  if (cal.day === cal.today) {
+    rows += data.overdue.filter(calShown).map(function (task) {
+      return taskRow(task, true);
+    }).join('');
+  }
+  rows += data.tasks.filter(function (task) {
+    return task.due_date === cal.day && calShown(task);
+  }).map(function (task) {
+    return taskRow(task, !task.done_at && cal.day < cal.today);
+  }).join('');
+
+  html += '<div class="card"><div class="day-title">' + longDay(cal.day) + '</div>'
+    + (rows || '<div class="empty">Задач нет</div>') + '</div>';
+
+  show(html);
+
+  $('calPrev').addEventListener('click', function () {
+    cal.day = addDays(cal.day, -7); loadCalendar();
+  });
+  $('calNext').addEventListener('click', function () {
+    cal.day = addDays(cal.day, 7); loadCalendar();
+  });
+  $('calToday').addEventListener('click', function () {
+    cal.day = cal.today; loadCalendar();
+  });
+  $('calAdd').addEventListener('click', function () { openTask(null); });
+
+  [].slice.call($('calWeek').querySelectorAll('[data-day]')).forEach(function (button) {
+    button.addEventListener('click', function () {
+      cal.day = button.getAttribute('data-day');
+      drawCalendar();
+    });
+  });
+
+  [].slice.call($('calFilters').querySelectorAll('[data-cat]')).forEach(function (button) {
+    button.addEventListener('click', function () {
+      var key = button.getAttribute('data-cat');
+      if (!key) cal.filter = [];
+      else if (cal.filter.indexOf(key) >= 0) {
+        cal.filter = cal.filter.filter(function (item) { return item !== key; });
+      } else cal.filter.push(key);
+      // Выбраны все четыре — это и есть «Все»
+      if (cal.filter.length === CATS.length) cal.filter = [];
+      try { localStorage.setItem('calFilter', JSON.stringify(cal.filter)); } catch (e) {}
+      drawCalendar();
+    });
+  });
+
+  [].slice.call($('view').querySelectorAll('[data-open]')).forEach(function (button) {
+    button.addEventListener('click', function () {
+      openTask(calFind(button.getAttribute('data-open')));
+    });
+  });
+
+  [].slice.call($('view').querySelectorAll('[data-done]')).forEach(function (box) {
+    box.addEventListener('change', function () {
+      var uid = box.getAttribute('data-done');
+      box.disabled = true;
+      patchTask(uid, { done: box.checked }).then(function () { loadCalendar(); })
+        .catch(function (e) { box.disabled = false; box.checked = !box.checked; fail(e.message); });
+    });
+  });
+}
+
+function taskRow(task, late) {
+  var details = [];
+  if (task.license_plate) details.push(escape(task.license_plate));
+  if (task.counterparty_name) details.push(escape(task.counterparty_name));
+  if (task.client_name) details.push(escape(task.client_name));
+  if (task.amount) details.push(money(task.amount));
+  if (shops.length > 1 && !currentShop) details.push(escape(calShopName(task.shop_id)));
+
+  var when = task.due_time || '—';
+  if (late && task.due_date !== cal.day) when = shortDay(task.due_date);
+
+  return '<div class="task' + (late ? ' late' : '') + (task.done_at ? ' done' : '') + '">'
+    + '<button class="open" type="button" data-open="' + attr(task.uid) + '">'
+    + '<span class="tm">' + escape(when) + '</span><span class="tt">'
+    + '<span class="cat ' + attr(task.category) + '">' + escape(CAT_TITLES[task.category] || task.category)
+    + '</span><b>' + escape(task.title) + '</b>'
+    + (details.length ? '<span>' + details.join(' · ') + '</span>' : '')
+    + (task.note ? '<span>' + escape(task.note) + '</span>' : '')
+    + (task.done_at ? '<span>сделано · ' + escape(task.done_by || '') + ', '
+       + escape(stampText(task.done_at)) + '</span>' : '')
+    + '</span></button>'
+    + '<input type="checkbox" data-done="' + attr(task.uid) + '" aria-label="Сделано"'
+    + (task.done_at ? ' checked' : '') + '></div>';
+}
+
+function patchTask(uid, body) {
+  var path = '/dashboard/tasks/' + encodeURIComponent(uid);
+  return api(withShop(path), { method: 'PATCH', body: body });
+}
+
+// Перенос: «Завтра» и «Через неделю» — от сегодняшнего дня, а не от дня
+// задачи: просроченную на прошлой неделе переносят вперёд, а не в прошлое
+function plusHour(task) {
+  var now = new Date();
+  var day = task.due_date < cal.today ? cal.today : task.due_date;
+  var minutes;
+  if (task.due_time) {
+    var parts = task.due_time.split(':');
+    minutes = (+parts[0]) * 60 + (+parts[1]) + 60;
+  } else {
+    // Без времени — через час от сейчас
+    day = day < cal.today ? cal.today : day;
+    minutes = now.getHours() * 60 + now.getMinutes() + 60;
+  }
+  if (minutes >= 24 * 60) { minutes -= 24 * 60; day = addDays(day, 1); }
+  return { due_date: day, due_time: pad(Math.floor(minutes / 60)) + ':' + pad(minutes % 60) };
+}
+
+function openTask(task) {
+  var adding = !task;
+  task = task || { category: (cal.filter.length === 1 ? cal.filter[0] : 'work'),
+                   due_date: cal.day, due_time: null, title: '', note: '',
+                   license_plate: '', counterparty_uid: null, amount: null };
+  var category = task.category;
+
+  // Ставить задачу «во все точки сразу» нельзя: у каждой свой склад и
+  // свои люди. Точку выбирают здесь, если сверху выбраны все
+  var needShop = adding && shops.length > 1 && !currentShop;
+  var shopId = adding ? (currentShop || (shops[0] && shops[0].id)) : task.shop_id;
+
+  var html = '<h2>' + (adding ? 'Новая задача' : 'Задача') + '</h2>';
+  if (!adding) {
+    html += '<div class="when">создал: ' + escape(task.created_by || '—')
+      + (SOURCE_TITLES[task.source] ? ' · ' + SOURCE_TITLES[task.source] : '')
+      + (task.created_at ? ', ' + escape(stampText(task.created_at)) : '')
+      + (task.done_at ? ' · <span class="tag ok">сделано · ' + escape(task.done_by || '')
+         + ', ' + escape(stampText(task.done_at)) + '</span>' : '') + '</div>';
+  }
+
+  html += '<div class="form">';
+  if (needShop) {
+    html += '<label for="tShop">Точка</label><select id="tShop">'
+      + shops.map(function (shop) {
+        return '<option value="' + shop.id + '">' + escape(shop.name) + '</option>';
+      }).join('') + '</select>';
+  }
+
+  html += '<label>Раздел</label><div class="segs" id="tCats">'
+    + CATS.map(function (item) {
+      return '<button class="chip f-' + item.key + '" type="button" data-cat="' + item.key
+        + '" aria-pressed="' + (item.key === category) + '">' + item.title + '</button>';
+    }).join('') + '</div>';
+
+  html += '<div class="two"><div><label for="tDate">Дата</label>'
+    + '<input id="tDate" type="date" value="' + attr(task.due_date) + '"></div>'
+    + '<div><label for="tTime">Время</label>'
+    + '<input id="tTime" type="time" value="' + attr(task.due_time || '') + '"></div></div>'
+    + '<p class="note">Время можно не ставить</p>';
+
+  html += '<label for="tTitle">Что за задача</label>'
+    + '<input id="tTitle" type="text" maxlength="200" value="' + attr(task.title) + '"'
+    + ' placeholder="Привезти комплект со склада">'
+    + '<label for="tNote">Что сделать</label>'
+    + '<textarea id="tNote" maxlength="4000">' + escape(task.note || '') + '</textarea>'
+    + '<div class="two"><div><label for="tPlate">Машина</label>'
+    + '<input id="tPlate" type="text" maxlength="20" value="' + attr(task.license_plate || '')
+    + '" placeholder="А123ВВ777"></div>'
+    + '<div><label for="tCp">Контрагент</label><select id="tCp"></select></div></div>'
+    + '<div id="tAmountBox"><label for="tAmount">Сумма</label>'
+    + '<input id="tAmount" type="number" inputmode="decimal" value="'
+    + (task.amount != null ? attr(task.amount) : '') + '"></div>';
+
+  if (task.client_name || task.client_phone || task.storage_ref) {
+    html += '<p class="note">'
+      + [task.client_name, task.client_phone ? fixPhone(task.client_phone) : '',
+         task.storage_ref ? 'комплект №' + task.storage_ref : '']
+        .filter(Boolean).map(escape).join(' · ') + '</p>';
+  }
+  html += '</div>';
+
+  if (!adding) {
+    html += '<div class="block-title">Перенести</div><div class="moves">'
+      + '<button type="button" id="tMoveHour">+1 час</button>'
+      + '<button type="button" id="tMoveTomorrow">Завтра</button>'
+      + '<button type="button" id="tMoveWeek">Через неделю</button>'
+      + '<input id="tMoveDate" type="date" aria-label="Выбрать дату"></div>';
+  }
+
+  html += '<button class="go" type="button" id="tSave" style="margin-top:18px">'
+    + (adding ? 'Поставить задачу' : 'Сохранить') + '</button>';
+
+  if (!adding) {
+    html += '<button class="danger" type="button" id="tDone" style="color:var(--ok)">'
+      + (task.done_at ? 'Снять отметку «сделано»' : '✓ Сделано') + '</button>'
+      + '<button class="danger" type="button" id="tDelete">Удалить</button>'
+      + '<div class="confirm" id="tConfirm" hidden>Удалить задачу? Она пропадёт и в цеху.'
+      + '<div class="moves"><button class="yes" type="button" id="tConfirmYes">Да, удалить</button>'
+      + '<button type="button" id="tConfirmNo">Нет</button></div></div>';
+  }
+  html += '<div class="error" id="formError" hidden></div>';
+
+  sheet(html);
+
+  function fillPeople() {
+    var mine = cal.people.filter(function (row) {
+      return String(row.shop_id) === String(shopId);
+    });
+    $('tCp').innerHTML = '<option value="">—</option>' + mine.map(function (row) {
+      return '<option value="' + attr(row.uid) + '"' + (row.uid === task.counterparty_uid
+        ? ' selected' : '') + '>' + escape(row.name) + (row.kind ? ' · ' + escape(row.kind) : '')
+        + '</option>';
+    }).join('');
+  }
+
+  function showAmount() {
+    // Сумма нужна покраске; у остальных поле только мешает. Уже
+    // поставленную сумму не прячем — иначе её не увидеть и не стереть
+    $('tAmountBox').hidden = !(category === 'paint' || task.amount);
+  }
+
+  fillPeople();
+  showAmount();
+
+  if (needShop) {
+    $('tShop').value = String(shopId);
+    $('tShop').addEventListener('change', function () {
+      shopId = $('tShop').value;
+      fillPeople();
+    });
+  }
+
+  [].slice.call($('tCats').querySelectorAll('[data-cat]')).forEach(function (button) {
+    button.addEventListener('click', function () {
+      category = button.getAttribute('data-cat');
+      [].slice.call($('tCats').querySelectorAll('[data-cat]')).forEach(function (other) {
+        other.setAttribute('aria-pressed', String(other === button));
+      });
+      showAmount();
+    });
+  });
+
+  function afterSave(saved) {
+    closeSheet();
+    if (saved && saved.due_date) cal.day = saved.due_date;
+    loadCalendar();
+  }
+
+  $('tSave').addEventListener('click', function () {
+    var title = $('tTitle').value.trim();
+    if (!title) { formError('Напишите, что за задача'); return; }
+    if (!$('tDate').value) { formError('Укажите дату'); return; }
+
+    var amount = $('tAmount').value.trim();
+    var body = {
+      category: category,
+      due_date: $('tDate').value,
+      due_time: $('tTime').value || null,
+      title: title,
+      note: $('tNote').value,
+      license_plate: $('tPlate').value,
+      counterparty_uid: $('tCp').value || null,
+      amount: amount ? amount : null
+    };
+
+    $('tSave').disabled = true;
+    var request;
+    if (adding) {
+      body.shop = shopId;
+      request = api('/dashboard/tasks', { method: 'POST', body: body });
+    } else {
+      request = patchTask(task.uid, body);
+    }
+    request.then(afterSave).catch(function (e) {
+      $('tSave').disabled = false;
+      formError(e.message);
+    });
+  });
+
+  if (adding) return;
+
+  function move(body) {
+    patchTask(task.uid, body).then(afterSave)
+      .catch(function (e) { formError(e.message); });
+  }
+
+  $('tMoveHour').addEventListener('click', function () { move(plusHour(task)); });
+  $('tMoveTomorrow').addEventListener('click', function () {
+    move({ due_date: addDays(cal.today, 1) });
+  });
+  $('tMoveWeek').addEventListener('click', function () {
+    move({ due_date: addDays(cal.today, 7) });
+  });
+  $('tMoveDate').addEventListener('change', function () {
+    if ($('tMoveDate').value) move({ due_date: $('tMoveDate').value });
+  });
+
+  $('tDone').addEventListener('click', function () {
+    patchTask(task.uid, { done: !task.done_at }).then(function () {
+      closeSheet();
+      loadCalendar();
+    }).catch(function (e) { formError(e.message); });
+  });
+
+  // Подтверждение — здесь же, в окне: системное окно браузера на
+  // телефоне выглядит как сбой и легко нажимается не туда
+  $('tDelete').addEventListener('click', function () {
+    $('tConfirm').hidden = false;
+    $('tConfirm').scrollIntoView({ block: 'nearest' });
+  });
+  $('tConfirmNo').addEventListener('click', function () { $('tConfirm').hidden = true; });
+  $('tConfirmYes').addEventListener('click', function () {
+    patchTask(task.uid, { deleted: true }).then(function () {
+      closeSheet();
+      loadCalendar();
+    }).catch(function (e) { formError(e.message); });
+  });
 }
 
 // ------------------------------------------------------------------

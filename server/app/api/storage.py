@@ -15,6 +15,7 @@ from app.database import get_db
 from app.models import Client, StoredSet, PENDING
 from app.schemas import StoredSetOut, StorageRequestIn
 from app.security import current_client
+from app.services import notify, tasks
 from app.utils import now as shop_now
 
 router = APIRouter(prefix='/storage', tags=['Хранение шин'])
@@ -84,9 +85,40 @@ def request_delivery(set_id: int, payload: StorageRequestIn,
     row.requested_for = payload.at
     row.request_state = PENDING
     row.requested_at = now
+
+    # Задача кладовщику в календарь цеха. Тот же комплект, заказанный
+    # повторно, — та же задача, а не вторая
+    tasks.for_storage_request(db, row)
     db.commit()
     db.refresh(row)
+
+    _tell_the_shop(row)
     return _to_public(row, now=now)
+
+
+def _tell_the_shop(row):
+    """
+    Сообщить в Telegram, что комплект надо привезти к дате.
+
+    Ждать следующего обмена нельзя: комплект надо найти на складе и
+    привезти, а между заявкой и приездом бывает меньше суток.
+    """
+    from app.utils import format_phone
+
+    at = row.requested_for
+    client = row.client
+    who = ' · '.join(part for part in (
+        row.license_plate,
+        (client.name if client else None) or 'без имени',
+        format_phone(client.phone) if client else None) if part)
+    clock = '' if at.time() == datetime.min.time() else f' в {at:%H:%M}'
+
+    notify.send_in_background(
+        f'<b>Привезти со склада</b> к {at:%d.%m}{clock}\n\n'
+        f'№ {tasks.set_number(row)} — {tasks.set_title(row)}\n'
+        f'{who}\n\n'
+        f'Клиент заказал из кабинета.',
+        shop=row.shop_id, kind=notify.KIND_STORAGE)
 
 
 @router.delete('/{set_id}/request', response_model=StoredSetOut,
@@ -106,6 +138,7 @@ def cancel_request(set_id: int,
     # доставать. Поэтому не стираем заявку, а помечаем отменённой
     row.requested_for = None
     row.request_state = PENDING if row.request_state else None
+    tasks.drop_storage_request(db, row)
     db.commit()
     db.refresh(row)
     return _to_public(row)

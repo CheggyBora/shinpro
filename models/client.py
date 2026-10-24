@@ -15,6 +15,10 @@ class Client(Base):
     # по нему стоит индекс. Для показа человеку используйте utils.format_phone().
     phone = Column(String(50), nullable=True, index=True)
 
+    # Водительское удостоверение — подставляется при приёме и выдаче
+    # хранения: по нему комплект отдают тому, кто сдавал
+    driver_license = Column(String(50), nullable=True)
+
     created_at = Column(DateTime(timezone=True), default=get_moscow_time)
 
     # Внутренняя группа (ClientGroup): насколько с человеком можно

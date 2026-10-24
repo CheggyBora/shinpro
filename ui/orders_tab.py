@@ -58,6 +58,15 @@ class OrdersTab:
         
         styles.create_button(input_frame, "Пробить", self.process_payment_for_current_order, 'Success.TButton').pack(side='left')
         
+        # Лента задач на сегодня: всегда на виду, без окон и «ОК».
+        # Скоро — жёлтая, просрочено — красная (docs/calendar.md)
+        self.app = None
+        self.tasks_strip = tk.Frame(self.frame, bg=styles.COLORS['bg_card'],
+                                    highlightthickness=1,
+                                    highlightbackground=styles.COLORS['border'])
+        self.tasks_strip.pack(fill='x', padx=15, pady=(0, 10))
+        self.refresh_tasks()
+
         top_card = styles.create_card_frame(self.frame)
         top_card.pack(fill='x', padx=15, pady=(0, 10))
         
@@ -529,6 +538,66 @@ class OrdersTab:
         parent.wait_window(dialog)
         return result['client']
     
+    STRIP_LIMIT = 6
+
+    def refresh_tasks(self):
+        from services.calendar_service import CalendarService
+        from ui.task_dialog import CATEGORY_COLORS
+        for child in self.tasks_strip.winfo_children():
+            child.destroy()
+        try:
+            service = CalendarService(self.db)
+            tasks = service.strip()
+        except Exception:
+            self.db.rollback()
+            return
+        tk.Label(self.tasks_strip, text='Сегодня:' if tasks else 'Сегодня задач нет',
+                 bg=styles.COLORS['bg_card'], fg=styles.COLORS['text_secondary'],
+                 font=(styles.DEFAULT_FONT, 9)).pack(side='left', padx=(8, 6), pady=5)
+        colors = {'overdue': ('#b91c1c', '#fee2e2'), 'soon': ('#92400e', '#fef3c7')}
+        from utils import as_naive, get_moscow_time
+        today = as_naive(get_moscow_time()).date()
+        for task in tasks[:self.STRIP_LIMIT]:
+            state = service.state(task)
+            fg, bg = colors.get(state) or (styles.COLORS['text'], styles.COLORS['bg_subtle'])
+            when = task.due_time or ''
+            if task.due_date < today:
+                when = f'{task.due_date:%d.%m}'
+            text = f'{when} {task.title}'.strip()
+            if task.license_plate and task.license_plate not in text:
+                text += f' · {task.license_plate}'
+            chip = tk.Label(self.tasks_strip, text=text[:48], bg=bg, fg=fg, cursor='hand2',
+                            padx=8, pady=2, font=(styles.DEFAULT_FONT, 9))
+            chip.pack(side='left', padx=(0, 4), pady=4)
+            dot = CATEGORY_COLORS.get(task.category, CATEGORY_COLORS['work'])[0]
+            chip.config(highlightthickness=2, highlightbackground=dot)
+            chip.bind('<Button-1>', lambda e, t=task: self._open_task(t))
+        if len(tasks) > self.STRIP_LIMIT:
+            more = tk.Label(self.tasks_strip, text=f'+{len(tasks) - self.STRIP_LIMIT}',
+                            bg=styles.COLORS['bg_card'], fg=styles.COLORS['primary'],
+                            cursor='hand2', font=(styles.DEFAULT_FONT, 9, 'underline'))
+            more.pack(side='left', padx=4)
+            more.bind('<Button-1>', lambda e: self.app and self.app.show_calendar())
+
+    def _open_task(self, task):
+        from ui.task_dialog import open_task
+        open_task(self.frame, self.db, task, on_saved=self._tasks_changed)
+
+    def _tasks_changed(self):
+        self.refresh_tasks()
+        for widget in self.active_orders.values():
+            if hasattr(widget, 'refresh_tasks'):
+                widget.refresh_tasks()
+        if self.app is not None:
+            self.app._calendar_refresh()
+
+    def open_plate(self, plate):
+        """Открыть наряд на номер — из «всё по машине»."""
+        if self.app is not None:
+            self.app.show_orders()
+        self.license_var.set(plate)
+        self.select_plate(plate)
+
     def open_order_tab(self, order):
         tab_frame = ttk.Frame(self.order_notebook)
         tab_title = f"  #{order.id}: {order.car.license_plate}  "

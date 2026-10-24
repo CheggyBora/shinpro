@@ -146,6 +146,28 @@ class OrderWidget(OrderItemsMixin, OrderPaymentMixin, OrderTimingMixin):
                                          font=(styles.DEFAULT_FONT, 9),
                                          foreground=styles.COLORS['text_secondary'])
         self.employees_label.pack(anchor='w', pady=(4, 0))
+
+        # Хранение прямо из наряда: открываются привычные формы вкладки
+        # «Хранение шин», уже заполненные из наряда и клиента
+        # (docs/calendar.md). На кнопке выдачи — номер комплекта, если
+        # у машины что-то лежит
+        storage_row = ttk.Frame(info_frame, style='White.TFrame')
+        storage_row.pack(anchor='w', fill='x', pady=(6, 0))
+        styles.create_button(storage_row, "Принять на хранение", self.storage_accept,
+                             'Compact.Secondary.TButton').pack(side='left')
+        stored = self._stored_sets()
+        release_text = "Выдать с хранения" + (
+            f"  №{', №'.join(str(s.id) for s in stored)}" if stored else "")
+        styles.create_button(storage_row, release_text, self.storage_release,
+                             'Compact.Secondary.TButton').pack(side='left', padx=(6, 0))
+        styles.create_button(storage_row, "Всё по машине", self.open_car,
+                             'Compact.Secondary.TButton').pack(side='left', padx=(6, 0))
+
+        # Задачи по этой машине из календаря: «шины приехали», «комплект
+        # привезли» — приёмщик видит их ровно тогда, когда машина у него
+        self.tasks_box = ttk.Frame(info_frame, style='White.TFrame')
+        self.tasks_box.pack(anchor='w', fill='x')
+        self.refresh_tasks()
         
         # Рекомендации (под сотрудниками)
         recommendations_frame = ttk.Frame(main_container, style='White.TFrame')
@@ -324,6 +346,77 @@ class OrderWidget(OrderItemsMixin, OrderPaymentMixin, OrderTimingMixin):
 
         messagebox.showinfo("Отправлено",
                             f"Клиенту сообщили {where}, что машина готова.")
+
+    # ------------------------------------------------------------------
+    # Хранение и задачи по машине
+    # ------------------------------------------------------------------
+
+    def _stored_sets(self):
+        from models import TireStorage
+        try:
+            return self.db.query(TireStorage).filter(
+                TireStorage.car_number == self.order.car.license_plate,
+                TireStorage.status == 'stored').order_by(TireStorage.id).all()
+        except Exception:
+            self.db.rollback()
+            return []
+
+    def _app(self):
+        return getattr(self.parent_orders_tab, 'app', None)
+
+    def storage_accept(self):
+        app = self._app()
+        if app is not None:
+            app.storage_from_order(self.order, release=False)
+
+    def storage_release(self):
+        app = self._app()
+        if app is not None:
+            app.storage_from_order(self.order, release=True)
+
+    def open_car(self):
+        from ui.car_info import open_car_info
+        open_car_info(self.frame, self.db, self.order.car.license_plate)
+
+    def refresh_tasks(self):
+        from services.calendar_service import CalendarService
+        from ui.task_dialog import CATEGORY_COLORS
+        for child in self.tasks_box.winfo_children():
+            child.destroy()
+        try:
+            tasks = CalendarService(self.db).for_plate(self.order.car.license_plate)
+        except Exception:
+            self.db.rollback()
+            return
+        for task in tasks:
+            fg, bg = CATEGORY_COLORS.get(task.category, CATEGORY_COLORS['work'])
+            row = tk.Frame(self.tasks_box, bg=bg)
+            row.pack(anchor='w', fill='x', pady=(6, 0))
+            when = f'{task.due_date:%d.%m}' + (f' {task.due_time}' if task.due_time else '')
+            text = f'Задача · {when} · {task.title}'
+            if task.note:
+                text += f' — {task.note.splitlines()[0][:80]}'
+            label = tk.Label(row, text=text, bg=bg, fg=fg, anchor='w', cursor='hand2',
+                             font=(styles.DEFAULT_FONT, 10))
+            label.pack(side='left', padx=8, pady=4)
+            label.bind('<Button-1>', lambda e, t=task: self._edit_task(t))
+            styles.create_button(row, "Сделано", lambda t=task: self._task_done(t),
+                                 'Compact.Secondary.TButton').pack(side='right', padx=4, pady=2)
+
+    def _edit_task(self, task):
+        from ui.task_dialog import open_task
+        open_task(self.frame, self.db, task, on_saved=self._tasks_changed)
+
+    def _task_done(self, task):
+        from services.calendar_service import CalendarService
+        from ui.task_dialog import WHO
+        CalendarService(self.db).set_done(task, True, by=WHO)
+        self._tasks_changed()
+
+    def _tasks_changed(self):
+        self.refresh_tasks()
+        if self.parent_orders_tab is not None:
+            self.parent_orders_tab.refresh_tasks()
 
     def _post_text(self):
         post = getattr(self.order, 'post_number', None)

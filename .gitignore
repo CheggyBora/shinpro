@@ -61,3 +61,5 @@ server/.env
 
 # Временная база для проверки миграций
 alembic_check.db
+*.db-shm
+*.db-wal

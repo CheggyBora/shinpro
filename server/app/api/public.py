@@ -363,7 +363,8 @@ def _tell_the_shop(db, appointment, stored, client):
         f'{appointment.license_plate} · {who} · '
         f'{format_phone(appointment.client_phone)}\n\n'
         f'{sets}\n\n'
-        f'Записался сам, по ссылке.')
+        f'Записался сам, по ссылке.',
+        shop=appointment.shop_id, kind=notify.KIND_STORAGE)
 
 
 def _active_count(db, phone):

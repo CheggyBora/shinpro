@@ -82,6 +82,11 @@ def draw_company_header(c, width, height, font_name):
 
     return y - 30  # Возвращаем y-позицию для продолжения контента
 
+VEHICLE_TYPES = {'Легковой': 'car', 'Джип/Кроссовер/Пикап': 'suv',
+                 'Категория С (коммерческий)': 'truck'}
+VEHICLE_TITLES = {value: key for key, value in VEHICLE_TYPES.items()}
+
+
 class TireStorageTab:
     def __init__(self, parent, db):
         self.db = db
@@ -124,6 +129,24 @@ class TireStorageTab:
         styles.create_label(row1, "Вод. удостоверение:", 'Card.TLabel').pack(side='left', padx=(0, 10))
         self.driver_license_entry = styles.create_entry(row1, width=20)
         self.driver_license_entry.pack(side='left')
+
+        # Кто сдал: чтобы на складе и в Telegram было видно, чей комплект.
+        # Из наряда подставляется само (docs/calendar.md)
+        row_client = ttk.Frame(form_frame, style='White.TFrame')
+        row_client.pack(fill='x', pady=5)
+        styles.create_label(row_client, "Клиент:", 'Card.TLabel').pack(side='left', padx=(0, 10))
+        self.client_name_entry = styles.create_entry(row_client, width=26)
+        self.client_name_entry.pack(side='left', padx=(0, 20))
+        styles.create_label(row_client, "Телефон:", 'Card.TLabel').pack(side='left', padx=(0, 10))
+        self.client_phone_entry = styles.create_entry(row_client, width=18)
+        self.client_phone_entry.pack(side='left', padx=(0, 20))
+        styles.create_label(row_client, "Транспорт:", 'Card.TLabel').pack(side='left', padx=(0, 10))
+        self.vehicle_var = tk.StringVar(value='Легковой')
+        ttk.Combobox(row_client, textvariable=self.vehicle_var,
+                     values=list(VEHICLE_TYPES.keys()), state='readonly', width=24,
+                     font=styles.FONTS['normal']).pack(side='left')
+        self.prefilled_client_id = None
+        self.after_accept = None
         
         row1a = ttk.Frame(form_frame, style='White.TFrame')
         row1a.pack(fill='x', pady=5)
@@ -176,6 +199,18 @@ class TireStorageTab:
         self.comments_entry = styles.create_entry(row5, width=70)
         self.comments_entry.pack(side='left')
         
+        # Комплект надо отвезти на склад — задача в календарь и сообщение
+        # в Telegram. Пусто — не ставим (лежит здесь же)
+        row_move = ttk.Frame(form_frame, style='White.TFrame')
+        row_move.pack(fill='x', pady=5)
+        styles.create_label(row_move, "Отвезти на склад:", 'Card.TLabel').pack(side='left', padx=(0, 10))
+        self.to_warehouse_entry = styles.create_entry(row_move, width=12)
+        self.to_warehouse_entry.pack(side='left', padx=(0, 10))
+        self._default_warehouse_day()
+        ttk.Label(row_move, text="дата ДД.ММ.ГГГГ — задача в календарь; пусто — не ставить",
+                  font=styles.FONTS['small'], foreground=styles.COLORS['text_secondary'],
+                  background=styles.COLORS['bg_card']).pack(side='left')
+
         price_frame = ttk.Frame(card_inner, style='White.TFrame')
         price_frame.pack(fill='x', pady=15)
         styles.create_label(price_frame, "Цена хранения:", 'Card.TLabel').pack(side='left', padx=(0, 10))
@@ -263,6 +298,10 @@ class TireStorageTab:
         btn_frame.pack(fill='x', pady=10)
         styles.create_button(btn_frame, "Выдать комплект", 
                            self.release_storage, 'Success.TButton').pack(side='left')
+        # Комплект лежит на складе — заказать к дате: задача в календарь
+        # и сообщение в Telegram тому, кто возит (docs/calendar.md)
+        styles.create_button(btn_frame, "Заказать со склада",
+                             self.order_from_warehouse, 'Primary.TButton').pack(side='left', padx=(10, 0))
         
         # Загружаем все комплекты при создании вкладки
         self.search_storage()
@@ -354,17 +393,30 @@ class TireStorageTab:
         if storage_type == 'Шины с дисками':
             wheel_type = self.wheel_type_var.get()
 
+        client_name = self.client_name_entry.get().strip()
+        client_phone = self.client_phone_entry.get().strip()
+        vehicle_type = VEHICLE_TYPES.get(self.vehicle_var.get(), 'car')
+        try:
+            from services.calendar_service import parse_day, TaskError
+            warehouse_text = self.to_warehouse_entry.get().strip()
+            warehouse_day = parse_day(warehouse_text) if warehouse_text else None
+        except TaskError as e:
+            messagebox.showerror("Ошибка", str(e))
+            return
+
         try:
             # 1. Создаём наряд (WorkOrder) для статистики
             log.debug(f"DEBUG: Step 1 - Creating work order for car {car_number}")
             order_service = OrderService(self.db)
             # create_client=False: раньше сюда подставлялось имя вида
             # "Хранение (Шины с дисками)", и на каждую приёмку в базу клиентов
-            # падала служебная запись. Хранение — это не клиент.
+            # падала служебная запись. Хранение — это не клиент. Клиента
+            # из наряда привязываем — он настоящий
             work_order = order_service.create_order(
                 license_plate=car_number,
                 wheel_diameter=diameter,
-                vehicle_type='car',
+                vehicle_type=vehicle_type,
+                client_id=self.prefilled_client_id,
                 create_client=False
             )
             log.debug(f"DEBUG: Work order created: ID={work_order.id}")
@@ -372,8 +424,11 @@ class TireStorageTab:
             # 2. Создаём запись в хранилище с привязкой к наряду
             log.debug(f"DEBUG: Step 2 - Creating storage record")
             storage = self.service.accept_storage(
-                car_number, driver_license, storage_type, diameter, brand, damage, wear, comments, wheel_type
+                car_number, driver_license, storage_type, diameter, brand, damage, wear, comments, wheel_type,
+                client_id=self.prefilled_client_id, client_name=client_name,
+                client_phone=client_phone, vehicle_type=vehicle_type
             )
+            self._remember_license(driver_license)
             log.debug(f"DEBUG: Storage created: ID={storage.id}")
 
             # Сервис работает в той же сессии, что и вкладка, поэтому
@@ -426,6 +481,14 @@ class TireStorageTab:
             
             # 6. Показываем диалог с чеком
             log.debug(f"DEBUG: Step 6 - Showing receipt dialog")
+            # Отвезти на склад — задача и сообщение. Не вышло — приёмка
+            # всё равно состоялась: деньги взяли, комплект лежит
+            if warehouse_day is not None:
+                try:
+                    self._task_to_warehouse(storage, warehouse_day)
+                except Exception as e:
+                    log.error(f"Задача «отвезти на склад» не поставлена: {e}")
+
             self.show_receipt_dialog(receipt_file, storage, payment_method)
             
             # Очищаем поля
@@ -435,6 +498,10 @@ class TireStorageTab:
             self.damage_entry.delete(0, tk.END)
             self.wear_entry.delete(0, tk.END)
             self.comments_entry.delete(0, tk.END)
+            self.client_name_entry.delete(0, tk.END)
+            self.client_phone_entry.delete(0, tk.END)
+            self.prefilled_client_id = None
+            self._default_warehouse_day()
             log.debug(f"DEBUG: Storage payment process completed successfully")
             
         except Exception as e:
@@ -444,6 +511,85 @@ class TireStorageTab:
             self.db.rollback()
             messagebox.showerror("Ошибка", str(e))
     
+    # ------------------------------------------------------------------
+    # Из наряда, склад, календарь (docs/calendar.md)
+    # ------------------------------------------------------------------
+
+    def _default_warehouse_day(self):
+        from datetime import timedelta
+        self.to_warehouse_entry.delete(0, tk.END)
+        tomorrow = get_moscow_time() + timedelta(days=1)
+        self.to_warehouse_entry.insert(0, tomorrow.strftime('%d.%m.%Y'))
+
+    @staticmethod
+    def _put(entry, value):
+        entry.delete(0, tk.END)
+        if value:
+            entry.insert(0, value)
+
+    def prefill_accept(self, order):
+        """Форма приёма, заполненная из наряда и карточки клиента."""
+        from utils import format_phone
+        self.nav.select(0)
+        client = order.client
+        self._put(self.car_number_entry, order.car.license_plate)
+        self._put(self.driver_license_entry, client.driver_license if client else '')
+        self._put(self.client_name_entry, client.name if client else '')
+        self._put(self.client_phone_entry, format_phone(client.phone) if client and client.phone else '')
+        self.prefilled_client_id = client.id if client else None
+        self.vehicle_var.set(VEHICLE_TITLES.get(order.vehicle_type, 'Легковой'))
+        if order.wheel_diameter:
+            self.diameter_var.set(order.wheel_diameter)
+            self.update_price()
+        self.brand_entry.focus_set()
+
+    def prefill_release(self, order):
+        """Выдача: номер уже вбит, комплекты машины — в списке."""
+        self.nav.select(1)
+        self._put(self.search_car_entry, order.car.license_plate)
+        self.search_storage()
+        for item in self.storage_tree.get_children():
+            if 'released' not in self.storage_tree.item(item)['tags']:
+                self.storage_tree.selection_set(item)
+                self.storage_tree.see(item)
+                break
+
+    def _remember_license(self, driver_license):
+        """Вписали водительское при приёме — запоминаем за клиентом."""
+        if not driver_license or not self.prefilled_client_id:
+            return
+        from models import Client
+        client = self.db.query(Client).filter(Client.id == self.prefilled_client_id).first()
+        if client is not None and not client.driver_license:
+            client.driver_license = driver_license
+            self.db.commit()
+
+    def _task_to_warehouse(self, storage, day):
+        from services.calendar_service import CalendarService, storage_title
+        from services import telegram_outbox
+        from utils import format_phone
+        CalendarService(self.db).storage_to_warehouse(storage, day, created_by='Цех')
+        who = ' · '.join(x for x in (storage.client_name,
+                                     format_phone(storage.client_phone) if storage.client_phone else '') if x)
+        telegram_outbox.queue(self.db, 'storage',
+                              f'<b>Отвезти на склад</b>\n{day:%d.%m} · №{storage.id} — {storage_title(storage)}\n'
+                              f'{storage.car_number}' + (f' · {who}' if who else ''))
+
+    def order_from_warehouse(self):
+        """Заказать комплект со склада к дате и времени."""
+        selected = self.storage_tree.selection()
+        if not selected:
+            messagebox.showerror("Ошибка", "Выберите комплект в списке")
+            return
+        if 'released' in self.storage_tree.item(selected[0])['tags']:
+            messagebox.showwarning("Склад", "Этот комплект уже выдан")
+            return
+        storage_id = self.storage_tree.item(selected[0])['values'][0]
+        storage = self.service.get_storage_by_id(storage_id)
+        if storage is None:
+            return
+        WarehouseOrderDialog(self.frame, self.db, storage)
+
     def show_receipt_dialog(self, receipt_file, storage, payment_method):
         """Показывает диалог для печати/просмотра чека и актов"""
         import platform
@@ -949,3 +1095,77 @@ class TireStorageTab:
             c.drawCentredString(width/2, y, f"Экземпляр {copy + 1} из {copies}")
         
         c.save()
+
+
+class WarehouseOrderDialog:
+    """
+    Заказать комплект со склада: к какому дню и часу он нужен в цеху и
+    зачем. Ставит задачу «Привезти со склада» и пишет в Telegram тому,
+    кто возит (docs/calendar.md).
+    """
+
+    def __init__(self, parent, db, storage):
+        from datetime import timedelta
+        from services.calendar_service import storage_title
+        self.db = db
+        self.storage = storage
+        self.dialog = tk.Toplevel(parent)
+        self.dialog.title("Заказать со склада")
+        self.dialog.configure(bg=styles.COLORS['bg_card'])
+        self.dialog.transient(parent.winfo_toplevel())
+        body = ttk.Frame(self.dialog, style='White.TFrame')
+        body.pack(fill='both', expand=True, padx=18, pady=16)
+        styles.create_label(body, f"№{storage.id} · {storage_title(storage)}",
+                            'CardHeading.TLabel').pack(anchor='w')
+        who = storage.car_number + (f" · {storage.client_name}" if storage.client_name else '')
+        styles.create_label(body, who, 'Card.TLabel').pack(anchor='w', pady=(2, 10))
+
+        form = ttk.Frame(body, style='White.TFrame')
+        form.pack(fill='x')
+        styles.create_label(form, "Нужен в цеху:", 'Card.TLabel').grid(row=0, column=0, sticky='w', pady=4)
+        when = ttk.Frame(form, style='White.TFrame')
+        when.grid(row=0, column=1, sticky='w', padx=(10, 0))
+        self.day = styles.create_entry(when, width=12)
+        self.day.pack(side='left')
+        self.day.insert(0, (get_moscow_time() + timedelta(days=1)).strftime('%d.%m.%Y'))
+        self.time = styles.create_entry(when, width=7)
+        self.time.pack(side='left', padx=(8, 0))
+        self.time.insert(0, '10:00')
+        styles.create_label(form, "Зачем:", 'Card.TLabel').grid(row=1, column=0, sticky='w', pady=4)
+        self.why = styles.create_entry(form, width=40)
+        self.why.grid(row=1, column=1, sticky='w', padx=(10, 0))
+        self.why.insert(0, "Запись на перекидку")
+
+        buttons = ttk.Frame(body, style='White.TFrame')
+        buttons.pack(fill='x', pady=(14, 0))
+        styles.create_button(buttons, "Заказать", self.save, 'Primary.TButton').pack(side='right')
+        styles.create_button(buttons, "Отмена", self.dialog.destroy,
+                             'Secondary.TButton').pack(side='right', padx=(0, 6))
+        styles.center_window(self.dialog, parent.winfo_toplevel())
+        self.dialog.grab_set()
+
+    def save(self):
+        from services.calendar_service import CalendarService, TaskError, parse_day, clean_time, storage_title
+        from services import telegram_outbox
+        from utils import format_phone
+        try:
+            day = parse_day(self.day.get())
+            time = clean_time(self.time.get())
+            why = self.why.get().strip() or None
+            CalendarService(self.db).storage_from_warehouse(self.storage, day, time, why, created_by='Цех')
+        except TaskError as e:
+            messagebox.showerror("Склад", str(e), parent=self.dialog)
+            return
+        except Exception as e:
+            self.db.rollback()
+            messagebox.showerror("Склад", f"Не удалось заказать: {e}", parent=self.dialog)
+            return
+        storage = self.storage
+        who = ' · '.join(x for x in (storage.client_name,
+                                     format_phone(storage.client_phone) if storage.client_phone else '') if x)
+        text = (f"<b>Привезти со склада</b>\nк {day:%d.%m}" + (f" в {time}" if time else '') +
+                f"\n№{storage.id} — {storage_title(storage)}\n{storage.car_number}" +
+                (f" · {who}" if who else '') + (f"\nЗачем: {why}" if why else ''))
+        telegram_outbox.queue(self.db, 'storage', text)
+        self.dialog.destroy()
+        messagebox.showinfo("Склад", "Заказано: задача в календаре, сообщение отправлено в Telegram")

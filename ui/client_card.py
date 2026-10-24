@@ -66,6 +66,12 @@ class ClientCard:
         self.phone_entry = styles.create_entry(fields, width=24)
         self.phone_entry.grid(row=0, column=3, sticky='w', padx=(10, 20), pady=3)
 
+        # Водительское — для приёма и выдачи хранения: подставляется само
+        styles.create_label(fields, "Вод. удостоверение:", 'Card.TLabel').grid(
+            row=1, column=0, sticky='w', pady=3)
+        self.license_entry = styles.create_entry(fields, width=24)
+        self.license_entry.grid(row=1, column=1, sticky='w', padx=(10, 20), pady=3)
+
         styles.create_button(fields, "Сохранить", self.save_client,
                              'Primary.TButton').grid(row=0, column=4, padx=(0, 0))
 
@@ -167,6 +173,8 @@ class ClientCard:
             self.name_entry.insert(0, client.name or '')
             self.phone_entry.delete(0, tk.END)
             self.phone_entry.insert(0, format_phone(client.phone) if client.phone else '')
+            self.license_entry.delete(0, tk.END)
+            self.license_entry.insert(0, client.driver_license or '')
 
             summary = self.client_service.get_client_summary(self.client_id)
             last = summary['last_visit'].strftime('%d.%m.%Y') if summary['last_visit'] else '—'
@@ -222,7 +230,8 @@ class ClientCard:
             self.client_service.update_client(
                 self.client_id,
                 name=self.name_entry.get(),
-                phone=self.phone_entry.get()
+                phone=self.phone_entry.get(),
+                driver_license=self.license_entry.get()
             )
             self.refresh()
             messagebox.showinfo("Готово", "Данные клиента сохранены", parent=self.dialog)

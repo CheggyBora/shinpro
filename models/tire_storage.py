@@ -9,6 +9,12 @@ class TireStorage(Base):
     id = Column(Integer, primary_key=True)
     car_number = Column(String(20), nullable=False)
     driver_license = Column(String(50))
+    # Кто сдал — чтобы на складе и в Telegram было видно, чей комплект,
+    # не поднимая карточку клиента
+    client_id = Column(Integer, nullable=True)
+    client_name = Column(String(200), nullable=True)
+    client_phone = Column(String(50), nullable=True)
+    vehicle_type = Column(String(20), nullable=True)
     storage_type = Column(String(50), nullable=False)
     diameter = Column(String(10), nullable=False)
     brand = Column(String(100))

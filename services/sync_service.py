@@ -171,6 +171,34 @@ class SyncService:
                 'rejected': queue.rejected}))
         return added
 
+    # ------------------------------------------------------------------
+    # Календарь задач и контрагенты (docs/calendar.md)
+    # ------------------------------------------------------------------
+
+    TASKS_SINCE_KEY = 'tasks_sync_since'
+
+    def tasks_exchange(self):
+        """
+        Отдать серверу задачи и контрагентов, поправленных в цеху, и забрать
+        поправленные в дашборде. Идёт вместе с живой очередью: задача,
+        поставленная владельцем из дома, должна появиться в цеху сразу.
+        Возвращает, сколько строк пришло с сервера.
+        """
+        from services.calendar_service import CalendarService
+
+        calendar = CalendarService(self.db)
+        tasks, parties = calendar.unsent()
+        since = self._settings().get(self.TASKS_SINCE_KEY, '') or None
+        answer = self._call('POST', '/sync/tasks', {
+            'since': since,
+            'tasks': [calendar.task_payload(t) for t in tasks],
+            'counterparties': [calendar.counterparty_payload(c) for c in parties],
+        })
+        changed = calendar.apply_server(answer, tasks, parties)
+        if answer.get('now'):
+            self._settings().set(self.TASKS_SINCE_KEY, answer['now'])
+        return changed
+
     def order_photos(self, order_local_id):
         """Что мастера прислали по этому наряду."""
         return self._call('GET', f'/sync/photos?order_local_id={order_local_id}')
@@ -510,6 +538,7 @@ class SyncService:
         company = get_company(self.db)
 
         from services.telegram_service import TelegramService
+        from services import telegram_outbox
 
         telegram = TelegramService(self.db)
         chats = ','.join(r.chat_id for r in telegram.get_active_recipients())
@@ -557,6 +586,14 @@ class SyncService:
             # сервере, и они бы разъехались
             'telegram_token': telegram.get_token(),
             'telegram_chats': chats,
+            # Склад и покраска могут уходить не всем: водителю — склад,
+            # маляру — покраска. Пусто — тем же, что сводка по смене
+            'telegram_chats_storage': telegram_outbox.chats_for_server(self.db, 'storage'),
+            'telegram_chats_paint': telegram_outbox.chats_for_server(self.db, 'paint'),
+            'telegram_chats_digest': telegram_outbox.chats_for_server(self.db, 'digest'),
+            'task_digest_enabled': settings.get('task_digest_enabled'),
+            'task_digest_morning': settings.get('task_digest_morning'),
+            'task_digest_evening': settings.get('task_digest_evening'),
 
             # Калькулятор покраски: кабинет должен считать ровно так же,
             # как приёмщик. Строкой, а не отдельным запросом — состав

@@ -432,6 +432,15 @@ def cmd_notify(db, args):
           f"не дошло: {result['failed']}, "
           f"пропущено: {result['skipped']}")
 
+    # Сводка задач владельцу: утром — на сегодня, вечером — что не
+    # отмечено. Каждая — раз в день, отметку держит сама точка
+    from app.services import tasks
+
+    digests = tasks.send_digests(db)
+    if digests[tasks.MORNING] or digests[tasks.EVENING]:
+        print(f"Сводка задач: утренняя {digests[tasks.MORNING]}, "
+              f"вечерняя {digests[tasks.EVENING]}")
+
 
 def cmd_booking(db, args):
     """

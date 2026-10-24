@@ -17,6 +17,7 @@ from .appointment import Appointment
 from .live_queue import LiveQueueEntry
 from .booking_posts import BookingPosts
 from .paint import PaintOption
+from .calendar import CalendarTask, Counterparty, TelegramOutbox
 
 __all__ = [
     'PaintOption',
@@ -40,5 +41,8 @@ __all__ = [
     'AuditLog',
     'Appointment',
     'LiveQueueEntry',
-    'BookingPosts'
+    'BookingPosts',
+    'CalendarTask',
+    'Counterparty',
+    'TelegramOutbox',
 ]

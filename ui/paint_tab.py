@@ -47,6 +47,20 @@ class PaintTab:
                   foreground=styles.COLORS['text_secondary'],
                   background=styles.COLORS['bg']).pack(anchor='w', pady=(0, 14))
 
+        # Машина — как в нарядах: набрали номер, подставились клиент и
+        # диаметр. Нужна, чтобы оформить покраску задачей (docs/calendar.md)
+        car_row = tk.Frame(wrap, bg=styles.COLORS['bg_card'])
+        car_row.pack(fill='x', pady=(0, 12))
+        styles.create_label(car_row, "Машина:", 'Card.TLabel').pack(side='left', padx=(14, 8), pady=10, anchor='n')
+        from ui.plate_picker import PlatePicker
+        self.plate = PlatePicker(car_row, self.db, on_pick=self.pick_car)
+        self.plate.frame.pack(side='left', pady=10, anchor='n')
+        self.owner_label = ttk.Label(car_row, text="", font=styles.FONTS['normal'],
+                                     foreground=styles.COLORS['text_secondary'],
+                                     background=styles.COLORS['bg_card'])
+        self.owner_label.pack(side='left', padx=12, pady=12, anchor='n')
+        self.owner = None
+
         body = tk.Frame(wrap, bg=styles.COLORS['bg'])
         body.pack(fill='both', expand=True)
 
@@ -166,8 +180,19 @@ class PaintTab:
             background=styles.COLORS['bg_card'])
         self.total_label.pack(side='right')
 
+        ready_row = tk.Frame(inner, bg=styles.COLORS['bg_card'])
+        ready_row.pack(fill='x', pady=(14, 0))
+        styles.create_label(ready_row, "Готово к:", 'Card.TLabel').pack(side='left')
+        self.ready_entry = styles.create_entry(ready_row, width=12)
+        self.ready_entry.pack(side='left', padx=(8, 0))
+        from datetime import timedelta
+        from utils import get_moscow_time
+        self.ready_entry.insert(0, (get_moscow_time() + timedelta(days=5)).strftime('%d.%m.%Y'))
+
         styles.create_button(inner, "Скопировать счёт", self.copy_bill,
-                             'Secondary.TButton').pack(fill='x', pady=(14, 0))
+                             'Secondary.TButton').pack(fill='x', pady=(10, 0))
+        styles.create_button(inner, "Оформить покраску", self.place_order,
+                             'Primary.TButton').pack(fill='x', pady=(6, 0))
 
     # ------------------------------------------------------------------
     # Счёт
@@ -217,6 +242,66 @@ class PaintTab:
 
         lines.append(f"Итого: {int(quote['total'])} ₽")
         return "\n".join(lines)
+
+    # ------------------------------------------------------------------
+    # Оформление: задача в календарь и сообщение в Telegram
+    # ------------------------------------------------------------------
+
+    def pick_car(self, plate):
+        from ui.plate_picker import owner_of, owner_text
+        car, self.owner = owner_of(self.db, plate)
+        self.owner_label.config(text=owner_text(self.owner) or 'новая машина')
+        if car is not None and car.wheel_diameter:
+            try:
+                wanted = int(str(car.wheel_diameter).upper().lstrip('R'))
+            except ValueError:
+                wanted = None
+            if wanted and any(row['diameter'] == wanted for row in self.service.sizes()):
+                self.diameter.set(wanted)
+                self.recalc()
+
+    def place_order(self):
+        """
+        Оформить покраску: задача «Покраска» к дате готовности с суммой
+        и сообщение в Telegram тому, кто красит.
+        """
+        from services.calendar_service import CalendarService, TaskError, parse_day
+        from services import telegram_outbox
+        from utils import format_phone
+        plate = self.plate.get()
+        if not plate:
+            messagebox.showerror("Покраска", "Впишите номер машины")
+            return
+        quote = self.current_quote()
+        if not quote['lines']:
+            messagebox.showerror("Покраска", "Выберите размер диска")
+            return
+        try:
+            ready = parse_day(self.ready_entry.get())
+        except TaskError as e:
+            messagebox.showerror("Покраска", str(e))
+            return
+        diameter = f"R{self.diameter.get()}"
+        wheels = self.wheels.get()
+        extras = [line['name'] for line in quote['lines'][1:]]
+        details = ', '.join(extras) if extras else None
+        name = self.owner.name if self.owner else None
+        phone = self.owner.phone if self.owner else None
+        try:
+            CalendarService(self.db).paint_job(
+                plate, ready, diameter, wheels, quote['total'], details=details,
+                client_name=name, client_phone=phone, created_by='Цех')
+        except Exception as e:
+            self.db.rollback()
+            messagebox.showerror("Покраска", f"Не удалось оформить: {e}")
+            return
+        who = ' · '.join(x for x in (name, format_phone(phone) if phone else '') if x)
+        total = f"{int(quote['total']):,}".replace(',', ' ')
+        text = (f"<b>Покраска дисков</b>\n{plate}" + (f" · {who}" if who else '') +
+                f"\n{diameter} × {wheels}" + (f" · {details}" if details else '') +
+                f"\nСумма: {total} ₽ · готово к {ready:%d.%m}")
+        telegram_outbox.queue(self.db, 'paint', text)
+        messagebox.showinfo("Покраска", "Оформлено: задача в календаре, сообщение отправлено в Telegram")
 
     def copy_bill(self):
         """Счёт в буфер — отправить клиенту в переписку."""

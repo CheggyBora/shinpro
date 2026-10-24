@@ -127,8 +127,9 @@ class ClientService:
         self.db.flush()
         return client, True
 
-    def update_client(self, client_id: int, name: str = None, phone: str = None):
-        """Изменить имя и/или телефон клиента."""
+    def update_client(self, client_id: int, name: str = None, phone: str = None,
+                      driver_license: str = None):
+        """Изменить имя, телефон и водительское удостоверение клиента."""
         client = self.db.query(Client).filter(Client.id == client_id).first()
         if not client:
             raise ValueError(f"Клиент #{client_id} не найден")
@@ -150,6 +151,9 @@ class ClientService:
                         f"клиенту «{occupied.name or 'без имени'}» (#{occupied.id})"
                     )
             client.phone = normalized or None
+
+        if driver_license is not None:
+            client.driver_license = ' '.join(driver_license.split()) or None
 
         self.db.commit()
         return client

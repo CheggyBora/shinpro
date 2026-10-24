@@ -118,6 +118,7 @@ class SettingsDialog:
             ('Категории мастеров', self._build_employee_roles),
             ('Выбор колеса', self._build_wheel_services),
             ('Живая очередь', self._build_live_queue),
+            ('Контрагенты', self._build_counterparties),
             ('Смена', self._build_shift),
             ('Хранение и сезон', self._build_storage),
             ('Печать', self._build_printing),
@@ -450,6 +451,67 @@ class SettingsDialog:
                                          wraplength=420, justify='left')
         self.telegram_status.pack(side='left', padx=(12, 0))
 
+        # Кому что: склад — водителю, покраска — маляру, сводка задач —
+        # владельцу. Никого не отметили — тем же, кому сводка по смене
+        self._section(content, "Кому что отправлять")
+        self._hint(content,
+                   "Отметьте получателей для каждого вида сообщений. Не "
+                   "отмечено никого — получат все, кому идёт сводка по смене. "
+                   "Сохраняется сразу.")
+        from services import telegram_outbox
+        self.route_vars = {}
+        active = [r for r in self.recipients if r.enabled and r.chat_id]
+        routes = ttk.Frame(content, style='White.TFrame')
+        routes.pack(fill='x', pady=(0, 8))
+        for row, (kind, title) in enumerate(telegram_outbox.KINDS.items()):
+            styles.create_label(routes, title, 'Card.TLabel').grid(
+                row=row, column=0, sticky='w', pady=3, padx=(0, 12))
+            chosen = set(telegram_outbox.route(self.db, kind))
+            for column, person in enumerate(active, start=1):
+                var = tk.BooleanVar(value=person.chat_id in chosen)
+                self.route_vars[(kind, person.chat_id)] = var
+                ttk.Checkbutton(routes, text=person.title, variable=var,
+                                command=lambda k=kind: self.save_route(k)).grid(
+                    row=row, column=column, sticky='w', padx=(0, 10))
+        if not active:
+            self._hint(content, "Сначала добавьте получателей выше.")
+
+        digest = ttk.Frame(content, style='White.TFrame')
+        digest.pack(fill='x', pady=(4, 6))
+        self.digest_var = tk.BooleanVar(value=self.settings.is_on('task_digest_enabled'))
+        ttk.Checkbutton(digest, text="Сводка задач владельцу: утром в",
+                        variable=self.digest_var,
+                        command=lambda: self.settings.set(
+                            'task_digest_enabled', '1' if self.digest_var.get() else '0')
+                        ).pack(side='left')
+        self.digest_times = {}
+        for key, after in (('task_digest_morning', 'и вечером в'), ('task_digest_evening', '')):
+            entry = styles.create_entry(digest, width=6)
+            entry.insert(0, self.settings.get(key) or '')
+            entry.pack(side='left', padx=(6, 6))
+            entry.bind('<FocusOut>', lambda e, k=key, w=entry: self.save_digest_time(k, w))
+            entry.bind('<Return>', lambda e, k=key, w=entry: self.save_digest_time(k, w))
+            self.digest_times[key] = entry
+            if after:
+                styles.create_label(digest, after, 'Card.TLabel').pack(side='left')
+
+    def save_route(self, kind):
+        from services import telegram_outbox
+        chosen = [chat for (k, chat), var in self.route_vars.items() if k == kind and var.get()]
+        telegram_outbox.set_route(self.db, kind, chosen)
+
+    def save_digest_time(self, key, entry):
+        from services.calendar_service import clean_time, TaskError
+        try:
+            value = clean_time(entry.get())
+        except TaskError as e:
+            messagebox.showerror("Telegram", str(e), parent=self.dialog)
+            return
+        if value:
+            self.settings.set(key, value)
+            entry.delete(0, tk.END)
+            entry.insert(0, value)
+
     def _build_export_folder(self, content):
         self._section(content, "Папка для сохранения отчётов")
 
@@ -627,6 +689,15 @@ class SettingsDialog:
             ('order_autosave_minutes',
              'Автосохранение наряда через, мин (0 — выкл.)'),
         ])
+
+    def _build_counterparties(self, content):
+        self._section(content, "Контрагенты")
+        self._hint(content,
+                   "Поставщики шин и расходников, правка дисков. В задаче "
+                   "календаря контрагент выбирается из этого списка. "
+                   "Правки здесь сохраняются сразу.")
+        from ui.counterparties_editor import CounterpartiesEditor
+        self.counterparties = CounterpartiesEditor(content, self.db, self.dialog)
 
     def _build_client_groups(self, content):
         self._section(content, "Группы клиентов")

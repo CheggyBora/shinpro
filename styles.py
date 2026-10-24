@@ -435,6 +435,20 @@ class NavBar(tk.Frame):
     def titles(self):
         return [item['title'] for item in self._items]
 
+    def set_title(self, frame, title):
+        """Поменять подпись раздела — например, счётчик просроченных задач."""
+        for item in self._items:
+            if item['frame'] is frame and item['label'].cget('text') != title:
+                item['label'].config(text=title)
+
+    def select_frame(self, frame):
+        """Открыть раздел по его рамке — без привязки к порядку."""
+        for index, item in enumerate(self._items):
+            if item['frame'] is frame:
+                self.select(index)
+                return True
+        return False
+
     def current(self):
         return self._current
 

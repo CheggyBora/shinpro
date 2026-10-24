@@ -9,7 +9,7 @@
 from datetime import timedelta
 
 from models import TireStorage, Settings
-from utils import get_moscow_time, normalize_plate
+from utils import get_moscow_time, normalize_plate, normalize_phone
 
 # Цены хранения по размеру, если в настройках ничего не задано
 DEFAULT_STORAGE_PRICES = {
@@ -147,10 +147,16 @@ class TireStorageService:
         return len(rows)
 
     def accept_storage(self, car_number, driver_license, storage_type, diameter,
-                       brand, damage, wear, comments='', wheel_type=None):
+                       brand, damage, wear, comments='', wheel_type=None,
+                       client_id=None, client_name=None, client_phone=None,
+                       vehicle_type=None):
         """Принять комплект на хранение."""
         try:
             storage = TireStorage(
+                client_id=client_id,
+                client_name=(client_name or '').strip() or None,
+                client_phone=normalize_phone(client_phone) if client_phone else None,
+                vehicle_type=vehicle_type,
                 car_number=normalize_plate(car_number),
                 driver_license=driver_license,
                 storage_type=storage_type,
