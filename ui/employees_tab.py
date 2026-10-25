@@ -921,10 +921,21 @@ class EmployeesTab:
             messagebox.showerror("Ошибка", "Нет открытой смены")
             return
         
-        # Подтверждение
+        # Подтверждение. Неоплаченные наряды не теряются: останутся
+        # открытыми и попадут в ту смену, в которой их пробьют
+        question = "Вы действительно хотите закрыть текущую смену?"
+        try:
+            from services.order_service import OrderService
+            unpaid = len(OrderService(self.db).unpaid_orders())
+        except Exception:
+            self.db.rollback()
+            unpaid = 0
+        if unpaid:
+            question += (f"\n\nНеоплаченных нарядов: {unpaid}. Они останутся открытыми "
+                         f"и попадут в ту смену, в которой их пробьют.")
         confirm = messagebox.askyesno(
             "Подтверждение", 
-            "Вы действительно хотите закрыть текущую смену?",
+            question,
             icon='question'
         )
         

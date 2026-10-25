@@ -96,6 +96,15 @@ class MainWindow:
         ui.car_info.ON_NEW_ORDER = self.orders_tab.open_plate
         self._calendar_badge()
 
+        # Неоплаченные наряды прошлых смен — снова на экран: их пробьют
+        # в той смене, когда закроют машину
+        try:
+            for order in self.orders_tab.order_service.unpaid_orders():
+                self.orders_tab.open_order_tab(order)
+        except Exception as e:
+            self.db.rollback()
+            log.error(f"Не удалось открыть неоплаченные наряды: {e}")
+
         self.nav.select(1)  # открываем сразу на нарядах — основная работа
         self.refresh_shift_status()
 

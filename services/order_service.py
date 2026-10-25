@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session, joinedload
 from typing import Optional
 from services.shift_service import ShiftService
 from services.client_service import ClientService
+from datetime import timedelta
 from utils import normalize_plate, money_round, get_moscow_time, as_naive
 
 class OrderService:
@@ -614,6 +615,18 @@ class OrderService:
     def get_all_services(self):
         return self.db.query(Service).filter(Service.is_active == True).all()
     
+    def unpaid_orders(self, days=7):
+        """
+        Неоплаченные наряды за последние дни — их открываем при запуске:
+        машину приняли вчера, а закрыть её должны иметь возможность и
+        сегодня, после перезапуска программы.
+        """
+        since = get_moscow_time() - timedelta(days=days)
+        return self.db.query(WorkOrder).filter(
+            WorkOrder.status != 'paid',
+            WorkOrder.is_deleted.isnot(True),
+            WorkOrder.created_at >= since).order_by(WorkOrder.id).all()
+
     def get_all_license_plates(self):
         """Получить список всех уникальных номеров машин"""
         cars = self.db.query(Car.license_plate).distinct().order_by(Car.license_plate).all()

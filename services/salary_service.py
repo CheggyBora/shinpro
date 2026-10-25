@@ -177,6 +177,15 @@ class SalaryService:
         from services.order_service import OrderService
         order_service = OrderService(self.db)
 
+        # Наряд проводится тем днём, когда машину закрыли: открыли вчера,
+        # пробили сегодня — выручка и зарплата в сегодняшней смене, а не
+        # во вчерашней, по которой сводка уже ушла. Мастера — те же, кто
+        # был при создании: их не трогаем
+        from services.shift_service import ShiftService
+        current = ShiftService(self.db).get_current_shift()
+        if current is not None:
+            order.shift_id = current.id
+
         order.paid_at = get_moscow_time()
         order.payment_method = payment_method
         order.total_amount = total_amount

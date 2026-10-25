@@ -17,6 +17,14 @@ class OrderPaymentMixin:
         import os
         import platform
         
+        # Пробить без открытой смены нельзя: непонятно, каким днём провести
+        from services.shift_service import ShiftService
+        if ShiftService(self.db).get_current_shift() is None:
+            messagebox.showwarning("Смена закрыта",
+                                   "Откройте смену: наряд проводится в той смене, "
+                                   "в которой закрыли машину.")
+            return
+
         total = self.order_service.calculate_total(self.order.id)
         
         dialog = tk.Toplevel(self.frame)

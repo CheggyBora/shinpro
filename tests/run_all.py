@@ -35,6 +35,7 @@ TESTS = [
     ('Живая очередь: телефон, сервер и цех', 'test_live_queue_sync.py'),
     ('Календарь задач, склад, покраска, Telegram', 'test_calendar.py'),
     ('Календарь: цех, сервер и дашборд', 'test_calendar_sync.py'),
+    ('Наряд проводится сменой, в которой пробит', 'test_shift_carryover.py'),
     ('Запись видна сразу с обеих сторон', 'test_booking_live.py'),
     ('Обмен с сервером приложения', 'test_sync.py'),
     ('Срочная досылка важного', 'test_sync_nudge.py'),
