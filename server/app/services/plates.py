@@ -182,6 +182,15 @@ def pick(full_text, full_conf, main_text=None, main_conf=0.0,
     region = _region(region_text) if region_text else ''
 
     if is_valid(full):
+        # Регион мелкий, и целиком модель теряет в нём цифру: «977»
+        # читает как «77». Отдельно прочитанный трёхзначный регион, в
+        # котором есть те же две цифры, — вернее (проверка 26.10.2026)
+        short = full[6:]
+        if plate_format(full) == 'standard' and len(short) == 2 and len(region) == 3 \
+                and short in region:
+            longer = (main if is_main_part(main) else full[:6]) + region
+            if is_valid(longer):
+                return longer, round(min(full_conf, region_conf), 3)
         # Целиком и по частям прочитали по-разному — верим частям: на
         # основной части модель ошибается реже, чем на всём номере
         if is_main_part(main) and plate_format(full) == 'standard' \
@@ -315,6 +324,11 @@ def _read(alpr, frame):
             main.text if main else None, _mean(main.confidence) if main else 0.0,
             region.text if region else None,
             _mean(region.confidence) if region else 0.0)
+        # Что модель увидела каждым способом — по журналу видно, где
+        # она ошибается на настоящих снимках
+        log.info('plates raw: full=%s main=%s region=%s -> %s',
+                 full.text, main.text if main else '-',
+                 region.text if region else '-', plate or 'none')
 
         # Полный номер всегда лучше куска, даже менее уверенный
         better = (plate is not None and (
