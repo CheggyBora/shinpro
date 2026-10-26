@@ -14,6 +14,8 @@ class Employee(Base):
     name = Column(String(100), nullable=True)
 
     salary_percent = Column(Float, default=40.0, nullable=False)
+    # Процент с услуг мойки — свой, отдельно от шиномонтажа
+    wash_percent = Column(Float, default=30.0, server_default='30', nullable=False)
     created_at = Column(DateTime(timezone=True), default=get_moscow_time)
     is_active = Column(Boolean, default=True)
 

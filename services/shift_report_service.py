@@ -64,6 +64,20 @@ class ShiftReportService:
 
         duration = (as_naive(end) - start).total_seconds() / 3600 if start else 0
 
+        # Выручка по направлениям — по строкам: наряд бывает «и то и то».
+        # Строки считаем до общих округлений и пересчитываем в доли от
+        # итога наряда, чтобы сумма направлений совпала с выручкой
+        from services.order_service import OrderService
+        by_direction = {}
+        for o in orders:
+            items = [i for i in o.items]
+            lines_total = sum(OrderService.item_total(i) for i in items) or 0
+            for i in items:
+                share = (OrderService.item_total(i) / lines_total * float(o.total_amount or 0)
+                         if lines_total else 0)
+                key = getattr(i, 'direction', None) or 'tire'
+                by_direction[key] = round(by_direction.get(key, 0) + share, 2)
+
         return {
             'shift': shift,
             'start': start,
@@ -78,6 +92,7 @@ class ShiftReportService:
             'by_master': by_master,
             'margin': round(revenue - consumables - salary_total, 2),
             'average_check': round(revenue / len(orders), 2) if orders else 0,
+            'by_direction': by_direction,
         }
 
     def format_summary(self, summary):
@@ -96,6 +111,12 @@ class ShiftReportService:
             f"  наличные: {summary['cash']:.0f} ₽",
             f"  безнал: {summary['card']:.0f} ₽",
             f"Средний чек: {summary['average_check']:.0f} ₽",
+        ]
+        # Мойка работает — выручку показываем и по направлениям
+        if summary.get('by_direction', {}).get('wash'):
+            lines += [f"  шиномонтаж: {summary['by_direction'].get('tire', 0):.0f} ₽",
+                      f"  мойка: {summary['by_direction'].get('wash', 0):.0f} ₽"]
+        lines += [
             "",
             f"Расходники: {summary['consumables']:.0f} ₽",
             f"Зарплата: {summary['salary_total']:.0f} ₽",

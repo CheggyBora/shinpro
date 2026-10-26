@@ -83,7 +83,9 @@ class EmployeeService:
                   entity_type='employee', entity_id=employee_id)
         return employee
 
-    def update_salary_percent(self, employee_id: int, new_percent: float, pin: str) -> Employee:
+    def update_salary_percent(self, employee_id: int, new_percent: float, pin: str,
+                              direction: str = 'tire') -> Employee:
+        """Ставка сотрудника: шиномонтажа или мойки — у каждой своя."""
         from services.auth_service import AuthService
         from services.audit_service import AuditService
 
@@ -99,13 +101,19 @@ class EmployeeService:
         if not employee:
             raise ValueError("Сотрудник не найден")
 
-        old_percent = employee.salary_percent
-        employee.salary_percent = new_percent
+        if direction == 'wash':
+            old_percent = employee.wash_percent
+            employee.wash_percent = new_percent
+            what = 'ставка мойки'
+        else:
+            old_percent = employee.salary_percent
+            employee.salary_percent = new_percent
+            what = 'ставка'
         self.db.commit()
         self.db.refresh(employee)
 
         audit.log(AuditService.SALARY_PERCENT_CHANGE,
-                  f"Сотрудник №{employee_id}: ставка {old_percent}% -> {new_percent}%",
+                  f"Сотрудник №{employee_id}: {what} {old_percent}% -> {new_percent}%",
                   entity_type='employee', entity_id=employee_id)
         return employee
     

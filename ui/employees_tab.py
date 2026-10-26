@@ -625,16 +625,26 @@ class EmployeesTab:
         
         emp_id = int(self.employees_tree.item(selected[0])['values'][0])
         
+        # Мойка включена — у сотрудника две ставки: шиномонтажа и мойки
+        from services import directions
+        direction = directions.TIRE
+        if directions.wash_on(self.db):
+            from ui.order_screen.directions import ask_choice
+            direction = ask_choice(self.frame, "Ставка", "Какую ставку меняем?",
+                                   [(d, directions.TITLES[d]) for d in directions.enabled(self.db)])
+            if not direction:
+                return
+
         pin = simpledialog.askstring("PIN-код", "Введите админский PIN-код:", show='*')
         if not pin:
             return
-        
+
         new_percent = simpledialog.askfloat("Новая ставка", "Введите новый процент зарплаты:")
         if new_percent is None:
             return
-        
+
         try:
-            self.service.update_salary_percent(emp_id, new_percent, pin)
+            self.service.update_salary_percent(emp_id, new_percent, pin, direction)
             messagebox.showinfo("Успех", f"Ставка обновлена на {new_percent}%")
             self.refresh_employees()
         except ValueError as e:
@@ -694,6 +704,12 @@ class EmployeesTab:
         except ValueError as e:
             messagebox.showerror("Ошибка", str(e))
     
+    def _percent_text(self, emp):
+        from services import directions
+        if directions.wash_on(self.db):
+            return f"{emp.salary_percent:.1f} / мойка {emp.wash_percent or 0:.1f}"
+        return f"{emp.salary_percent:.1f}"
+
     def refresh_employees(self):
         for item in self.employees_tree.get_children():
             self.employees_tree.delete(item)
@@ -709,7 +725,7 @@ class EmployeesTab:
                 emp.id,
                 emp.name or '',
                 roles.role_title(emp),
-                f"{emp.salary_percent:.1f}",
+                self._percent_text(emp),
                 emp.created_at.strftime('%d.%m.%Y')
             ))
     

@@ -21,6 +21,10 @@ class Car(Base):
     # None — ещё не выяснили.
     wheels_assembled = Column(Boolean, nullable=True)
 
+    # Класс для прайса мойки: седан, кроссовер, джип, минивэн.
+    # Спрашиваем один раз и запоминаем
+    wash_class = Column(String(16), nullable=True)
+
     # Владелец машины. Один клиент может иметь несколько машин.
     # nullable=True: машину можно обслужить и без указания клиента.
     client_id = Column(Integer, ForeignKey('clients.id'), nullable=True, index=True)

@@ -46,6 +46,9 @@ class MainWindow:
         # Верхняя полоса с названием
         self.app_bar = styles.create_app_bar(self.root, company_name.upper())
         self.app_bar.pack(fill='x')
+        # Переключатель «Шиномонтаж | Мойка» — когда работают оба направления
+        self.mode_switch = tk.Frame(self.app_bar.winfo_children()[0], bg=styles.COLORS['primary_dark'])
+        self.mode_switch.pack(side='left', padx=(24, 0))
 
         # Навигация вместо стандартных вкладок: выбранный раздел
         # отмечается цветом и полоской, а не приподнятой коробкой
@@ -90,6 +93,11 @@ class MainWindow:
         self.live_running = None
         self.live_result = 0
         self.root.after(5 * 1000, self._live_tick)
+
+        self.draw_mode_switch()
+        self.apply_mode()
+        from services import directions as _directions
+        _directions.ON_CHANGE = self.directions_changed
 
         # «Всё по машине» → «Создать наряд»
         import ui.car_info
@@ -191,6 +199,50 @@ class MainWindow:
         except Exception as e:
             self.db.rollback()
             log.warning(f"Календарь не обновился: {e}")
+
+    # ------------------------------------------------------------------
+    # Направления: шиномонтаж и мойка (services/directions.py)
+    # ------------------------------------------------------------------
+
+    def draw_mode_switch(self):
+        from services import directions
+        for child in self.mode_switch.winfo_children():
+            child.destroy()
+        enabled = directions.enabled(self.db)
+        if self.orders_tab.mode not in enabled:
+            self.orders_tab.mode = enabled[0]
+        if len(enabled) < 2:
+            return
+        for direction in enabled:
+            on = direction == self.orders_tab.mode
+            label = tk.Label(self.mode_switch, text=directions.TITLES[direction], cursor='hand2',
+                             font=(styles.DEFAULT_FONT, 11, 'bold' if on else 'normal'),
+                             bg='#ffffff' if on else styles.COLORS['primary_dark'],
+                             fg=styles.COLORS['primary_dark'] if on else '#bfdbfe',
+                             padx=14, pady=4)
+            label.pack(side='left', pady=12)
+            label.bind('<Button-1>', lambda e, d=direction: self.set_mode(d))
+
+    def set_mode(self, mode):
+        if mode == self.orders_tab.mode:
+            return
+        self.orders_tab.set_mode(mode)
+        self.draw_mode_switch()
+        self.apply_mode()
+
+    def apply_mode(self):
+        """Хранение шин и покраска — дела шиномонтажа: в мойке их нет."""
+        from services import directions
+        tire = self.orders_tab.mode == directions.TIRE
+        self.nav.set_visible(self.tire_storage_tab.frame, tire)
+        self.nav.set_visible(self.paint_tab.frame, tire)
+        self.refresh_shift_status()
+
+    def directions_changed(self):
+        """В настройках включили или выключили направление."""
+        self.draw_mode_switch()
+        self.orders_tab.set_mode(self.orders_tab.mode)
+        self.apply_mode()
 
     def show_orders(self):
         self.nav.select_frame(self.orders_tab.frame)
@@ -449,6 +501,11 @@ class MainWindow:
             shift = ShiftService(self.db).get_current_shift()
             if shift:
                 text = f"Смена открыта  ·  постов: {shift.open_posts}"
+                # В мойке — посты мойки: у неё свои
+                from services import directions
+                if getattr(self, 'orders_tab', None) is not None and \
+                        self.orders_tab.mode == directions.WASH:
+                    text = f"Смена открыта  ·  постов мойки: {directions.wash_posts(self.db)}"
             else:
                 text = "Смена не открыта"
             self.app_bar.subtitle_label.config(text=text)

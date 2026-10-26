@@ -97,6 +97,12 @@ class OrderItemsMixin:
             self.edit_price_inline(selected[0], event)
         elif column == '#4':
             self.edit_discount(selected[0])
+        elif column == '#6':
+            item_id = int(self.items_tree.item(selected[0])['tags'][0])
+            item = next((i for i in self.order_service.get_order_items(self.order.id)
+                         if i.id == item_id), None)
+            if item is not None:
+                self.choose_item_employee(item)
 
     def edit_wheels(self, item_id_str):
         """Ошиблись колесом — двойной клик по названию и отметить заново."""
@@ -312,12 +318,18 @@ class OrderItemsMixin:
             if item.discount_manual:
                 discount_display += " *"
 
+            who = ''
+            from services import directions as _directions
+            if _directions.assigned(self.db, getattr(item, 'direction', None) or 'tire'):
+                from ui.order_screen.directions import employee_name
+                who = employee_name(self.db, item.employee_id) if item.employee_id else 'выбрать ▾'
             self.items_tree.insert('', 'end', values=(
                 item_title(item),
                 item.quantity,
                 f"{item.price:.2f}",
                 discount_display,
-                f"{item_total:.2f}"
+                f"{item_total:.2f}",
+                who
             ), tags=(str(item.id),))
         
         total_with_discount = self.order_service.calculate_total(self.order.id)

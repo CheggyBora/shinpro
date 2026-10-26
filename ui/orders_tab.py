@@ -23,6 +23,10 @@ class OrdersTab:
         self.employees_tab = employees_tab
         self.frame = ttk.Frame(parent, style='BG.TFrame')
         self.active_orders = {}
+        # Какое направление выбрано сверху: шиномонтаж или мойка
+        # (services/directions.py). Кнопки услуг и вкладки нарядов — его
+        from services import directions as _directions
+        self.mode = _directions.enabled(db)[0]
         
         input_frame = ttk.Frame(self.frame, style='BG.TFrame')
         input_frame.pack(fill='x', padx=15, pady=(15, 10))
@@ -101,7 +105,8 @@ class OrdersTab:
         """
         from services.service_layout import build_columns, COLUMN_COUNT
 
-        services = self.order_service.get_all_services()
+        services = [s for s in self.order_service.get_all_services()
+                    if (getattr(s, 'direction', None) or 'tire') == self.mode]
         unique_names = list(dict.fromkeys([s.name for s in services]))
         columns = build_columns(self.db, unique_names)
 
@@ -263,7 +268,7 @@ class OrdersTab:
 
         dialog = tk.Toplevel(self.frame)
         dialog.title("Детали наряда")
-        dialog.geometry("470x620")
+        dialog.geometry("470x760")
         dialog.configure(bg=styles.COLORS['bg'])
         styles.center_window(dialog, self.frame.winfo_toplevel())
 
@@ -275,7 +280,29 @@ class OrdersTab:
         # Получаем предзаполненные данные если есть
         prefilled = getattr(self, 'prefilled_data', None)
 
-        styles.create_label(content, "Диаметр колеса*:", 'Card.TLabel').pack(anchor='w', pady=(0, 5))
+        # На что приехал: шиномонтаж, мойка или оба. Если на объекте
+        # работает одно направление — выбирать нечего
+        from services import directions as _directions
+        enabled_directions = _directions.enabled(self.db)
+        direction_vars = {d: tk.BooleanVar(value=(d == self.mode)) for d in enabled_directions}
+        wash_class_var = tk.StringVar()
+        if len(enabled_directions) > 1:
+            styles.create_label(content, "Направление*:", 'Card.TLabel').pack(anchor='w', pady=(0, 5))
+            row = ttk.Frame(content, style='White.TFrame')
+            row.pack(fill='x', pady=(0, 10))
+            for d in enabled_directions:
+                ttk.Checkbutton(row, text=_directions.TITLES[d], variable=direction_vars[d]).pack(
+                    side='left', padx=(0, 14))
+        if _directions.WASH in enabled_directions:
+            known = self.order_service.get_car_by_license_plate(license)
+            if known is not None and known.wash_class:
+                wash_class_var.set(_directions.class_title(known.wash_class))
+            styles.create_label(content, "Класс для мойки:", 'Card.TLabel').pack(anchor='w', pady=(0, 5))
+            ttk.Combobox(content, textvariable=wash_class_var, state='readonly',
+                         values=[_directions.WASH_CLASS_TITLES[k] for k in _directions.WASH_CLASSES],
+                         font=styles.FONTS['normal']).pack(fill='x', pady=(0, 12))
+
+        styles.create_label(content, "Диаметр колеса (для шиномонтажа):", 'Card.TLabel').pack(anchor='w', pady=(0, 5))
         diameter_var = tk.StringVar(value=prefilled['diameter'] if prefilled else '')
         diameter_combo = ttk.Combobox(content, textvariable=diameter_var,
                                       values=['R13', 'R14', 'R15', 'R16', 'R17', 'R18', 'R19', 'R20', 'R21', 'R22', 'R23', 'R24'],
@@ -411,7 +438,15 @@ class OrdersTab:
             }
             vehicle_type = vehicle_type_map.get(vehicle_type_display, 'car')
 
-            if not diameter:
+            chosen_directions = [d for d, var in direction_vars.items() if var.get()]
+            if not chosen_directions:
+                messagebox.showerror("Ошибка", "Отметьте, на что приехал: шиномонтаж или мойка")
+                return
+            wash_class = _directions.class_by_title(wash_class_var.get())
+            if _directions.WASH in chosen_directions and not wash_class:
+                messagebox.showerror("Ошибка", "Для мойки выберите класс машины")
+                return
+            if _directions.TIRE in chosen_directions and not diameter:
                 messagebox.showerror("Ошибка", "Заполните диаметр колеса")
                 return
 
@@ -429,14 +464,17 @@ class OrdersTab:
                     client_name=client_name,
                     client_phone=client_phone,
                     client_id=client_id,
-                    wheels_assembled=wheels_options.get(wheels_var.get())
+                    wheels_assembled=wheels_options.get(wheels_var.get()),
+                    directions=chosen_directions,
+                    wash_class=wash_class
                 )
                 # Машина встаёт на пост: без номера поста программа
-                # считала бы его свободным и позвала бы туда очередь
+                # считала бы его свободным и позвала бы туда очередь.
+                # Пост мойки наряд занял сам при создании
                 from services.live_queue_service import LiveQueueService
                 queue = LiveQueueService(self.db)
                 wheels = wheels_options.get(wheels_var.get())
-                if queue.enabled():
+                if queue.enabled() and _directions.TIRE in chosen_directions:
                     order.post_number = queue.first_free_post()
                     if wheels is not None:
                         order.package_minutes = queue.package_minutes(wheels)
@@ -597,6 +635,23 @@ class OrdersTab:
             self.app.show_orders()
         self.license_var.set(plate)
         self.select_plate(plate)
+
+    def set_mode(self, mode):
+        """Переключили направление: свои кнопки услуг и свои наряды."""
+        from services import directions as _directions
+        self.mode = mode
+        self._service_buttons_signature = None
+        self.load_service_buttons()
+        for order_id, widget in self.active_orders.items():
+            tab = widget.frame
+            try:
+                state = 'normal' if mode in _directions.parse(widget.order.directions) else 'hidden'
+                self.order_notebook.tab(tab, state=state)
+            except Exception:
+                pass
+            if hasattr(widget, 'refresh_directions'):
+                widget.refresh_directions()
+        self.refresh_tasks()
 
     def open_order_tab(self, order):
         tab_frame = ttk.Frame(self.order_notebook)

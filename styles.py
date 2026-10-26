@@ -441,6 +441,20 @@ class NavBar(tk.Frame):
             if item['frame'] is frame and item['label'].cget('text') != title:
                 item['label'].config(text=title)
 
+    def set_visible(self, frame, visible):
+        """Спрятать раздел или вернуть — порядок разделов сохраняется."""
+        for item in self._items:
+            if item['frame'] is frame:
+                item['hidden'] = not visible
+        for item in self._items:
+            item['holder'].pack_forget()
+        for item in self._items:
+            if not item.get('hidden'):
+                item['holder'].pack(side='left')
+        current = self._items[self._current] if self._current is not None else None
+        if current is not None and current.get('hidden'):
+            self.select(next(i for i, it in enumerate(self._items) if not it.get('hidden')))
+
     def select_frame(self, frame):
         """Открыть раздел по его рамке — без привязки к порядку."""
         for index, item in enumerate(self._items):

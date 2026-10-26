@@ -16,8 +16,9 @@ import styles
 from .items import OrderItemsMixin
 from .payment import OrderPaymentMixin
 from .timing import OrderTimingMixin
+from .directions import OrderDirectionsMixin
 
-class OrderWidget(OrderItemsMixin, OrderPaymentMixin, OrderTimingMixin):
+class OrderWidget(OrderItemsMixin, OrderPaymentMixin, OrderTimingMixin, OrderDirectionsMixin):
     """Вкладка одного наряда: состав, оплата, время работы."""
 
     def __init__(self, frame, order, db, order_service, salary_service, print_service, close_callback, parent_orders_tab=None):
@@ -83,8 +84,9 @@ class OrderWidget(OrderItemsMixin, OrderPaymentMixin, OrderTimingMixin):
         # Пост: по нему программа знает, что он занят, и раздаёт посты
         # записи и живой очереди (docs/live_queue.md)
         from services.live_queue_service import LiveQueueService
-        if order.status != 'paid' and (order.post_number
-                                       or LiveQueueService(self.db).enabled()):
+        from services import directions as _directions
+        if order.status != 'paid' and 'tire' in _directions.parse(order.directions) and (
+                order.post_number or LiveQueueService(self.db).enabled()):
             self.post_label = ttk.Label(
                 header_row, text=self._post_text(),
                 font=(styles.DEFAULT_FONT, 10, 'bold'),
@@ -146,6 +148,10 @@ class OrderWidget(OrderItemsMixin, OrderPaymentMixin, OrderTimingMixin):
                                          font=(styles.DEFAULT_FONT, 9),
                                          foreground=styles.COLORS['text_secondary'])
         self.employees_label.pack(anchor='w', pady=(4, 0))
+
+        # Шиномонтаж и мойка в одном наряде: что в нём есть, пост мойки,
+        # «+ Мойка» / «+ Шиномонтаж» (docs: services/directions.py)
+        self.build_directions(info_frame)
 
         # Хранение прямо из наряда: открываются привычные формы вкладки
         # «Хранение шин», уже заполненные из наряда и клиента
@@ -261,8 +267,11 @@ class OrderWidget(OrderItemsMixin, OrderPaymentMixin, OrderTimingMixin):
         
         # Высоту просим небольшую: таблица растянется по месту, а высокий
         # запрос выдавливал её за нижний край окна
-        self.items_tree = ttk.Treeview(tree_frame, columns=('Услуга', 'Кол-во', 'Цена', 'Скидка', 'Итого'),
+        self.items_tree = ttk.Treeview(tree_frame, columns=('Услуга', 'Кол-во', 'Цена', 'Скидка', 'Итого', 'Кто'),
                                        show='headings', height=6)
+        # Кто делал — только у мойки: её начисляют тому, кто мыл
+        self.items_tree.heading('Кто', text='Кто делал')
+        self.items_tree.column('Кто', width=120, anchor='center')
         self.items_tree.heading('Услуга', text='Услуга')
         self.items_tree.heading('Кол-во', text='Кол-во')
         self.items_tree.heading('Цена', text='Цена')

@@ -43,6 +43,13 @@ class WorkOrder(Base):
     # живой очереди. Пусто — старые наряды и наряды без поста
     post_number = Column(Integer, nullable=True)
 
+    # На что приехал человек: «tire», «wash» или «tire,wash». Каждое
+    # направление занимает свой пост: шиномонтаж — post_number, мойка —
+    # wash_post_number. Класс машины — для цены мойки
+    directions = Column(String(20), default='tire', server_default='tire', nullable=False)
+    wash_post_number = Column(Integer, nullable=True)
+    wash_class = Column(String(16), nullable=True)
+
     # Время пакета, с которым машина пришла из очереди или записи:
     # на дисках 30 минут, только шины — час (настройки booking_minutes_*).
     # Плановое время наряда не меньше пакета, даже если у услуг в прайсе

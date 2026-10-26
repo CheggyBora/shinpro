@@ -112,6 +112,7 @@ class SettingsDialog:
         # ищется прокруткой наугад. Слева список, справа один раздел —
         # видно, что вообще есть, и видно, где сейчас находишься
         self._build_sections(outer, [
+            ('Направления', self._build_directions),
             ('Запись', self._build_booking),
             ('Наряды и очередь', self._build_orders),
             ('Группы клиентов', self._build_client_groups),
@@ -689,6 +690,60 @@ class SettingsDialog:
             ('order_autosave_minutes',
              'Автосохранение наряда через, мин (0 — выкл.)'),
         ])
+
+    def _build_directions(self, content):
+        from services import directions
+        self._section(content, "Что работает на этом объекте")
+        self._hint(content,
+                   "Шиномонтаж, мойка или оба. Когда работают оба, сверху в "
+                   "программе появляется переключатель «Шиномонтаж | Мойка». "
+                   "Сохраняется сразу.")
+        self.tire_var = tk.BooleanVar(value=directions.tire_on(self.db))
+        self.wash_var = tk.BooleanVar(value=directions.wash_on(self.db))
+        for text, var in (("Шиномонтаж", self.tire_var), ("Мойка", self.wash_var)):
+            ttk.Checkbutton(content, text=text, variable=var,
+                            command=self.save_directions).pack(anchor='w', pady=2)
+
+        self._section(content, "Мастера шиномонтажа")
+        self.tire_assign_var = tk.BooleanVar(value=directions.tire_assign(self.db))
+        ttk.Checkbutton(content, text="Выбирать мастеров на каждый наряд",
+                        variable=self.tire_assign_var,
+                        command=lambda: directions.set_tire_assign(
+                            self.db, self.tire_assign_var.get())).pack(anchor='w', pady=2)
+        self._hint(content,
+                   "Выключено — как всегда: шиномонтаж делят все, кто был на "
+                   "смене при создании наряда. Включено — наряд ставят на пост, "
+                   "а в наряд кнопкой «Мастера наряда» добавляют тех, кто на нём "
+                   "работает: делят только они. Мойка всегда назначается на "
+                   "сотрудника в строке.")
+
+        self._section(content, "Мойка")
+        row = ttk.Frame(content, style='White.TFrame')
+        row.pack(fill='x', pady=(0, 6))
+        styles.create_label(row, "Постов мойки:", 'Card.TLabel').pack(side='left')
+        self.wash_posts_var = tk.StringVar(value=str(directions.wash_posts(self.db)))
+        posts = ttk.Spinbox(row, from_=1, to=20, width=5, textvariable=self.wash_posts_var,
+                            command=self.save_wash_posts)
+        posts.pack(side='left', padx=(8, 0))
+        posts.bind('<FocusOut>', lambda e: self.save_wash_posts())
+        self._hint(content, "Прайс мойки — в разделе «Прайс-лист», кнопка «Мойка». "
+                            "Ставки мойки — в «Сотрудниках», «Изменить ставку».")
+
+    def save_directions(self):
+        from services import directions
+        try:
+            directions.set_enabled(self.db, self.tire_var.get(), self.wash_var.get())
+        except ValueError as e:
+            messagebox.showerror("Направления", str(e), parent=self.dialog)
+            self.tire_var.set(True)
+
+    def save_wash_posts(self):
+        from services import directions
+        try:
+            value = max(1, min(20, int(self.wash_posts_var.get())))
+        except ValueError:
+            return
+        self.settings.set(directions.WASH_POSTS_KEY, str(value))
 
     def _build_counterparties(self, content):
         self._section(content, "Контрагенты")

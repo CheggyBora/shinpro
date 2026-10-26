@@ -19,6 +19,15 @@ class Service(Base):
     price_r22 = Column(Float, default=0.0)
     price_r23 = Column(Float, default=0.0)
     price_r24 = Column(Float, default=0.0)
+
+    # Направление: шиномонтаж или мойка (services/directions.py). У мойки
+    # цена зависит не от диаметра, а от класса машины
+    direction = Column(String(10), default='tire', server_default='tire', nullable=False)
+    price_sedan = Column(Float, default=0.0)
+    price_crossover = Column(Float, default=0.0)
+    price_jeep = Column(Float, default=0.0)
+    price_minivan = Column(Float, default=0.0)
+
     is_active = Column(Boolean, default=True)
     editable_price = Column(Boolean, default=False)
 

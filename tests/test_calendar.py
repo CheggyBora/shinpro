@@ -135,6 +135,8 @@ calendar.apply_server({'tasks': [from_dashboard]})
 row = calendar.by_uid('dash-1')
 check('задача из дашборда появилась', row is not None and row.source == 'dashboard')
 check('и не уходит обратно лишний раз', row not in calendar.unsent()[0])
+calendar.set_done(row, True, by='Цех')
+check('отметили в ту же секунду — правка ждёт отправки', row in calendar.unsent()[0])
 
 print()
 print('=== Контрагенты ===')

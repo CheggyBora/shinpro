@@ -405,14 +405,16 @@ class CalendarService:
             task.deleted = bool(item.get('deleted'))
             task.created_at = _parse(item.get('created_at')) or task.created_at or moment
             task.updated_at = theirs or moment
-            task.synced_at = moment
+            task.synced_at = task.updated_at
             changed += 1
         for item in answer.get('counterparties') or []:
             row = self.counterparty(item.get('uid'))
             theirs = _parse(item.get('updated_at'))
             if row is not None and theirs is not None and row.updated_at is not None \
                     and as_naive(row.updated_at) >= theirs:
-                row.synced_at = moment
+                # Наша новее — уйдёт следующим обменом; та же — уже отдана
+                if as_naive(row.updated_at) == theirs:
+                    row.synced_at = row.updated_at
                 continue
             if row is None:
                 if not item.get('name'):
@@ -424,7 +426,7 @@ class CalendarService:
                     setattr(row, key, item[key])
             row.deleted = bool(item.get('deleted'))
             row.updated_at = theirs or moment
-            row.synced_at = moment
+            row.synced_at = row.updated_at
             changed += 1
         self.db.commit()
         return changed

@@ -33,5 +33,11 @@ class WorkOrderItem(Base):
     # колесо не спрашивает или наряд старый. См. services/wheel_service.py
     wheels = Column(String(100), nullable=True)
 
+    # Направление строки — снимок с услуги: наряд бывает «и то и то», и
+    # выручка в отчётах делится по строкам. Строке мойки назначают, кто её
+    # делал: начисляется ему, а не всем на смене
+    direction = Column(String(10), default='tire', server_default='tire', nullable=False)
+    employee_id = Column(Integer, nullable=True)
+
     work_order = relationship("WorkOrder", backref="items")
     service = relationship("Service", backref="order_items")

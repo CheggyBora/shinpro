@@ -264,6 +264,7 @@ class SyncService:
         employees = [{'local_id': row.id,
                       'name': row.name,
                       'salary_percent': row.salary_percent,
+                      'wash_percent': getattr(row, 'wash_percent', None),
                       'is_active': bool(row.is_active)}
                      for row in self.db.query(Employee).all()]
 
@@ -379,6 +380,11 @@ class SyncService:
                     # Товар или работа. Снимок с позиции наряда, а не
                     # взгляд в прайс: позицию могли переделать после
                     'is_goods': bool(getattr(item, 'is_goods', False)),
+
+                    # Шиномонтаж или мойка — дашборд мойки считает по
+                    # строкам; у мойки — кто делал
+                    'direction': getattr(item, 'direction', None) or 'tire',
+                    'employee_local_id': getattr(item, 'employee_id', None),
                 } for item in items]
             except Exception as e:
                 log.warning(f"Наряд №{order.id} не попал в обмен: {e}")
@@ -403,6 +409,8 @@ class SyncService:
 
                 'changed_at': as_naive(changed_at),
                 'shift_local_id': order.shift_id,
+                'directions': getattr(order, 'directions', None) or 'tire',
+                'wash_class': getattr(order, 'wash_class', None),
                 'vehicle_type': order.vehicle_type,
                 'wheel_diameter': order.wheel_diameter,
                 'payment_method': order.payment_method,

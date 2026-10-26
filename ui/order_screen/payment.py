@@ -25,6 +25,22 @@ class OrderPaymentMixin:
                                    "в которой закрыли машину.")
             return
 
+        # Мастеров выбирают на наряд, а их нет — делить шиномонтаж некому
+        from services import directions as _directions
+        if _directions.tire_assign(self.db) and not self.order.employee_ids \
+                and self.salary_service._work_of(self.order.id):
+            messagebox.showwarning("Мастера наряда",
+                                   "Добавьте мастеров наряда: кнопка «Мастера наряда».")
+            return
+
+        missing = self.salary_service.unassigned_wash(self.order.id)
+        if missing:
+            messagebox.showwarning("Кто делал",
+                                   "Выберите, кто делал: " + ", ".join(missing) +
+                                   "\n(двойной щелчок по колонке «Кто делал» "
+                                   "или кнопка «… — на одного»)")
+            return
+
         total = self.order_service.calculate_total(self.order.id)
         
         dialog = tk.Toplevel(self.frame)

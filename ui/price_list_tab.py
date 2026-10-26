@@ -516,6 +516,12 @@ class PriceListTab:
         styles.create_button(btn_frame, "Джип/Кроссовер", lambda: self.filter_by_vehicle_type('suv'), 'Service.TButton').pack(side='left', padx=(0, 5))
         styles.create_button(btn_frame, "Категория С", lambda: self.filter_by_vehicle_type('truck'), 'Service.TButton').pack(side='left', padx=(0, 5))
         
+        # Мойка — отдельным окном: у неё цена по классу машины, а не по диаметру
+        from services import directions
+        if directions.wash_on(self.db):
+            styles.create_button(btn_frame, "Мойка", self.open_wash_prices,
+                                 'Service.TButton').pack(side='left', padx=(15, 5))
+
         styles.create_button(btn_frame, "Сохранить изменения", self.save_changes, 'Success.TButton').pack(side='right')
         
         # Карточка с ценами на хранение
@@ -633,6 +639,10 @@ class PriceListTab:
         # Загружаем данные
         self.load_services()
     
+    def open_wash_prices(self):
+        from ui.wash_prices import WashPrices
+        WashPrices(self.frame, self.db)
+
     def filter_by_vehicle_type(self, vehicle_type):
         """Фильтр по типу транспорта"""
         self.current_vehicle_type = vehicle_type

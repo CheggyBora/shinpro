@@ -17,7 +17,9 @@ class OrderService:
                      client_name: Optional[str] = None, client_phone: Optional[str] = None,
                      client_id: Optional[int] = None,
                      create_client: bool = True,
-                     wheels_assembled: Optional[bool] = None) -> WorkOrder:
+                     wheels_assembled: Optional[bool] = None,
+                     directions: Optional[list] = None,
+                     wash_class: Optional[str] = None) -> WorkOrder:
         """
         Создать наряд.
 
@@ -35,16 +37,30 @@ class OrderService:
             if not plate:
                 raise ValueError("Не указан номер автомобиля")
 
+            from services import directions as _directions
+            chosen = _directions.parse(','.join(directions or ['tire']))
+
             car = self.db.query(Car).filter(Car.license_plate == plate).first()
             if not car:
-                car = Car(license_plate=plate, vehicle_type=vehicle_type, wheel_diameter=wheel_diameter)
+                car = Car(license_plate=plate, vehicle_type=vehicle_type,
+                          wheel_diameter=wheel_diameter or None)
                 self.db.add(car)
                 self.db.flush()
             else:
-                # Обновляем параметры машины при каждом создании наряда
+                # Обновляем параметры машины при каждом создании наряда.
+                # Наряд только на мойку диаметр не спрашивает — известный
+                # не затираем
                 car.vehicle_type = vehicle_type
-                car.wheel_diameter = wheel_diameter
+                if wheel_diameter:
+                    car.wheel_diameter = wheel_diameter
                 self.db.flush()
+
+            # Класс для мойки запоминаем за машиной: спросили один раз
+            if wash_class:
+                car.wash_class = wash_class
+                self.db.flush()
+            if _directions.WASH in chosen and not (wash_class or car.wash_class):
+                raise ValueError("Для мойки выберите класс машины")
 
             # Колёса в сборе запоминаем за машиной. Если в этот раз не
             # выясняли, ранее известное значение не затираем.
@@ -77,9 +93,13 @@ class OrderService:
             # Автоскидка положена, когда о клиенте известно и имя, и телефон
             auto_discount = bool(client and client.name and client.phone)
 
-            # Получаем список сотрудников на смене
+            # Получаем список сотрудников на смене. Если мастеров выбирают
+            # на наряд (тумблер в настройках), список пуст — его заполнят
+            # в самом наряде теми, кто работает на посту
             active_shifts = self.db.query(WorkShift).filter(WorkShift.end_time.is_(None)).all()
             employee_ids_list = [str(shift.employee_id) for shift in active_shifts]
+            if _directions.tire_assign(self.db):
+                employee_ids_list = []
             employee_ids_str = ','.join(employee_ids_list) if employee_ids_list else None
             
             # Получаем текущую смену и присваиваем shift_id
@@ -94,11 +114,19 @@ class OrderService:
                 auto_discount=auto_discount,
                 status='draft',
                 employee_ids=employee_ids_str,
-                shift_id=shift_id
+                shift_id=shift_id,
+                directions=_directions.join(chosen),
+                wash_class=wash_class or car.wash_class
             )
             self.db.add(order)
             self.db.commit()
             self.db.refresh(order)
+
+            # Мойка занимает свой пост — первый свободный
+            if _directions.WASH in chosen:
+                from services.wash_posts import WashPosts
+                order.wash_post_number = WashPosts(self.db).first_free()
+                self.db.commit()
 
             # Машина должна появиться на телефоне мастера сразу, а не
             # через десять минут: он подходит к ней прямо сейчас, и
@@ -147,7 +175,7 @@ class OrderService:
                 return existing_item
             
             # Создаем новую позицию
-            price = self.price_for(service, order.wheel_diameter)
+            price = self.price_for(service, order.wheel_diameter, order.wash_class)
             
             # Определяем начальную скидку для новой позиции
             # Выбираем максимум из всех доступных скидок
@@ -183,7 +211,15 @@ class OrderService:
                                  if service.is_goods
                                  else (service.consumable_cost or 0.0)),
                 is_goods=bool(service.is_goods),
+                direction=getattr(service, 'direction', None) or 'tire',
             )
+            # На смене один человек — назначаемая строка его, выбирать некого
+            from services import directions as _directions
+            if _directions.assigned(self.db, item.direction):
+                from models import WorkShift
+                on_shift = self.db.query(WorkShift).filter(WorkShift.end_time.is_(None)).all()
+                if len(on_shift) == 1:
+                    item.employee_id = on_shift[0].employee_id
             self.db.add(item)
             self.db.commit()
             self.db.refresh(item)
@@ -230,16 +266,22 @@ class OrderService:
         return item
 
     @staticmethod
-    def price_for(service, diameter):
+    def price_for(service, diameter, wash_class=None):
         """
         Цена позиции для этого диаметра.
 
         У товара цена одна: вентиль не стоит по-разному под R15 и R17.
         Единая цена разрешена и обычной услуге — мойка одного колеса
-        тоже бывает без разбора диаметра.
+        тоже бывает без разбора диаметра. Мойка машины — по классу:
+        седан, кроссовер, джип, минивэн.
         """
         if service.flat_price is not None:
             return service.flat_price
+
+        if getattr(service, 'direction', None) == 'wash':
+            if not wash_class:
+                return 0.0
+            return getattr(service, f'price_{wash_class}', 0.0) or 0.0
 
         return getattr(service, f'price_{(diameter or "").lower()}', 0.0) or 0.0
 
@@ -615,6 +657,72 @@ class OrderService:
     def get_all_services(self):
         return self.db.query(Service).filter(Service.is_active == True).all()
     
+    def add_direction(self, order_id, direction, wash_class=None, wheel_diameter=None):
+        """
+        Дополнить наряд вторым направлением: приехал на шиномонтаж и решил
+        помыться, или наоборот. Мойке нужен класс машины, шиномонтажу —
+        диаметр. Направление занимает свой первый свободный пост.
+        """
+        from services import directions as _directions
+        order = self.db.query(WorkOrder).filter(WorkOrder.id == order_id).first()
+        if order is None:
+            raise ValueError("Наряд не найден")
+        have = _directions.parse(order.directions)
+        if direction in have:
+            return order
+        if direction == _directions.WASH:
+            wash_class = wash_class or order.wash_class or (order.car.wash_class if order.car else None)
+            if not wash_class:
+                raise ValueError("Для мойки выберите класс машины")
+            order.wash_class = wash_class
+            if order.car is not None:
+                order.car.wash_class = wash_class
+            from services.wash_posts import WashPosts
+            order.wash_post_number = WashPosts(self.db).first_free()
+        else:
+            diameter = wheel_diameter or order.wheel_diameter or (order.car.wheel_diameter if order.car else None)
+            if not diameter:
+                raise ValueError("Для шиномонтажа выберите диаметр")
+            order.wheel_diameter = diameter
+            if order.car is not None and wheel_diameter:
+                order.car.wheel_diameter = wheel_diameter
+            from services.live_queue_service import LiveQueueService
+            queue = LiveQueueService(self.db)
+            if queue.enabled():
+                order.post_number = queue.first_free_post()
+        order.directions = _directions.join(have + [direction])
+        self.db.commit()
+        return order
+
+    def set_item_employee(self, item_id, employee_id):
+        """Кто делал строку мойки — ему и начислится."""
+        item = self.db.query(WorkOrderItem).filter(WorkOrderItem.id == item_id).first()
+        if item is None:
+            raise ValueError("Позиция не найдена")
+        item.employee_id = employee_id
+        self.db.commit()
+        return item
+
+    def set_order_masters(self, order_id, employee_ids):
+        """Мастера шиномонтажа этого наряда — те, кто работает на посту."""
+        order = self.db.query(WorkOrder).filter(WorkOrder.id == order_id).first()
+        if order is None:
+            raise ValueError("Наряд не найден")
+        ids = [str(int(e)) for e in dict.fromkeys(employee_ids)]
+        order.employee_ids = ','.join(ids) if ids else None
+        self.db.commit()
+        return order
+
+    def assign_wash(self, order_id, employee_id, direction='wash'):
+        """Все услуги направления в наряде — на одного сотрудника."""
+        items = self.db.query(WorkOrderItem).filter(
+            WorkOrderItem.work_order_id == order_id,
+            WorkOrderItem.direction == direction).all()
+        for item in items:
+            item.employee_id = employee_id
+        self.db.commit()
+        return len(items)
+
     def unpaid_orders(self, days=7):
         """
         Неоплаченные наряды за последние дни — их открываем при запуске:
