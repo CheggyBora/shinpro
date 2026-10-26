@@ -293,6 +293,19 @@ class OrdersTab:
             for d in enabled_directions:
                 ttk.Checkbutton(row, text=_directions.TITLES[d], variable=direction_vars[d]).pack(
                     side='left', padx=(0, 14))
+        # Мастеров выбирают на наряд (тумблер в настройках) — исполнители
+        # шиномонтажа отмечаются сразу при создании
+        performer_vars = {}
+        if _directions.tire_assign(self.db) and _directions.TIRE in enabled_directions:
+            from ui.order_screen.directions import wash_people
+            styles.create_label(content, "Исполнители шиномонтажа*:", 'Card.TLabel').pack(anchor='w', pady=(0, 5))
+            people_row = ttk.Frame(content, style='White.TFrame')
+            people_row.pack(fill='x', pady=(0, 10))
+            for person in wash_people(self.db)[:8]:
+                performer_vars[person.id] = tk.BooleanVar(value=False)
+                ttk.Checkbutton(people_row, text=person.title,
+                                variable=performer_vars[person.id]).pack(side='left', padx=(0, 10))
+
         if _directions.WASH in enabled_directions:
             known = self.order_service.get_car_by_license_plate(license)
             if known is not None and known.wash_class:
@@ -449,6 +462,10 @@ class OrdersTab:
             if _directions.TIRE in chosen_directions and not diameter:
                 messagebox.showerror("Ошибка", "Заполните диаметр колеса")
                 return
+            performers = [pid for pid, var in performer_vars.items() if var.get()]
+            if performer_vars and _directions.TIRE in chosen_directions and not performers:
+                messagebox.showerror("Ошибка", "Отметьте, кто будет делать шиномонтаж")
+                return
 
             # Если кассир правил телефон после выбора клиента, ищем заново:
             # выбранный ранее клиент мог перестать соответствовать введённому номеру
@@ -468,6 +485,8 @@ class OrdersTab:
                     directions=chosen_directions,
                     wash_class=wash_class
                 )
+                if performers:
+                    self.order_service.set_order_masters(order.id, performers)
                 # Машина встаёт на пост: без номера поста программа
                 # считала бы его свободным и позвала бы туда очередь.
                 # Пост мойки наряд занял сам при создании

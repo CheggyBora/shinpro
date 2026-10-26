@@ -51,56 +51,6 @@ def ask_choice(parent, title, prompt, options):
 class OrderDirectionsMixin:
     """Направления наряда, пост мойки и кто делал мойку."""
 
-    def build_directions(self, parent):
-        self.directions_row = ttk.Frame(parent, style='White.TFrame')
-        self.directions_row.pack(anchor='w', fill='x', pady=(6, 0))
-        self.refresh_directions()
-
-    def _mode(self):
-        tab = getattr(self, 'parent_orders_tab', None)
-        return getattr(tab, 'mode', directions.TIRE) if tab is not None else directions.TIRE
-
-    def refresh_directions(self):
-        row = self.directions_row
-        for child in row.winfo_children():
-            child.destroy()
-        if not directions.wash_on(self.db) and directions.WASH not in directions.parse(self.order.directions) \
-                and not directions.tire_assign(self.db):
-            row.pack_forget()
-            return
-        have = directions.parse(self.order.directions)
-        parts = []
-        for direction in have:
-            text = directions.TITLES[direction]
-            if direction == directions.WASH:
-                text += f' · {directions.class_title(self.order.wash_class)}'
-                text += (f' · пост мойки {self.order.wash_post_number}'
-                         if self.order.wash_post_number else ' · пост мойки не выбран')
-            parts.append(text)
-        ttk.Label(row, text='  +  '.join(parts), font=(styles.DEFAULT_FONT, 10, 'bold'),
-                  background=styles.COLORS['bg_card'],
-                  foreground=styles.COLORS['text']).pack(side='left')
-        if self.order.status == 'paid':
-            return
-        for direction in directions.enabled(self.db):
-            title = directions.TITLES[direction]
-            if direction not in have:
-                styles.create_button(row, f'+ {title}', lambda d=direction: self.add_direction(d),
-                                     'Compact.Secondary.TButton').pack(side='left', padx=(10, 0))
-            elif direction != self._mode() or len(have) > 1:
-                # Услуги «чужого» направления — списком: кнопки сверху
-                # показывают только выбранное направление
-                styles.create_button(row, f'Услуги: {title.lower()}', lambda d=direction: self.pick_services(d),
-                                     'Compact.Secondary.TButton').pack(side='left', padx=(10, 0))
-        if directions.WASH in have:
-            styles.create_button(row, 'Пост мойки', self.change_wash_post,
-                                 'Compact.Secondary.TButton').pack(side='left', padx=(6, 0))
-            styles.create_button(row, 'Мойку — на одного', self.assign_all_wash,
-                                 'Compact.Secondary.TButton').pack(side='left', padx=(6, 0))
-        if directions.TIRE in have and directions.tire_assign(self.db):
-            styles.create_button(row, 'Мастера наряда', self.choose_masters,
-                                 'Compact.Secondary.TButton').pack(side='left', padx=(6, 0))
-
     # ------------------------------------------------------------------
 
     def add_direction(self, direction):

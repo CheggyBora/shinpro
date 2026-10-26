@@ -17,8 +17,10 @@ from .items import OrderItemsMixin
 from .payment import OrderPaymentMixin
 from .timing import OrderTimingMixin
 from .directions import OrderDirectionsMixin
+from .blocks import OrderBlocksMixin
 
-class OrderWidget(OrderItemsMixin, OrderPaymentMixin, OrderTimingMixin, OrderDirectionsMixin):
+class OrderWidget(OrderItemsMixin, OrderPaymentMixin, OrderTimingMixin, OrderBlocksMixin,
+                  OrderDirectionsMixin):
     """Вкладка одного наряда: состав, оплата, время работы."""
 
     def __init__(self, frame, order, db, order_service, salary_service, print_service, close_callback, parent_orders_tab=None):
@@ -70,31 +72,9 @@ class OrderWidget(OrderItemsMixin, OrderPaymentMixin, OrderTimingMixin, OrderDir
                   background=styles.COLORS['bg_card'],
                   foreground=styles.COLORS['primary']).pack(side='left', padx=(14, 0))
 
-        # Удаление — действие редкое и опасное, поэтому не кричит цветом
-        if order.status == 'draft':
-            styles.create_button(header_row, "Удалить наряд", self.delete_order,
-                                 'Secondary.TButton').pack(side='left', padx=(16, 0))
-
-        ttk.Label(header_row,
-                  text=f"{vehicle_type_display} · {order.wheel_diameter}",
-                  font=(styles.DEFAULT_FONT, 9),
-                  background=styles.COLORS['bg_card'],
-                  foreground=styles.COLORS['text_secondary']).pack(side='left', padx=(14, 0))
-
-        # Пост: по нему программа знает, что он занят, и раздаёт посты
-        # записи и живой очереди (docs/live_queue.md)
-        from services.live_queue_service import LiveQueueService
-        from services import directions as _directions
-        if order.status != 'paid' and 'tire' in _directions.parse(order.directions) and (
-                order.post_number or LiveQueueService(self.db).enabled()):
-            self.post_label = ttk.Label(
-                header_row, text=self._post_text(),
-                font=(styles.DEFAULT_FONT, 10, 'bold'),
-                background=styles.COLORS['bg_card'],
-                foreground=styles.COLORS['text'])
-            self.post_label.pack(side='left', padx=(14, 0))
-            styles.create_button(header_row, "Сменить пост", self.change_post,
-                                 'Compact.Secondary.TButton').pack(side='left', padx=(6, 0))
+        # Редкое — в одном меню: хранение, фото, «готово», удалить
+        # (макеты от 26.10.2026). Диаметр и пост — в шапке блока шиномонтажа
+        self.build_more_menu(header_row)
 
         if order.client:
             client_row = ttk.Frame(info_frame, style='White.TFrame')
@@ -119,21 +99,9 @@ class OrderWidget(OrderItemsMixin, OrderPaymentMixin, OrderTimingMixin, OrderDir
 
             # Из наряда сразу в карточку: поправить телефон или добавить
             # ещё одну машину, не выходя из работы
-            styles.create_button(client_row, "Карточка клиента",
-                                 self.open_client_card, 'Secondary.TButton').pack(
+            styles.create_button(client_row, "Клиент",
+                                 self.open_client_card, 'Compact.Secondary.TButton').pack(
                                      side='left', padx=(10, 0))
-
-            # «Машина готова» — клиенту, который уехал ждать. Кнопка
-            # рядом с его телефоном: если сказать нечем, приёмщик тут
-            # же видит номер и звонит
-            self.ready_button = styles.create_button(
-                client_row, "Сообщить, что готово", self.tell_ready,
-                'Secondary.TButton')
-            self.ready_button.pack(side='left', padx=(6, 0))
-
-            styles.create_button(client_row, "Фото", self.open_photos,
-                                 'Secondary.TButton').pack(side='left',
-                                                           padx=(6, 0))
 
             self.told_label = ttk.Label(
                 client_row, text="", font=(styles.DEFAULT_FONT, 9),
@@ -141,33 +109,6 @@ class OrderWidget(OrderItemsMixin, OrderPaymentMixin, OrderTimingMixin, OrderDir
                 foreground=styles.COLORS['success'])
             self.told_label.pack(side='left', padx=(10, 0))
             self.refresh_told()
-
-        # Сотрудники (под машиной)
-        self.employees_label = ttk.Label(info_frame, text="",
-                                         background=styles.COLORS['bg_card'],
-                                         font=(styles.DEFAULT_FONT, 9),
-                                         foreground=styles.COLORS['text_secondary'])
-        self.employees_label.pack(anchor='w', pady=(4, 0))
-
-        # Шиномонтаж и мойка в одном наряде: что в нём есть, пост мойки,
-        # «+ Мойка» / «+ Шиномонтаж» (docs: services/directions.py)
-        self.build_directions(info_frame)
-
-        # Хранение прямо из наряда: открываются привычные формы вкладки
-        # «Хранение шин», уже заполненные из наряда и клиента
-        # (docs/calendar.md). На кнопке выдачи — номер комплекта, если
-        # у машины что-то лежит
-        storage_row = ttk.Frame(info_frame, style='White.TFrame')
-        storage_row.pack(anchor='w', fill='x', pady=(6, 0))
-        styles.create_button(storage_row, "Принять на хранение", self.storage_accept,
-                             'Compact.Secondary.TButton').pack(side='left')
-        stored = self._stored_sets()
-        release_text = "Выдать с хранения" + (
-            f"  №{', №'.join(str(s.id) for s in stored)}" if stored else "")
-        styles.create_button(storage_row, release_text, self.storage_release,
-                             'Compact.Secondary.TButton').pack(side='left', padx=(6, 0))
-        styles.create_button(storage_row, "Всё по машине", self.open_car,
-                             'Compact.Secondary.TButton').pack(side='left', padx=(6, 0))
 
         # Задачи по этой машине из календаря: «шины приехали», «комплект
         # привезли» — приёмщик видит их ровно тогда, когда машина у него
@@ -259,45 +200,10 @@ class OrderWidget(OrderItemsMixin, OrderPaymentMixin, OrderTimingMixin, OrderDir
         # Идентификатор отложенного автосохранения, чтобы отменять предыдущее
         self._autosave_job = None
 
-        # Список услуг
-        ttk.Label(main_container, text="Услуги:", font=(styles.DEFAULT_FONT, 9, 'bold'), style='ServiceHeading.TLabel').pack(fill='x', pady=(2, 1))
-        
-        tree_frame = ttk.Frame(main_container, style='White.TFrame')
-        tree_frame.pack(fill='both', expand=True)
-        
-        # Высоту просим небольшую: таблица растянется по месту, а высокий
-        # запрос выдавливал её за нижний край окна
-        self.items_tree = ttk.Treeview(tree_frame, columns=('Услуга', 'Кол-во', 'Цена', 'Скидка', 'Итого', 'Кто'),
-                                       show='headings', height=6)
-        # Кто делал — только у мойки: её начисляют тому, кто мыл
-        self.items_tree.heading('Кто', text='Кто делал')
-        self.items_tree.column('Кто', width=120, anchor='center')
-        self.items_tree.heading('Услуга', text='Услуга')
-        self.items_tree.heading('Кол-во', text='Кол-во')
-        self.items_tree.heading('Цена', text='Цена')
-        self.items_tree.heading('Скидка', text='Скидка %')
-        self.items_tree.heading('Итого', text='Итого')
-        
-        # Ширина колонок
-        self.items_tree.column('Услуга', width=250, anchor='w')
-        self.items_tree.column('Кол-во', width=60, anchor='center')
-        self.items_tree.column('Цена', width=90, anchor='center')
-        self.items_tree.column('Скидка', width=90, anchor='center')
-        self.items_tree.column('Итого', width=90, anchor='center')
-        
-        self.items_tree.pack(side='left', fill='both', expand=True)
-        
-        tree_scroll = ttk.Scrollbar(tree_frame, orient='vertical', command=self.items_tree.yview)
-        tree_scroll.pack(side='right', fill='y')
-        self.items_tree.config(yscrollcommand=tree_scroll.set)
-        
-        # Inline редактирование количества по двойному клику
-        self.items_tree.bind('<Double-1>', self.on_double_click)
-        self.items_tree.bind('<Delete>', self.delete_item)
-        
-        # Entry для inline редактирования
-        self.edit_entry = None
-        
+        # Услуги — блоками по направлениям: шиномонтаж, мойка
+        # (ui/order_screen/blocks.py)
+        self.build_blocks(main_container)
+
         # Загрузка данных
         self.refresh_items()
 
@@ -450,7 +356,7 @@ class OrderWidget(OrderItemsMixin, OrderPaymentMixin, OrderTimingMixin, OrderDir
             messagebox.showwarning("Пост", str(e), parent=self.frame)
             return
         self.db.refresh(self.order)
-        self.post_label.config(text=self._post_text())
+        self.post_label.config(text=self._post_text() + ' ▾')
 
     def open_client_card(self):
         """Открыть карточку клиента этого наряда."""

@@ -292,13 +292,22 @@ class OrderItemsMixin:
 
     def refresh_items(self):
         def reload():
-            for row in self.items_tree.get_children():
-                self.items_tree.delete(row)
             loaded = self.order_service.get_order_items(self.order.id)
             self.db.refresh(self.order)
             return loaded
 
         items = retry_after_rollback(self.db, reload)
+
+        # Направления наряда поменялись — сначала перестроить блоки
+        from services import directions as _directions
+        trees = getattr(self, 'trees', None) or {'tire': self.items_tree}
+        if hasattr(self, 'render_blocks') and \
+                _directions.parse(self.order.directions) != getattr(self, '_rendered_directions', None):
+            self.render_blocks()
+            trees = self.trees
+        for tree in trees.values():
+            for row in tree.get_children():
+                tree.delete(row)
 
         # Обновляем значения в комбобоксах
         self.rim_discount_var.set(str(self.order.rim_discount))
@@ -323,7 +332,8 @@ class OrderItemsMixin:
             if _directions.assigned(self.db, getattr(item, 'direction', None) or 'tire'):
                 from ui.order_screen.directions import employee_name
                 who = employee_name(self.db, item.employee_id) if item.employee_id else 'выбрать ▾'
-            self.items_tree.insert('', 'end', values=(
+            tree = trees.get(getattr(item, 'direction', None) or 'tire') or next(iter(trees.values()))
+            tree.insert('', 'end', values=(
                 item_title(item),
                 item.quantity,
                 f"{item.price:.2f}",
@@ -332,6 +342,9 @@ class OrderItemsMixin:
                 who
             ), tags=(str(item.id),))
         
+        if hasattr(self, 'refresh_block_summaries'):
+            self.refresh_block_summaries(items)
+
         total_with_discount = self.order_service.calculate_total(self.order.id)
         
         # Обновляем лейблы с ценами
