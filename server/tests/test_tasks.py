@@ -12,9 +12,10 @@
     отменил запись — задача снята, перенесли — едет следом;
   · сообщения о складе — получателям склада, если они заданы;
   · сводка владельцу: утром раз и вечером раз, своим получателям;
-  · мойка — свой слой: направление ездит в обмене, старый цех — это
-    шиномонтаж, у мойки только Рабочая и Поставки, дашборд показывает
-    слой по выбору и знает, включена ли мойка, в сводке — «Мойка:».
+  · мойка: направление ездит в обмене, старый цех — это шиномонтаж,
+    у мойки только Рабочая и Поставки; календарь дашборда один на оба
+    направления (direction пусто или all), tire и wash — фильтр; знает,
+    включена ли мойка; в сводке — «Мойка:».
 """
 import os
 import sys
@@ -596,13 +597,37 @@ with TestClient(app) as http:
 
     print()
     print('=== Мойка в дашборде ===')
+    # Календарь у шиномонтажа и мойки один: без direction и с all —
+    # обоих направлений, tire и wash — фильтр
+    plain_view = http.get('/dashboard/tasks', headers=owner,
+                          params=dict(week, shop=slug)).json()
+    check('без direction — оба направления',
+          plain_view['direction'] == 'all'
+          and by_uid(plain_view['tasks'], 'w-1') is not None
+          and by_uid(plain_view['tasks'], 'w-old') is not None,
+          str([row['uid'] for row in plain_view['tasks']]))
+    all_view = http.get('/dashboard/tasks', headers=owner,
+                        params=dict(week, shop=slug, direction='all')).json()
+    check('direction=all — оба направления',
+          all_view['direction'] == 'all'
+          and {row['direction'] for row in all_view['tasks']} == {'tire', 'wash'}
+          and [row['uid'] for row in all_view['tasks']]
+          == [row['uid'] for row in plain_view['tasks']],
+          str([(row['uid'], row['direction']) for row in all_view['tasks']]))
     tire_view = http.get('/dashboard/tasks', headers=owner,
-                         params=dict(week, shop=slug)).json()
-    check('без direction — шиномонтаж, как раньше',
+                         params=dict(week, shop=slug, direction='tire')).json()
+    check('direction=tire — только шиномонтаж',
           tire_view['direction'] == 'tire'
           and by_uid(tire_view['tasks'], 'w-1') is None
           and by_uid(tire_view['tasks'], 'w-old') is not None,
           str([row['uid'] for row in tire_view['tasks']]))
+    check('и просроченные — только шиномонтажа',
+          all(row['direction'] == 'tire' for row in tire_view['overdue']))
+    odd_view = http.get('/dashboard/tasks', headers=owner,
+                        params=dict(week, shop=slug, direction='гараж')).json()
+    check('непонятный direction — оба, а не отказ',
+          odd_view['direction'] == 'all'
+          and len(odd_view['tasks']) == len(all_view['tasks']))
     wash_view = http.get('/dashboard/tasks', headers=owner,
                          params=dict(week, shop=slug, direction='wash')).json()
     check('слой мойки — только её задачи',
@@ -634,10 +659,19 @@ with TestClient(app) as http:
     check('контрагенты мойки — свои', [row['name'] for row in people] == ['АвтоХим'],
           str(people))
     people = http.get('/dashboard/counterparties', headers=owner,
-                      params={'shop': slug}).json()
-    check('без direction — контрагенты шиномонтажа',
+                      params={'shop': slug, 'direction': 'tire'}).json()
+    check('контрагенты шиномонтажа — без мойки',
           'АвтоХим' not in [row['name'] for row in people]
           and 'Еврошины' in [row['name'] for row in people], str(people))
+    people = http.get('/dashboard/counterparties', headers=owner,
+                      params={'shop': slug}).json()
+    check('без direction — контрагенты обоих направлений',
+          'АвтоХим' in [row['name'] for row in people]
+          and 'Еврошины' in [row['name'] for row in people], str(people))
+    people = http.get('/dashboard/counterparties', headers=owner,
+                      params={'shop': slug, 'direction': 'all'}).json()
+    check('direction=all — тоже оба',
+          {row['direction'] for row in people} == {'tire', 'wash'}, str(people))
 
     made = http.post(f'/dashboard/tasks?shop={slug}', headers=owner, json={
         'direction': 'wash', 'category': 'supply', 'due_date': TODAY.isoformat(),

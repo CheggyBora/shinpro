@@ -16,6 +16,9 @@ from ui.task_dialog import open_task, CATEGORY_COLORS, WHO
 from utils import get_moscow_time, as_naive
 
 FILTER_KEY = 'calendar_filter'
+DIRECTION_KEY = 'calendar_direction'
+DIRECTION_TITLES = {'all': 'Все', 'tire': 'Шиномонтаж', 'wash': 'Мойка'}
+DIRECTION_COLORS = {'tire': ('#1d4ed8', '#dbeafe'), 'wash': ('#0f766e', '#ccfbf1')}
 WEEKDAYS = ['пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'вс']
 WEEKDAYS_FULL = ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье']
 MONTHS = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа',
@@ -36,9 +39,11 @@ class CalendarTab:
         today = self._today()
         self.selected = today
         self.week_start = today - timedelta(days=today.weekday())
-        # Слой календаря: шиномонтаж или мойка — его выбирает переключатель
-        # сверху (главное окно зовёт set_direction)
-        self.direction = 'tire'
+        # Календарь один на шиномонтаж и мойку (решение владельца от
+        # 26.10.2026). Фильтр направления: all / tire / wash
+        self.direction = self._settings().get(DIRECTION_KEY, 'all') or 'all'
+        if self.direction not in ('all', 'tire', 'wash'):
+            self.direction = 'all'
         self.filters = self._load_filters()
         # Главное окно ставит сюда «что-то поменялось» — обновить ленту
         self.on_changed = None
@@ -57,21 +62,32 @@ class CalendarTab:
         from services.settings_service import SettingsService
         return SettingsService(self.db)
 
-    def _filter_key(self):
-        # У каждого слоя свой выбор фильтров
-        return FILTER_KEY if self.direction == 'tire' else f'{FILTER_KEY}_{self.direction}'
+    def _wash(self):
+        from services import directions
+        return directions.wash_on(self.db)
+
+    def shown_categories(self):
+        """Разделы, которые сейчас можно выбрать: по фильтру направления."""
+        if self.direction == 'all':
+            found = categories_of('tire') + [c for c in categories_of('wash')
+                                             if c not in categories_of('tire')]
+            return found if self._wash() else categories_of('tire')
+        return categories_of(self.direction)
+
+    def query_direction(self):
+        return None if self.direction == 'all' else self.direction
 
     def _load_filters(self):
-        raw = self._settings().get(self._filter_key(), '') or ''
-        chosen = {c for c in raw.split(',') if c in categories_of(self.direction)}
-        return chosen
+        raw = self._settings().get(FILTER_KEY, '') or ''
+        return {c for c in raw.split(',') if c in self.shown_categories()}
 
     def _save_filters(self):
-        self._settings().set(self._filter_key(), ','.join(
-            c for c in categories_of(self.direction) if c in self.filters))
+        self._settings().set(FILTER_KEY, ','.join(
+            c for c in self.shown_categories() if c in self.filters))
 
-    def set_direction(self, direction):
+    def set_direction_filter(self, direction):
         self.direction = direction
+        self._settings().set(DIRECTION_KEY, direction)
         self.filters = self._load_filters()
         self.load()
 
@@ -84,7 +100,7 @@ class CalendarTab:
             self.filters.discard(key)
         else:
             self.filters.add(key)
-        if self.filters == set(categories_of(self.direction)):
+        if self.filters == set(self.shown_categories()):
             self.filters = set()
         self._save_filters()
         self.load()
@@ -116,8 +132,11 @@ class CalendarTab:
         earlier.config(width=3)
         earlier.pack(side='right', padx=(0, 4))
 
+        # Направление — только когда мойка включена
+        self.direction_row = tk.Frame(inner, bg=styles.COLORS['bg_card'])
+        self.direction_row.pack(fill='x', pady=(12, 0))
         self.filter_row = tk.Frame(inner, bg=styles.COLORS['bg_card'])
-        self.filter_row.pack(fill='x', pady=(12, 8))
+        self.filter_row.pack(fill='x', pady=(8, 8))
 
         self.week_row = tk.Frame(inner, bg=styles.COLORS['bg_card'])
         self.week_row.pack(fill='x')
@@ -163,9 +182,31 @@ class CalendarTab:
             log.error(f'Календарь не нарисовался: {e}')
 
     def _draw_filters(self):
+        for child in self.direction_row.winfo_children():
+            child.destroy()
         for child in self.filter_row.winfo_children():
             child.destroy()
-        for key in categories_of(self.direction) + ['all']:
+        wash = self._wash()
+        if wash:
+            if not self.direction_row.winfo_manager():
+                self.direction_row.pack(fill='x', pady=(12, 0), before=self.filter_row)
+            tk.Label(self.direction_row, text='Направление:', bg=styles.COLORS['bg_card'],
+                     fg=styles.COLORS['text_secondary'], font=(styles.DEFAULT_FONT, 9)).pack(side='left', padx=(0, 6))
+            for key in ('all', 'tire', 'wash'):
+                on = key == self.direction
+                fg, bg = DIRECTION_COLORS.get(key, (styles.COLORS['text'], styles.COLORS['bg_subtle']))
+                chip = tk.Label(self.direction_row, text=DIRECTION_TITLES[key], cursor='hand2',
+                                padx=12, pady=3, relief='solid', borderwidth=1,
+                                font=(styles.DEFAULT_FONT, 10, 'bold' if on else 'normal'),
+                                bg=bg if on else styles.COLORS['bg_card'],
+                                fg=fg if on else styles.COLORS['text_secondary'])
+                chip.pack(side='left', padx=(0, 6))
+                chip.bind('<Button-1>', lambda e, k=key: self.set_direction_filter(k))
+            tk.Label(self.filter_row, text='Разделы:', bg=styles.COLORS['bg_card'],
+                     fg=styles.COLORS['text_secondary'], font=(styles.DEFAULT_FONT, 9)).pack(side='left', padx=(0, 6))
+        else:
+            self.direction_row.pack_forget()
+        for key in self.shown_categories() + ['all']:
             on = (not self.filters) if key == 'all' else (not self.filters or key in self.filters)
             fg, bg = CATEGORY_COLORS.get(key, (styles.COLORS['text'], styles.COLORS['bg_subtle']))
             text = 'Все' if key == 'all' else CATEGORY_TITLES[key]
@@ -187,14 +228,14 @@ class CalendarTab:
         else:
             self.range_label.config(text=f'{self.week_start.day} {MONTHS[self.week_start.month - 1]} – '
                                          f'{end.day} {MONTHS[end.month - 1]}')
-        week = self.service.week(self.week_start, self.categories(), self.direction)
+        week = self.service.week(self.week_start, self.categories(), self.query_direction())
         today = self._today()
         for i, (day, tasks) in enumerate(week.items()):
             chosen = day == self.selected
             box = tk.Frame(self.week_row, bg=styles.COLORS['primary_soft'] if chosen else styles.COLORS['bg_card'],
                            highlightthickness=2 if chosen else 1,
                            highlightbackground=styles.COLORS['primary'] if chosen else styles.COLORS['border'],
-                           cursor='hand2', height=96)
+                           cursor='hand2', height=112)
             box.grid(row=0, column=i, sticky='nsew', padx=2)
             box.pack_propagate(False)
             head = tk.Label(box, text=f'{WEEKDAYS[i]} {day.day}', anchor='w',
@@ -225,8 +266,8 @@ class CalendarTab:
         self.day_label.config(text=day_title(self.selected))
         rows = []
         if self.selected == self._today():
-            rows += [(t, True) for t in self.service.overdue(self.selected, self.categories(), self.direction)]
-        rows += [(t, False) for t in self.service.day(self.selected, self.categories(), self.direction)]
+            rows += [(t, True) for t in self.service.overdue(self.selected, self.categories(), self.query_direction())]
+        rows += [(t, False) for t in self.service.day(self.selected, self.categories(), self.query_direction())]
         if not rows:
             ttk.Label(self.day_list, text='На этот день задач нет. «+ Задача» — поставить.',
                       font=styles.FONTS['normal'], foreground=styles.COLORS['text_secondary'],
@@ -255,6 +296,11 @@ class CalendarTab:
         text.pack(side='left', fill='x', expand=True, pady=5)
         line = tk.Frame(text, bg=styles.COLORS['bg_card'])
         line.pack(fill='x')
+        # Метка направления — когда мойка включена: календарь общий
+        if self._wash():
+            direction = task.direction or 'tire'
+            self._chip(line, DIRECTION_TITLES[direction].upper(), DIRECTION_COLORS[direction],
+                       bold=True, side='left', padx=(0, 4))
         self._chip(line, CATEGORY_TITLES.get(task.category, task.category),
                    CATEGORY_COLORS.get(task.category, CATEGORY_COLORS['work']), side='left')
         if overdue:
@@ -318,7 +364,7 @@ class CalendarTab:
     def new_task(self):
         open_task(self.frame, self.db, on_saved=self._changed, due_date=self.selected,
                   category=next(iter(self.filters)) if len(self.filters) == 1 else 'work',
-                  direction=self.direction)
+                  direction=self.query_direction() if self._wash() else 'tire')
 
     def edit(self, task):
         open_task(self.frame, self.db, task, on_saved=self._changed)

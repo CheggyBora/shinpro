@@ -18,9 +18,9 @@ from app.security import current_staff, require_sync_key
 from app.services import shop_settings, tasks as task_service, tenancy
 from app.utils import now as shop_now
 
-# Слой календаря в адресе: tire или wash. Пусто — шиномонтаж, чтобы
-# дашборд, открытый до появления мойки, видел всё то же, что и раньше
-DIRECTION_HELP = 'Слой: tire (по умолчанию) или wash'
+# Фильтр по направлению в адресе: tire, wash или all. Календарь у
+# шиномонтажа и мойки один, пусто — оба направления сразу
+DIRECTION_HELP = 'Направление: all (по умолчанию — оба), tire или wash'
 
 sync_router = APIRouter(prefix='/sync', tags=['Обмен с цехом'])
 router = APIRouter(prefix='/dashboard', tags=['Дашборд: календарь'])
@@ -119,14 +119,15 @@ def list_tasks(day_from: Optional[date] = Query(None, alias='from'),
                staff: StaffUser = Depends(current_staff),
                db: Session = Depends(get_db)):
     """
-    Задачи с from по to одного слоя. Если в эти дни попадает сегодня —
-    ещё и неотмеченные прошлых дней отдельным списком: они висят
-    красными, пока их не отметят.
+    Задачи с from по to — обоих направлений или одного (direction).
+    Если в эти дни попадает сегодня — ещё и неотмеченные прошлых дней
+    отдельным списком: они висят красными, пока их не отметят.
 
     wash_enabled — работает ли мойкой хоть одна из показанных точек:
-    только тогда дашборд показывает переключатель «Шиномонтаж | Мойка».
+    только тогда дашборд показывает фильтр «Направление» и метки
+    «ШИНОМОНТАЖ» / «МОЙКА» у задач.
     """
-    direction = task_service.parse_direction(direction)
+    direction = task_service.parse_direction_filter(direction)
     today = shop_now().date()
     day_from = day_from or today
     day_to = day_to or (day_from + timedelta(days=6))
@@ -143,7 +144,7 @@ def list_tasks(day_from: Optional[date] = Query(None, alias='from'),
         'from': day_from.isoformat(),
         'to': day_to.isoformat(),
         'today': today.isoformat(),
-        'direction': direction,
+        'direction': direction or task_service.ALL,
         'wash_enabled': any(shop_settings.wash_on(db, shop_id)
                             for shop_id in ids),
         'overdue': [_view(row, names) for row in overdue],
@@ -194,9 +195,10 @@ def list_counterparties(shop: Optional[str] = Query(None),
                             None, description=DIRECTION_HELP),
                         staff: StaffUser = Depends(current_staff),
                         db: Session = Depends(get_db)):
-    # У мойки свои поставщики: в задаче мойки выбирать склад шин незачем
+    # У мойки свои поставщики: в задаче мойки выбирать склад шин незачем.
+    # Форма просит список направления задачи; пусто или all — все
     ids = _shop_ids(db, staff, shop)
-    direction = task_service.parse_direction(direction)
+    direction = task_service.parse_direction_filter(direction)
     result = []
     for row in task_service.counterparties(db, ids, direction=direction):
         item = task_service.counterparty_dict(row)

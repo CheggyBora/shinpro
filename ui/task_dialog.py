@@ -57,17 +57,37 @@ class TaskDialog:
 
         today = as_naive(get_moscow_time()).date()
 
-        # Слой календаря: у мойки свои разделы и контрагенты
-        self.direction = (task.direction if task else defaults.get('direction')) or 'tire'
+        # Шиномонтаж или мойка. Календарь один на оба направления, и чтобы
+        # задача случайно не попала не туда, у новой задачи направление
+        # выбирают сами — заранее ничего не отмечено (кроме случаев, когда
+        # оно понятно: фильтр «Мойка», карточка контрагента мойки)
+        from services import directions as _directions
+        self.wash = _directions.wash_on(db) or (task is not None and task.direction == 'wash')
+        if task is not None:
+            self.direction = task.direction or 'tire'
+        elif self.wash:
+            self.direction = defaults.get('direction')
+        else:
+            self.direction = 'tire'
+        if self.wash:
+            where = ttk.Frame(body, style='White.TFrame')
+            where.pack(fill='x', before=form, pady=(0, 8))
+            styles.create_label(where, 'Где*', 'Card.TLabel').pack(side='left', padx=(0, 12))
+            if task is not None:
+                styles.create_label(where, _directions.TITLES[self.direction],
+                                    'CardHeading.TLabel').pack(side='left')
+            else:
+                self.direction_var = tk.StringVar(value=self.direction or '')
+                for value in (_directions.TIRE, _directions.WASH):
+                    ttk.Radiobutton(where, text=_directions.TITLES[value], value=value,
+                                    variable=self.direction_var,
+                                    command=self._direction_chosen).pack(side='left', padx=(0, 14))
+
         label(0, 'Раздел')
         self.category = tk.StringVar(value=task.category if task else defaults.get('category', WORK))
-        if self.category.get() not in categories_of(self.direction):
-            self.category.set(WORK)
-        cats = ttk.Frame(form, style='White.TFrame')
-        cats.grid(row=0, column=1, sticky='w', pady=4)
-        for key in categories_of(self.direction):
-            ttk.Radiobutton(cats, text=CATEGORY_TITLES[key], value=key,
-                            variable=self.category).pack(side='left', padx=(0, 10))
+        self.cats = ttk.Frame(form, style='White.TFrame')
+        self.cats.grid(row=0, column=1, sticky='w', pady=4)
+        self._draw_categories()
 
         label(1, 'Дата и время')
         when = ttk.Frame(form, style='White.TFrame')
@@ -102,15 +122,16 @@ class TaskDialog:
         self.client_phone = task.client_phone if task else defaults.get('client_phone')
 
         label(3, 'Контрагент')
-        self.parties = self.service.counterparties(self.direction)
+        self.parties = self.service.counterparties(self.direction) if self.direction else []
         names = ['—'] + [c.name for c in self.parties]
         self.party = tk.StringVar(value='—')
         uid = task.counterparty_uid if task else defaults.get('counterparty_uid')
         chosen = next((c for c in self.parties if c.uid == uid), None)
         if chosen is not None:
             self.party.set(chosen.name)
-        ttk.Combobox(form, textvariable=self.party, values=names, state='readonly',
-                     width=30, font=styles.FONTS['normal']).grid(row=3, column=1, sticky='w', pady=4)
+        self.party_box = ttk.Combobox(form, textvariable=self.party, values=names, state='readonly',
+                                      width=30, font=styles.FONTS['normal'])
+        self.party_box.grid(row=3, column=1, sticky='w', pady=4)
 
         label(4, 'Что за задача')
         self.title = styles.create_entry(form, width=48)
@@ -181,6 +202,27 @@ class TaskDialog:
         from ui.car_info import open_car_info
         open_car_info(self.dialog, self.db, plate)
 
+    def _draw_categories(self):
+        for child in self.cats.winfo_children():
+            child.destroy()
+        if not self.direction:
+            ttk.Label(self.cats, text='— появится после выбора направления —',
+                      font=styles.FONTS['small'], foreground=styles.COLORS['text_secondary'],
+                      background=styles.COLORS['bg_card']).pack(side='left')
+            return
+        if self.category.get() not in categories_of(self.direction):
+            self.category.set(WORK)
+        for key in categories_of(self.direction):
+            ttk.Radiobutton(self.cats, text=CATEGORY_TITLES[key], value=key,
+                            variable=self.category).pack(side='left', padx=(0, 10))
+
+    def _direction_chosen(self):
+        self.direction = self.direction_var.get() or None
+        self._draw_categories()
+        self.parties = self.service.counterparties(self.direction) if self.direction else []
+        self.party.set('—')
+        self.party_box.config(values=['—'] + [c.name for c in self.parties])
+
     def fields(self):
         amount = self.amount.get().strip().replace(' ', '').replace(',', '.')
         try:
@@ -203,6 +245,9 @@ class TaskDialog:
         self.dialog.destroy()
 
     def save(self):
+        if not self.direction:
+            messagebox.showerror('Задача', 'Выберите, шиномонтаж это или мойка', parent=self.dialog)
+            return
         try:
             fields = self.fields()
             if self.task is None:

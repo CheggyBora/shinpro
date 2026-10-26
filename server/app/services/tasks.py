@@ -159,6 +159,22 @@ def parse_direction(value):
     return value if value in DIRECTIONS else TIRE
 
 
+# Фильтр календаря «Направление: Все»
+ALL = 'all'
+
+
+def parse_direction_filter(value):
+    """
+    Фильтр дашборда по направлению: tire, wash или all.
+
+    Пусто и непонятное — все: календарь у шиномонтажа и мойки один
+    (docs/calendar.md), направления разводит фильтр. None — «без
+    фильтра», ровно то, что ждут for_range и counterparties.
+    """
+    value = str(value or '').strip().lower()
+    return value if value in DIRECTIONS else None
+
+
 # Почему раздел не подходит — словами, которые видит владелец
 CATEGORY_ERRORS = {
     TIRE: 'У шиномонтажа разделы: Рабочая, Хранение, Шины, Покраска '
@@ -459,9 +475,10 @@ def exchange(db, shop, payload, now=None):
 # Дашборд
 # ----------------------------------------------------------------------
 
-def for_range(db, shop_ids, day_from, day_to, today=None, direction=TIRE):
+def for_range(db, shop_ids, day_from, day_to, today=None, direction=None):
     """
-    Задачи на дни календаря — одного слоя: шиномонтажа или мойки.
+    Задачи на дни календаря. direction — только этого направления;
+    None — обоих: календарь у шиномонтажа и мойки один.
 
     Если в показанные дни попадает сегодня, сверху ещё и неотмеченные
     прошлые: задача не исчезает оттого, что её день прошёл, — она висит
@@ -469,8 +486,9 @@ def for_range(db, shop_ids, day_from, day_to, today=None, direction=TIRE):
     """
     today = today or shop_now().date()
     base = db.query(Task).filter(Task.shop_id.in_(shop_ids),
-                                 Task.direction == direction,
                                  Task.deleted.is_(False))
+    if direction is not None:
+        base = base.filter(Task.direction == direction)
 
     rows = base.filter(Task.due_date >= day_from,
                        Task.due_date <= day_to).all()

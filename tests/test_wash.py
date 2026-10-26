@@ -222,10 +222,34 @@ root.update()
 check('в мойке нет «Хранения» и «Покраски»',
       app.nav._items[app.nav.titles().index('Хранение шин')].get('hidden') is True)
 check('кнопки услуг — мойки', app.orders_tab.mode == 'wash')
-check('календарь — слой мойки', app.calendar_tab.direction == 'wash')
-filters = [w.cget('text') for w in app.calendar_tab.filter_row.winfo_children()]
-check('фильтры мойки: Рабочая, Поставки, Все',
-      [f.replace('● ', '') for f in filters] == ['Рабочая', 'Поставки', 'Все'], str(filters))
+cal = app.calendar_tab
+check('календарь общий — переключатель сверху его не трогает', cal.direction == 'all')
+check('есть строка «Направление»', len(cal.direction_row.winfo_children()) == 4)
+cal.set_direction_filter('wash')
+filters = [w.cget('text') for w in cal.filter_row.winfo_children()]
+check('фильтр «Мойка»: Рабочая, Поставки, Все',
+      [f.replace('● ', '') for f in filters] == ['Разделы:', 'Рабочая', 'Поставки', 'Все'], str(filters))
+titles = [t.title for t in cal.service.day(today, None, cal.query_direction())]
+check('видны только задачи мойки', titles == ['Химия: шампунь 2 канистры'], str(titles))
+cal.set_direction_filter('all')
+from ui.task_dialog import TaskDialog
+import ui.task_dialog as task_dialog_module
+shown = _setup.silence_dialogs(task_dialog_module)
+dialog = TaskDialog(root, app.db, None, None, {'due_date': today})
+check('новая задача: направление не выбрано', dialog.direction is None)
+dialog.title.insert(0, 'Задача из окна')
+dialog.save()
+check('без направления не сохранить', any('шиномонтаж это или мойка' in (t or '') for _k, _ti, t in shown))
+dialog.direction_var.set('wash')
+dialog._direction_chosen()
+check('после выбора — разделы мойки и её контрагенты',
+      dialog.category.get() == 'work' and [p.name for p in dialog.parties] == ['ХимПро'])
+dialog.category.set('supply')
+dialog.save()
+from models import CalendarTask
+saved = app.db.query(CalendarTask).filter(CalendarTask.title == 'Задача из окна').first()
+check('сохранилась в мойку', saved is not None and saved.direction == 'wash' and saved.category == 'supply',
+      str(shown[-1:]))
 app.set_mode('tire')
 check('вернулись — разделы на месте',
       not app.nav._items[app.nav.titles().index('Хранение шин')].get('hidden'))

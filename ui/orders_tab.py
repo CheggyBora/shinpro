@@ -604,7 +604,9 @@ class OrdersTab:
             child.destroy()
         try:
             service = CalendarService(self.db)
-            tasks = service.strip(direction=self.mode)
+            tasks = service.strip()
+            from services import directions as _directions
+            wash = _directions.wash_on(self.db)
         except Exception:
             self.db.rollback()
             return
@@ -621,6 +623,9 @@ class OrdersTab:
             if task.due_date < today:
                 when = f'{task.due_date:%d.%m}'
             text = f'{when} {task.title}'.strip()
+            # Календарь общий: задачи мойки помечены «М»
+            if wash and (task.direction or 'tire') == 'wash':
+                text = f'М · {text}'
             if task.license_plate and task.license_plate not in text:
                 text += f' · {task.license_plate}'
             chip = tk.Label(self.tasks_strip, text=text[:48], bg=bg, fg=fg, cursor='hand2',
