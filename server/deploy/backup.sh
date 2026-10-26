@@ -15,7 +15,9 @@ KEEP_DAYS=30
 # выполняем: скрипт работает от root, и строка, подложенная в .env,
 # иначе выполнилась бы с его правами (ревью 26.10.2026)
 env_value() {
-    grep -E "^$1=" "$APP_DIR/.env" | tail -n 1 | cut -d= -f2- \
+    # Строки нет — пусто, а не ошибка: при pipefail «не нашёл» у grep
+    # останавливал весь скрипт и с ним раскатку
+    { grep -E "^$1=" "$APP_DIR/.env" || true; } | tail -n 1 | cut -d= -f2- \
         | sed -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'$/\1/"
 }
 SERVER_DATABASE_URL="$(env_value SERVER_DATABASE_URL)"
