@@ -95,6 +95,10 @@ DEFAULTS = {
     # Склад и база зарплаты (docs/stock.md). minus — «выручка минус
     # расходники», как было; revenue — «от выручки»
     'stock_enabled': '0',
+    # Наряд по фото и обложка — у каждого направления свой тумблер
+    # (docs/order_photo.md)
+    'arrival_photo_tire': '0',
+    'arrival_photo_wash': '0',
     'salary_base_tire': 'minus',
     'salary_base_wash': 'minus',
     # Запись на мойку — своя (docs/booking_wash.md)

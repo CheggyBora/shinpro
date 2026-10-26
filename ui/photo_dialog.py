@@ -153,34 +153,7 @@ class PhotoDialog:
                  f"открывает страницу с экрана.")
 
     def draw_code(self, url):
-        """Нарисовать QR квадратиками. Картинка для этого не нужна."""
-        self.canvas.delete('all')
-
-        try:
-            import qrcode
-        except ImportError:
-            self.canvas.create_text(
-                130, 130, width=230, justify='center',
-                text="Не хватает библиотеки qrcode.\n"
-                     "Переустановите программу.")
-            log.error("qrcode не установлен — QR для мастеров не нарисовать")
-            return
-
-        code = qrcode.QRCode(box_size=1, border=2)
-        code.add_data(url)
-        code.make(fit=True)
-        matrix = code.get_matrix()
-
-        side = len(matrix) * MODULE
-        self.canvas.config(width=side, height=side)
-
-        for y, row in enumerate(matrix):
-            for x, dark in enumerate(row):
-                if dark:
-                    self.canvas.create_rectangle(
-                        x * MODULE, y * MODULE,
-                        (x + 1) * MODULE, (y + 1) * MODULE,
-                        fill='black', outline='')
+        draw_qr(self.canvas, url)
 
     # ------------------------------------------------------------------
     # Что прислали
@@ -218,3 +191,34 @@ class PhotoDialog:
         self.state.config(
             text=(f"Снимков: {len(rows)}" if rows
                   else "По этому наряду фотографий пока нет"))
+
+
+def draw_qr(canvas, url):
+    """Нарисовать QR квадратиками. Картинка для этого не нужна."""
+    canvas.delete('all')
+
+    try:
+        import qrcode
+    except ImportError:
+        canvas.create_text(
+            130, 130, width=230, justify='center',
+            text="Не хватает библиотеки qrcode.\n"
+                 "Переустановите программу.")
+        log.error("qrcode не установлен — QR для мастеров не нарисовать")
+        return
+
+    code = qrcode.QRCode(box_size=1, border=2)
+    code.add_data(url)
+    code.make(fit=True)
+    matrix = code.get_matrix()
+
+    side = len(matrix) * MODULE
+    canvas.config(width=side, height=side)
+
+    for y, row in enumerate(matrix):
+        for x, dark in enumerate(row):
+            if dark:
+                canvas.create_rectangle(
+                    x * MODULE, y * MODULE,
+                    (x + 1) * MODULE, (y + 1) * MODULE,
+                    fill='black', outline='')

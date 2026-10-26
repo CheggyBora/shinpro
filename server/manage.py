@@ -569,6 +569,27 @@ def cmd_push_keys(db, args):
     print('SERVER_PUSH_CONTACT=mailto:вашапочта@пример.ру')
 
 
+def cmd_plate_models(db, args):
+    """
+    Скачать и проверить модели распознавания номеров (docs/order_photo.md).
+
+    Без этого веса скачаются при первом снимке с телефона, и первый
+    мастер прождёт лишние секунды. Не скачалось — не беда: номер
+    впишут руками, наряд по фото всё равно работает.
+    """
+    import time
+
+    from app.services import plates
+
+    started = time.monotonic()
+    if plates.warm_up():
+        print(f'Распознавание номеров готово ({time.monotonic() - started:.1f} с). '
+              f'Модели: {plates.model_dir()}')
+    else:
+        print('Распознавание номеров недоступно — номер будут вписывать руками. '
+              'Причина — в журнале выше')
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='Аккаунты, точки и оплата',
@@ -641,6 +662,9 @@ def main():
     keys.add_argument('--force', action='store_true',
                       help='выдать новые, даже если ключи уже есть')
 
+    commands.add_parser('plate-models',
+                        help='скачать модели распознавания номеров')
+
     args = parser.parse_args()
 
     init_db()
@@ -663,6 +687,7 @@ def main():
             'booking': cmd_booking,
             'drop-shop': cmd_drop_shop,
             'drop-account': cmd_drop_account,
+            'plate-models': cmd_plate_models,
         }[args.command]
         handler(db, args)
     finally:

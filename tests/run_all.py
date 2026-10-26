@@ -40,6 +40,8 @@ TESTS = [
     ('Запись на мойку в цеху', 'test_booking_wash_shop.py'),
     ('Склад и база зарплаты', 'test_stock.py'),
     ('Окна склада', 'test_stock_ui.py'),
+    ('Касса: ордера, остаток, пересчёт', 'test_cash.py'),
+    ('Наряд по фото: цех и обложка', 'test_arrivals_shop.py'),
     ('Запись видна сразу с обеих сторон', 'test_booking_live.py'),
     ('Обмен с сервером приложения', 'test_sync.py'),
     ('Срочная досылка важного', 'test_sync_nudge.py'),

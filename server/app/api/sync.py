@@ -23,7 +23,7 @@
 и путать этот доступ с клиентским входом нельзя.
 """
 from datetime import datetime, timedelta, time
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
@@ -37,6 +37,7 @@ from app.models import (Client, Car, Appointment, BookingDay, StoredSet,
                         PENDING, TAKEN, REJECTED, KIND_READY)
 from app.security import require_sync_key
 from app.services import shop_settings
+from app.services import cash as cash_service
 from app.models.photo import MasterDevice, OpenOrder, OrderPhoto
 from app.services.booking_service import (BookingService, SLOT_TAKEN, WASH,
                                            clean_direction, clean_wash_class)
@@ -176,6 +177,15 @@ class ShiftIn(BaseModel):
     open_posts: int = 1
     total_salary: float = 0.0
 
+    # Касса (docs/cash.md). Старая программа не шлёт — поля не трогаем.
+    # Any, а не float: кривое число в одной смене не должно ронять весь
+    # обмен, его чистит services/cash.py
+    cash_start: Any = None
+    cash_expected: Any = None
+    cash_counted: Any = None
+    cash_diff: Any = None
+    cash_diff_reason: Any = None
+
 
 class StorageIn(BaseModel):
     local_id: int
@@ -224,6 +234,11 @@ class PushIn(BaseModel):
     payouts: List[PayoutIn] = []
     storage: List[StorageIn] = []
     queue: Optional[QueueIn] = None
+
+    # Кассовые ордера, изменённые с прошлого обмена (docs/cash.md).
+    # Словари, а не строгая модель: кривой ордер пропускается, а не
+    # роняет весь обмен. Старая программа не шлёт — пусто
+    cash_orders: List[Any] = []
     settings: dict = {}
 
     # Когда каждую настройку поменяли в цеху. Старая версия программы
@@ -248,6 +263,9 @@ class PushOut(BaseModel):
     storage: int = 0
     queue: bool = False
     settings: int = 0
+    cash_orders: int = 0
+    # uid ордеров, которые понять не удалось: вид, сумма или uid кривые
+    cash_rejected: List[str] = []
 
     # Настройки, которые владелец поменял из дашборда позже, чем цех у
     # себя. Цех их принимает: иначе правка из дашборда жила бы до
@@ -547,8 +565,14 @@ def push(payload: PushIn, db: Session = Depends(get_db),
         row.status = item.status
         row.open_posts = item.open_posts
         row.total_salary = item.total_salary
+        cash_service.apply_shift(row, item)
         db.flush()
         result.shifts += 1
+
+    # --- Касса ----------------------------------------------------------
+    if payload.cash_orders:
+        result.cash_orders, result.cash_rejected = cash_service.upsert_orders(
+            db, shop, payload.cash_orders)
 
     # --- Хранение -----------------------------------------------------
     for item in payload.storage:
@@ -1347,8 +1371,11 @@ def order_photos(order_local_id: int, db: Session = Depends(get_db),
     редко. Здесь — список, картинка берётся по ссылке, когда приёмщик
     решит посмотреть.
     """
+    # Обложку цех держит у себя сам (docs/order_photo.md): в список
+    # снимков мастеров она не идёт, иначе висела бы «не отправлено»
     rows = db.query(OrderPhoto).filter(
         OrderPhoto.shop_id == shop.id,
+        OrderPhoto.kind != 'cover',
         OrderPhoto.order_local_id == order_local_id).order_by(
         OrderPhoto.created_at).all()
 
@@ -1361,3 +1388,62 @@ def order_photos(order_local_id: int, db: Session = Depends(get_db),
         'channel': row.channel,
         'error': row.last_error,
     } for row in rows]
+
+
+# ----------------------------------------------------------------------
+# Машина с телефона (docs/order_photo.md)
+# ----------------------------------------------------------------------
+
+class ArrivalDoneIn(BaseModel):
+    # Номер созданного наряда; пусто — приёмщик закрыл окно
+    order_local_id: Optional[int] = None
+
+
+@router.get('/arrivals', summary='Машины с телефона, ждущие наряда')
+def pending_arrivals(db: Session = Depends(get_db), shop: Shop = Mine):
+    """
+    Ждущие — не разобранные и не старше двух часов. Цех спрашивает при
+    каждом живом обмене и открывает окно создания наряда.
+    """
+    from app.services import arrivals
+
+    return {'arrivals': [arrivals.to_dict(row)
+                         for row in arrivals.pending(db, shop)]}
+
+
+@router.get('/arrivals/{arrival_id}/photo', summary='Снимок машины с телефона')
+def arrival_photo(arrival_id: int, db: Session = Depends(get_db),
+                  shop: Shop = Mine):
+    import os
+
+    from fastapi.responses import FileResponse
+
+    from app.services import arrivals, photos
+
+    arrival = arrivals.of_shop(db, shop, arrival_id)
+    if arrival is None or arrival.photo is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail='Снимка нет')
+
+    path = photos.full_path(arrival.photo)
+    if not os.path.exists(path):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail='Файл не найден')
+
+    return FileResponse(path, media_type='image/jpeg',
+                        headers={'Cache-Control': 'private, max-age=86400'})
+
+
+@router.post('/arrivals/{arrival_id}/done', summary='Цех разобрался с машиной')
+def arrival_done(arrival_id: int, payload: ArrivalDoneIn,
+                 db: Session = Depends(get_db), shop: Shop = Mine):
+    """
+    С номером наряда — снимок становится его обложкой; без номера —
+    приёмщик закрыл окно, машина снимается и больше не всплывает.
+    """
+    from app.services import arrivals
+
+    arrival = arrivals.of_shop(db, shop, arrival_id)
+    if arrival is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail='Машины нет')
+
+    arrivals.done(db, shop, arrival, payload.order_local_id)
+    return {'ok': True}

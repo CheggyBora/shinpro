@@ -65,6 +65,33 @@ def set_tire_assign(db, on):
     _settings(db).set(TIRE_ASSIGN_KEY, '1' if on else '0')
 
 
+def photo_on(db, direction):
+    """
+    Наряд по фото и обложка (docs/order_photo.md) — включаются отдельно
+    у шиномонтажа и у мойки. По умолчанию выключено. У выключенной мойки
+    выключено и фото.
+    """
+    if direction == WASH and not wash_on(db):
+        return False
+    if direction == TIRE and not tire_on(db):
+        return False
+    return _flag(db, f'arrival_photo_{direction}', '0')
+
+
+def set_photo_on(db, direction, on):
+    _settings(db).set(f'arrival_photo_{direction}', '1' if on else '0')
+    if ON_CHANGE is not None:
+        try:
+            ON_CHANGE()
+        except Exception:
+            pass
+
+
+def photo_directions(db):
+    """Где включён наряд по фото: ['tire'], ['wash'], оба или пусто."""
+    return [d for d in (TIRE, WASH) if photo_on(db, d)]
+
+
 def assigned(db, direction):
     """Начисляется ли строка тому, кого выбрали в ней. Только мойка:
     мастеров шиномонтажа выбирают на весь наряд."""

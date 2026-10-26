@@ -180,6 +180,37 @@ def order_card(local_id: int, shop: Optional[str] = None,
     return card
 
 
+@router.get('/photo/{photo_id}', include_in_schema=False)
+def cover_photo(photo_id: int, until: str = '', key: str = '',
+                db: Session = Depends(get_db)):
+    """
+    Обложка наряда по подписанной ссылке из списка или карточки наряда
+    (cover_url). Ссылку выдаёт только вошедшему сотруднику с доступом
+    к нарядам, и живёт она полдня.
+    """
+    import os
+
+    from fastapi.responses import FileResponse
+
+    from app.models import OrderPhoto
+    from app.security import staff_photo_allowed
+    from app.services import photos as photo_service
+
+    if not staff_photo_allowed(photo_id, until, key):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail='Нельзя')
+
+    row = db.query(OrderPhoto).filter(OrderPhoto.id == photo_id).first()
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail='Фото не найдено')
+
+    path = photo_service.full_path(row)
+    if not os.path.exists(path):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail='Файл не найден')
+
+    return FileResponse(path, media_type='image/jpeg',
+                        headers={'Cache-Control': 'private, max-age=3600'})
+
+
 @router.get('/shifts', summary='Смены за период')
 def shifts(day_from: Optional[date] = Query(None, alias='from'),
            day_to: Optional[date] = Query(None, alias='to'),

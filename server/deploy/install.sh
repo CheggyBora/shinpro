@@ -58,6 +58,7 @@ mkdir -p "$APP_DIR"
 rsync -a --delete \
     --exclude '.git' --exclude '__pycache__' --exclude '*.db' \
     --exclude '.env' --exclude 'venv' \
+    --exclude '/photos/' --exclude '/plate-models/' \
     "$SOURCE_DIR"/ "$APP_DIR"/
 chown -R "$APP_USER:$APP_USER" "$APP_DIR"
 

@@ -802,13 +802,21 @@ class EmployeesTab:
         if posts is None:
             return  # передумали открывать смену
 
+        # Касса: сколько наличных фактически (docs/cash.md)
+        from ui.cash_tab import ask_start
+        from services.cash_service import money
+        cash_start = ask_start(self.frame, self.db)
+        if cash_start is None:
+            return
+
         try:
-            shift = self.shift_service.open_shift(open_posts=posts)
+            shift = self.shift_service.open_shift(open_posts=posts, cash_start=cash_start)
             messagebox.showinfo(
                 "Успех",
                 f"Смена #{shift.id} открыта\n"
                 f"Время: {shift.start_time.strftime('%d.%m.%Y %H:%M')}\n"
-                f"Открыто постов: {shift.open_posts}")
+                f"Открыто постов: {shift.open_posts}\n"
+                f"В кассе: {money(cash_start)}")
             self.update_shift_status()
             self.refresh_employees()
         except ValueError as e:
@@ -957,7 +965,14 @@ class EmployeesTab:
         
         if not confirm:
             return
-        
+
+        # Пересчёт кассы обязателен: без него смену не закрыть
+        from ui.cash_tab import CountDialog
+        counting = CountDialog(self.frame, self.db, current_shift)
+        self.frame.wait_window(counting.dialog)
+        if not counting.ok:
+            return
+
         try:
             # Закрываем смену
             result = self.shift_service.close_shift(current_shift.id)

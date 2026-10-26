@@ -108,7 +108,7 @@ if settings.CORS_ORIGINS:
     )
 
 from app.api import (auth, booking, storage, history, queue, sync, public,  # noqa: E402
-                     photos, live, tasks, stock,
+                     photos, live, tasks, stock, cash,
                      staff, dashboard, telegram, push)
 
 app.include_router(auth.router)
@@ -129,6 +129,7 @@ app.include_router(tasks.sync_router)
 app.include_router(tasks.router)
 app.include_router(stock.sync_router)
 app.include_router(stock.router)
+app.include_router(cash.router)
 
 
 # ----------------------------------------------------------------------

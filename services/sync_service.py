@@ -94,7 +94,7 @@ class SyncService:
     # Запросы
     # ------------------------------------------------------------------
 
-    def _call(self, method, path, payload=None):
+    def _call(self, method, path, payload=None, raw=False):
         from config import offline_test_mode
         if offline_test_mode():
             raise SyncError('Тестовый режим без связи')
@@ -114,7 +114,9 @@ class SyncService:
 
         try:
             with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:
-                return json.loads(response.read().decode('utf-8'))
+                body = response.read()
+                # raw — файл (снимок машины), а не ответ JSON
+                return body if raw else json.loads(body.decode('utf-8'))
         except urllib.error.HTTPError as e:
             detail = ''
             try:
@@ -215,6 +217,18 @@ class SyncService:
         SyncService._stock_sent = mark
         return True
 
+    # --- Машина с телефона (docs/order_photo.md) -----------------------
+
+    def arrivals(self):
+        return self._call('GET', '/sync/arrivals').get('arrivals') or []
+
+    def arrival_photo(self, arrival_id):
+        return self._call('GET', f'/sync/arrivals/{int(arrival_id)}/photo', raw=True)
+
+    def arrival_done(self, arrival_id, order_local_id=None):
+        return self._call('POST', f'/sync/arrivals/{int(arrival_id)}/done',
+                          {'order_local_id': order_local_id})
+
     def order_photos(self, order_local_id):
         """Что мастера прислали по этому наряду."""
         return self._call('GET', f'/sync/photos?order_local_id={order_local_id}')
@@ -284,12 +298,26 @@ class SyncService:
                       'is_active': bool(row.is_active)}
                      for row in self.db.query(Employee).all()]
 
+        # Касса: у открытой смены «должно быть» — текущий остаток
+        from services.cash_service import CashService
+        cash = CashService(self.db)
+        try:
+            cash.refresh_expected()
+        except Exception as e:
+            self.db.rollback()
+            log.warning(f"Остаток кассы не посчитан: {e}")
+
         shifts = [{'local_id': row.id,
                    'started_at': as_naive(row.start_time),
                    'ended_at': as_naive(row.end_time),
                    'status': row.status,
                    'open_posts': row.open_posts,
-                   'total_salary': row.total_salary or 0.0}
+                   'total_salary': row.total_salary or 0.0,
+                   'cash_start': row.cash_start,
+                   'cash_expected': row.cash_expected,
+                   'cash_counted': row.cash_counted,
+                   'cash_diff': row.cash_diff,
+                   'cash_diff_reason': row.cash_diff_reason}
                   for row in self._recent_shifts(changed_since)]
 
         return {
@@ -299,6 +327,7 @@ class SyncService:
             'employees': employees,
             'shifts': shifts,
             'payouts': self._collect_payouts(changed_since),
+            'cash_orders': cash.payload(changed_since),
             'storage': self._collect_storage(),
             'queue': self._collect_queue(),
             'settings': self._collect_settings(),
@@ -569,6 +598,7 @@ class SyncService:
         from services.telegram_service import TelegramService
         from services import telegram_outbox
 
+        from services import directions as _directions
         telegram = TelegramService(self.db)
         chats = ','.join(r.chat_id for r in telegram.get_active_recipients())
 
@@ -603,6 +633,9 @@ class SyncService:
             # Мойка включена — в дашборде календарь с переключателем
             'direction_wash': settings.get('direction_wash'),
             'stock_enabled': settings.get('stock_enabled'),
+            # Наряд по фото: телефон предлагает только включённые направления
+            'arrival_photo_tire': '1' if _directions.photo_on(self.db, 'tire') else '0',
+            'arrival_photo_wash': '1' if _directions.photo_on(self.db, 'wash') else '0',
             'wash_booking_enabled': settings.get('wash_booking_enabled'),
             'wash_booking_posts': settings.get('wash_booking_posts'),
             'wash_booking_opens_at': settings.get('wash_booking_opens_at'),

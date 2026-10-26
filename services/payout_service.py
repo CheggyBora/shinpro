@@ -173,6 +173,16 @@ class PayoutService:
             entity_id=payout.id,
             employee_id=employee_id)
 
+        # Касса: выдача — это расходный ордер «Зарплата». Наличными —
+        # из кассы, на карту — ордер есть, наличные не меняются
+        try:
+            from services.cash_service import CashService
+            CashService(self.db).from_payout(payout)
+        except Exception as e:
+            self.db.rollback()
+            from logger import log
+            log.error(f"Расходный ордер по выдаче №{payout.id} не проведён: {e}")
+
         return payout
 
     def cancel(self, payout_id, pin):
@@ -197,6 +207,15 @@ class PayoutService:
         amount, employee_id = payout.amount, payout.employee_id
         self.db.delete(payout)
         self.db.commit()
+
+        # Ордер о выдаче не удаляем — проводим обратный
+        try:
+            from services.cash_service import CashService
+            CashService(self.db).payout_cancelled(payout_id)
+        except Exception as e:
+            self.db.rollback()
+            from logger import log
+            log.error(f"Ордер по отменённой выдаче №{payout_id} не отменён: {e}")
 
         AuditService(self.db).log(
             AuditService.SALARY_PAYOUT_CANCEL,

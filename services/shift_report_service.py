@@ -127,6 +127,11 @@ class ShiftReportService:
                 lines.append(f"  мастер №{employee_id}: {amount:.0f} ₽")
 
         lines += ["", f"Осталось шиномонтажу: <b>{summary['margin']:.0f} ₽</b>"]
+        try:
+            from services.cash_service import CashService
+            lines += CashService(self.db).summary_lines(shift)
+        except Exception:
+            self.db.rollback()
         return "\n".join(lines)
 
     def send_summary(self, shift, on_done=None):

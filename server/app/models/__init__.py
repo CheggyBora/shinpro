@@ -8,12 +8,13 @@ from app.models.notice import (Notice, TITLES, KIND_BOOKED, KIND_REMINDER,
                                ABOUT_AUTUMN, ABOUT_SPRING,
                                WAITING, SENT, FAILED, SKIPPED,
                                BY_TELEGRAM, BY_PUSH)
-from app.models.photo import MasterDevice, OpenOrder, OrderPhoto
+from app.models.photo import MasterDevice, OpenOrder, OrderPhoto, Arrival
 from app.models.push import PushSubscription
 from app.models.live import LiveTicket
 from app.models.task import (Task, Counterparty, CATEGORIES, CATEGORY_TITLES,
                              SOURCES)
 from app.models.stock import StockItem
+from app.models.cash import CashOrder
 from app.models.shop import (Appointment, BookingDay, StoredSet, Visit,
                              VisitItem, SalaryAccrual, SalaryPayout,
                              ShopEmployee, ShopShift, QueueSnapshot, ShopSetting,
@@ -33,10 +34,10 @@ __all__ = [
     'KIND_STORAGE', 'KIND_SEASON', 'KIND_READY', 'KIND_QUEUE', 'KIND_ARRIVE', 'KIND_LATE',
     'ABOUT_AUTUMN', 'ABOUT_SPRING',
     'WAITING', 'SENT', 'FAILED', 'SKIPPED',
-    'MasterDevice', 'OpenOrder', 'OrderPhoto',
+    'MasterDevice', 'OpenOrder', 'OrderPhoto', 'Arrival',
     'PushSubscription', 'LiveTicket',
     'Task', 'Counterparty', 'CATEGORIES', 'CATEGORY_TITLES', 'SOURCES',
-    'StockItem',
+    'StockItem', 'CashOrder',
     'Appointment', 'BookingDay', 'StoredSet', 'Visit', 'VisitItem',
     'SalaryAccrual', 'SalaryPayout', 'ShopEmployee', 'ShopShift',
     'QueueSnapshot',

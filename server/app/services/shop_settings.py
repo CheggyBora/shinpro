@@ -95,6 +95,12 @@ DEFAULTS = {
     'stock_enabled': '0',
     'stock_snapshot_at': '',
 
+    # Наряд по фото машины (docs/order_photo.md): снимок с телефона,
+    # номер распознаётся, снимок — обложка наряда. Включается отдельно
+    # для шиномонтажа и мойки; присылает цех. По умолчанию выключено
+    'arrival_photo_tire': '0',
+    'arrival_photo_wash': '0',
+
     'storage_warn_days': '7',
 
     # За сколько дней записываться с выдачей комплекта со склада.
@@ -221,6 +227,21 @@ def wash_booking_on(db, shop):
     """
     return (wash_on(db, shop)
             and is_on(get(db, 'wash_booking_enabled', shop=shop) or '0'))
+
+
+def arrival_photo_directions(db, shop):
+    """
+    Для каких направлений включён наряд по фото машины: ['tire', 'wash'].
+
+    Пустое — выключено, как у мойки. Мойка — только если точка вообще
+    работает мойкой: иначе телефон предложил бы направление, которого нет.
+    """
+    found = []
+    if is_on(get(db, 'arrival_photo_tire', shop=shop) or '0'):
+        found.append('tire')
+    if wash_on(db, shop) and is_on(get(db, 'arrival_photo_wash', shop=shop) or '0'):
+        found.append('wash')
+    return found
 
 
 def stock_on(db, shop):

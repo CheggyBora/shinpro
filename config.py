@@ -101,7 +101,7 @@ def init_db():
                         BookingPosts, PaintOption, ClientGroup,
                         EmployeeRole, LiveQueueEntry, CalendarTask,
                         Counterparty, TelegramOutbox, StockItem, ServiceMaterial,
-                        StockMove)
+                        StockMove, CashOrder)
     Base.metadata.create_all(bind=engine)
     add_missing_columns()
     fill_storage_deadlines()

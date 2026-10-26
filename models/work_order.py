@@ -49,6 +49,9 @@ class WorkOrder(Base):
     directions = Column(String(20), default='tire', server_default='tire', nullable=False)
     wash_post_number = Column(Integer, nullable=True)
     wash_class = Column(String(16), nullable=True)
+    # Обложка: снимок машины с телефона при приезде (docs/order_photo.md).
+    # Имя файла в папке photos/covers рядом с базой
+    cover_path = Column(String(200), nullable=True)
 
     # Время пакета, с которым машина пришла из очереди или записи:
     # на дисках 30 минут, только шины — час (настройки booking_minutes_*).

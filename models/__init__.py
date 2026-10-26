@@ -19,6 +19,7 @@ from .booking_posts import BookingPosts
 from .paint import PaintOption
 from .calendar import CalendarTask, Counterparty, TelegramOutbox
 from .stock import StockItem, ServiceMaterial, StockMove
+from .cash import CashOrder
 
 __all__ = [
     'PaintOption',

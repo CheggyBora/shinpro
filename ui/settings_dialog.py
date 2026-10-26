@@ -121,6 +121,7 @@ class SettingsDialog:
             ('Живая очередь', self._build_live_queue),
             ('Контрагенты', self._build_counterparties),
             ('Смена', self._build_shift),
+            ('Касса', self._build_cash),
             ('Хранение и сезон', self._build_storage),
             ('Печать', self._build_printing),
             ('Кнопки услуг', self._build_service_buttons),
@@ -530,6 +531,18 @@ class SettingsDialog:
                    f"Если не заполнено, отчёты сохраняются в папку рядом "
                    f"с программой:\n{get_default_exports_dir()}")
 
+    def _build_cash(self, content):
+        self._section(content, "Статьи кассовых ордеров")
+        self._hint(content,
+                   "Из этих списков выбирают статью в приходном и расходном ордере. "
+                   "Убранная статья остаётся у уже проведённых ордеров. Выдача "
+                   "зарплаты всегда идёт статьёй «Зарплата».")
+        from ui.cash_tab import CategoriesEditor
+        CategoriesEditor(content, self.db).frame.pack(anchor='w', pady=(4, 8))
+        self._hint(content,
+                   "При открытии смены вводят, сколько наличных в кассе, при закрытии — "
+                   "пересчитывают. Без пересчёта смену из программы не закрыть.")
+
     def _build_shift(self, content):
         self._section(content, "Автоматическое закрытие смены")
 
@@ -716,6 +729,20 @@ class SettingsDialog:
                    "а в наряд кнопкой «Мастера наряда» добавляют тех, кто на нём "
                    "работает: делят только они. Мойка всегда назначается на "
                    "сотрудника в строке.")
+
+        self._section(content, "Наряд по фото машины")
+        self.photo_vars = {}
+        for direction, title in (('tire', 'Шиномонтаж'), ('wash', 'Мойка')):
+            var = tk.BooleanVar(value=self.settings.get(f'arrival_photo_{direction}') == '1')
+            self.photo_vars[direction] = var
+            ttk.Checkbutton(content, text=f"{title}: QR, номер по фото и обложка наряда",
+                            variable=var,
+                            command=lambda d=direction, v=var: directions.set_photo_on(
+                                self.db, d, v.get())).pack(anchor='w', pady=2)
+        self._hint(content,
+                   "Включено — рядом с «Создать наряд» кнопка «QR»: телефон снимает "
+                   "машину, номер читается сам, наряд получает обложку. Выключено — "
+                   "кнопки нет, телефон это направление не предлагает, обложка не видна.")
 
         self._section(content, "От чего считается зарплата")
         self.salary_base_vars = {}

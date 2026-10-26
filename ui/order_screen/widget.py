@@ -62,6 +62,19 @@ class OrderWidget(OrderItemsMixin, OrderPaymentMixin, OrderTimingMixin, OrderBlo
         header_row = ttk.Frame(info_frame, style='White.TFrame')
         header_row.pack(anchor='w', fill='x')
 
+        # Обложка — снимок машины с телефона: видно, та ли машина на посту.
+        # Щелчок — на весь экран (docs/order_photo.md)
+        from services.arrival_service import cover_file, load_image, show_full
+        cover = cover_file(order, self.db)
+        image = load_image(cover, 64, 48) if cover else None
+        if image is not None:
+            thumb = tk.Label(header_row, image=image, cursor='hand2', bd=0,
+                             bg=styles.COLORS['bg_card'])
+            thumb.image = image
+            thumb.pack(side='left', padx=(0, 10))
+            thumb.bind('<Button-1>', lambda e, p=cover: show_full(
+                self.frame, p, f'Наряд №{order.id} · {order.car.license_plate}'))
+
         ttk.Label(header_row, text=f"Наряд №{order.id}",
                   font=(styles.DEFAULT_FONT, 15, 'bold'),
                   background=styles.COLORS['bg_card'],

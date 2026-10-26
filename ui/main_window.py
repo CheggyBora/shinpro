@@ -75,6 +75,8 @@ class MainWindow:
         self.settings_tab = SettingsTab(self.content, self.db)
         from ui.stock_tab import StockTab
         self.stock_tab = StockTab(self.content, self.db)
+        from ui.cash_tab import CashTab
+        self.cash_tab = CashTab(self.content, self.db)
         self.stock_tab.on_changed = lambda: self._calendar_badge()
 
         self.nav.add('Сотрудники', self.employees_tab.frame)
@@ -85,6 +87,7 @@ class MainWindow:
         self.nav.add('Хранение шин', self.tire_storage_tab.frame)
         self.nav.add('Покраска', self.paint_tab.frame)
         self.nav.add('Склад', self.stock_tab.frame)
+        self.nav.add('Касса', self.cash_tab.frame)
         self.nav.add('Отчёты', self.statistics_tab.frame)
         self.nav.add('Прайс-лист', self.price_list_tab.frame)
         self.nav.add('Настройки', self.settings_tab.frame)
@@ -160,7 +163,64 @@ class MainWindow:
                 self._queue_housekeeping()
                 self._calendar_refresh()
         self._start_telegram()
+        self._start_arrivals()
         self.root.after(self.LIVE_SECONDS * 1000, self._live_tick)
+
+    # ------------------------------------------------------------------
+    # Машина с телефона (docs/order_photo.md)
+    # ------------------------------------------------------------------
+
+    def _start_arrivals(self):
+        """Спросить сервер, не сняли ли машину на телефон, — в своём потоке."""
+        running = getattr(self, 'arrivals_running', None)
+        if running is not None and running.is_alive():
+            return False
+        try:
+            from services.sync_service import SyncService
+            if not SyncService(self.db).is_enabled() or self.orders_tab.shift_service.get_current_shift() is None:
+                return False
+        except Exception:
+            self.db.rollback()
+            return False
+
+        import threading
+
+        def worker():
+            from config import SessionLocal
+            from services.arrival_service import ArrivalService
+            db = SessionLocal()
+            try:
+                found = ArrivalService(db).pending()
+            except Exception as e:
+                log.warning(f"Машины с телефона не получены: {e}")
+                found = []
+            finally:
+                db.close()
+            if found:
+                self.root.after(0, lambda: self._show_arrivals(found))
+
+        self.arrivals_running = threading.Thread(target=worker, daemon=True)
+        self.arrivals_running.start()
+        return True
+
+    def _show_arrivals(self, found):
+        """Открыть окно создания для первой новой машины; остальные — следом."""
+        seen = self.__dict__.setdefault('arrivals_seen', set())
+        fresh = [a for a in found if a['id'] not in seen]
+        if not fresh:
+            return
+        # Окно создания уже открыто — не мешаем, следующая машина
+        # покажется при следующем обмене
+        open_dialog = getattr(self.orders_tab, 'create_dialog', None)
+        if open_dialog is not None and open_dialog.winfo_exists():
+            return
+        arrival = fresh[0]
+        seen.add(arrival['id'])
+        try:
+            self.orders_tab.open_arrival(arrival)
+        except Exception as e:
+            self.db.rollback()
+            log.error(f"Окно наряда для машины с телефона не открылось: {e}")
 
     def _start_telegram(self):
         """Дослать сообщения о складе и покраске — в своём потоке."""
@@ -288,6 +348,9 @@ class MainWindow:
         self.nav.set_title(self.stock_tab.frame, f'Склад ({problems})' if problems else 'Склад')
         if self.stock_tab.frame.winfo_ismapped():
             self.stock_tab.load()
+        # Касса: оплатили наряд наличными — остаток вырос
+        if self.cash_tab.frame.winfo_ismapped():
+            self.cash_tab.load(keep=True)
 
     def _queue_housekeeping(self, refresh=False):
         """

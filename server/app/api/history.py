@@ -90,6 +90,8 @@ def photos(limit: int = Query(30, le=100),
 
     rows = db.query(OrderPhoto).filter(
         OrderPhoto.client_id == client.id,
+        # Обложка наряда — снимок машины для цеха, не «фото от мастера»
+        OrderPhoto.kind != 'cover',
         OrderPhoto.sent_at.isnot(None)).order_by(
         OrderPhoto.created_at.desc()).limit(limit).all()
 
@@ -119,7 +121,7 @@ def photo_file(photo_id: int, key: str = '', db: Session = Depends(get_db)):
     from app.services import photos as photo_service
 
     row = db.query(OrderPhoto).filter(OrderPhoto.id == photo_id).first()
-    if row is None or row.client_id is None:
+    if row is None or row.client_id is None or row.kind == 'cover':
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail='Фото не найдено')
 
     if key != photo_key(row.id, row.client_id):

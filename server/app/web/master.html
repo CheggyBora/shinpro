@@ -22,6 +22,12 @@
   --brand: #2563eb;
   --ok: #16a34a;
   --bad: #dc2626;
+  --ok-bg: #dcfce7;
+  --warn: #92400e;
+  --warn-bg: #fef3c7;
+  --accent-bg: #dbeafe;
+  --accent: #1d4ed8;
+  --plate-font: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -32,6 +38,11 @@
     --line: #1e293b;
     --bg: #0b1220;
     --card: #111a2e;
+    --ok-bg: #12301f;
+    --warn: #f0c46a;
+    --warn-bg: #3b2f14;
+    --accent-bg: #1e3350;
+    --accent: #93c5fd;
   }
 }
 
@@ -106,6 +117,50 @@ button.ghost { background: var(--card); color: var(--ink); border: 1.5px solid v
 .ok { color: var(--ok); }
 .empty { text-align: center; color: var(--muted); padding: 40px 0; }
 
+/* --- Новая машина (docs/order_photo.md) ---
+   Кнопка во всю ширину над списком: снимают на ходу, у машины,
+   одной рукой. Нажатие сразу открывает камеру */
+.new-car { display: flex; align-items: center; justify-content: center; gap: 10px;
+  width: 100%; padding: 18px; margin-bottom: 14px; border-radius: 14px;
+  background: var(--brand); color: #fff; font-size: 18px; font-weight: 700;
+  position: relative; cursor: pointer; }
+.new-car svg { width: 24px; height: 24px; stroke: currentColor; fill: none;
+  stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: 0 0 auto; }
+.new-car input, .retake input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.retake { display: block; width: 100%; padding: 16px; text-align: center; font-size: 17px;
+  font-weight: 600; border-radius: 14px; background: var(--card); color: var(--ink);
+  border: 1.5px solid var(--line); position: relative; cursor: pointer; margin-top: 8px; }
+
+.car-photo { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover;
+  border-radius: 14px; background: var(--line); margin-bottom: 12px; }
+
+.recog { display: flex; align-items: center; gap: 10px; border-radius: 12px;
+  padding: 10px 12px; background: var(--ok-bg); color: var(--ok); font-weight: 600;
+  font-size: 15px; }
+.recog.warn { background: var(--warn-bg); color: var(--warn); }
+.recog.wait { background: var(--line); color: var(--ink-soft); }
+.recog input[type="text"] { flex: 1; min-width: 0; padding: 10px 12px;
+  font-family: var(--plate-font); font-size: 22px; font-weight: 600;
+  letter-spacing: .04em; text-transform: uppercase; }
+
+.hint-line { font-size: 15px; color: var(--ink-soft); margin: 10px 0 0; }
+.hint-line b { color: var(--ink); font-weight: 600; }
+.badge { display: inline-block; margin-top: 8px; padding: 5px 10px; border-radius: 8px;
+  background: var(--accent-bg); color: var(--accent); font-size: 15px; font-weight: 600; }
+
+.seg { display: flex; gap: 6px; margin-top: 14px; }
+.seg button { flex: 1 1 0; min-width: 0; width: auto; padding: 12px 6px; font-size: 15px;
+  font-weight: 600; background: var(--card); color: var(--ink);
+  border: 1.5px solid var(--line); border-radius: 12px; }
+.seg button[aria-pressed="true"] { border: 2px solid var(--brand); color: var(--brand); }
+
+.done-mark { width: 64px; height: 64px; border-radius: 50%; background: var(--ok-bg);
+  color: var(--ok); display: flex; align-items: center; justify-content: center;
+  margin: 8px auto 12px; }
+.done-mark svg { width: 34px; height: 34px; stroke: currentColor; fill: none;
+  stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+.link-btn { background: none; color: var(--brand); font-weight: 600; padding: 14px; }
+
 [hidden] { display: none !important; }
 </style>
 </head>
@@ -153,6 +208,14 @@ button.ghost { background: var(--card); color: var(--ink); border: 1.5px solid v
 
 <!-- Список машин -->
 <section id="screenCars" hidden>
+  <!-- Новая машина: снимок сразу с камеры. Наряд по ней откроет
+       приёмщик на компьютере (docs/order_photo.md) -->
+  <label class="new-car" id="newCar" hidden>
+    <input type="file" accept="image/*" capture="environment" data-arrival>
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/>
+      <circle cx="12" cy="13" r="3.5"/></svg>
+    Новая машина
+  </label>
   <div id="cars"></div>
   <button type="button" class="ghost" id="reload">Обновить список</button>
 </section>
@@ -178,6 +241,51 @@ button.ghost { background: var(--card); color: var(--ink); border: 1.5px solid v
   <p class="note" id="sendState" hidden></p>
 </section>
 
+<!-- Новая машина: снимок → номер → «Создать наряд» -->
+<section id="screenArrival" hidden>
+  <img class="car-photo" id="arrPhoto" alt="Снимок машины">
+
+  <div class="recog wait" id="arrBox">
+    <span>Номер:</span>
+    <input id="arrPlate" type="text" autocomplete="off" autocapitalize="characters"
+           spellcheck="false" placeholder="впишите" aria-label="Номер машины">
+  </div>
+  <p class="hint-line" id="arrState">Читаем номер…</p>
+  <p class="hint-line" id="arrKnown" hidden></p>
+  <span class="badge" id="arrBooked" hidden></span>
+
+  <div class="seg" id="arrDirs" hidden role="group" aria-label="Что делаем">
+    <button type="button" data-dirs="tire" aria-pressed="true">Шиномонтаж</button>
+    <button type="button" data-dirs="wash" aria-pressed="false">Мойка</button>
+    <button type="button" data-dirs="tire,wash" aria-pressed="false">Оба</button>
+  </div>
+
+  <button type="button" id="arrCreate" style="margin-top:16px" disabled>Создать наряд</button>
+  <label class="retake">
+    <input type="file" accept="image/*" capture="environment" data-arrival>
+    Переснять
+  </label>
+  <button type="button" class="link-btn" id="arrBack">К списку машин</button>
+  <p class="note bad" id="arrError" hidden></p>
+</section>
+
+<!-- Машина ушла в цех -->
+<section id="screenArrivalDone" hidden>
+  <div class="card" style="text-align:center">
+    <div class="done-mark"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div>
+    <div style="font-size:22px;font-weight:700;font-family:var(--plate-font)" id="doneplate"></div>
+    <p class="note" style="margin-top:8px">Машина в цеху. Приёмщик откроет наряд на
+      компьютере — номер и снимок уже подставлены.</p>
+  </div>
+  <label class="new-car">
+    <input type="file" accept="image/*" capture="environment" data-arrival>
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/>
+      <circle cx="12" cy="13" r="3.5"/></svg>
+    Ещё машина
+  </label>
+  <button type="button" class="ghost" id="doneBack">К списку машин</button>
+</section>
+
 <script>
 'use strict';
 
@@ -188,7 +296,7 @@ function $(id) { return document.getElementById(id); }
 
 function show(name) {
   ['screenConnect', 'screenHome', 'screenCars',
-   'screenShot'].forEach(function (id) {
+   'screenShot', 'screenArrival', 'screenArrivalDone'].forEach(function (id) {
     $(id).hidden = (id !== name);
   });
 }
@@ -268,6 +376,9 @@ function loadCars() {
   $('reload').hidden = false;
   api('/m/cars').then(function (data) {
     $('title').textContent = data.shop || 'Фото в наряд';
+    // «Новая машина» — когда наряд по фото включён хоть для одного
+    // направления (docs/order_photo.md)
+    $('newCar').hidden = !(data.arrival_directions || []).length;
     $('who').textContent = data.name ? data.name : '';
 
     if (!data.cars.length) {
@@ -419,6 +530,203 @@ $('doSend').addEventListener('click', function () {
   });
 });
 
+// --- Новая машина (docs/order_photo.md) -------------------------------
+//
+// Сняли машину — сервер читает номер — телефон показывает его (можно
+// поправить), «есть в базе» и «записан на …» — «Создать наряд». Наряд
+// создаёт приёмщик: у него на компьютере откроется окно создания.
+
+var arrival = { photoId: null, dirs: 'tire', allowed: ['tire'], url: null,
+                hintsTimer: null, busy: false };
+
+// Латиница, похожая на кириллицу, — в кириллицу: на номере других
+// букв не бывает, а клавиатура телефона часто стоит на английской
+var LOOKALIKE = { A: 'А', B: 'В', E: 'Е', K: 'К', M: 'М', H: 'Н', O: 'О', P: 'Р',
+                  C: 'С', T: 'Т', Y: 'У', X: 'Х' };
+
+function plateText(value) {
+  return String(value || '').toUpperCase().replace(/[\s\-_.]/g, '')
+    .replace(/[ABEKMHOPCTYX]/g, function (ch) { return LOOKALIKE[ch]; });
+}
+
+function plateLooksFull(value) {
+  return /^[АВЕКМНОРСТУХ]\d{3}[АВЕКМНОРСТУХ]{2}\d{2,3}$/.test(value)
+    || /^[АВЕКМНОРСТУХ]{2}\d{4,5}\d{2}$/.test(value);
+}
+
+function dateText(iso) {
+  var parts = String(iso || '').split('-');
+  return parts.length === 3 ? parts[2] + '.' + parts[1] : '';
+}
+
+var DIR_WORDS = { tire: 'шиномонтаж', wash: 'мойка' };
+
+function drawHints(found) {
+  found = found || {};
+  var known = found.known;
+  if (known) {
+    var bits = [];
+    if (known.client_name) bits.push('<b>' + escape(known.client_name) + '</b>');
+    if (known.car) bits.push(escape(known.car));
+    if (known.last_visit) bits.push('был ' + dateText(known.last_visit));
+    $('arrKnown').innerHTML = 'Есть в базе' + (bits.length ? ': ' + bits.join(' · ') : '');
+    $('arrKnown').hidden = false;
+  } else {
+    $('arrKnown').hidden = true;
+  }
+
+  var booked = found.appointment;
+  if (booked) {
+    $('arrBooked').textContent = 'Записан на ' + booked.time + ' · '
+      + (DIR_WORDS[booked.direction] || 'шиномонтаж');
+    $('arrBooked').hidden = false;
+    // Записан на мойку — сразу предлагаем мойку
+    if (arrival.allowed.length > 1 && booked.direction === 'wash') setDirs('wash');
+  } else {
+    $('arrBooked').hidden = true;
+  }
+}
+
+function setDirs(value) {
+  arrival.dirs = value;
+  [].slice.call($('arrDirs').querySelectorAll('button')).forEach(function (button) {
+    button.setAttribute('aria-pressed', String(button.getAttribute('data-dirs') === value));
+  });
+}
+
+[].slice.call($('arrDirs').querySelectorAll('button')).forEach(function (button) {
+  button.addEventListener('click', function () { setDirs(button.getAttribute('data-dirs')); });
+});
+
+function plateBox(state) {
+  $('arrBox').className = 'recog' + (state ? ' ' + state : '');
+}
+
+function refreshCreate() {
+  $('arrCreate').disabled = arrival.busy || plateText($('arrPlate').value).length < 4;
+}
+
+function startArrival(file) {
+  if (!file) return;
+
+  arrival.photoId = null;
+  arrival.busy = true;
+  setDirs('tire');
+  $('arrDirs').hidden = true;
+  $('arrKnown').hidden = true;
+  $('arrBooked').hidden = true;
+  $('arrError').hidden = true;
+  $('arrPlate').value = '';
+  plateBox('wait');
+  $('arrState').textContent = 'Отправляем снимок и читаем номер…';
+  $('arrState').hidden = false;
+  refreshCreate();
+
+  if (arrival.url) URL.revokeObjectURL(arrival.url);
+  arrival.url = URL.createObjectURL(file);
+  $('arrPhoto').src = arrival.url;
+  show('screenArrival');
+  window.scrollTo(0, 0);
+
+  // Жмём в телефоне, как и фото мастера: в боксе связь плохая, а
+  // номер с уменьшенного снимка читается так же
+  shrink(file).then(function (blob) {
+    var form = new FormData();
+    form.append('photo', blob, 'car.jpg');
+    return api('/m/arrival/recognize', { method: 'POST', body: form });
+  }).then(function (data) {
+    arrival.busy = false;
+    arrival.photoId = data.photo_id;
+    // Выбор — только из включённых направлений; одно — выбора нет,
+    // уходит оно само
+    arrival.allowed = (data.directions_allowed && data.directions_allowed.length)
+      ? data.directions_allowed : ['tire'];
+    setDirs(arrival.allowed[0]);
+    $('arrDirs').hidden = arrival.allowed.length < 2;
+
+    if (data.plate) {
+      $('arrPlate').value = data.plate;
+      if (data.plate_complete) {
+        plateBox('');
+        $('arrState').textContent = 'Проверьте номер. Если ошибка — поправьте.';
+      } else {
+        plateBox('warn');
+        $('arrState').textContent = 'Регион не прочитался — допишите его.';
+      }
+    } else {
+      plateBox('warn');
+      $('arrState').textContent = 'Номер не прочитался: грязный или снят под углом. '
+        + 'Впишите руками или переснимите — фото всё равно станет обложкой.';
+    }
+    drawHints(data);
+    refreshCreate();
+  }).catch(function (e) {
+    arrival.busy = false;
+    if (e.status === 401) return showStranger();
+    plateBox('warn');
+    $('arrState').textContent = 'Снимок не отправился: ' + e.message
+      + '. Переснимите или впишите номер руками.';
+    refreshCreate();
+  });
+}
+
+[].slice.call(document.querySelectorAll('input[data-arrival]')).forEach(function (input) {
+  input.addEventListener('change', function (event) {
+    var file = (event.target.files || [])[0];
+    // Сбрасываем, чтобы тот же снимок можно было выбрать снова
+    event.target.value = '';
+    startArrival(file);
+  });
+});
+
+$('arrPlate').addEventListener('input', function () {
+  var input = $('arrPlate');
+  var fixed = plateText(input.value);
+  if (fixed !== input.value) input.value = fixed;
+  refreshCreate();
+
+  // Поправили номер — подсказки под ним тоже должны быть про него
+  clearTimeout(arrival.hintsTimer);
+  if (!plateLooksFull(fixed)) { drawHints(null); return; }
+  plateBox('');
+  $('arrState').textContent = 'Номер похож на настоящий — можно создавать наряд.';
+  arrival.hintsTimer = setTimeout(function () {
+    api('/m/arrival/hints', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ plate: fixed })
+    }).then(function (found) {
+      if (plateText($('arrPlate').value) === fixed) drawHints(found);
+    }).catch(function () {});
+  }, 500);
+});
+
+$('arrCreate').addEventListener('click', function () {
+  var plate = plateText($('arrPlate').value);
+  if (plate.length < 4) return;
+
+  $('arrCreate').disabled = true;
+  $('arrError').hidden = true;
+
+  api('/m/arrival', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ photo_id: arrival.photoId, plate: plate,
+                           directions: arrival.dirs.split(',') })
+  }).then(function () {
+    $('doneplate').textContent = plate;
+    show('screenArrivalDone');
+  }).catch(function (e) {
+    if (e.status === 401) return showStranger();
+    $('arrError').textContent = e.message;
+    $('arrError').hidden = false;
+    refreshCreate();
+  });
+});
+
+$('arrBack').addEventListener('click', loadCars);
+$('doneBack').addEventListener('click', loadCars);
+
 // --- Запуск -----------------------------------------------------------
 
 try { state.key = localStorage.getItem(KEY); } catch (e) {}
@@ -434,6 +742,7 @@ function showStranger() {
     + 'помнит себя только там.</p></div>';
   show('screenCars');
   $('reload').hidden = true;
+  $('newCar').hidden = true;
 }
 
 if (linkFromAddress()) {

@@ -114,6 +114,12 @@ class OrderPhoto(Base):
     # Кто снял — как назвался на телефоне
     author = Column(String(80), nullable=True)
 
+    # photo — снимок мастера для клиента; cover — обложка наряда: машина
+    # целиком, снятая при приезде (docs/order_photo.md). Обложка клиенту
+    # не уходит и в его кабинете не видна: это снимок для цеха
+    kind = Column(String(10), default='photo', nullable=False,
+                  server_default='photo')
+
     created_at = Column(DateTime, default=shop_now, nullable=False, index=True)
 
     # Когда и чем сказали клиенту. Пусто — значит сказать было нечем:
@@ -125,6 +131,39 @@ class OrderPhoto(Base):
 
     shop = relationship('Shop')
     client = relationship('Client')
+
+
+PHOTO = 'photo'
+COVER = 'cover'
+
+
+class Arrival(Base):
+    """
+    Машина с телефона: сняли при приезде, номер распознали, ждём цех.
+
+    Наряд по ней создаёт приёмщик в цеху — телефон только подаёт машину.
+    Цех забирает ждущие при живом обмене и говорит, чем кончилось: создал
+    наряд — снимок становится его обложкой; закрыл окно — машина снята.
+    """
+    __tablename__ = 'arrivals'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    shop_id = Column(Integer, ForeignKey('shops.id'), nullable=False,
+                     index=True)
+    photo_id = Column(Integer, ForeignKey('order_photos.id'), nullable=True)
+
+    plate = Column(String(20), nullable=False, server_default='')
+    # «tire», «wash» или «tire,wash» — как у наряда
+    directions = Column(String(20), default='tire', nullable=False,
+                        server_default='tire')
+
+    created_at = Column(DateTime, default=shop_now, nullable=False,
+                        index=True)
+    # Цех разобрался: создал наряд или закрыл окно
+    done_at = Column(DateTime, nullable=True)
+    order_local_id = Column(Integer, nullable=True)
+
+    photo = relationship('OrderPhoto')
 
 
 Index('ix_open_orders_shop_plate', OpenOrder.shop_id, OpenOrder.license_plate)

@@ -142,6 +142,21 @@ class Settings:
     # о прошлогодней грыже не спорит никто, а место оно занимает
     PHOTO_KEEP_MONTHS = int(os.environ.get('SERVER_PHOTO_KEEP_MONTHS', '12'))
 
+    # --- Номер машины с фото ----------------------------------------
+    # Наряд по фото с телефона (docs/order_photo.md): номер распознаётся
+    # здесь же, на сервере. Выключить — SERVER_PLATES=0: тогда номер
+    # всегда вписывают руками, остальное работает как было.
+    PLATES_ENABLED = _bool('SERVER_PLATES', True)
+
+    # Куда скачиваются веса моделей (~13 МБ, один раз). Служба пишет
+    # только в свою рабочую папку (ProtectSystem=strict, ProtectHome),
+    # поэтому не в ~/.cache, а рядом с кодом. Раскатка эту папку не
+    # стирает — см. deploy/post-receive
+    PLATE_MODEL_DIR = os.environ.get(
+        'SERVER_PLATE_MODEL_DIR',
+        os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                     'plate-models'))
+
     # --- Шиномонтаж ---------------------------------------------------
     SHOP_NAME = os.environ.get('SERVER_SHOP_NAME', 'Шиномонтаж')
 

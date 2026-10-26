@@ -1,0 +1,4 @@
+# Данные сервера, а не код: снимки из цеха и скачанные веса моделей
+# распознавания номеров (app/config.py: PHOTO_DIR, PLATE_MODEL_DIR)
+/photos/
+/plate-models/

@@ -20,6 +20,7 @@ class AuditService:
     SALARY_PAYOUT_CANCEL = 'salary.payout_cancel'
     PIN_FAILED = 'auth.pin_failed'
     PIN_CHANGED = 'auth.pin_changed'
+    CASH = 'cash.order'
 
     # Как показывать код действия человеку
     TITLES = {
@@ -33,6 +34,7 @@ class AuditService:
         SALARY_PAYOUT_CANCEL: 'Отмена выдачи зарплаты',
         PIN_FAILED: 'Неверный PIN-код',
         PIN_CHANGED: 'Смена PIN-кода',
+        CASH: 'Касса',
     }
 
     def __init__(self, db):

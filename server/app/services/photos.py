@@ -15,6 +15,7 @@ import secrets
 from datetime import timedelta
 
 from app.config import settings
+from app.models.photo import PHOTO, COVER
 from app.models import (MasterDevice, Notice, OpenOrder, OrderPhoto,
                         KIND_READY, BY_TELEGRAM, BY_PUSH, SENT, SKIPPED,
                         FAILED)
@@ -103,7 +104,7 @@ def cars_for(db, shop):
 # ----------------------------------------------------------------------
 
 def save(db, shop, data, content_type, order_local_id=None, plate=None,
-         comment=None, author=None):
+         comment=None, author=None, kind=PHOTO):
     """
     Положить снимок на диск и завести строку.
 
@@ -137,6 +138,7 @@ def save(db, shop, data, content_type, order_local_id=None, plate=None,
         path=os.path.relpath(path, settings.PHOTO_DIR).replace(os.sep, '/'),
         comment=(comment or '').strip()[:1000] or None,
         author=(author or '').strip()[:80] or None,
+        kind=COVER if kind == COVER else PHOTO,
         client_id=None)
 
     photo.client_id = _client_for(db, shop, photo)
@@ -183,6 +185,11 @@ def tell_client(db, shop, photo):
     """
     from app.models import Account, Client
     from app.services import shop_settings
+
+    # Обложка — снимок машины для цеха, а не «фото от мастера»: клиенту
+    # она не уходит никогда (docs/order_photo.md)
+    if photo.kind == COVER:
+        return None
 
     if photo.client_id is None:
         photo.last_error = 'Машина ни за кем не записана'
@@ -277,8 +284,18 @@ def drop_old(db, months=None):
     if months <= 0:
         return 0
 
+    from app.models import Arrival
+
     edge = shop_now() - timedelta(days=30 * months)
     rows = db.query(OrderPhoto).filter(OrderPhoto.created_at < edge).all()
+
+    # Машины с телефона ссылаются на свой снимок: без них строку снимка
+    # не убрать. Сами они к этому времени давно разобраны
+    ids = [photo.id for photo in rows]
+    if ids:
+        db.query(Arrival).filter(Arrival.photo_id.in_(ids)).delete(
+            synchronize_session=False)
+        db.flush()
 
     gone = 0
     for photo in rows:

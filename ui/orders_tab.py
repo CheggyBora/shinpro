@@ -58,9 +58,19 @@ class OrdersTab:
         self.license_entry.bind('<Down>', self.on_down_arrow)
         self.license_entry.bind('<Return>', self.on_entry_return)
         
-        styles.create_button(input_frame, "Создать наряд", self.create_new_order, 'Primary.TButton').pack(side='left', padx=(0, 10))
+        styles.create_button(input_frame, "Создать наряд", self.create_new_order, 'Primary.TButton').pack(side='left', padx=(0, 6))
+        # Наряд по фото: телефон снимает машину, номер читается сам
+        # (docs/order_photo.md)
+        self.qr_button = styles.create_button(input_frame, "QR", self.show_phone_code,
+                                              'Secondary.TButton')
+        self.qr_button.pack(side='left', padx=(0, 10))
+        self._pending_arrival = None
+        # «Пробить» — после QR: прячем и возвращаем QR на его место
+        self._qr_anchor = None
         
-        styles.create_button(input_frame, "Пробить", self.process_payment_for_current_order, 'Success.TButton').pack(side='left')
+        self._pay_button = styles.create_button(input_frame, "Пробить", self.process_payment_for_current_order, 'Success.TButton')
+        self._pay_button.pack(side='left')
+        self.refresh_qr()
         
         # Лента задач на сегодня: всегда на виду, без окон и «ОК».
         # Скоро — жёлтая, просрочено — красная (docs/calendar.md)
@@ -254,7 +264,51 @@ class OrdersTab:
         # Автоматически открываем диалог создания наряда
         self.create_new_order()
     
+    def refresh_qr(self):
+        """QR — только там, где наряд по фото включён (своё у шинки и мойки)."""
+        from services import directions as _directions
+        try:
+            on = _directions.photo_on(self.db, self.mode)
+        except Exception:
+            self.db.rollback()
+            on = False
+        if on and not self.qr_button.winfo_ismapped():
+            self.qr_button.pack(side='left', padx=(0, 10), before=self._pay_button)
+        elif not on:
+            self.qr_button.pack_forget()
+
+    def show_phone_code(self):
+        from ui.arrival_dialog import PhoneCodeDialog
+        PhoneCodeDialog(self.frame, self.db)
+
+    def open_arrival(self, arrival):
+        """
+        Машина с телефона: окно создания с номером, клиентом и снимком.
+        Наряд создаёт приёмщик — сам по себе он не появится.
+        """
+        if self.app is not None:
+            self.app.show_orders()
+        self._pending_arrival = arrival
+        self.license_var.set(normalize_plate(arrival.get('plate') or ''))
+        self.select_plate(arrival.get('plate') or '')
+
+    def _arrival_done(self, arrival, order_id=None):
+        """Сказать серверу, что машина разобрана, — в фоне: связь бывает медленной."""
+        import threading
+
+        def worker():
+            from config import SessionLocal
+            from services.arrival_service import ArrivalService
+            db = SessionLocal()
+            try:
+                ArrivalService(db).done(arrival['id'], order_id)
+            finally:
+                db.close()
+
+        threading.Thread(target=worker, daemon=True).start()
+
     def create_new_order(self):
+        arrival, self._pending_arrival = getattr(self, '_pending_arrival', None), None
         license = normalize_plate(self.license_entry.get())
         if not license:
             messagebox.showerror("Ошибка", "Введите номер автомобиля")
@@ -268,6 +322,8 @@ class OrdersTab:
 
         dialog = tk.Toplevel(self.frame)
         dialog.title("Детали наряда")
+        # Открыто ли окно создания — машина с телефона ждёт, пока закроют
+        self.create_dialog = dialog
         dialog.geometry("470x760")
         dialog.configure(bg=styles.COLORS['bg'])
         styles.center_window(dialog, self.frame.winfo_toplevel())
@@ -275,7 +331,28 @@ class OrdersTab:
         content = ttk.Frame(dialog, style='White.TFrame')
         content.pack(fill='both', expand=True, padx=20, pady=20)
 
-        styles.create_label(content, f"Создание наряда для {license}", 'CardHeading.TLabel').pack(anchor='w', pady=(0, 15))
+        styles.create_label(content, f"Создание наряда для {license}"
+                            + (" · с телефона" if arrival else ""),
+                            'CardHeading.TLabel').pack(anchor='w', pady=(0, 15))
+
+        # Машина с телефона: снимок сбоку — будущая обложка наряда.
+        # Закрыли окно, не создав, — машина снимается
+        if arrival is not None:
+            from services.arrival_service import load_image, show_full
+            image = load_image(arrival['photo'], 200, 150) if arrival.get('photo') else None
+            if image is not None:
+                photo = tk.Label(content, image=image, cursor='hand2', bd=0,
+                                 bg=styles.COLORS['bg_card'])
+                photo.image = image
+                photo.pack(anchor='w', pady=(0, 10))
+                photo.bind('<Button-1>', lambda e: show_full(dialog, arrival['photo']))
+
+            def dismiss():
+                self._arrival_done(arrival, None)
+                dialog.destroy()
+
+            dialog.protocol('WM_DELETE_WINDOW', dismiss)
+            dialog.geometry("470x900")
 
         # Получаем предзаполненные данные если есть
         prefilled = getattr(self, 'prefilled_data', None)
@@ -284,7 +361,9 @@ class OrdersTab:
         # работает одно направление — выбирать нечего
         from services import directions as _directions
         enabled_directions = _directions.enabled(self.db)
-        direction_vars = {d: tk.BooleanVar(value=(d == self.mode)) for d in enabled_directions}
+        chosen_on_phone = (arrival or {}).get('directions') or []
+        direction_vars = {d: tk.BooleanVar(value=(d in chosen_on_phone) if chosen_on_phone else (d == self.mode))
+                          for d in enabled_directions}
         wash_class_var = tk.StringVar()
         if len(enabled_directions) > 1:
             styles.create_label(content, "Направление*:", 'Card.TLabel').pack(anchor='w', pady=(0, 5))
@@ -498,6 +577,10 @@ class OrdersTab:
                     if wheels is not None:
                         order.package_minutes = queue.package_minutes(wheels)
                     self.db.commit()
+                if arrival is not None:
+                    from services.arrival_service import ArrivalService
+                    ArrivalService(self.db).attach(order, arrival.get('photo'))
+                    self._arrival_done(arrival, order.id)
                 self.open_order_tab(order)
                 self.license_entry.delete(0, tk.END)
                 self.update_license_plates_list()
@@ -676,18 +759,29 @@ class OrdersTab:
             if hasattr(widget, 'refresh_directions'):
                 widget.refresh_directions()
         self.refresh_tasks()
+        if hasattr(self, 'qr_button'):
+            self.refresh_qr()
 
     def open_order_tab(self, order):
         tab_frame = ttk.Frame(self.order_notebook)
         tab_title = f"  #{order.id}: {order.car.license_plate}  "
-        self.order_notebook.add(tab_frame, text=tab_title)
+        # Обложка на вкладке: когда открыто пять нарядов, машину находишь
+        # глазами, а не по номеру
+        from services.arrival_service import cover_file, load_image
+        cover = cover_file(order, self.db)
+        tab_image = load_image(cover, 36, 27) if cover else None
+        if tab_image is not None:
+            self.order_notebook.add(tab_frame, text=tab_title, image=tab_image, compound='left')
+        else:
+            self.order_notebook.add(tab_frame, text=tab_title)
         
         order_widget = OrderWidget(tab_frame, order, self.db, self.order_service, 
                                    self.salary_service, self.print_service, self.close_order_tab, self)
         self.active_orders[order.id] = order_widget
-        
+        order_widget._tab_image = tab_image
+
         self.order_notebook.select(tab_frame)
-    
+
     def close_order_tab(self, order_id):
         if order_id in self.active_orders:
             widget = self.active_orders[order_id]

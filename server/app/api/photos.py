@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import MasterDevice, OrderPhoto, Shop
-from app.services import photos, shop_settings, tenancy
+from app.services import arrivals, photos, plates, shop_settings, tenancy
 from app.utils import now as shop_now
 
 router = APIRouter(prefix='/m', tags=['Фото из цеха'])
@@ -214,6 +214,9 @@ def cars(request: Request, response: Response,
         'shop': shop_settings.title(db, shop),
         'name': device.name,
         'cars': photos.cars_for(db, shop),
+        # «Новая машина» на телефоне — только если наряд по фото включён
+        # хоть для одного направления (docs/order_photo.md)
+        'arrival_directions': shop_settings.arrival_photo_directions(db, shop),
     }
 
 
@@ -260,6 +263,101 @@ async def upload(request: Request,
                 'reason': photo.last_error or 'Клиенту сообщить нечем'}
 
     return {'id': photo.id, 'sent': True, 'channel': channel}
+
+
+# ----------------------------------------------------------------------
+# Новая машина: снимок при приезде → номер → наряд в цеху
+# ----------------------------------------------------------------------
+
+@router.post('/arrival/recognize', summary='Снимок машины: распознать номер')
+async def arrival_recognize(request: Request, response: Response,
+                            photo: UploadFile = File(...),
+                            db: Session = Depends(get_db)):
+    """
+    Принять снимок машины и прочитать номер (docs/order_photo.md).
+
+    Снимок сохраняется сразу, как обложка без наряда: номер может не
+    прочитаться, а фото всё равно станет обложкой. Распознавание — на
+    этом сервере, в отдельном потоке: сервер в это время отвечает
+    остальным. Не прочиталось — plate пустой, номер впишут руками.
+    """
+    from fastapi.concurrency import run_in_threadpool
+
+    device = _device(request, db, response)
+    shop = db.query(Shop).filter(Shop.id == device.shop_id).first()
+
+    if not shop_settings.arrival_photo_directions(db, shop):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            detail='Наряд по фото выключен в программе цеха')
+
+    data = await photo.read()
+    try:
+        saved = photos.save(db, shop, data, photo.content_type,
+                            author=device.name, kind=photos.COVER)
+    except photos.PhotoError as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+    plate, confidence = await run_in_threadpool(plates.recognize, data)
+    if plate:
+        # Регион не прочитался — дополняем по базе, если машина одна
+        plate = arrivals.complete_plate(db, shop, plate)
+        saved.license_plate = plate
+        saved.client_id = photos._client_for(db, shop, saved)
+        db.commit()
+
+    found = arrivals.hints(db, shop, plate)
+    return {
+        'photo_id': saved.id,
+        'plate': plate or None,
+        # Полный ли номер: без региона телефон просит его дописать
+        'plate_complete': bool(plate) and plates.is_valid(plate),
+        'confidence': round(confidence or 0.0, 3),
+        'known': found['known'],
+        'appointment': found['appointment'],
+        'wash_enabled': shop_settings.wash_on(db, shop),
+        # Для каких направлений включён наряд по фото: по ним телефон
+        # рисует выбор «Шиномонтаж / Мойка / Оба». Одно — выбора нет
+        'directions_allowed': shop_settings.arrival_photo_directions(db, shop),
+    }
+
+
+@router.post('/arrival/hints', summary='Подсказки по номеру, вписанному руками')
+def arrival_hints(payload: dict, request: Request, response: Response,
+                  db: Session = Depends(get_db)):
+    """«Есть в базе» и «записан на …» для номера, который поправили."""
+    device = _device(request, db, response)
+    shop = db.query(Shop).filter(Shop.id == device.shop_id).first()
+    plate = plates.normalize((payload or {}).get('plate'))
+    return arrivals.hints(db, shop, plate)
+
+
+@router.post('/arrival', summary='Подать машину в цех')
+def arrival_create(payload: dict, request: Request, response: Response,
+                   db: Session = Depends(get_db)):
+    """
+    {"photo_id", "plate", "directions"} → {"ok": true, "arrival_id"}.
+
+    Наряд создаёт приёмщик: цех заберёт машину при ближайшем обмене и
+    откроет окно создания наряда с номером и снимком.
+    """
+    device = _device(request, db, response)
+    shop = db.query(Shop).filter(Shop.id == device.shop_id).first()
+    payload = payload or {}
+
+    photo_id = payload.get('photo_id')
+    try:
+        photo_id = int(photo_id) if photo_id not in (None, '') else None
+    except (TypeError, ValueError):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            detail='Снимок не найден. Переснимите машину')
+
+    try:
+        arrival = arrivals.create(db, shop, photo_id, payload.get('plate'),
+                                  payload.get('directions'))
+    except arrivals.ArrivalError as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+    return {'ok': True, 'arrival_id': arrival.id}
 
 
 @router.get('/photo/{photo_id}', include_in_schema=False)

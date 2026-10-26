@@ -90,6 +90,42 @@ def photo_key(photo_id, client_id):
                     material, 'sha256').hexdigest()[:32]
 
 
+def staff_photo_key(photo_id, until):
+    """Подпись ссылки на снимок для дашборда: номер снимка и срок."""
+    material = f'staff-photo:{photo_id}:{until}'.encode('utf-8')
+    return hmac.new(settings.SECRET_KEY.encode('utf-8'),
+                    material, 'sha256').hexdigest()[:32]
+
+
+def staff_photo_url(photo_id):
+    """
+    Адрес обложки наряда для вошедшего сотрудника.
+
+    Картинку грузит тег <img>, заголовок с токеном туда не положить —
+    поэтому ссылка подписана, как у снимков клиента, но живёт полдня:
+    уволенному сотруднику старая ссылка ничего не откроет. Срок
+    округлён до часа, чтобы в пределах часа адрес не менялся и браузер
+    брал картинку из своего кэша.
+    """
+    import time
+
+    until = (int(time.time()) // 3600 + 13) * 3600
+    return (f'/dashboard/photo/{photo_id}?until={until}'
+            f'&key={staff_photo_key(photo_id, until)}')
+
+
+def staff_photo_allowed(photo_id, until, key):
+    import time
+
+    try:
+        until = int(until)
+    except (TypeError, ValueError):
+        return False
+    if until < time.time():
+        return False
+    return hmac.compare_digest(str(key or ''), staff_photo_key(photo_id, until))
+
+
 def create_token(client_id):
     # Срок жизни токена — по UTC: так его проверяет библиотека. Всё
     # остальное время на сервере — время шиномонтажа, см. app/utils.now

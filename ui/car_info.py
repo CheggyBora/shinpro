@@ -14,6 +14,7 @@ from models import TireStorage, WorkOrder, CalendarTask
 from services.calendar_service import CalendarService, storage_title
 from ui.plate_picker import owner_of
 from utils import normalize_plate, format_phone, as_naive
+from services.arrival_service import cover_file, load_image, show_full
 
 # Главное окно ставит сюда «открыть наряд на этот номер»
 ON_NEW_ORDER = None
@@ -57,12 +58,19 @@ class CarInfo:
     def _section(self, title):
         styles.create_label(self.body, title, 'CardHeading.TLabel').pack(anchor='w', pady=(14, 4))
 
-    def _line(self, left, right, muted=False):
+    def _line(self, left, right, muted=False, cover=None):
         row = ttk.Frame(self.body, style='White.TFrame')
         row.pack(fill='x', pady=1)
         ttk.Label(row, text=left, width=11, font=styles.FONTS['small'],
                   foreground=styles.COLORS['text_secondary'],
                   background=styles.COLORS['bg_card']).pack(side='left', anchor='n')
+        # У визита со снимком — маленькая обложка, щелчок — крупно
+        image = load_image(cover, 40, 30) if cover else None
+        if image is not None:
+            thumb = tk.Label(row, image=image, cursor='hand2', bd=0, bg=styles.COLORS['bg_card'])
+            thumb.image = image
+            thumb.pack(side='left', padx=(0, 8))
+            thumb.bind('<Button-1>', lambda e, p=cover: show_full(self.dialog, p, self.plate))
         ttk.Label(row, text=right, font=styles.FONTS['normal'], wraplength=600, justify='left',
                   foreground=styles.COLORS['text_secondary'] if muted else styles.COLORS['text'],
                   background=styles.COLORS['bg_card']).pack(side='left', anchor='w')
@@ -81,6 +89,23 @@ class CarInfo:
             ttk.Label(head, text=' · '.join(f for f in facts if f), font=styles.FONTS['normal'],
                       foreground=styles.COLORS['text_secondary'],
                       background=styles.COLORS['bg_card']).pack(side='left', padx=12)
+
+        # Последний снимок машины — крупно: видно, в каком виде она
+        # приезжала (docs/order_photo.md)
+        from services.arrival_service import ArrivalService
+        if self.car is not None:
+            shot_order, shot = ArrivalService(self.db).latest_for_car(self.car.id)
+            image = load_image(shot, 280, 210) if shot else None
+            if image is not None:
+                when = as_naive(shot_order.created_at)
+                photo = tk.Label(self.body, image=image, cursor='hand2', bd=0,
+                                 bg=styles.COLORS['bg_card'])
+                photo.image = image
+                photo.pack(anchor='w', pady=(10, 0))
+                photo.bind('<Button-1>', lambda e, p=shot: show_full(self.dialog, p, self.plate))
+                ttk.Label(self.body, text=f'Последнее фото — {when:%d.%m.%Y}' if when else 'Последнее фото',
+                          font=styles.FONTS['small'], foreground=styles.COLORS['text_secondary'],
+                          background=styles.COLORS['bg_card']).pack(anchor='w')
 
         self._section('Владелец')
         if self.owner is None:
@@ -137,7 +162,8 @@ class CarInfo:
             when = as_naive(order.created_at)
             total = f' · {order.total_amount:,.0f} ₽'.replace(',', ' ') if order.total_amount else ''
             state = '' if order.status == 'paid' else ' · не оплачен'
-            self._line(f'{when:%d.%m.%y}' if when else '', f'№{order.id} · {names or "без услуг"}{total}{state}')
+            self._line(f'{when:%d.%m.%y}' if when else '', f'№{order.id} · {names or "без услуг"}{total}{state}',
+                       cover=cover_file(order, self.db))
 
         buttons = ttk.Frame(self.body, style='White.TFrame')
         buttons.pack(fill='x', pady=(16, 8))

@@ -655,9 +655,30 @@ class DashboardService:
         # Позиции нужны каждой строке — для метки направления
         rows = query.options(selectinload(Visit.items)).order_by(
             Visit.visited_at.desc()).limit(limit).all()
-        return [self._order_row(order) for order in rows]
+        covers = self._covers(rows)
+        return [self._order_row(order, covers) for order in rows]
 
-    def _order_row(self, order):
+    def _covers(self, orders):
+        """
+        Обложки нарядов (docs/order_photo.md): снимок машины с телефона.
+        Одним запросом на весь список; у наряда — последняя обложка.
+        """
+        from app.models import OrderPhoto
+
+        if not orders:
+            return {}
+        shop_ids = {order.shop_id for order in orders}
+        local_ids = {order.local_id for order in orders}
+        rows = self.db.query(OrderPhoto.id, OrderPhoto.shop_id,
+                             OrderPhoto.order_local_id).filter(
+            OrderPhoto.kind == 'cover',
+            OrderPhoto.shop_id.in_(shop_ids),
+            OrderPhoto.order_local_id.in_(local_ids)).order_by(
+            OrderPhoto.created_at, OrderPhoto.id).all()
+        return {(shop_id, local_id): photo_id
+                for photo_id, shop_id, local_id in rows}
+
+    def _order_row(self, order, covers=None):
         masters = []
         for accrual in order.accruals:
             if self.direction is not None and \
@@ -685,7 +706,15 @@ class DashboardService:
             'services': order.services,
             # Метка в списке: что было в наряде — шиномонтаж, мойка, оба
             'directions': self._directions_of(order),
+            'cover_url': None,
         }
+        if covers is None:
+            covers = self._covers([order])
+        cover = covers.get((order.shop_id, order.local_id))
+        if cover is not None:
+            from app.security import staff_photo_url
+
+            row['cover_url'] = staff_photo_url(cover)
         if self.direction is not None:
             # Сколько из суммы наряда пришлось на выбранное направление
             row['direction_amount'] = round(self._revenue(order), 2)

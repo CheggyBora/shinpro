@@ -15,3 +15,11 @@ class Shift(Base):
     # обслуживается одновременно, а значит расчёт очереди и записи.
     # Закрыли пост — он просто выпадает из расчёта.
     open_posts = Column(Integer, default=2, nullable=False)
+
+    # Касса (docs/cash.md). Сколько наличных было при открытии — вводят
+    # руками; при закрытии пересчитывают: «должно быть» против «есть»
+    cash_start = Column(Float, nullable=True)
+    cash_expected = Column(Float, nullable=True)
+    cash_counted = Column(Float, nullable=True)
+    cash_diff = Column(Float, nullable=True)
+    cash_diff_reason = Column(String(300), nullable=True)

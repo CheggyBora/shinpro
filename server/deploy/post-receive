@@ -46,8 +46,13 @@ while read -r _old _new ref; do
     say "Раскладываем в $APP"
     # Настройки, окружение Python и базу не трогаем: там ключи, пароли
     # и данные, которых в репозитории нет и быть не должно
+    #
+    # Снимки из цеха и модели распознавания номеров — тоже данные: без
+    # исключения --delete стирал бы их при каждой раскатке. Пути от
+    # корня («/…/»), иначе под исключение попала бы и папка кода app/models
     rsync -a --delete \
         --exclude '.env' --exclude 'venv' --exclude '*.db' \
+        --exclude '/photos/' --exclude '/plate-models/' \
         "$SRC/server/" "$APP/"
     chown -R tire:tire "$APP"
 

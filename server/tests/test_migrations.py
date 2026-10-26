@@ -129,6 +129,46 @@ columns = {column['name']: column
 check('у позиции есть мойщик',
       'employee_local_id' in columns
       and columns['employee_local_id']['nullable'])
+# Касса — шаг d4a8c2e6f1b9: ордера из цеха и пересчёт у смены
+check('есть кассовые ордера', 'cash_orders' in tables)
+columns = {column['name']: column
+           for column in inspector.get_columns('cash_orders')}
+check('у ордера все поля',
+      {'shop_id', 'uid', 'kind', 'number', 'category', 'amount', 'method',
+       'note', 'employee_local_id', 'shift_local_id', 'created_at',
+       'reverses_uid', 'payout_local_id', 'changed_at'} <= set(columns),
+      str(sorted(columns)))
+for name, default in (('kind', 'out'), ('method', 'cash'), ('amount', '0')):
+    check(f'у ордера {name} обязателен и со значением по умолчанию',
+          not columns[name]['nullable']
+          and default in str(columns[name].get('default')),
+          str(columns[name]))
+uniques = [set(item['column_names'])
+           for item in inspector.get_unique_constraints('cash_orders')]
+check('uid ордера уникален внутри точки', {'shop_id', 'uid'} in uniques,
+      str(uniques))
+columns = {column['name']: column
+           for column in inspector.get_columns('shop_shifts')}
+check('у смены поля кассы, все необязательные',
+      all(name in columns and columns[name]['nullable']
+          for name in ('cash_start', 'cash_expected', 'cash_counted',
+                       'cash_diff', 'cash_diff_reason')),
+      str(sorted(columns)))
+# Машина с телефона — шаг f6b2d8a4c9e1: вид снимка и машины, ждущие цех
+columns = {column['name']: column
+           for column in inspector.get_columns('order_photos')}
+kind = columns.get('kind')
+check('у снимка есть вид, по умолчанию — снимок мастера',
+      kind is not None and not kind['nullable']
+      and 'photo' in str(kind.get('default')), str(kind))
+check('есть машины с телефона', 'arrivals' in tables)
+columns = {column['name']: column for column in inspector.get_columns('arrivals')}
+check('у машины все поля',
+      {'shop_id', 'photo_id', 'plate', 'directions', 'created_at', 'done_at',
+       'order_local_id'} <= set(columns), str(sorted(columns)))
+check('направление машины по умолчанию — шиномонтаж',
+      not columns['directions']['nullable']
+      and 'tire' in str(columns['directions'].get('default')))
 
 print('\n=== Схема совпадает с моделями ===')
 # Тот же расчёт, что делает autogenerate: если он находит отличия,
@@ -188,6 +228,36 @@ check('наряд, позиция и начисление до шага стал
 with engine.begin() as connection:
     for table in ('salary_accruals', 'visit_items', 'visits'):
         connection.execute(text(f'DELETE FROM {table}'))
+
+print('\n=== Старые смены после шага кассы — касса пустая ===')
+command.downgrade(config, 'b3e9d1f7a2c5')
+with engine.begin() as connection:
+    connection.execute(text(
+        "INSERT INTO shop_shifts (id, local_id, started_at, status, "
+        "open_posts, total_salary) "
+        "VALUES (1, 7, '2026-10-01 09:00:00', 'closed', 2, 1500)"))
+command.upgrade(config, 'head')
+with engine.connect() as connection:
+    old = connection.execute(text(
+        'SELECT cash_start, cash_expected, cash_counted, cash_diff, '
+        'cash_diff_reason, total_salary FROM shop_shifts')).fetchone()
+check('смена до шага: касса не считалась, начисления на месте',
+      tuple(old) == (None, None, None, None, None, 1500), str(old))
+with engine.begin() as connection:
+    connection.execute(text('DELETE FROM shop_shifts'))
+
+print('\n=== Старые снимки после шага машины с телефона — снимки мастеров ===')
+command.downgrade(config, 'd4a8c2e6f1b9')
+with engine.begin() as connection:
+    connection.execute(text(
+        "INSERT INTO order_photos (id, shop_id, path, created_at) "
+        "VALUES (1, 1, '1/2026-10/a.jpg', '2026-10-01 12:00:00')"))
+command.upgrade(config, 'head')
+with engine.connect() as connection:
+    old = connection.execute(text('SELECT kind FROM order_photos')).scalar()
+check('снимок до шага — снимок мастера, не обложка', old == 'photo', str(old))
+with engine.begin() as connection:
+    connection.execute(text('DELETE FROM order_photos'))
 
 print('\n=== Повторный запуск ничего не ломает ===')
 init_db()

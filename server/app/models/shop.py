@@ -392,6 +392,15 @@ class ShopShift(Base):
     open_posts = Column(Integer, default=1, nullable=False)
     total_salary = Column(Float, default=0.0, nullable=False)
 
+    # Касса (docs/cash.md). Пусто — не считали: старая программа цеха
+    # этого не шлёт. У открытой смены cash_expected — остаток сейчас
+    cash_start = Column(Float, nullable=True)
+    cash_expected = Column(Float, nullable=True)
+    cash_counted = Column(Float, nullable=True)
+    # Пересчитали минус «должно быть»: меньше нуля — недостача
+    cash_diff = Column(Float, nullable=True)
+    cash_diff_reason = Column(String(255), nullable=True)
+
 
 class QueueSnapshot(Base):
     """

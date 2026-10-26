@@ -8,7 +8,7 @@ class ShiftService:
     def __init__(self, db: Session):
         self.db = db
     
-    def open_shift(self, open_posts: int = None) -> Shift:
+    def open_shift(self, open_posts: int = None, cash_start=None) -> Shift:
         """
         Открыть новую смену.
 
@@ -32,8 +32,12 @@ class ShiftService:
         if open_posts < 1:
             raise ValueError("В смене должен быть открыт хотя бы один пост")
 
-        # Создаём новую смену
+        # Создаём новую смену. cash_start — сколько наличных в кассе
+        # фактически (docs/cash.md)
         shift = Shift(status='open', open_posts=open_posts)
+        if cash_start is not None:
+            from services.cash_service import parse_amount
+            shift.cash_start = parse_amount(cash_start)
         self.db.add(shift)
         self.db.commit()
         self.db.refresh(shift)
@@ -162,6 +166,15 @@ class ShiftService:
         # Вычисляем общую сумму
         total_salary = sum(data['salary'] for data in employees_salary.values())
         
+        # Касса: не пересчитали (смену закрыло само) — фиксируем хотя бы
+        # «должно быть»
+        if shift.cash_expected is None or shift.cash_counted is None:
+            try:
+                from services.cash_service import CashService
+                shift.cash_expected = CashService(self.db).expected(shift)
+            except Exception:
+                pass
+
         # Закрываем смену
         shift.end_time = get_moscow_time()
         shift.status = 'closed'
