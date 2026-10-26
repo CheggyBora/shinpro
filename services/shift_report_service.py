@@ -56,6 +56,12 @@ class ShiftReportService:
                     by_master.get(entry['employee_id'], 0) + entry['amount'], 2)
 
         revenue = sum(float(o.total_amount or 0) for o in orders)
+        # Возвраты, проведённые в эту смену (наряд мог быть и вчерашним) —
+        # чтобы сводка сходилась с «Отчётами» (решение владельца 26.10.2026)
+        refunded_orders = self.db.query(WorkOrder).filter(
+            WorkOrder.refunded_at.isnot(None), WorkOrder.is_deleted == False).all()
+        refunds = sum(float(o.refunded_amount or 0) for o in refunded_orders
+                      if start <= as_naive(o.refunded_at) <= as_naive(end))
         consumables = sum(float(o.consumables_amount or 0) for o in orders)
         salary_total = round(sum(by_master.values()), 2)
 
@@ -85,12 +91,14 @@ class ShiftReportService:
             'duration_hours': round(duration, 1),
             'orders_count': len(orders),
             'revenue': round(revenue, 2),
+            'refunds': round(refunds, 2),
+            'net_revenue': round(revenue - refunds, 2),
             'cash': round(cash, 2),
             'card': round(card, 2),
             'consumables': round(consumables, 2),
             'salary_total': salary_total,
             'by_master': by_master,
-            'margin': round(revenue - consumables - salary_total, 2),
+            'margin': round(revenue - refunds - consumables - salary_total, 2),
             'average_check': round(revenue / len(orders), 2) if orders else 0,
             'by_direction': by_direction,
         }
@@ -110,6 +118,12 @@ class ShiftReportService:
             f"Выручка: <b>{summary['revenue']:.0f} ₽</b>",
             f"  наличные: {summary['cash']:.0f} ₽",
             f"  безнал: {summary['card']:.0f} ₽",
+        ]
+        # Возвраты — отдельной строкой и итог: так сводка сходится с «Отчётами»
+        if summary.get('refunds'):
+            lines += [f"Возвраты: −{summary['refunds']:.0f} ₽",
+                      f"Итого: <b>{summary['net_revenue']:.0f} ₽</b>"]
+        lines += [
             f"Средний чек: {summary['average_check']:.0f} ₽",
         ]
         # Мойка работает — выручку показываем и по направлениям

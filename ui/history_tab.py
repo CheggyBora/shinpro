@@ -519,44 +519,44 @@ class HistoryTab:
         styles.create_button(content, "Провести", apply_refund,
                              'Danger.TButton').pack(fill='x')
 
+    # Главное окно ставит сюда «открыть наряд в «Нарядах»»
+    on_open_order = None
+
     def toggle_warranty(self):
-        """Отметить наряд гарантийной переделкой или снять отметку."""
+        """
+        Гарантийная переделка: новый наряд на ту же машину с теми же
+        услугами по 0 ₽ (решение владельца 26.10.2026). Открывается в
+        «Нарядах», работают и пробивают его как обычный.
+        """
         from services import OrderService
+        from services.shift_service import ShiftService
 
         order_id = self.selected_order_id()
         if not order_id:
             return
-
-        order_service = OrderService(self.db)
-        order = order_service.get_order_by_id(order_id, include_deleted=True)
-        if not order:
-            return
-
-        if order.is_warranty:
-            if messagebox.askyesno("Снять отметку",
-                                   f"Наряд №{order_id} отмечен как гарантийная переделка.\n\n"
-                                   f"Снять отметку?"):
-                order_service.set_warranty(order_id, False)
-                self.load_page()
+        if ShiftService(self.db).get_current_shift() is None:
+            messagebox.showwarning("Смена закрыта", "Откройте смену: переделка — это новый наряд")
             return
 
         reason = simpledialog.askstring(
             "Гарантийная переделка",
-            f"Наряд №{order_id} — переделка по гарантии.\n\n"
-            f"Такой наряд не попадёт в выручку и средний чек.\n\n"
-            f"Причина:",
+            f"По наряду №{order_id} будет создан новый наряд — те же услуги по 0 ₽.\n\n"
+            f"Что переделываем и почему:",
             parent=self.frame)
         if reason is None:
             return
 
         try:
-            order_service.set_warranty(order_id, True, reason=reason)
-            self.load_page()
-            messagebox.showinfo("Готово",
-                                f"Наряд №{order_id} отмечен как гарантийная переделка")
+            order = OrderService(self.db).create_warranty(order_id, reason=reason)
         except Exception as e:
             self.db.rollback()
-            messagebox.showerror("Ошибка", str(e))
+            messagebox.showerror("Гарантия", str(e))
+            return
+        self.load_page()
+        if self.on_open_order is not None:
+            self.on_open_order(order)
+        else:
+            messagebox.showinfo("Гарантия", f"Создан наряд №{order.id} — переделка по гарантии")
 
     def reprint_receipt(self):
         """

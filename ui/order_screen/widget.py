@@ -85,6 +85,13 @@ class OrderWidget(OrderItemsMixin, OrderPaymentMixin, OrderTimingMixin, OrderBlo
                   background=styles.COLORS['bg_card'],
                   foreground=styles.COLORS['primary']).pack(side='left', padx=(14, 0))
 
+        # Гарантийная переделка — видно сразу, почему услуги по 0 ₽
+        if getattr(order, 'is_warranty', False):
+            tk.Label(header_row, text=f"гарантия · по наряду №{order.warranty_of_id}"
+                     if order.warranty_of_id else "гарантия",
+                     bg='#fef3c7', fg='#92400e', padx=8, pady=1,
+                     font=(styles.DEFAULT_FONT, 10, 'bold')).pack(side='left', padx=(12, 0))
+
         # Редкое — в одном меню: хранение, фото, «готово», удалить
         # (макеты от 26.10.2026). Диаметр и пост — в шапке блока шиномонтажа
         self.build_more_menu(header_row)

@@ -120,7 +120,14 @@ class StatisticsService:
         totals = {}
 
         for order in orders:
-            for entry in salaries.get(order.id, []):
+            entries = salaries.get(order.id, [])
+            # Выручку наряда делим между мастерами так же, как зарплату:
+            # раньше каждому писалась вся сумма, и наряд на 4000, сделанный
+            # вдвоём, давал по мастерам 8000 (решение владельца 26.10.2026).
+            # Возврат уже вычтен — как в остальных отчётах
+            revenue = float(order.total_amount or 0) - float(order.refunded_amount or 0)
+            paid_out = sum(entry['amount'] for entry in entries)
+            for entry in entries:
                 master = totals.setdefault(entry['employee_id'], {
                     'employee_id': entry['employee_id'],
                     'orders': 0,
@@ -129,7 +136,8 @@ class StatisticsService:
                 })
                 master['orders'] += 1
                 master['salary'] += entry['amount']
-                master['revenue'] += float(order.total_amount or 0)
+                share = (entry['amount'] / paid_out) if paid_out else 1 / len(entries)
+                master['revenue'] += revenue * share
 
         result = list(totals.values())
         for master in result:
@@ -285,8 +293,8 @@ class StatisticsService:
         total_cars = len(orders)
         total_services = sum(s['count'] for s in services_stats.values())
 
-        # Возвраты вычитаем из выручки, гарантийные переделки в неё
-        # не входят вовсе: это бесплатный повторный визит по нашей вине
+        # Возвраты вычитаем из выручки. Гарантийная переделка — наряд, где
+        # работа по 0 ₽: в выручку идёт только поставленный заново товар
         total_refunds = sum(float(order.refunded_amount or 0) for order in orders)
         warranty_orders = [o for o in orders if o.is_warranty]
 

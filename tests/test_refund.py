@@ -104,18 +104,29 @@ check('в записи видна причина',
       any('клиент недоволен' in (e.description or '') for e in entries))
 
 print('\n=== Гарантийная переделка ===')
-warranty = paid_order('Н555НН50')
-order_service.set_warranty(warranty.id, True, reason='повторная балансировка')
-db.refresh(warranty)
-check('отметка проставлена', warranty.is_warranty is True)
-
+source = paid_order('Н555НН50')
+warranty = order_service.create_warranty(source.id, reason='повторная балансировка')
+check('создан новый наряд, исходный не тронут',
+      warranty.id != source.id and not source.is_warranty and source.status == 'paid')
+check('та же машина и тот же клиент',
+      warranty.car_id == source.car_id and warranty.client_id == source.client_id)
+check('помечен гарантией, видно по какому наряду',
+      warranty.is_warranty is True and warranty.warranty_of_id == source.id
+      and warranty.warranty_reason == 'повторная балансировка')
+names = sorted(i.service.name for i in warranty.items)
+check('те же услуги', names == sorted(i.service.name for i in source.items if not i.is_goods), str(names))
+check('услуги по 0 ₽', order_service.calculate_total(warranty.id) == 0)
+added = order_service.add_service_to_order(warranty.id, source.items[0].service_id)
+check('добавленная потом услуга — тоже 0 ₽', added.price == 0)
+try:
+    order_service.create_warranty(warranty.id)
+    check('переделку по переделке не создать', False)
+except ValueError:
+    check('переделку по переделке не создать', True)
 warranty_log = db.query(AuditLog).filter(AuditLog.action == 'order.warranty').all()
-check('отметка записана в журнал', len(warranty_log) == 1)
-
-order_service.set_warranty(warranty.id, False)
+check('переделка записана в журнал', len(warranty_log) == 1)
+SalaryService(db).process_payment(warranty.id, 'cash', order_service.calculate_total(warranty.id))
 db.refresh(warranty)
-check('отметку можно снять', warranty.is_warranty is False)
-order_service.set_warranty(warranty.id, True)
 
 print('\n=== Отчёты учитывают возвраты ===')
 summary = stats.get_sales_statistics(*PERIOD)

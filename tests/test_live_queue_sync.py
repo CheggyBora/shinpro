@@ -155,8 +155,13 @@ with TestClient(server_app) as server:
     person = ServerClient(account_id=shop_row.account_id, phone='79160000900', name='Анна')
     sdb.add(person)
     sdb.commit()
+    # Запись — на сегодня: «через 20 минут» перед полуночью уходило на завтра,
+    # и цех, который смотрит записи дня, её не видел
+    soon = (server_now() + _td(minutes=20)).replace(second=0, microsecond=0)
+    if soon.date() != server_now().date():
+        soon = server_now().replace(hour=23, minute=59, second=0, microsecond=0)
     visit = ServerAppointment(shop_id=shop_row.id, client_id=person.id,
-                              scheduled_at=(server_now() + _td(minutes=20)).replace(second=0, microsecond=0),
+                              scheduled_at=soon,
                               duration_minutes=30, license_plate='Р888РР77', client_phone='79160000900',
                               wheels_assembled=True, wheel_diameter='R18', status='scheduled')
     sdb.add(visit)

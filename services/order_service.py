@@ -186,8 +186,10 @@ class OrderService:
                 self.db.refresh(existing_item)
                 return existing_item
             
-            # Создаем новую позицию
+            # Создаем новую позицию. В гарантийной переделке работа — 0 ₽
             price = self.price_for(service, order.wheel_diameter, order.wash_class)
+            if getattr(order, 'is_warranty', False) and not service.is_goods:
+                price = 0.0
             
             # Определяем начальную скидку для новой позиции
             # Выбираем максимум из всех доступных скидок
@@ -995,27 +997,54 @@ class OrderService:
             self.db.rollback()
             return False, f"Ошибка при возврате: {str(e)}"
 
-    def set_warranty(self, order_id: int, is_warranty: bool = True, reason: str = ''):
+    def create_warranty(self, order_id: int, reason: str = ''):
         """
-        Отметить наряд как гарантийную переделку.
+        Гарантийная переделка: новый наряд на ту же машину и того же
+        клиента, с теми же услугами по 0 ₽ (решение владельца 26.10.2026).
 
-        Такой наряд не участвует в выручке и среднем чеке, но виден
-        в отчётах: по нему считают качество работы.
+        Исходный наряд не трогаем — за него заплатили, и он остаётся как
+        был. Переделку пробивают как обычный наряд: работа бесплатна, а
+        поставленный заново товар — по цене.
         """
-        order = self.db.query(WorkOrder).filter_by(id=order_id).first()
-        if not order:
+        from services.wheel_service import parse as parse_wheels
+        from services import directions as _directions
+
+        original = self.db.query(WorkOrder).filter_by(id=order_id).first()
+        if original is None:
             raise ValueError(f"Наряд №{order_id} не найден")
+        if original.status != 'paid':
+            raise ValueError(f"Наряд №{order_id} не оплачен — переделывать по гарантии нечего")
+        if original.is_warranty:
+            raise ValueError(f"Наряд №{order_id} сам гарантийный — выберите исходный наряд")
+        plate = original.car.license_plate if original.car else None
+        if not plate:
+            raise ValueError("У наряда нет машины")
 
-        order.is_warranty = bool(is_warranty)
+        order = self.create_order(
+            plate, original.wheel_diameter or '', original.vehicle_type,
+            client_id=original.client_id, create_client=False,
+            directions=_directions.parse(original.directions),
+            wash_class=original.wash_class)
+        order.is_warranty = True
+        order.warranty_of_id = original.id
+        order.warranty_reason = (reason or '').strip()[:500] or None
+        self.db.commit()
+
+        for item in original.items:
+            if item.service is None or getattr(item, 'is_goods', False):
+                continue
+            line = self.add_service_to_order(order.id, item.service_id,
+                                             wheels=parse_wheels(item.wheels) or None)
+            if line is not None and not item.wheels and (item.quantity or 1) > 1:
+                line.quantity = item.quantity
         self.db.commit()
 
         from services.audit_service import AuditService
         AuditService(self.db).log(
             'order.warranty',
-            f"Наряд №{order_id} "
-            f"{'отмечен как гарантийная переделка' if is_warranty else 'снят с гарантии'}"
-            + (f". Причина: {reason}" if reason else ''),
-            entity_type='work_order', entity_id=order_id)
+            f"Гарантийная переделка по наряду №{order_id} ({plate}): наряд №{order.id}"
+            + (f". Причина: {order.warranty_reason}" if order.warranty_reason else ''),
+            entity_type='work_order', entity_id=order.id)
         return order
 
     def get_active_orders(self):

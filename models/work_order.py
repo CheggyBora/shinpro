@@ -82,9 +82,13 @@ class WorkOrder(Base):
     refund_reason = Column(String(500), nullable=True)
     refund_type = Column(String(20), nullable=True)  # refund | reversal
 
-    # Гарантийная переделка — бесплатный повторный визит по нашей вине.
-    # В выручке и среднем чеке не участвует, но виден в отчётах.
+    # Гарантийная переделка — отдельный наряд на ту же машину, услуги в
+    # нём по 0 ₽ (решение владельца 26.10.2026). Товары — по цене: вентиль
+    # при переделке ставят новый. В отчётах виден, сколько было переделок
     is_warranty = Column(Boolean, default=False)
+    # По какому наряду переделка и почему
+    warranty_of_id = Column(Integer, nullable=True)
+    warranty_reason = Column(String(500), nullable=True)
 
     is_deleted = Column(Boolean, default=False)
     deleted_at = Column(DateTime(timezone=True), nullable=True)

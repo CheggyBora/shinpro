@@ -68,6 +68,8 @@ class MainWindow:
         self.clients_tab = ClientsTab(self.content, self.db)
         # История нарядов теперь подраздел внутри «Клиентов»
         self.history_tab = self.clients_tab.history_tab
+        # Гарантийная переделка открывается в «Нарядах»
+        self.history_tab.on_open_order = self._open_warranty
         self.tire_storage_tab = TireStorageTab(self.content, self.db)
         self.paint_tab = PaintTab(self.content, self.db)
         self.statistics_tab = StatisticsTab(self.content, self.db)
@@ -317,6 +319,10 @@ class MainWindow:
         if self.appointments_tab.direction != self.orders_tab.mode:
             self.appointments_tab.set_direction(self.orders_tab.mode)
         self.apply_mode()
+
+    def _open_warranty(self, order):
+        self.orders_tab.open_order_tab(order)
+        self.show_orders()
 
     def show_orders(self):
         self.nav.select_frame(self.orders_tab.frame)
