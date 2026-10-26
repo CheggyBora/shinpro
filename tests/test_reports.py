@@ -130,15 +130,11 @@ check('сумма начислений сходится с нарядами',
       round(sum(m['salary'] for m in masters), 2) == summary['total_salary'],
       f"{sum(m['salary'] for m in masters)} vs {summary['total_salary']}")
 
-print('\n=== Удалённый наряд из отчёта уходит ===')
-order_service.delete_work_order(o1.id, reason='проверка')
+print('\n=== Оплаченный наряд не удаляется — только возврат ===')
+# Оплаченный — только возврат (решение владельца 26.10.2026)
+ok, _ = order_service.delete_work_order(o1.id, reason='проверка')
 after = stats.get_orders_report(*PERIOD)
-check('в отчёте остался один наряд', len(after) == 1, str(len(after)))
-masters_after = stats.get_masters_report(*PERIOD)
-check('начисления по удалённому наряду откатились',
-      round(sum(m['salary'] for m in masters_after), 2)
-      == round(second['salary_total'], 2),
-      f"{sum(m['salary'] for m in masters_after)} vs {second['salary_total']}")
+check('оплаченный не удаляется, в отчёте оба наряда', not ok and len(after) == 2, str(len(after)))
 
 print('\n=== Выгрузка в файл ===')
 path = export_rows('тест_отчёта',

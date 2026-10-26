@@ -394,8 +394,11 @@ class HistoryTab:
         buttons_frame = ttk.Frame(content, style='White.TFrame')
         buttons_frame.pack(fill='x', pady=(10, 0))
         
-        styles.create_button(buttons_frame, "Удалить наряд",                            lambda: self.delete_order(order_id, dialog), 
-                           'Danger.TButton').pack(side='left', fill='x', expand=True, padx=(0, 10))
+        # Оплаченный — только возврат, удалить его нельзя (решение 26.10.2026)
+        if order.status != 'paid':
+            styles.create_button(buttons_frame, "Удалить наряд",
+                                 lambda: self.delete_order(order_id, dialog),
+                                 'Danger.TButton').pack(side='left', fill='x', expand=True, padx=(0, 10))
         
         styles.create_button(buttons_frame, "Закрыть", dialog.destroy, 'Secondary.TButton').pack(side='left', fill='x', expand=True)
     

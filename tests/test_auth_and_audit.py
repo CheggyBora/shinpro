@@ -112,11 +112,11 @@ from services import SalaryService
 paid = order_service.create_order('К900ОР99', 'R16', 'car')
 order_service.add_service_to_order(paid.id, service.id)
 SalaryService(db).process_payment(paid.id, 'cash', order_service.calculate_total(paid.id))
-ok, _ = order_service.delete_work_order(paid.id, reason='ошибка кассира')
+ok, message = order_service.delete_work_order(paid.id, reason='ошибка кассира')
 soft = [e for e in audit.get_recent() if e.action == AuditService.ORDER_DELETE]
-check('удаление оплаченного наряда записано', ok and len(soft) == 1)
-check('причина удаления сохранена', 'ошибка кассира' in soft[0].description,
-      soft[0].description)
+# Оплаченный — только возврат (решение владельца 26.10.2026)
+check('оплаченный наряд не удаляется — только возврат',
+      not ok and 'возврат' in message.lower() and len(soft) == 0, message)
 
 print('\n=== Журнал читается по-человечески ===')
 check('у действия есть понятное название',

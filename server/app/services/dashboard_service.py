@@ -699,6 +699,9 @@ class DashboardService:
 
         row = {
             'local_id': order.local_id,
+            # Номера нарядов у каждой точки свои: карточку открываем вместе
+            # с точкой, иначе при «Все точки» №7 одной путался с №7 другой
+            'shop_id': order.shop_id,
             'visited_at': order.visited_at,
             'license_plate': order.license_plate,
             'total_amount': round(order.total_amount or 0.0, 2),

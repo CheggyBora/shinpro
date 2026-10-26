@@ -56,5 +56,9 @@ while read -r _old _new ref; do
         "$SRC/server/" "$APP/"
     chown -R tire:tire "$APP"
 
-    bash "$APP/deploy/update.sh"
+    # Сам update.sh — из $SRC, а не из $APP: рабочая папка принадлежит
+    # службе, и код, который выполняется от root, оттуда брать нельзя —
+    # иначе служба, если её взломать, получила бы root при следующей
+    # раскатке (ревью 26.10.2026). $SRC пишет только root
+    bash "$SRC/server/deploy/update.sh"
 done

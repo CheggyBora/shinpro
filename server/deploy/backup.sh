@@ -11,10 +11,15 @@ APP_DIR="/opt/tire-server"
 BACKUP_DIR="/var/backups/tire"
 KEEP_DAYS=30
 
-set -a
-# shellcheck disable=SC1091
-. "$APP_DIR/.env"
-set +a
+# .env принадлежит службе. Читаем из него нужное как текст, а не
+# выполняем: скрипт работает от root, и строка, подложенная в .env,
+# иначе выполнилась бы с его правами (ревью 26.10.2026)
+env_value() {
+    grep -E "^$1=" "$APP_DIR/.env" | tail -n 1 | cut -d= -f2- \
+        | sed -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'$/\1/"
+}
+SERVER_DATABASE_URL="$(env_value SERVER_DATABASE_URL)"
+SERVER_BACKUP_RSYNC="$(env_value SERVER_BACKUP_RSYNC)"
 
 mkdir -p "$BACKUP_DIR"
 STAMP="$(date '+%Y%m%d_%H%M%S')"

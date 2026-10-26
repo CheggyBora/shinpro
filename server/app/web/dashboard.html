@@ -1006,8 +1006,12 @@ function dirTags(directions) {
   }).join('');
 }
 
-function withShop(path) {
-  // Адрес без периода, но с выбранной точкой
+function withShop(path, shopId) {
+  // Адрес без периода, но с выбранной точкой. shopId — точка самой строки:
+  // номера нарядов и смен у каждой точки свои
+  if (shopId) {
+    return path + (path.indexOf('?') >= 0 ? '&' : '?') + 'shop=' + encodeURIComponent(shopId);
+  }
   if (!currentShop) return path;
   var join = path.indexOf('?') >= 0 ? '&' : '?';
   return path + join + 'shop=' + encodeURIComponent(currentShop);
@@ -1238,7 +1242,8 @@ function loadOrders(masterId) {
         var part = row.direction_amount != null
           && Math.abs(row.direction_amount - row.total_amount) > 0.005;
 
-        return '<button class="row" type="button" data-order="' + row.local_id + '">'
+        return '<button class="row" type="button" data-order="' + row.local_id
+          + '" data-shop="' + (row.shop_id || '') + '">'
           + (row.cover_url ? '<img class="cover-sm" loading="lazy" alt="" src="'
              + escape(row.cover_url) + '">' : '')
           + '<div class="main"><b>' + escape(row.license_plate || '—') + tags + '</b>'
@@ -1253,7 +1258,7 @@ function loadOrders(masterId) {
 
     [].slice.call($('view').querySelectorAll('[data-order]')).forEach(function (button) {
       button.addEventListener('click', function () {
-        openOrder(button.getAttribute('data-order'));
+        openOrder(button.getAttribute('data-order'), button.getAttribute('data-shop'));
       });
     });
   }).catch(function (e) { show(''); fail(e.message); });
@@ -1265,7 +1270,8 @@ function loadShifts() {
 
     show('<div class="card"><h2>Смены</h2>' + rows.map(function (row) {
       var open = row.status !== 'closed';
-      return '<button class="row" type="button" data-shift="' + row.local_id + '">'
+      return '<button class="row" type="button" data-shift="' + row.local_id
+        + '" data-shop="' + (row.shop_id || '') + '">'
         + '<div class="main"><b>' + timeText(row.started_at)
         + (open ? '<span class="tag ok">идёт</span>' : '') + '</b>'
         + '<span>' + row.open_posts + ' '
@@ -1277,7 +1283,7 @@ function loadShifts() {
 
     [].slice.call($('view').querySelectorAll('[data-shift]')).forEach(function (button) {
       button.addEventListener('click', function () {
-        openShift(button.getAttribute('data-shift'));
+        openShift(button.getAttribute('data-shift'), button.getAttribute('data-shop'));
       });
     });
   }).catch(function (e) { show(''); fail(e.message); });
@@ -1749,8 +1755,8 @@ $('sheet').addEventListener('click', function (event) {
   if (event.target === $('sheet')) closeSheet();
 });
 
-function openOrder(id) {
-  api(withShop('/dashboard/orders/' + id)).then(function (card) {
+function openOrder(id, shopId) {
+  api(withShop('/dashboard/orders/' + id, shopId)).then(function (card) {
     var html = '<h2>' + escape(card.license_plate || '—') + '</h2>'
       + '<div class="when">Наряд №' + card.local_id + ' · ' + timeText(card.visited_at)
       + (card.is_deleted ? ' · <span class="tag bad">удалён</span>' : '') + '</div>';
@@ -1820,8 +1826,8 @@ function openOrder(id) {
   }).catch(function (e) { fail(e.message); });
 }
 
-function openShift(id) {
-  api(withDir(withShop('/dashboard/shifts/' + id + '/salary'))).then(function (data) {
+function openShift(id, shopId) {
+  api(withDir(withShop('/dashboard/shifts/' + id + '/salary', shopId))).then(function (data) {
     var html = '<h2>Начисления за смену'
       + (dashDir() ? ' · ' + DIR_TITLES[dashDir()].toLowerCase() : '')
       + '</h2><div class="when">'
@@ -1852,7 +1858,8 @@ function openShift(id) {
 
     [].slice.call($('sheetBody').querySelectorAll('[data-order]')).forEach(function (button) {
       button.addEventListener('click', function () {
-        openOrder(button.getAttribute('data-order'));
+        // Наряды смены — той же точки, что и смена
+        openOrder(button.getAttribute('data-order'), shopId);
       });
     });
   }).catch(function (e) { fail(e.message); });
