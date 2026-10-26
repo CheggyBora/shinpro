@@ -335,36 +335,86 @@ def engine():
     return _engine
 
 
+# Номер вырезаем из снимка покрупнее: на уменьшенном до MAX_SIDE кадре
+# номер — сотня точек, а цифры региона — десяток, и модель их путает
+CROP_SIDE = 3200
+
+
 def _frame(image_bytes):
-    """Снимок в массив BGR, уменьшенный, повёрнутый как на экране телефона."""
+    """
+    (кадр для поиска номера, крупный снимок для вырезки, во сколько раз
+    крупный больше). Оба повёрнуты как на экране телефона.
+    """
     import numpy as np
     from PIL import Image, ImageOps
 
-    image = Image.open(io.BytesIO(image_bytes))
-    image.draft('RGB', (MAX_SIDE, MAX_SIDE))      # JPEG уменьшается при чтении
-    image = ImageOps.exif_transpose(image).convert('RGB')
-    image.thumbnail((MAX_SIDE, MAX_SIDE))
-    return np.ascontiguousarray(np.asarray(image)[:, :, ::-1])
+    big = Image.open(io.BytesIO(image_bytes))
+    big.draft('RGB', (CROP_SIDE, CROP_SIDE))      # JPEG уменьшается при чтении
+    big = ImageOps.exif_transpose(big).convert('RGB')
+    big.thumbnail((CROP_SIDE, CROP_SIDE))
+    small = big.copy()
+    small.thumbnail((MAX_SIDE, MAX_SIDE))
+    scale = big.size[0] / small.size[0]
+    return np.ascontiguousarray(np.asarray(small)[:, :, ::-1]), big, scale
 
 
-def _read(alpr, frame):
+def _pad(image, ratio=2.0):
+    """Поля по бокам до пропорции модели — без них цифры растягиваются."""
+    import cv2
+    height, width = image.shape[:2]
+    need = int(height * ratio)
+    if width >= need:
+        return image
+    left = (need - width) // 2
+    return cv2.copyMakeBorder(image, 0, 0, left, need - width - left, cv2.BORDER_REPLICATE)
+
+
+def confirmed_region(plate, votes):
+    """
+    Регион номера подтверждён, если его прочитали хотя бы дважды разными
+    способами (или трёхзначный, где в другом прочтении те же две цифры).
+    Неподтверждённый — отдаём основную часть: дописать две-три цифры
+    быстрее, чем найти ошибку в уверенно подставленном чужом номере
+    (проверка на настоящих снимках 26.10.2026).
+    """
+    region = plate[6:]
+    return [v for v in votes if v].count(region) >= 2
+
+
+def _read(alpr, shot):
+    import numpy as np
+
+    frame, big, scale = shot
     best = (None, 0.0)
-    found = sorted(alpr.detector.predict(frame),
-                   key=lambda item: item.confidence, reverse=True)[:MAX_PLATES]
+    # Сначала самый крупный номер: снимают ту машину, что ближе, а на
+    # заднем плане бывают соседние (проверка 26.10.2026: вместо Porsche
+    # прочитался Mercedes за ним)
+    def area(item):
+        box = item.bounding_box
+        return (box.x2 - box.x1) * (box.y2 - box.y1)
+
+    found = sorted(alpr.detector.predict(frame), key=area, reverse=True)[:MAX_PLATES]
 
     for detection in found:
+        if best[0] is not None:
+            break       # ближняя машина прочиталась — соседние не нужны
         box = detection.bounding_box
         x1, y1, x2, y2 = int(box.x1), int(box.y1), int(box.x2), int(box.y2)
         if x2 - x1 < 8 or y2 - y1 < 4:
             continue
-        # Чуть шире рамки детектора: без полей модель теряет крайние знаки
-        pad_x, pad_y = int((x2 - x1) * 0.04), int((y2 - y1) * 0.08)
-        crop = frame[max(0, y1 - pad_y):y2 + pad_y, max(0, x1 - pad_x):x2 + pad_x]
+        # Чуть шире рамки детектора: без полей модель теряет крайние знаки.
+        # Вырезаем из крупного снимка — точек в номере втрое больше
+        pad_x, pad_y = (x2 - x1) * 0.04, (y2 - y1) * 0.08
+        crop = np.asarray(big.crop((
+            max(0, int((x1 - pad_x) * scale)), max(0, int((y1 - pad_y) * scale)),
+            int((x2 + pad_x) * scale), int((y2 + pad_y) * scale))))[:, :, ::-1].copy()
         width, height = crop.shape[1], crop.shape[0]
 
         full = alpr.ocr.predict(crop)
         main = alpr.ocr.predict(crop[:, :int(width * 0.78)])
-        region = alpr.ocr.predict(crop[:int(height * 0.75), int(width * 0.76):])
+        region_crop = crop[:int(height * 0.75), int(width * 0.76):]
+        region = alpr.ocr.predict(region_crop)
+        region_padded = alpr.ocr.predict(_pad(region_crop))
         if full is None:
             continue
 
@@ -373,11 +423,26 @@ def _read(alpr, frame):
             main.text if main else None, _mean(main.confidence) if main else 0.0,
             region.text if region else None,
             _mean(region.confidence) if region else 0.0)
+        # Регион подтверждаем вторым прочтением: эта модель не училась на
+        # российских номерах и мелкие цифры региона читает неуверенно
+        if plate and plate_format(plate) == 'standard':
+            full_latin = _latin(full.text)
+            votes = [_region(full_latin[6:]) if len(full_latin) > 6 else '',
+                     _region(region.text) if region else '',
+                     _region(region_padded.text) if region_padded else '']
+            if not confirmed_region(plate, votes):
+                agreed = [v for v in votes if v and votes.count(v) >= 2 and is_valid(plate[:6] + v)]
+                if agreed:
+                    plate = plate[:6] + agreed[0]
+                else:
+                    plate, confidence = plate[:6], round(confidence * 0.5, 3)
+
         # Что модель увидела каждым способом — по журналу видно, где
         # она ошибается на настоящих снимках
-        log.info('plates raw: full=%s main=%s region=%s -> %s',
+        log.info('plates raw: full=%s main=%s region=%s/%s -> %s',
                  full.text, main.text if main else '-',
-                 region.text if region else '-', plate or 'none')
+                 region.text if region else '-',
+                 region_padded.text if region_padded else '-', plate or 'none')
 
         # Полный номер всегда лучше куска, даже менее уверенный
         better = (plate is not None and (
