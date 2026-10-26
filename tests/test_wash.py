@@ -134,6 +134,27 @@ check('второму ещё мойка 25% от 700', people[2]['amount'] == 40
 salary.process_payment(mixed.id, 'cash', orders.calculate_total(mixed.id))
 
 print()
+print('=== На сервер: начисления по направлениям (дашборд мойки) ===')
+from services.sync_service import SyncService
+
+
+def sent_accruals(order_id):
+    visit = next(v for v in SyncService(db)._collect_visits() if v['local_id'] == order_id)
+    return sorted((a['employee_local_id'], a['direction'], a['amount']) for a in visit['accruals']), visit
+
+
+accruals, visit = sent_accruals(mixed.id)
+check('строки наряда — со своим направлением',
+      sorted(i['direction'] for i in visit['items']) == ['tire', 'wash'])
+check('первому — только шиномонтаж, второму — шиномонтаж и мойка отдельно',
+      accruals == [(1, 'tire', 400.0), (2, 'tire', 400.0), (2, 'wash', 175.0)], str(accruals))
+orders.refund_order(mixed.id, amount=orders.calculate_total(mixed.id) / 2, reason='половина')
+accruals, _ = sent_accruals(mixed.id)
+wash_back = [a for a in accruals if a[1] == 'wash' and a[2] < 0]
+check('откат при возврате делится в той же доле',
+      wash_back == [(2, 'wash', -87.5)] and round(sum(a[2] for a in accruals), 2) == 487.5, str(accruals))
+
+print()
 print('=== Наряд мойки + шиномонтаж: нужен диаметр ===')
 second = orders.create_order('Р200РР77', '', 'car', create_client=False,
                              directions=['wash'], wash_class='jeep')

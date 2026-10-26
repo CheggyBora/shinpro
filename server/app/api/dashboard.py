@@ -42,12 +42,19 @@ def _period(day_from: Optional[date], day_to: Optional[date]):
     return day_from, day_to
 
 
-def _service(db, staff, shop=None):
+# Переключатель «Шиномонтаж | Мойка» (docs/wash_dashboard.md): tire или
+# wash. Пусто или непонятное — оба направления сразу, как до мойки
+Direction = Query(None, description='tire — шиномонтаж, wash — мойка, '
+                                    'пусто — всё вместе')
+
+
+def _service(db, staff, shop=None, direction=None):
     """
     Считалка, настроенная на точки этого аккаунта.
 
     shop — выбранная точка: её имя или номер. Пусто — считаем по всем
     точкам аккаунта сразу: для владельца сети это и есть главная цифра.
+    direction — шиномонтаж или мойка; пусто — всё вместе.
 
     Чужую точку подставить нельзя: список берётся из аккаунта, к
     которому относится сам сотрудник.
@@ -63,7 +70,7 @@ def _service(db, staff, shop=None):
                                 detail='Такой точки нет')
         ids = chosen
 
-    return DashboardService(db, staff.account_id, ids)
+    return DashboardService(db, staff.account_id, ids, direction)
 
 
 @router.get('/shops', summary='Точки аккаунта — для выбора на дашборде')
@@ -83,16 +90,18 @@ def summary(day_from: Optional[date] = Query(None, alias='from'),
             day_to: Optional[date] = Query(None, alias='to'),
            shop: Optional[str] = Query(
                None, description='Точка. Пусто — все точки сети'),
+            direction: Optional[str] = Direction,
             staff: StaffUser = Depends(require(PERM_REVENUE)),
             db: Session = Depends(get_db)):
     day_from, day_to = _period(day_from, day_to)
-    return _service(db, staff, shop).summary(day_from, day_to)
+    return _service(db, staff, shop, direction).summary(day_from, day_to)
 
 
 @router.get('/sales', summary='Продажи: основное и допродажи')
 def sales(day_from: Optional[date] = Query(None, alias='from'),
           day_to: Optional[date] = Query(None, alias='to'),
           shop: Optional[str] = None,
+          direction: Optional[str] = Direction,
           staff: StaffUser = Depends(require(PERM_REVENUE)),
           db: Session = Depends(get_db)):
     """
@@ -103,7 +112,7 @@ def sales(day_from: Optional[date] = Query(None, alias='from'),
     в том, предложили человеку что-то сверх или просто перекинули колёса.
     """
     day_from, day_to = _period(day_from, day_to)
-    return _service(db, staff, shop).sales(day_from, day_to)
+    return _service(db, staff, shop, direction).sales(day_from, day_to)
 
 
 @router.get('/services', summary='Выручка по услугам')
@@ -111,10 +120,11 @@ def services(day_from: Optional[date] = Query(None, alias='from'),
              day_to: Optional[date] = Query(None, alias='to'),
            shop: Optional[str] = Query(
                None, description='Точка. Пусто — все точки сети'),
+             direction: Optional[str] = Direction,
              staff: StaffUser = Depends(require(PERM_REVENUE)),
              db: Session = Depends(get_db)):
     day_from, day_to = _period(day_from, day_to)
-    return _service(db, staff, shop).services(day_from, day_to)
+    return _service(db, staff, shop, direction).services(day_from, day_to)
 
 
 @router.get('/masters', summary='Мастера и начисления')
@@ -122,10 +132,11 @@ def masters(day_from: Optional[date] = Query(None, alias='from'),
             day_to: Optional[date] = Query(None, alias='to'),
            shop: Optional[str] = Query(
                None, description='Точка. Пусто — все точки сети'),
+            direction: Optional[str] = Direction,
             staff: StaffUser = Depends(require(PERM_SALARY_ALL)),
             db: Session = Depends(get_db)):
     day_from, day_to = _period(day_from, day_to)
-    return _service(db, staff, shop).masters(day_from, day_to)
+    return _service(db, staff, shop, direction).masters(day_from, day_to)
 
 
 @router.get('/orders', summary='Наряды за период')
@@ -135,6 +146,7 @@ def orders(day_from: Optional[date] = Query(None, alias='from'),
                None, description='Точка. Пусто — все точки сети'),
            employee_local_id: Optional[int] = None,
            payment_method: Optional[str] = None,
+           direction: Optional[str] = Direction,
            limit: int = Query(500, le=2000),
            staff: StaffUser = Depends(current_staff),
            db: Session = Depends(get_db)):
@@ -149,8 +161,8 @@ def orders(day_from: Optional[date] = Query(None, alias='from'),
                             detail='Нет доступа к этому разделу')
 
     day_from, day_to = _period(day_from, day_to)
-    return _service(db, staff, shop).orders(day_from, day_to, employee_local_id,
-                                       payment_method, limit)
+    return _service(db, staff, shop, direction).orders(
+        day_from, day_to, employee_local_id, payment_method, limit)
 
 
 @router.get('/orders/{local_id}', summary='Наряд целиком')
@@ -173,14 +185,19 @@ def shifts(day_from: Optional[date] = Query(None, alias='from'),
            day_to: Optional[date] = Query(None, alias='to'),
            shop: Optional[str] = Query(
                None, description='Точка. Пусто — все точки сети'),
+           direction: Optional[str] = Direction,
            staff: StaffUser = Depends(current_staff),
            db: Session = Depends(get_db)):
+    """
+    Смены за период. С направлением «начислено» — только его часть:
+    смена у шиномонтажа и мойки общая, а зарплата у каждого своя.
+    """
     if not staff.can(PERM_SALARY_ALL):
         raise HTTPException(status.HTTP_403_FORBIDDEN,
                             detail='Нет доступа к этому разделу')
 
     day_from, day_to = _period(day_from, day_to)
-    return _service(db, staff, shop).shifts(day_from, day_to)
+    return _service(db, staff, shop, direction).shifts(day_from, day_to)
 
 
 @router.get('/shifts/current', summary='Текущая смена')
@@ -193,6 +210,9 @@ def current_shift(shop: Optional[str] = None,
     Слепок очереди приходит из цеха раз в десять минут. Отдаём вместе с
     его временем: если цех давно не выходил на связь, дашборд покажет
     «данные от 10:42», а не соврёт свежими цифрами.
+
+    Направления здесь нет: смена и очередь у шиномонтажа и мойки общие,
+    а денег этот ответ не несёт.
     """
     service = _service(db, staff, shop)
     shift = service.current_shift()
@@ -222,6 +242,7 @@ def current_shift(shop: Optional[str] = None,
 
 @router.get('/shifts/{shift_local_id}/salary', summary='Начисления за смену')
 def shift_salary(shift_local_id: int, shop: Optional[str] = None,
+                 direction: Optional[str] = Direction,
                  staff: StaffUser = Depends(current_staff),
                  db: Session = Depends(get_db)):
     """
@@ -234,7 +255,7 @@ def shift_salary(shift_local_id: int, shop: Optional[str] = None,
         raise HTTPException(status.HTTP_403_FORBIDDEN,
                             detail='Нет доступа к зарплатам')
 
-    return _service(db, staff, shop).shift_salary(shift_local_id)
+    return _service(db, staff, shop, direction).shift_salary(shift_local_id)
 
 
 # ----------------------------------------------------------------------
@@ -256,6 +277,9 @@ def salary(shop: Optional[str] = None,
            db: Session = Depends(get_db)):
     """
     Кому сколько начислено, выдано и осталось — за всё время.
+
+    На шиномонтаж и мойку не делится: человеку платят одной суммой, и
+    остаток «по мойке» только запутал бы выдачу.
 
     В ответе видно, может ли этот человек выдавать: прятать кнопку по
     роли на стороне страницы нельзя, решает сервер.

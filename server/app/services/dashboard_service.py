@@ -13,14 +13,50 @@
     она перестанет;
   · гарантийные наряды прибавляют машину, но не деньги;
   · зарплата не пересчитывается — берётся начисленная в цеху.
+
+Шиномонтаж и мойка (docs/wash_dashboard.md). Если у точки есть мойка,
+владелец смотрит направления по отдельности. Один наряд бывает
+смешанным, и делится он по строкам, а не целиком:
+
+  · выручка направления — сумма его позиций; без направления — как
+    раньше, сумма наряда;
+  · наряд считается в направлении, если в нём есть хоть одна его
+    позиция; наряд без позиций — по своему полю directions;
+  · возврат, расходники и база зарплаты строками не размечены и
+    делятся в доле направления: возврат и база — в доле выручки,
+    расходники — в доле себестоимости материалов позиций (если её нет —
+    тоже в доле выручки). Так шиномонтаж плюс мойка дают ровно общую
+    цифру;
+  · зарплата — начисления с этим направлением: их делит цех;
+  · остатки и выдача зарплаты не делятся: человеку платят одной суммой.
 """
 from datetime import datetime, time, timedelta
 
-from sqlalchemy import func
+from sqlalchemy import func, and_, or_, exists
+from sqlalchemy.orm import selectinload
 
 from app.models import (Visit, VisitItem, SalaryAccrual, SalaryPayout,
                         ShopEmployee, ShopShift, PENDING)
 from app.utils import now as shop_now
+
+TIRE = 'tire'
+WASH = 'wash'
+DIRECTIONS = (TIRE, WASH)
+
+
+def clean_direction(value):
+    """
+    «tire» или «wash». Всё прочее — None, то есть оба направления сразу.
+
+    Непонятное не ругаем: это фильтр экрана, а не деньги, и пустой ответ
+    из-за опечатки в адресе был бы хуже общей цифры.
+    """
+    value = (value or '').strip().lower()
+    return value if value in DIRECTIONS else None
+
+
+def _line_direction(item):
+    return item.direction or TIRE
 
 
 def day_bounds(day_from, day_to):
@@ -31,9 +67,10 @@ def day_bounds(day_from, day_to):
 
 
 class DashboardService:
-    def __init__(self, db, account_id=None, shop_ids=None):
+    def __init__(self, db, account_id=None, shop_ids=None, direction=None):
         """
         account_id — чей дашборд. shop_ids — какие точки показывать.
+        direction — шиномонтаж или мойка; пусто — оба сразу, как раньше.
 
         Пусто и то и другое — считаем по всему, что есть: так работает
         сервер с единственным шиномонтажом, где выбирать не из чего.
@@ -41,6 +78,7 @@ class DashboardService:
         self.db = db
         self.account_id = account_id
         self.shop_ids = list(shop_ids) if shop_ids else None
+        self.direction = clean_direction(direction)
 
     def _only_mine(self, query, model=None):
         """Сузить выборку до выбранных точек."""
@@ -63,15 +101,116 @@ class DashboardService:
         return {shop.id: shop.name for shop in query.all()}
 
     # ------------------------------------------------------------------
+    # Направление: шиномонтаж или мойка
+    # ------------------------------------------------------------------
+
+    def _in_direction(self, query):
+        """
+        Только наряды, где есть работа выбранного направления.
+
+        Есть позиции — смотрим на них: смешанный наряд попадает в оба
+        направления. Позиций нет — на поле наряда directions.
+        """
+        if self.direction is None:
+            return query
+
+        has_line = exists().where(and_(VisitItem.visit_id == Visit.id,
+                                       VisitItem.direction == self.direction))
+        no_lines = ~exists().where(VisitItem.visit_id == Visit.id)
+        return query.filter(or_(
+            has_line,
+            and_(no_lines, Visit.directions.contains(self.direction))))
+
+    def _with_lines(self, query):
+        """Позиции одним запросом: делить наряд будем по ним."""
+        if self.direction is None:
+            return query
+        return query.options(selectinload(Visit.items))
+
+    def _directions_of(self, order):
+        """Направления наряда — по позициям, без позиций — по полю наряда."""
+        if order.items:
+            found = {_line_direction(item) for item in order.items}
+        else:
+            found = set((order.directions or TIRE).split(','))
+        return [name for name in DIRECTIONS if name in found]
+
+    def _share(self, order):
+        """
+        Доля направления в деньгах наряда, от 0 до 1.
+
+        По суммам позиций. Все позиции бесплатные (гарантия) — по их
+        числу. Позиций нет — наряд целиком принадлежит первому из своих
+        направлений: делить его не по чему.
+        """
+        if self.direction is None:
+            return 1.0
+
+        items = list(order.items)
+        if items:
+            whole = sum(item.total or 0.0 for item in items)
+            mine = [item for item in items
+                    if _line_direction(item) == self.direction]
+            if whole > 0:
+                return sum(item.total or 0.0 for item in mine) / whole
+            return len(mine) / len(items)
+
+        first = (order.directions or TIRE).split(',')[0]
+        return 1.0 if first == self.direction else 0.0
+
+    def _revenue(self, order):
+        """Выручка наряда в выбранном направлении."""
+        if self.direction is None:
+            return order.total_amount or 0.0
+        if order.items:
+            return sum(item.total or 0.0 for item in order.items
+                       if _line_direction(item) == self.direction)
+        return (order.total_amount or 0.0) * self._share(order)
+
+    def _consumables(self, order):
+        """
+        Расходники наряда в выбранном направлении.
+
+        Сумму наряда делим в доле себестоимости материалов позиций, а не
+        складываем позиции заново: тогда шиномонтаж плюс мойка дают ровно
+        ту цифру, что прислал цех.
+        """
+        total = order.consumables_amount or 0.0
+        if self.direction is None or not total:
+            return total
+
+        whole = sum(item.consumable_cost or 0.0 for item in order.items)
+        if whole > 0:
+            mine = sum(item.consumable_cost or 0.0 for item in order.items
+                       if _line_direction(item) == self.direction)
+            return total * mine / whole
+        return total * self._share(order)
+
+    def _refund(self, order):
+        """Возврат в выбранном направлении — в доле его выручки."""
+        return (order.refunded_amount or 0.0) * self._share(order)
+
+    def _salary_base(self, order):
+        """База зарплаты в выбранном направлении — в доле его выручки."""
+        return (order.salary_base or 0.0) * self._share(order)
+
+    def _accruals_only(self, query):
+        """Начисления выбранного направления."""
+        if self.direction is None:
+            return query
+        return query.filter(SalaryAccrual.direction == self.direction)
+
+    # ------------------------------------------------------------------
     # Общее
     # ------------------------------------------------------------------
 
     def _orders_query(self, start, end):
         """Наряды периода: оплаченные, не удалённые, из выбранных точек."""
-        return self._only_mine(self.db.query(Visit).filter(
-            Visit.is_deleted.is_(False),
-            Visit.visited_at >= start,
-            Visit.visited_at <= end))
+        return self._with_lines(self._in_direction(self._only_mine(
+            self.db.query(Visit).filter(
+                Visit.is_deleted.is_(False),
+                Visit.visited_at >= start,
+                Visit.visited_at <= end))))
 
     def _refunds_in(self, start, end):
         """
@@ -80,12 +219,13 @@ class DashboardService:
         Отдельным запросом: сам наряд мог быть месяц назад, а деньги
         вернули сегодня — и вычесть их надо из сегодняшнего дня.
         """
-        return self._only_mine(self.db.query(Visit).filter(
-            Visit.is_deleted.is_(False),
-            Visit.refunded_amount > 0,
-            Visit.refunded_at.isnot(None),
-            Visit.refunded_at >= start,
-            Visit.refunded_at <= end))
+        return self._with_lines(self._in_direction(self._only_mine(
+            self.db.query(Visit).filter(
+                Visit.is_deleted.is_(False),
+                Visit.refunded_amount > 0,
+                Visit.refunded_at.isnot(None),
+                Visit.refunded_at >= start,
+                Visit.refunded_at <= end))))
 
     # ------------------------------------------------------------------
     # Сводка
@@ -95,31 +235,34 @@ class DashboardService:
         start, end = day_bounds(day_from, day_to)
         orders = self._orders_query(start, end).all()
 
-        revenue = sum(order.total_amount or 0.0 for order in orders)
-        refunded = sum(order.refunded_amount or 0.0
+        # Без направления каждая из этих функций — ровно прежнее поле
+        # наряда: total_amount, refunded_amount, consumables_amount
+        revenue = sum(self._revenue(order) for order in orders)
+        refunded = sum(self._refund(order)
                        for order in self._refunds_in(start, end).all())
 
-        cash = sum(order.total_amount or 0.0 for order in orders
+        cash = sum(self._revenue(order) for order in orders
                    if order.payment_method == 'cash')
-        card = sum(order.total_amount or 0.0 for order in orders
+        card = sum(self._revenue(order) for order in orders
                    if order.payment_method == 'card')
 
-        consumables = sum(order.consumables_amount or 0.0 for order in orders)
+        consumables = sum(self._consumables(order) for order in orders)
         warranty = [order for order in orders if order.is_warranty]
 
-        salary = self._only_mine(
+        salary = self._accruals_only(self._only_mine(
             self.db.query(func.sum(SalaryAccrual.amount)).join(
                 Visit, SalaryAccrual.visit_id == Visit.id).filter(
                 Visit.is_deleted.is_(False),
                 Visit.visited_at >= start,
-                Visit.visited_at <= end)).scalar() or 0.0
+                Visit.visited_at <= end))).scalar() or 0.0
 
-        paid_orders = [order for order in orders if (order.total_amount or 0) > 0]
+        paid_orders = [order for order in orders if self._revenue(order) > 0]
         average = round(revenue / len(paid_orders), 2) if paid_orders else 0.0
 
         return {
             'from': day_from,
             'to': day_to,
+            'direction': self.direction or 'all',
             'revenue': round(revenue, 2),
             'refunded': round(refunded, 2),
             # Чистая выручка: за вычетом возвратов этого периода
@@ -152,13 +295,13 @@ class DashboardService:
             key = order.visited_at.date().isoformat()
             if key not in buckets:
                 continue
-            buckets[key]['revenue'] += order.total_amount or 0.0
+            buckets[key]['revenue'] += self._revenue(order)
             buckets[key]['cars'] += 1
 
         for order in self._refunds_in(start, end).all():
             key = order.refunded_at.date().isoformat()
             if key in buckets:
-                buckets[key]['revenue'] -= order.refunded_amount or 0.0
+                buckets[key]['revenue'] -= self._refund(order)
 
         rows = list(buckets.values())
         for row in rows:
@@ -183,7 +326,8 @@ class DashboardService:
             VisitItem.service_name,
             func.sum(VisitItem.quantity),
             func.sum(VisitItem.total),
-            func.sum(VisitItem.consumable_cost * VisitItem.quantity),
+            # Цех присылает расходник строки целиком, уже на всё количество
+            func.sum(VisitItem.consumable_cost),
             VisitItem.is_extra,
             VisitItem.is_goods,
         ).join(Visit, VisitItem.visit_id == Visit.id).filter(
@@ -191,6 +335,8 @@ class DashboardService:
             Visit.visited_at >= start,
             Visit.visited_at <= end,
         )
+        if self.direction is not None:
+            rows = rows.filter(VisitItem.direction == self.direction)
         rows = self._only_mine(rows).group_by(
             VisitItem.service_name, VisitItem.is_extra,
             VisitItem.is_goods).all()
@@ -264,21 +410,39 @@ class DashboardService:
     # ------------------------------------------------------------------
 
     def masters(self, day_from, day_to):
-        """Выработка и начисления по мастерам за период."""
+        """
+        Выработка и начисления по мастерам за период.
+
+        Наряды считаем разными нарядами, а не строками начислений: цех
+        присылает человеку по строке на направление, да ещё откат при
+        возврате, — и один наряд иначе посчитался бы дважды вместе с
+        его базой и выручкой.
+        """
         start, end = day_bounds(day_from, day_to)
 
-        rows = self._only_mine(self.db.query(
-            Visit.shop_id,
-            SalaryAccrual.employee_local_id,
-            func.count(SalaryAccrual.id),
-            func.sum(SalaryAccrual.amount),
-            func.sum(Visit.salary_base),
-            func.sum(Visit.total_amount),
+        query = self._accruals_only(self._only_mine(self.db.query(
+            SalaryAccrual, Visit,
         ).join(Visit, SalaryAccrual.visit_id == Visit.id).filter(
             Visit.is_deleted.is_(False),
             Visit.visited_at >= start,
             Visit.visited_at <= end,
-        )).group_by(Visit.shop_id, SalaryAccrual.employee_local_id).all()
+        )))
+        if self.direction is not None:
+            query = query.options(selectinload(Visit.items))
+
+        groups = {}
+        for accrual, visit in query.all():
+            key = (visit.shop_id, accrual.employee_local_id)
+            group = groups.setdefault(key, {'salary': 0.0, 'visits': {}})
+            group['salary'] += accrual.amount or 0.0
+            group['visits'][visit.id] = visit
+
+        rows = [(shop_id, local_id, len(group['visits']), group['salary'],
+                 sum(self._salary_base(visit)
+                     for visit in group['visits'].values()),
+                 sum(self._revenue(visit)
+                     for visit in group['visits'].values()))
+                for (shop_id, local_id), group in groups.items()]
 
         people = self._people()
         titles = self._shop_titles()
@@ -481,15 +645,31 @@ class DashboardService:
             query = query.filter(Visit.payment_method == payment_method)
 
         if employee_local_id is not None:
-            query = query.join(
-                SalaryAccrual, SalaryAccrual.visit_id == Visit.id).filter(
-                SalaryAccrual.employee_local_id == employee_local_id)
+            # Подзапросом, а не соединением: строк начислений у человека
+            # в наряде бывает несколько, и наряд задвоился бы в списке
+            mine = self._accruals_only(self.db.query(
+                SalaryAccrual.visit_id).filter(
+                SalaryAccrual.employee_local_id == employee_local_id))
+            query = query.filter(Visit.id.in_(mine))
 
-        rows = query.order_by(Visit.visited_at.desc()).limit(limit).all()
+        # Позиции нужны каждой строке — для метки направления
+        rows = query.options(selectinload(Visit.items)).order_by(
+            Visit.visited_at.desc()).limit(limit).all()
         return [self._order_row(order) for order in rows]
 
     def _order_row(self, order):
-        return {
+        masters = []
+        for accrual in order.accruals:
+            if self.direction is not None and \
+                    (accrual.direction or TIRE) != self.direction:
+                continue
+            title = self._master_title(accrual.employee_local_id, order.shop_id)
+            # Строк у человека бывает несколько — по направлению и откат
+            # при возврате, — а имя в списке нужно одно
+            if title not in masters:
+                masters.append(title)
+
+        row = {
             'local_id': order.local_id,
             'visited_at': order.visited_at,
             'license_plate': order.license_plate,
@@ -501,10 +681,15 @@ class DashboardService:
             # можно: «почему выручка меньше, чем я помню» разбирается
             # именно по таким
             'is_deleted': order.is_deleted,
-            'masters': [self._master_title(row.employee_local_id, order.shop_id)
-                        for row in order.accruals],
+            'masters': masters,
             'services': order.services,
+            # Метка в списке: что было в наряде — шиномонтаж, мойка, оба
+            'directions': self._directions_of(order),
         }
+        if self.direction is not None:
+            # Сколько из суммы наряда пришлось на выбранное направление
+            row['direction_amount'] = round(self._revenue(order), 2)
+        return row
 
     def _master_title(self, local_id, shop_id=None):
         query = self.db.query(ShopEmployee).filter(
@@ -545,6 +730,7 @@ class DashboardService:
             'planned_minutes': order.planned_minutes,
             'actual_minutes': minutes,
             'shift_local_id': order.shift_local_id,
+            'wash_class': order.wash_class,
             'items': [{
                 'service_name': item.service_name,
                 'quantity': item.quantity,
@@ -553,12 +739,19 @@ class DashboardService:
                 'total': round(item.total or 0.0, 2),
                 'consumable_cost': round(item.consumable_cost or 0.0, 2),
                 'comment': item.comment,
+                'direction': _line_direction(item),
+                # Кто мыл: мойку делает один человек, и видно это по строке
+                'employee_local_id': item.employee_local_id,
+                'employee_title': (
+                    self._master_title(item.employee_local_id, order.shop_id)
+                    if item.employee_local_id is not None else None),
             } for item in order.items],
             'accruals': [{
                 'employee_local_id': row.employee_local_id,
                 'title': self._master_title(row.employee_local_id,
                                             order.shop_id),
                 'amount': round(row.amount or 0.0, 2),
+                'direction': row.direction or TIRE,
             } for row in accruals],
         })
         return card
@@ -576,6 +769,27 @@ class DashboardService:
 
         titles = self._shop_titles()
 
+        # Смена у шиномонтажа и мойки общая, а итог начислений цех
+        # присылает один на всех. По направлению считаем его сами — из
+        # начислений этого направления в нарядах смены
+        parts = None
+        if self.direction is not None and rows:
+            found = self._accruals_only(self.db.query(
+                Visit.shop_id, Visit.shift_local_id,
+                func.sum(SalaryAccrual.amount),
+            ).join(Visit, SalaryAccrual.visit_id == Visit.id).filter(
+                Visit.is_deleted.is_(False),
+                Visit.shift_local_id.in_({row.local_id for row in rows}),
+                Visit.shop_id.in_({row.shop_id for row in rows}),
+            )).group_by(Visit.shop_id, Visit.shift_local_id).all()
+            parts = {(shop_id, shift_id): total
+                     for shop_id, shift_id, total in found}
+
+        def salary_of(row):
+            if parts is None:
+                return row.total_salary or 0.0
+            return parts.get((row.shop_id, row.local_id)) or 0.0
+
         return [{
             'local_id': row.local_id,
             'shop_id': row.shop_id,
@@ -584,7 +798,7 @@ class DashboardService:
             'ended_at': row.ended_at,
             'status': row.status,
             'open_posts': row.open_posts,
-            'total_salary': round(row.total_salary or 0.0, 2),
+            'total_salary': round(float(salary_of(row)), 2),
         } for row in rows]
 
     def shift_salary(self, shift_local_id, shop_id=None):
@@ -614,10 +828,12 @@ class DashboardService:
             orders = orders.filter(Visit.shop_id == shift.shop_id)
         else:
             orders = self._only_mine(orders)
+        orders = self._accruals_only(orders)
 
-        rows = orders.order_by(Visit.local_id).all()
+        rows = orders.order_by(Visit.local_id, SalaryAccrual.id).all()
 
         people = {}
+        lines = {}
         for accrual, order in rows:
             emp_id = accrual.employee_local_id
             if emp_id not in people:
@@ -628,11 +844,21 @@ class DashboardService:
                     'orders': [],
                 }
             people[emp_id]['salary'] += accrual.amount or 0.0
-            people[emp_id]['orders'].append({
+
+            # Одно начисление цех присылает частями — шиномонтаж и мойка
+            # отдельно, с одним и тем же временем. Человеку это одна
+            # строка наряда; откат при возврате — другое время, своя строка
+            key = (emp_id, order.id, accrual.accrued_at)
+            if key in lines:
+                lines[key]['amount'] = round(
+                    lines[key]['amount'] + (accrual.amount or 0.0), 2)
+                continue
+            lines[key] = {
                 'order_id': order.local_id,
                 'license_plate': order.license_plate,
                 'amount': round(accrual.amount or 0.0, 2),
-            })
+            }
+            people[emp_id]['orders'].append(lines[key])
 
         for person in people.values():
             person['salary'] = round(person['salary'], 2)

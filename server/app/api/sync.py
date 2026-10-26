@@ -97,11 +97,19 @@ class VisitItemIn(BaseModel):
     is_extra: bool = False
     is_goods: bool = False
 
+    # Шиномонтаж или мойка и кто мыл (docs/wash_dashboard.md). Старая
+    # программа не шлёт — значит, шиномонтаж
+    direction: Optional[str] = 'tire'
+    employee_local_id: Optional[int] = None
+
 
 class AccrualIn(BaseModel):
     employee_local_id: int
     amount: float = 0.0
     accrued_at: Optional[datetime] = None
+    # Новая программа делит начисление человека по направлениям и шлёт
+    # до двух строк на наряд. Старая шлёт одну — она вся шиномонтаж
+    direction: Optional[str] = 'tire'
 
 
 class VisitIn(BaseModel):
@@ -133,6 +141,10 @@ class VisitIn(BaseModel):
     planned_minutes: int = 0
     started_at: Optional[datetime] = None
     finished_at: Optional[datetime] = None
+
+    # «tire», «wash» или «tire,wash»; класс машины — для мойки
+    directions: Optional[str] = 'tire'
+    wash_class: Optional[str] = None
 
     items: List[VisitItemIn] = []
     accruals: List[AccrualIn] = []
@@ -311,6 +323,26 @@ def _client_by_local_id(db, local_id, cache, account_id=None):
     return row
 
 
+def _direction(value):
+    """
+    Направление строки наряда или начисления: «tire» или «wash».
+
+    Здесь, в отличие от записи, непонятное — шиномонтаж: наряд уже
+    оплачен, и отказаться его принять из-за опечатки значило бы потерять
+    деньги на дашборде. Шиномонтаж — то, чем было всё до мойки.
+    """
+    return clean_direction(value) or 'tire'
+
+
+def _directions(value):
+    """«tire», «wash» или «tire,wash» — всегда в этом порядке, без мусора."""
+    found = {clean_direction(part) for part in (value or '').split(',')
+             if part.strip()}
+    found.discard(None)
+    ordered = [name for name in ('tire', WASH) if name in found]
+    return ','.join(ordered) or 'tire'
+
+
 @router.post('/push', response_model=PushOut, summary='Цех отдаёт свои данные')
 def push(payload: PushIn, db: Session = Depends(get_db),
          shop: Shop = Mine):
@@ -425,6 +457,8 @@ def push(payload: PushIn, db: Session = Depends(get_db),
         row.planned_minutes = item.planned_minutes
         row.started_at = item.started_at
         row.finished_at = item.finished_at
+        row.directions = _directions(item.directions)
+        row.wash_class = clean_wash_class(item.wash_class)
         db.flush()
 
         # Позиции и начисления кладём заново. Наряд мог измениться как
@@ -446,7 +480,9 @@ def push(payload: PushIn, db: Session = Depends(get_db),
                     consumable_cost=line.consumable_cost,
                     comment=line.comment,
                     is_extra=line.is_extra,
-                    is_goods=line.is_goods))
+                    is_goods=line.is_goods,
+                    direction=_direction(line.direction),
+                    employee_local_id=line.employee_local_id))
 
         if item.accruals:
             for old in list(row.accruals):
@@ -457,7 +493,8 @@ def push(payload: PushIn, db: Session = Depends(get_db),
                     visit_id=row.id,
                     employee_local_id=accrual.employee_local_id,
                     amount=accrual.amount,
-                    accrued_at=accrual.accrued_at or item.visited_at))
+                    accrued_at=accrual.accrued_at or item.visited_at,
+                    direction=_direction(accrual.direction)))
 
         db.flush()
         result.visits += 1

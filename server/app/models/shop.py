@@ -224,6 +224,15 @@ class Visit(Base):
     started_at = Column(DateTime, nullable=True)
     finished_at = Column(DateTime, nullable=True)
 
+    # Направления наряда: «tire», «wash» или «tire,wash», если в одном
+    # наряде и шиномонтаж, и мойка (docs/wash_dashboard.md). Деньги по
+    # направлениям делятся не по этому полю, а по позициям: оно нужно
+    # тому наряду, у которого позиций нет
+    directions = Column(String(20), default='tire', nullable=False,
+                        server_default='tire')
+    # Класс машины для мойки: sedan / crossover / jeep / minivan
+    wash_class = Column(String(16), nullable=True)
+
     client = relationship('Client')
     items = relationship('VisitItem', back_populates='visit',
                          cascade='all, delete-orphan')
@@ -270,6 +279,14 @@ class VisitItem(Base):
     # месяцев перестанет что-либо значить
     is_extra = Column(Boolean, default=False, nullable=False, index=True)
 
+    # Шиномонтаж или мойка. По нему смешанный наряд делится на дашборде:
+    # строки мойки — выручка мойки, остальные — шиномонтажа
+    direction = Column(String(10), default='tire', nullable=False,
+                       server_default='tire')
+    # Кто мыл. Мойку делает один человек, и в наряде это видно по строке;
+    # у шиномонтажа пусто — там работают все мастера наряда
+    employee_local_id = Column(Integer, nullable=True)
+
     visit = relationship('Visit', back_populates='items')
 
 
@@ -289,6 +306,12 @@ class SalaryAccrual(Base):
     employee_local_id = Column(Integer, nullable=False, index=True)
     amount = Column(Float, default=0.0, nullable=False)
     accrued_at = Column(DateTime, nullable=True, index=True)
+
+    # За шиномонтаж или за мойку. Цех делит начисление сам и присылает
+    # человеку до двух строк на наряд — по строке на направление.
+    # Остаток к выдаче от этого не делится: человеку платят одной суммой
+    direction = Column(String(10), default='tire', nullable=False,
+                       server_default='tire')
 
     visit = relationship('Visit', back_populates='accruals')
 

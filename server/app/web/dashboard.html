@@ -330,6 +330,28 @@ input.code { letter-spacing: 8px; text-align: center; font-size: 22px; font-weig
 .kind.goods { background: #dcfce7; color: #166534; }
 .kind.material { background: #e0e7ff; color: #3730a3; }
 
+/* --- Шиномонтаж | Мойка ---
+   Переключатель над цифрами (docs/wash_dashboard.md). Виден, только
+   когда у выбранной точки есть мойка. На телефоне — во всю ширину,
+   по половине на направление: попасть пальцем легче, чем в чип */
+.dir-switch { padding: 12px 0 0; }
+.dir-switch .seg-in { display: flex; gap: 3px; padding: 3px; width: 100%;
+  border: 1.5px solid var(--line); border-radius: 12px; background: var(--card); }
+.dir-switch button { flex: 1 1 0; min-width: 0; border: 0; background: none;
+  border-radius: 9px; padding: 8px 10px; font-size: 14.5px; color: var(--ink-soft); }
+.dir-switch button[aria-pressed="true"] { background: var(--brand); color: #fff;
+  font-weight: 600; }
+.dir-switch button[data-dir="wash"][aria-pressed="true"] { background: #0f766e; }
+/* Метки в строке списка — в одну строку с номером машины. Правило
+   «.row .main span» делает span блоком, и без этого каждая метка
+   вставала отдельной полосой */
+.row .main b .dir, .row .main b .tag { display: inline-block; white-space: nowrap;
+  overflow: visible; }
+.row .main b .dir { margin-left: 6px; vertical-align: 1px; font-size: 10.5px;
+  color: inherit; }
+.row .main b .dir.tire { color: #1d4ed8; } .row .main b .dir.wash { color: #0f766e; }
+.line .dir { margin-right: 6px; vertical-align: 1px; }
+
 /* Разделов стало больше, чем помещается в ширину телефона: полоса
    прокручивается, а не сжимает подписи до нечитаемых */
 @media (max-width: 759px) {
@@ -344,6 +366,8 @@ input.code { letter-spacing: 8px; text-align: center; font-size: 22px; font-weig
   .tabs { position: static; border-top: 0; border-bottom: 1px solid var(--line);
     background: none; margin-bottom: 12px; }
   .tabs button { flex: 0 0 auto; flex-direction: row; padding: 10px 16px; font-size: 14px; }
+  .dir-switch .seg-in { display: inline-flex; width: auto; }
+  .dir-switch button { flex: 0 0 auto; min-width: 150px; }
   .sheet { align-items: center; }
   .sheet .inner { border-radius: 20px; max-height: 80vh; }
 }
@@ -417,6 +441,7 @@ input.code { letter-spacing: 8px; text-align: center; font-size: 22px; font-weig
 
   <div class="wrap">
     <div class="period" id="shops" hidden></div>
+    <div class="dir-switch" id="dirSwitch" hidden></div>
     <div class="period" id="period"></div>
     <div class="dates" id="dates">
       <input id="dFrom" type="date"><input id="dTo" type="date">
@@ -855,8 +880,72 @@ function applyPeriod() {
 
 function query(path) {
   var join = path.indexOf('?') >= 0 ? '&' : '?';
-  var full = path + join + 'from=' + period.from + '&to=' + period.to;
+  var full = withDir(path + join + 'from=' + period.from + '&to=' + period.to);
   return currentShop ? full + '&shop=' + encodeURIComponent(currentShop) : full;
+}
+
+// ------------------------------------------------------------------
+// Шиномонтаж | Мойка (docs/wash_dashboard.md)
+// ------------------------------------------------------------------
+//
+// Выручка, наряды, смены и начисления — по выбранному направлению.
+// Смешанный наряд сервер делит по строкам. Переключатель виден, когда
+// у выбранной точки есть мойка (по всем точкам — хоть у одной); нет
+// мойки — направления в запросах нет, и цифры прежние, общие.
+// Остатки зарплаты не делятся: человеку платят одной суммой.
+
+var dashDirection = 'tire';
+try {
+  var savedDash = localStorage.getItem('dashDirection');
+  if (savedDash === 'tire' || savedDash === 'wash') dashDirection = savedDash;
+} catch (e) {}
+
+// Разделы, которые считаются по направлению. У календаря и склада свой
+// фильтр «Направление», остальное на шиномонтаж и мойку не делится
+var DIR_SECTIONS = { summary: 1, services: 1, masters: 1, orders: 1, shifts: 1 };
+
+function washOn() {
+  return shownShops().some(function (shop) { return shop.wash_enabled; });
+}
+
+// Направление для запросов: пусто — всё вместе, как до мойки
+function dashDir() { return washOn() ? dashDirection : ''; }
+
+function withDir(path) {
+  var dir = dashDir();
+  if (!dir) return path;
+  return path + (path.indexOf('?') >= 0 ? '&' : '?') + 'direction=' + dir;
+}
+
+function drawDirection() {
+  var box = $('dirSwitch');
+  box.hidden = !washOn() || !DIR_SECTIONS[section];
+  if (box.hidden) return;
+
+  box.innerHTML = '<div class="seg-in" role="group" aria-label="Направление">'
+    + DIRS.map(function (item) {
+      return '<button type="button" data-dir="' + item.key + '" aria-pressed="'
+        + (item.key === dashDirection) + '">' + item.title + '</button>';
+    }).join('') + '</div>';
+
+  [].slice.call(box.querySelectorAll('button')).forEach(function (button) {
+    button.addEventListener('click', function () {
+      if (button.getAttribute('data-dir') === dashDirection) return;
+      dashDirection = button.getAttribute('data-dir');
+      try { localStorage.setItem('dashDirection', dashDirection); } catch (e) {}
+      load();
+    });
+  });
+}
+
+// Метки направлений у смешанного наряда. У наряда одного направления
+// метка — шум: что он шиномонтаж, и так видно по переключателю
+function dirTags(directions) {
+  if (!washOn() || !directions || directions.length < 2) return '';
+  return directions.map(function (key) {
+    return '<span class="dir ' + (key === 'wash' ? 'wash' : 'tire') + '">'
+      + (STOCK_DIR_TAGS[key] || 'шинка') + '</span>';
+  }).join('');
 }
 
 function withShop(path) {
@@ -911,6 +1000,9 @@ function load() {
                  || section === 'stock';
   $('period').style.display = aboutPeople ? 'none' : '';
   $('dates').style.display = aboutPeople ? 'none' : '';
+  // Переключатель — после смены точки или раздела: у новой точки мойки
+  // может не быть, а у раздела — деления по направлениям
+  drawDirection();
 
   if (section === 'calendar') return loadCalendar();
   if (section === 'stock') return loadStock();
@@ -932,7 +1024,9 @@ function loadSummary() {
     var data = answers[0], now = answers[1];
     var html = '';
 
-    if (now.queue) {
+    // Очередь из цеха — очередь шиномонтажа: у мойки живой очереди нет,
+    // и её посты в этом слепке не считаются
+    if (now.queue && dashDir() !== 'wash') {
       var q = now.queue;
       html += '<div class="card"><h2>Сейчас в цеху</h2>'
         + '<div class="line"><span>В работе</span><b>' + q.cars_in_work + '</b></div>'
@@ -1076,17 +1170,23 @@ function loadOrders(masterId) {
 
     show('<div class="card"><h2>Наряды' + (masterId ? ' мастера' : '') + '</h2>'
       + rows.map(function (row) {
-        var tags = '';
+        var tags = dirTags(row.directions);
         if (row.is_warranty) tags += '<span class="tag warn">гарантия</span>';
         if (row.refunded_amount) tags += '<span class="tag bad">возврат</span>';
+
+        // Смешанный наряд: крупно — часть выбранного направления, мелко —
+        // из какой суммы она. Иначе сумма списка не сойдётся со сводкой
+        var part = row.direction_amount != null
+          && Math.abs(row.direction_amount - row.total_amount) > 0.005;
 
         return '<button class="row" type="button" data-order="' + row.local_id + '">'
           + '<div class="main"><b>' + escape(row.license_plate || '—') + tags + '</b>'
           + '<span>№' + row.local_id + ' · ' + timeText(row.visited_at)
           + (row.masters.length ? ' · ' + escape(row.masters.join(', ')) : '')
           + '</span></div>'
-          + '<div class="money">' + money(row.total_amount)
-          + '<small>' + (row.payment_method === 'card' ? 'карта' : 'наличные')
+          + '<div class="money">' + money(part ? row.direction_amount : row.total_amount)
+          + '<small>' + (part ? 'из ' + money(row.total_amount) + ' · ' : '')
+          + (row.payment_method === 'card' ? 'карта' : 'наличные')
           + '</small></div></button>';
       }).join('') + '</div>');
 
@@ -1594,11 +1694,21 @@ function openOrder(id) {
       + '<div class="when">Наряд №' + card.local_id + ' · ' + timeText(card.visited_at)
       + (card.is_deleted ? ' · <span class="tag bad">удалён</span>' : '') + '</div>';
 
+    // Смешанный наряд: у каждой строки метка направления, у мойки — кто
+    // мыл. Деньги наряда на дашборде делятся именно по этим строкам
+    var mixed = (card.directions || []).length > 1;
+    var tag = function (key) {
+      return mixed ? '<span class="dir ' + (key === 'wash' ? 'wash' : 'tire') + '">'
+        + (STOCK_DIR_TAGS[key] || 'шинка') + '</span>' : '';
+    };
+
     html += '<div class="block-title">Работы</div>';
     html += card.items.map(function (item) {
-      return '<div class="line"><span>' + escape(item.service_name)
+      return '<div class="line"><span>' + tag(item.direction) + escape(item.service_name)
         + (item.quantity > 1 ? ' × ' + item.quantity : '')
         + (item.discount_percent ? ' · −' + item.discount_percent + '%' : '')
+        + (item.direction === 'wash' && item.employee_title
+           ? ' · ' + escape(item.employee_title) : '')
         + '</span><b>' + money(item.total) + '</b></div>';
     }).join('');
 
@@ -1620,8 +1730,8 @@ function openOrder(id) {
       html += '<div class="line"><span>База для начисления</span><b>'
         + money(card.salary_base) + '</b></div>';
       html += card.accruals.map(function (row) {
-        return '<div class="line"><span>' + escape(row.title) + '</span><b>'
-          + money(row.amount) + '</b></div>';
+        return '<div class="line"><span>' + tag(row.direction) + escape(row.title)
+          + '</span><b>' + money(row.amount) + '</b></div>';
       }).join('');
     }
 
@@ -1643,8 +1753,10 @@ function openOrder(id) {
 }
 
 function openShift(id) {
-  api(withShop('/dashboard/shifts/' + id + '/salary')).then(function (data) {
-    var html = '<h2>Начисления за смену</h2><div class="when">'
+  api(withDir(withShop('/dashboard/shifts/' + id + '/salary'))).then(function (data) {
+    var html = '<h2>Начисления за смену'
+      + (dashDir() ? ' · ' + DIR_TITLES[dashDir()].toLowerCase() : '')
+      + '</h2><div class="when">'
       + (data.shift.started_at ? timeText(data.shift.started_at) : '')
       + (data.is_final ? '' : ' · смена идёт, сумма ещё вырастет') + '</div>';
 

@@ -406,12 +406,17 @@ class SyncService:
                 log.warning(f"Наряд №{order.id} не попал в обмен: {e}")
                 continue
 
+            # Начисление человеку — по направлениям: дашборд мойки
+            # считает зарплату мойки отдельно
+            from services.salary_service import by_direction
             accruals = [{
                 'employee_local_id': row.employee_id,
-                'amount': row.amount or 0.0,
+                'amount': part,
+                'direction': direction,
                 'accrued_at': as_naive(row.transaction_date),
-            } for row in self.db.query(SalaryTransaction).filter(
-                SalaryTransaction.work_order_id == order.id).all()]
+            } for row, parts in by_direction(self.db.query(SalaryTransaction).filter(
+                SalaryTransaction.work_order_id == order.id).order_by(SalaryTransaction.id).all())
+                for direction, part in parts.items()]
 
             visits.append({
                 'local_id': order.id,

@@ -297,6 +297,51 @@ class SalaryService:
         return nobody
 
 
+def wash_share(transaction):
+    """Какая доля начисления — за мойку, по строкам разбора. None — разбора нет."""
+    detail = read_detail(transaction) or {}
+    lines = detail.get('lines') or []
+    total = sum(l.get('amount') or 0 for l in lines)
+    if not total:
+        return None
+    return sum(l.get('amount') or 0 for l in lines if l.get('direction') == 'wash') / total
+
+
+def by_direction(transactions):
+    """
+    Начисления наряда по людям и направлениям:
+    [(transaction, {'tire': 380.0, 'wash': 360.0})].
+
+    Дашборд мойки показывает зарплату отдельно (docs/wash_dashboard.md).
+    Откат при возврате — отдельная строка без разбора: её делим в той же
+    доле, что исходное начисление этого человека.
+    """
+    own = {}
+    for row in transactions:
+        share = wash_share(row)
+        if share is not None and (row.amount or 0) > 0:
+            own.setdefault(row.employee_id, share)
+    result = []
+    for row in transactions:
+        amount = round(row.amount or 0.0, 2)
+        share = wash_share(row)
+        if share is None:
+            share = own.get(row.employee_id, 0.0)
+        if not share:
+            result.append((row, {'tire': amount}))
+            continue
+        result.append((row, _split(amount, share)))
+    return result
+
+
+def _split(amount, share):
+    wash_part = round(amount * share, 2)
+    parts = {'wash': wash_part}
+    if round(amount - wash_part, 2):
+        parts['tire'] = round(amount - wash_part, 2)
+    return parts
+
+
 def read_detail(transaction):
     """Разбор начисления: {'lines': [...], 'skipped': [...]} или None."""
     raw = getattr(transaction, 'detail', None)

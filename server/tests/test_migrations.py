@@ -112,6 +112,23 @@ uniques = [set(item['column_names'])
            for item in inspector.get_unique_constraints('stock_items')]
 check('uid позиции уникален внутри точки', {'shop_id', 'uid'} in uniques,
       str(uniques))
+# Мойка на дашборде — шаг b3e9d1f7a2c5: направление у наряда, позиции
+# и начисления, у позиции — мойщик, у наряда — класс машины
+for table, name in (('visits', 'directions'), ('visit_items', 'direction'),
+                    ('salary_accruals', 'direction')):
+    columns = {column['name']: column for column in inspector.get_columns(table)}
+    direction = columns.get(name)
+    check(f'у {table} есть {name}', direction is not None
+          and not direction['nullable']
+          and 'tire' in str(direction.get('default')), str(direction))
+columns = {column['name']: column for column in inspector.get_columns('visits')}
+check('у наряда есть класс машины для мойки',
+      'wash_class' in columns and columns['wash_class']['nullable'])
+columns = {column['name']: column
+           for column in inspector.get_columns('visit_items')}
+check('у позиции есть мойщик',
+      'employee_local_id' in columns
+      and columns['employee_local_id']['nullable'])
 
 print('\n=== Схема совпадает с моделями ===')
 # Тот же расчёт, что делает autogenerate: если он находит отличия,
@@ -142,6 +159,35 @@ command.upgrade(config, 'head')
 inspector = inspect(engine)
 check('повторный проход возвращает схему',
       {'shops', 'visits', 'staff_users'} <= set(inspector.get_table_names()))
+
+print('\n=== Старые наряды после шага мойки — шиномонтаж ===')
+from sqlalchemy import text
+
+command.downgrade(config, 'a6f2c8e4b1d7')
+with engine.begin() as connection:
+    connection.execute(text(
+        "INSERT INTO visits (id, visited_at, total_amount, is_warranty, "
+        "consumables_amount, salary_base, general_discount, rim_discount, "
+        "auto_discount, refunded_amount, is_deleted, planned_minutes) "
+        "VALUES (1, '2026-10-01 12:00:00', 1000, 0, 0, 0, 0, 0, 0, 0, 0, 0)"))
+    connection.execute(text(
+        "INSERT INTO visit_items (id, visit_id, service_name, quantity, "
+        "unit_price, discount_percent, total, consumable_cost, is_goods, "
+        "is_extra) VALUES (1, 1, 'Шиномонтаж', 4, 250, 0, 1000, 0, 0, 0)"))
+    connection.execute(text(
+        "INSERT INTO salary_accruals (id, visit_id, employee_local_id, amount) "
+        "VALUES (1, 1, 1, 400)"))
+command.upgrade(config, 'head')
+with engine.connect() as connection:
+    old = (connection.execute(text('SELECT directions FROM visits')).scalar(),
+           connection.execute(text('SELECT direction FROM visit_items')).scalar(),
+           connection.execute(text(
+               'SELECT direction FROM salary_accruals')).scalar())
+check('наряд, позиция и начисление до шага стали шиномонтажом',
+      old == ('tire', 'tire', 'tire'), str(old))
+with engine.begin() as connection:
+    for table in ('salary_accruals', 'visit_items', 'visits'):
+        connection.execute(text(f'DELETE FROM {table}'))
 
 print('\n=== Повторный запуск ничего не ломает ===')
 init_db()
