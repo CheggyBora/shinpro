@@ -69,8 +69,12 @@ def _service(db, staff, shop=None):
 @router.get('/shops', summary='Точки аккаунта — для выбора на дашборде')
 def shops(staff: StaffUser = Depends(current_staff),
           db: Session = Depends(get_db)):
+    # stock_enabled и wash_enabled — какие разделы показывать у точки:
+    # «Склад» виден, когда у выбранной точки склад включён
     return [{'id': row.id, 'slug': row.slug, 'name': row.name,
-             'address': row.address, 'last_sync_at': row.last_sync_at}
+             'address': row.address, 'last_sync_at': row.last_sync_at,
+             'stock_enabled': shop_settings.stock_on(db, row),
+             'wash_enabled': shop_settings.wash_on(db, row)}
             for row in tenancy.shops_of(db, staff.account_id)]
 
 

@@ -312,7 +312,8 @@ def drop_shop(db, shop):
     """
     from app.models import (Appointment, BookingDay, QueueSnapshot,
                             SalaryPayout, ShopEmployee, ShopSetting,
-                            ShopShift, StoredSet, Visit)
+                            ShopShift, StockItem, StoredSet, Visit,
+                            Task, Counterparty)
 
     # Наряды через объекты, а не одним запросом: у них есть позиции и
     # начисления, и убрать их должен каскад, описанный в модели
@@ -321,7 +322,8 @@ def drop_shop(db, shop):
     db.flush()
 
     for model in (Appointment, BookingDay, StoredSet, SalaryPayout,
-                  ShopEmployee, ShopShift, QueueSnapshot, ShopSetting):
+                  ShopEmployee, ShopShift, QueueSnapshot, ShopSetting,
+                  StockItem, Task, Counterparty):
         db.query(model).filter(model.shop_id == shop.id).delete(
             synchronize_session=False)
 

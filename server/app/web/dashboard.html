@@ -307,6 +307,29 @@ input.code { letter-spacing: 8px; text-align: center; font-size: 22px; font-weig
   background: var(--card); }
 .form textarea:focus { outline: none; border-color: var(--brand); }
 
+/* --- Склад ---
+   Те же цвета, что в цеху: в минусе — красным, мало — жёлтым. Строка
+   целиком, а не одна цифра: с телефона её видно, не вчитываясь */
+.stock-when { font-size: 12.5px; color: var(--ink-soft); white-space: nowrap; }
+.stock-sum { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0 4px; }
+.srow { display: flex; align-items: flex-start; gap: 10px; padding: 9px 10px;
+  border: 1px solid var(--line); border-radius: 10px; margin-top: 6px; }
+.srow.neg { background: #fee2e2; border-color: #fecaca; }
+.srow.low { background: #fef3c7; border-color: #fde68a; }
+.srow .main { flex: 1; min-width: 0; }
+.srow .main b { display: block; font-weight: 600; overflow-wrap: anywhere; }
+.srow .meta { display: flex; flex-wrap: wrap; gap: 3px 6px; align-items: center;
+  font-size: 12.5px; color: var(--ink-soft); margin-top: 2px; }
+.srow .qty { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.srow .qty b { display: block; font-size: 16px; }
+.srow.neg .qty b { color: var(--bad); }
+.srow.low .qty b { color: var(--warn); }
+.srow .qty small { display: block; font-size: 11.5px; color: var(--ink-soft); }
+.kind { display: inline-block; font-size: 10.5px; font-weight: 700; padding: 2px 6px;
+  border-radius: 6px; white-space: nowrap; }
+.kind.goods { background: #dcfce7; color: #166534; }
+.kind.material { background: #e0e7ff; color: #3730a3; }
+
 /* Разделов стало больше, чем помещается в ширину телефона: полоса
    прокручивается, а не сжимает подписи до нечитаемых */
 @media (max-width: 759px) {
@@ -713,8 +736,22 @@ var ICONS = {
   booking: '<rect x="3" y="5" width="18" height="16" rx="2"/>'
          + '<path d="M8 3v4M16 3v4M3 11h18"/><path d="M8 15h3"/>',
   calendar: '<rect x="3" y="5" width="18" height="16" rx="2"/>'
-          + '<path d="M8 3v4M16 3v4M3 11h18"/><path d="M8 16l2 2 4-4"/>'
+          + '<path d="M8 3v4M16 3v4M3 11h18"/><path d="M8 16l2 2 4-4"/>',
+  stock: '<path d="M3 7.5l9-4.5 9 4.5-9 4.5-9-4.5z"/><path d="M3 7.5v9l9 4.5 9-4.5v-9"/>'
+       + '<path d="M12 12v9"/>'
 };
+
+// Точки, которые сейчас на экране: выбранная или все
+function shownShops() {
+  if (!currentShop) return shops;
+  return shops.filter(function (shop) { return String(shop.id) === String(currentShop); });
+}
+
+// «Склад» виден, когда у выбранной точки склад включён (docs/stock.md).
+// По всем точкам — если включён хоть у одной
+function stockOn() {
+  return shownShops().some(function (shop) { return shop.stock_enabled; });
+}
 
 function sections() {
   var list = [];
@@ -724,6 +761,8 @@ function sections() {
   // Задачи нужны всем, кто заходит в дашборд: владелец ставит их из
   // дома, админ отмечает. Отдельного права под них нет
   list.push({ key: 'calendar', title: 'Календарь' });
+  // Остатки, как и задачи, нужны всем, кто заходит в дашборд
+  if (stockOn()) list.push({ key: 'stock', title: 'Склад' });
   if (can('revenue')) list.push({ key: 'services', title: 'Услуги' });
   if (can('salary_all')) list.push({ key: 'masters', title: 'Мастера' });
   if (can('orders')) list.push({ key: 'orders', title: 'Наряды' });
@@ -737,6 +776,10 @@ function sections() {
 
 function drawTabs() {
   var list = sections();
+  // Раздел пропал — у новой точки склад выключен. Не держим человека
+  // на пустом месте, а открываем первый из доступных
+  var here = list.some(function (item) { return item.key === section; });
+  if (!here && list.length) section = list[0].key;
   $('tabs').innerHTML = list.map(function (item) {
     return '<button type="button" data-key="' + item.key + '" aria-pressed="'
       + (item.key === section) + '"><svg viewBox="0 0 24 24">' + ICONS[item.key]
@@ -841,6 +884,7 @@ function drawShops() {
     button.addEventListener('click', function () {
       currentShop = button.getAttribute('data-shop');
       drawShops();
+      drawTabs();
       load();
     });
   });
@@ -863,11 +907,13 @@ function load() {
 
   // На экране доступа период ни при чём: люди не относятся к месяцу
   var aboutPeople = section === 'staff' || section === 'salary'
-                 || section === 'booking' || section === 'calendar';
+                 || section === 'booking' || section === 'calendar'
+                 || section === 'stock';
   $('period').style.display = aboutPeople ? 'none' : '';
   $('dates').style.display = aboutPeople ? 'none' : '';
 
   if (section === 'calendar') return loadCalendar();
+  if (section === 'stock') return loadStock();
   if (section === 'booking') return loadBooking();
   if (section === 'staff') return loadStaff();
   if (section === 'salary') return loadSalary();
@@ -2301,6 +2347,157 @@ function openTask(task) {
 }
 
 // ------------------------------------------------------------------
+// Склад
+// ------------------------------------------------------------------
+//
+// Остатки, присланные цехом (docs/stock.md): сначала то, что в минусе,
+// потом то, чего мало. Править отсюда нельзя — склад ведут в цеху.
+// Сервер отдаёт оба направления сразу, фильтр — здесь: переключение
+// не ждёт сети.
+
+var STOCK_DIRS = [{ key: 'all', title: 'Все' }, { key: 'tire', title: 'Шиномонтаж' },
+                  { key: 'wash', title: 'Мойка' }];
+var STOCK_DIR_TAGS = { tire: 'шинка', wash: 'мойка' };
+var STOCK_KINDS = { goods: 'товар', material: 'материал' };
+
+var stock = { data: null, direction: 'all', onlyLow: false };
+
+// Фильтры помним на этом устройстве: кладовщику мойки не выбирать
+// «Мойку» заново при каждом входе
+try {
+  stock.direction = localStorage.getItem('stockDirection') || 'all';
+  stock.onlyLow = localStorage.getItem('stockOnlyLow') === '1';
+} catch (e) {}
+
+function saveStockFilter() {
+  try {
+    localStorage.setItem('stockDirection', stock.direction);
+    localStorage.setItem('stockOnlyLow', stock.onlyLow ? '1' : '0');
+  } catch (e) {}
+}
+
+// 1,5 л · 146 шт · −0,4 л. Минус — настоящий, а не дефис: в столбце
+// цифр дефис теряется
+function stockNumber(value) {
+  var number = Number(value) || 0;
+  var text = Math.abs(number).toLocaleString('ru-RU', { maximumFractionDigits: 3 });
+  return (number < 0 && text !== '0' ? '−' : '') + text;
+}
+
+function stockAmount(value, unit) {
+  return stockNumber(value) + (unit ? ' ' + escape(unit) : '');
+}
+
+// Цена за штуку — просто цена, за литр и килограмм — «350 ₽/л»
+function stockPrice(item) {
+  var unit = item.unit && item.unit !== 'шт' ? '/' + escape(item.unit) : '';
+  return money(item.price) + unit;
+}
+
+// «Обновлено: 16:05», не сегодня — ещё и число. Время — как прислал
+// сервер, московское, без перевода поясов
+function stockWhen(iso) {
+  if (!iso) return 'Цех ещё не присылал склад';
+  var now = new Date();
+  var today = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0')
+    + '-' + String(now.getDate()).padStart(2, '0');
+  var clock = iso.slice(11, 16);
+  if (iso.slice(0, 10) === today) return 'Обновлено: ' + clock;
+  return 'Обновлено: ' + iso.slice(8, 10) + '.' + iso.slice(5, 7) + ' ' + clock;
+}
+
+function loadStock() {
+  api(withShop('/dashboard/stock')).then(function (data) {
+    stock.data = data;
+    drawStock();
+  }).catch(function (e) { show(''); fail(e.message); });
+}
+
+function drawStock() {
+  var data = stock.data || { items: [] };
+  if (!data.enabled) {
+    show('<div class="card"><h2>Склад</h2><div class="empty">Склад у этой точки не ведётся.'
+      + '<br>Включают в программе цеха: Настройки → Направления.</div></div>');
+    return;
+  }
+
+  var items = data.items || [];
+  // Фильтр по направлению — только если есть мойка: у шиномонтажа без
+  // мойки он бы только путал
+  var wash = data.wash_enabled || items.some(function (item) { return item.direction === 'wash'; });
+  var direction = wash ? stock.direction : 'all';
+  var many = !currentShop && shops.length > 1;
+
+  var mine = items.filter(function (item) {
+    return direction === 'all' || item.direction === direction;
+  });
+  var neg = mine.filter(function (item) { return item.state === 'neg'; }).length;
+  var low = mine.filter(function (item) { return item.state === 'low'; }).length;
+  var rows = stock.onlyLow
+    ? mine.filter(function (item) { return item.state !== 'ok'; }) : mine;
+
+  var html = '<div class="card"><div class="cal-head"><h2>Склад</h2>'
+    + '<span class="stock-when">' + escape(stockWhen(data.updated_at)) + '</span></div>';
+
+  if (wash) {
+    html += '<div class="cal-filter" id="sDirs"><span class="lab">Направление:</span>'
+      + STOCK_DIRS.map(function (item) {
+        return '<button class="chip" type="button" data-sdir="' + item.key
+          + '" aria-pressed="' + (item.key === direction) + '">' + item.title + '</button>';
+      }).join('') + '</div>';
+  }
+  html += '<div class="cal-filter"><button class="chip" type="button" id="sOnlyLow" aria-pressed="'
+    + stock.onlyLow + '">Только мало и минус</button></div>';
+
+  if (neg || low) {
+    html += '<div class="stock-sum">'
+      + (neg ? '<span class="tag bad" style="margin:0">В минусе: ' + neg + '</span>' : '')
+      + (low ? '<span class="tag warn" style="margin:0">Мало: ' + low + '</span>' : '')
+      + '</div>';
+  }
+
+  if (!rows.length) {
+    html += '<div class="empty">' + (stock.onlyLow && mine.length
+      ? 'Всего хватает: ничего не мало и не в минусе'
+      : 'Позиций нет') + '</div>';
+  }
+
+  html += rows.map(function (item) {
+    var meta = '<span class="kind ' + (item.kind === 'goods' ? 'goods' : 'material') + '">'
+      + (STOCK_KINDS[item.kind] || 'материал') + '</span>';
+    if (wash && direction === 'all') {
+      meta += '<span class="dir ' + (item.direction === 'wash' ? 'wash' : 'tire') + '">'
+        + (STOCK_DIR_TAGS[item.direction] || 'шинка') + '</span>';
+    }
+    if (many && item.shop_name) meta += '<span>' + escape(item.shop_name) + '</span>';
+    meta += '<span>' + stockPrice(item) + '</span>';
+
+    return '<div class="srow ' + escape(item.state) + '">'
+      + '<div class="main"><b>' + escape(item.name) + '</b><div class="meta">' + meta + '</div></div>'
+      + '<div class="qty"><b>' + stockAmount(item.quantity, item.unit) + '</b>'
+      + '<small>мин. ' + stockNumber(item.min_quantity) + '</small></div></div>';
+  }).join('');
+
+  html += '</div>';
+  show(html);
+
+  if (wash) {
+    [].slice.call($('sDirs').querySelectorAll('button')).forEach(function (button) {
+      button.addEventListener('click', function () {
+        stock.direction = button.getAttribute('data-sdir');
+        saveStockFilter();
+        drawStock();
+      });
+    });
+  }
+  $('sOnlyLow').addEventListener('click', function () {
+    stock.onlyLow = !stock.onlyLow;
+    saveStockFilter();
+    drawStock();
+  });
+}
+
+// ------------------------------------------------------------------
 // Запуск
 // ------------------------------------------------------------------
 
@@ -2329,6 +2526,7 @@ function start() {
   api('/dashboard/shops').then(function (rows) {
     shops = rows || [];
     drawShops();
+    drawTabs();
     load();
   }).catch(function () { load(); });
 }

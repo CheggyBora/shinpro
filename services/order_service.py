@@ -207,9 +207,7 @@ class OrderService:
                 # Снимок себестоимости: подорожание закупки не должно
                 # менять уже начисленные зарплаты. У товара себестоимость —
                 # это его закупочная цена
-                consumable_cost=((service.purchase_price or 0.0)
-                                 if service.is_goods
-                                 else (service.consumable_cost or 0.0)),
+                consumable_cost=self._consumable_cost(service),
                 is_goods=bool(service.is_goods),
                 direction=getattr(service, 'direction', None) or 'tire',
             )
@@ -264,6 +262,18 @@ class OrderService:
             item.quantity = len(wheels)
         self.db.commit()
         return item
+
+    def _consumable_cost(self, service):
+        """
+        Снимок расходника строки. У товара — его закупка. Склад включён и
+        у услуги прописан расход материалов — по расходу и отпускной цене;
+        иначе — сумма у услуги, как было.
+        """
+        if service.is_goods:
+            return service.purchase_price or 0.0
+        from services.stock_service import StockService
+        cost = StockService(self.db).consumable_cost_for(service)
+        return cost if cost is not None else (service.consumable_cost or 0.0)
 
     @staticmethod
     def price_for(service, diameter, wash_class=None):
@@ -506,11 +516,13 @@ class OrderService:
         items = self.db.query(WorkOrderItem).filter(
             WorkOrderItem.work_order_id == order_id).all()
 
+        from services.salary_service import SalaryService
+        salary = SalaryService(self.db)
         base = 0.0
         for item in items:
             if getattr(item, 'is_goods', False):
                 continue
-            base += self.item_total(item) - self.item_consumables(item)
+            base += salary._base(item)
 
         return round(max(0.0, base), 2)
 
@@ -931,6 +943,15 @@ class OrderService:
                 entity_type='work_order', entity_id=order_id)
 
             full = order.refunded_amount >= paid
+            # Вернули наряд целиком — списанное возвращается на склад
+            if full:
+                try:
+                    from services.stock_service import StockService
+                    StockService(self.db).return_order(order_id)
+                except Exception as e:
+                    self.db.rollback()
+                    from logger import log
+                    log.error(f"Склад не вернулся по наряду №{order_id}: {e}")
             message = (f"{title} проведён: {amount:.2f} руб."
                        + ("" if full else f"\nОстаток по наряду: "
                                           f"{paid - order.refunded_amount:.2f} руб."))

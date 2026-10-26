@@ -717,6 +717,35 @@ class SettingsDialog:
                    "работает: делят только они. Мойка всегда назначается на "
                    "сотрудника в строке.")
 
+        self._section(content, "От чего считается зарплата")
+        self.salary_base_vars = {}
+        for direction, title in (('tire', 'Шиномонтаж'), ('wash', 'Мойка')):
+            row = ttk.Frame(content, style='White.TFrame')
+            row.pack(fill='x', pady=2)
+            styles.create_label(row, f"{title}:", 'Card.TLabel').pack(side='left')
+            var = tk.StringVar(value=directions.salary_base(self.db, direction))
+            self.salary_base_vars[direction] = var
+            for value, text in (('revenue', 'от выручки'),
+                                ('minus', 'от выручки минус расходники')):
+                ttk.Radiobutton(row, text=text, value=value, variable=var,
+                                command=lambda d=direction, v=var: self.settings.set(
+                                    f'salary_base_{d}', v.get())).pack(side='left', padx=(10, 0))
+        self._hint(content,
+                   "Выручка — сумма услуги после всех скидок. Минус расходники — "
+                   "то же, но без стоимости материалов услуги. С товаров зарплата "
+                   "не начисляется ни в одном варианте.")
+
+        self._section(content, "Склад")
+        self.stock_var = tk.BooleanVar(value=self.settings.get('stock_enabled') == '1')
+        ttk.Checkbutton(content, text="Вести склад: остатки товаров и материалов",
+                        variable=self.stock_var,
+                        command=self.save_stock).pack(anchor='w', pady=2)
+        self._hint(content,
+                   "Включено — появляется раздел «Склад». При оплате наряда "
+                   "списываются проданные товары и материалы по услугам, при "
+                   "полном возврате — возвращаются. Остаток может уйти в минус: "
+                   "главному придёт сообщение в Telegram.")
+
         self._section(content, "Мойка")
         row = ttk.Frame(content, style='White.TFrame')
         row.pack(fill='x', pady=(0, 6))
@@ -754,6 +783,10 @@ class SettingsDialog:
             self.wash_booking_fields[key] = entry
         self._hint(content, "Живой очереди у мойки нет: клиент записывается на время, "
                             "«Я на месте» у мойки не показывается.")
+
+    def save_stock(self):
+        from services.stock_service import StockService
+        StockService(self.db).set_enabled(self.stock_var.get())
 
     def save_wash_booking(self, key, entry):
         value = entry.get().strip()

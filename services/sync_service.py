@@ -199,6 +199,22 @@ class SyncService:
             self._settings().set(self.TASKS_SINCE_KEY, answer['now'])
         return changed
 
+    # Снимок склада уходит, только когда поменялся — держим отпечаток
+    # последнего отправленного (на время работы программы)
+    _stock_sent = None
+
+    def stock_exchange(self):
+        """Остатки для дашборда (docs/stock.md): полный снимок, когда поменялся."""
+        from services.stock_service import StockService
+        stock = StockService(self.db)
+        snapshot = stock.snapshot()
+        mark = stock.fingerprint(snapshot)
+        if mark == SyncService._stock_sent:
+            return False
+        self._call('POST', '/sync/stock', snapshot)
+        SyncService._stock_sent = mark
+        return True
+
     def order_photos(self, order_local_id):
         """Что мастера прислали по этому наряду."""
         return self._call('GET', f'/sync/photos?order_local_id={order_local_id}')
@@ -581,6 +597,7 @@ class SyncService:
             'live_queue_enabled': '1' if self._live_queue_on() else '0',
             # Мойка включена — в дашборде календарь с переключателем
             'direction_wash': settings.get('direction_wash'),
+            'stock_enabled': settings.get('stock_enabled'),
             'wash_booking_enabled': settings.get('wash_booking_enabled'),
             'wash_booking_posts': settings.get('wash_booking_posts'),
             'wash_booking_opens_at': settings.get('wash_booking_opens_at'),

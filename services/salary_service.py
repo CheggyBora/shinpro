@@ -98,11 +98,24 @@ class SalaryService:
             # Назначенное считается отдельно — тому, кто делал (distribute)
             if self._is_assigned(item):
                 continue
-            base = max(0.0, OrderService.item_total(item)
-                       - OrderService.item_consumables(item))
+            base = self._base(item)
             name = item.service.name if item.service else f'Позиция №{item.id}'
             work.append((name, base))
         return work
+
+    def _base(self, item):
+        """
+        База строки для зарплаты. «От выручки» — итог строки после всех
+        скидок; «минус расходники» — то же минус расходник строки. Что
+        выбрано — своё у шиномонтажа и у мойки (docs/stock.md). Не ниже
+        нуля: материалы дороже работы — мастер в минус не уходит.
+        """
+        from services.order_service import OrderService
+        from services import directions
+        total = OrderService.item_total(item)
+        if directions.salary_base(self.db, getattr(item, 'direction', None) or 'tire') == 'revenue':
+            return max(0.0, total)
+        return max(0.0, total - OrderService.item_consumables(item))
 
     def _is_assigned(self, item):
         """Строку начисляют тому, кого выбрали: мойка — всегда, шиномонтаж —
@@ -120,8 +133,7 @@ class SalaryService:
         for item in items:
             if getattr(item, 'is_goods', False) or not self._is_assigned(item):
                 continue
-            base = max(0.0, OrderService.item_total(item)
-                       - OrderService.item_consumables(item))
+            base = self._base(item)
             name = item.service.name if item.service else f'Позиция №{item.id}'
             lines.append((name, base, item.employee_id, getattr(item, 'direction', None) or 'tire'))
         return lines
@@ -261,6 +273,15 @@ class SalaryService:
         order.status = 'paid'
 
         self.db.commit()
+
+        # Склад включён — списать материалы по услугам и проданные товары
+        try:
+            from services.stock_service import StockService
+            StockService(self.db).write_off_order(order_id)
+        except Exception as e:
+            self.db.rollback()
+            from logger import log
+            log.error(f"Склад не списался по наряду №{order_id}: {e}")
 
         # Оплачен — машина ушла с поста: место в живой очереди закрыто,
         # пост свободен для следующего

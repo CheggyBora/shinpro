@@ -89,6 +89,12 @@ DEFAULTS = {
     'wash_booking_slot_step': '30',
     'wash_booking_minutes': '30',
 
+    # Склад (docs/stock.md). По умолчанию выключен: расходник у услуги —
+    # сумма в рублях, остатков нет. Присылает цех вместе со снимком
+    # склада. stock_snapshot_at — когда снимок доехал сюда (ISO)
+    'stock_enabled': '0',
+    'stock_snapshot_at': '',
+
     'storage_warn_days': '7',
 
     # За сколько дней записываться с выдачей комплекта со склада.
@@ -215,6 +221,17 @@ def wash_booking_on(db, shop):
     """
     return (wash_on(db, shop)
             and is_on(get(db, 'wash_booking_enabled', shop=shop) or '0'))
+
+
+def stock_on(db, shop):
+    """
+    Ведёт ли точка склад.
+
+    Пустое — выключено, как у мойки: включённый по ошибке склад показал
+    бы владельцу пустой раздел и ничего бы не сломал, но и пользы бы
+    не принёс.
+    """
+    return is_on(get(db, 'stock_enabled', shop=shop) or '0')
 
 
 def updated_at(db, key, shop=None):

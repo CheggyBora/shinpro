@@ -18,6 +18,7 @@ from .live_queue import LiveQueueEntry
 from .booking_posts import BookingPosts
 from .paint import PaintOption
 from .calendar import CalendarTask, Counterparty, TelegramOutbox
+from .stock import StockItem, ServiceMaterial, StockMove
 
 __all__ = [
     'PaintOption',

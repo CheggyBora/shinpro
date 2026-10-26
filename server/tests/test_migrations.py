@@ -98,6 +98,20 @@ check('у записи есть направление', direction is not None
       and 'tire' in str(direction.get('default')), str(direction))
 check('у записи есть класс машины для мойки',
       'wash_class' in columns and columns['wash_class']['nullable'])
+# Склад — шаг a6f2c8e4b1d7: снимок остатков из цеха
+check('есть склад', 'stock_items' in tables)
+columns = {column['name']: column
+           for column in inspector.get_columns('stock_items')}
+check('у позиции склада все поля',
+      {'shop_id', 'uid', 'name', 'direction', 'kind', 'unit', 'quantity',
+       'min_quantity', 'price', 'purchase_price', 'updated_at'} <= set(columns),
+      str(sorted(columns)))
+check('закупка у позиции необязательна',
+      columns.get('purchase_price', {}).get('nullable') is True)
+uniques = [set(item['column_names'])
+           for item in inspector.get_unique_constraints('stock_items')]
+check('uid позиции уникален внутри точки', {'shop_id', 'uid'} in uniques,
+      str(uniques))
 
 print('\n=== Схема совпадает с моделями ===')
 # Тот же расчёт, что делает autogenerate: если он находит отличия,

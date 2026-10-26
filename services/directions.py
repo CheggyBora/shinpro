@@ -101,17 +101,10 @@ def set_enabled(db, tire, wash):
             pass
 
 
-def wash_booking_on(db):
-    """Принимать запись на мойку через кабинет."""
-    return wash_on(db) and _flag(db, 'wash_booking_enabled', '0')
-
-
-def wash_booking_posts(db):
-    return max(1, _settings(db).get_int('wash_booking_posts', 2))
-
-
-def wash_booking_minutes(db):
-    return max(10, _settings(db).get_int('wash_booking_minutes', 30))
+def salary_base(db, direction):
+    """От чего процент: revenue — итог строки после скидок, minus — минус расходник."""
+    value = _settings(db).get(f'salary_base_{direction}') or 'minus'
+    return 'revenue' if value == 'revenue' else 'minus'
 
 
 def wash_booking_on(db):

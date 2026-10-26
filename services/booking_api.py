@@ -235,10 +235,6 @@ class BookingApi:
         from services import directions
         return directions.wash_booking_posts(self.db)
 
-    def _wash_posts(self):
-        from services import directions
-        return directions.wash_booking_posts(self.db)
-
     def _cached_posts(self, day):
         from models import BookingPosts
 

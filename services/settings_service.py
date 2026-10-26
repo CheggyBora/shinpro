@@ -92,13 +92,11 @@ DEFAULTS = {
     'direction_wash': '0',
     'wash_posts': '2',
     'tire_assign_employees': '0',
-    # Запись на мойку — своя (docs/booking_wash.md)
-    'wash_booking_enabled': '0',
-    'wash_booking_posts': '2',
-    'wash_booking_opens_at': '09:00',
-    'wash_booking_closes_at': '21:00',
-    'wash_booking_slot_step': '30',
-    'wash_booking_minutes': '30',
+    # Склад и база зарплаты (docs/stock.md). minus — «выручка минус
+    # расходники», как было; revenue — «от выручки»
+    'stock_enabled': '0',
+    'salary_base_tire': 'minus',
+    'salary_base_wash': 'minus',
     # Запись на мойку — своя (docs/booking_wash.md)
     'wash_booking_enabled': '0',
     'wash_booking_posts': '2',

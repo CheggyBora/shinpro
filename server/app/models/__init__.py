@@ -13,6 +13,7 @@ from app.models.push import PushSubscription
 from app.models.live import LiveTicket
 from app.models.task import (Task, Counterparty, CATEGORIES, CATEGORY_TITLES,
                              SOURCES)
+from app.models.stock import StockItem
 from app.models.shop import (Appointment, BookingDay, StoredSet, Visit,
                              VisitItem, SalaryAccrual, SalaryPayout,
                              ShopEmployee, ShopShift, QueueSnapshot, ShopSetting,
@@ -35,6 +36,7 @@ __all__ = [
     'MasterDevice', 'OpenOrder', 'OrderPhoto',
     'PushSubscription', 'LiveTicket',
     'Task', 'Counterparty', 'CATEGORIES', 'CATEGORY_TITLES', 'SOURCES',
+    'StockItem',
     'Appointment', 'BookingDay', 'StoredSet', 'Visit', 'VisitItem',
     'SalaryAccrual', 'SalaryPayout', 'ShopEmployee', 'ShopShift',
     'QueueSnapshot',

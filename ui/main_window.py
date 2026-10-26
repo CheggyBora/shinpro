@@ -73,6 +73,9 @@ class MainWindow:
         self.statistics_tab = StatisticsTab(self.content, self.db)
         self.price_list_tab = PriceListTab(self.content, self.db)
         self.settings_tab = SettingsTab(self.content, self.db)
+        from ui.stock_tab import StockTab
+        self.stock_tab = StockTab(self.content, self.db)
+        self.stock_tab.on_changed = lambda: self._calendar_badge()
 
         self.nav.add('Сотрудники', self.employees_tab.frame)
         self.nav.add('Наряды', self.orders_tab.frame)
@@ -81,6 +84,7 @@ class MainWindow:
         self.nav.add('Клиенты', self.clients_tab.frame)
         self.nav.add('Хранение шин', self.tire_storage_tab.frame)
         self.nav.add('Покраска', self.paint_tab.frame)
+        self.nav.add('Склад', self.stock_tab.frame)
         self.nav.add('Отчёты', self.statistics_tab.frame)
         self.nav.add('Прайс-лист', self.price_list_tab.frame)
         self.nav.add('Настройки', self.settings_tab.frame)
@@ -240,6 +244,10 @@ class MainWindow:
         tire = self.orders_tab.mode == directions.TIRE
         self.nav.set_visible(self.tire_storage_tab.frame, tire)
         self.nav.set_visible(self.paint_tab.frame, tire)
+        # Склад — только когда его ведут (docs/stock.md)
+        from services.stock_service import stock_on
+        self.nav.set_visible(self.stock_tab.frame, stock_on(self.db))
+        self._calendar_badge()
         self.refresh_shift_status()
 
     def directions_changed(self):
@@ -273,6 +281,13 @@ class MainWindow:
         count = CalendarService(self.db).overdue_count()
         self.nav.set_title(self.calendar_tab.frame,
                            f'Календарь ({count})' if count else 'Календарь')
+        # «Склад (N)» — сколько позиций мало или в минусе
+        from services.stock_service import StockService
+        stock = StockService(self.db)
+        problems = stock.problems_count() if stock.enabled() else 0
+        self.nav.set_title(self.stock_tab.frame, f'Склад ({problems})' if problems else 'Склад')
+        if self.stock_tab.frame.winfo_ismapped():
+            self.stock_tab.load()
 
     def _queue_housekeeping(self, refresh=False):
         """
@@ -323,6 +338,10 @@ class MainWindow:
                 SyncService(db).tasks_exchange()
             except Exception as e:
                 log.warning(f"Задачи календаря не обменялись: {e}")
+            try:
+                SyncService(db).stock_exchange()
+            except Exception as e:
+                log.warning(f"Остатки склада не отправлены: {e}")
             try:
                 # Записи на сегодня: «Я на месте» с телефона должно
                 # появиться в цеху сразу, а не при следующем открытии ленты
