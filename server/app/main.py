@@ -166,6 +166,14 @@ def dashboard_page():
         return HTMLResponse(page.read())
 
 
+@app.get('/d/plates', response_class=HTMLResponse, include_in_schema=False)
+def plates_page():
+    """Проверка распознавания номеров с телефона владельца (вход — дашборда)."""
+    path = os.path.join(WEB_DIR, 'plates.html')
+    with open(path, encoding='utf-8') as page:
+        return HTMLResponse(page.read())
+
+
 def _short_name(name, limit=14):
     """Короткое имя под значком: целое слово, без хвостов и кавычек."""
     clean = (name or 'Шиномонтаж').replace('«', '').replace('»', '').strip()

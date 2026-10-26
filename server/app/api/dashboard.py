@@ -10,7 +10,7 @@
 from datetime import date, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -520,3 +520,41 @@ def _minutes(value):
         return hours * 60 + minutes
     except (ValueError, AttributeError, TypeError):
         return 0
+
+
+@router.post('/plates/check', summary='Проверка распознавания номера')
+async def plates_check(photo: UploadFile = File(...),
+                       staff: StaffUser = Depends(require(PERM_REVENUE))):
+    """
+    Владелец снимает машину на телефон — сервер читает номер так же, как
+    при наряде по фото (docs/order_photo.md). Снимок не сохраняется: это
+    проверка распознавания и нагрузки, а не наряд.
+    """
+    import time
+
+    from fastapi.concurrency import run_in_threadpool
+
+    from app.config import settings
+    from app.services import photos, plates
+
+    if (photo.content_type or '').lower() not in photos.KINDS:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            detail='Это не фотография. Нужен снимок с камеры')
+    data = await photo.read()
+    if not data:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail='Пустой файл')
+    if len(data) > settings.PHOTO_MAX_BYTES:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            detail='Снимок слишком большой. Попробуйте ещё раз')
+
+    first = plates._engine is None
+    started = time.monotonic()
+    plate, confidence = await run_in_threadpool(plates.recognize, data)
+    return {
+        'plate': plate or None,
+        'plate_complete': bool(plate) and plates.is_valid(plate),
+        'confidence': round(confidence or 0.0, 3),
+        'ms': int((time.monotonic() - started) * 1000),
+        # Первый снимок в процессе грузит модели — он дольше остальных
+        'first': first,
+    }

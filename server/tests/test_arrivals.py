@@ -483,4 +483,26 @@ with TestClient(app) as http:
     check('старые снимки убраны вместе с машинами', gone >= 5 and left == 0,
           f'{gone} {left}')
 
+    print()
+    print('=== Проверка номеров с телефона владельца ===')
+    check('страница открывается', http.get('/d/plates').status_code == 200)
+    jpeg = b'\xff\xd8\xff\xe0' + b'0' * 64
+    answer = http.post('/dashboard/plates/check', files={'photo': ('a.jpg', jpeg, 'image/jpeg')})
+    check('без входа — нельзя', answer.status_code == 401, answer.text)
+    db = SessionLocal()
+    photos_before = db.query(OrderPhoto).count()
+    db.close()
+    answers.append(('А123ВВ777', 0.93))
+    answer = http.post('/dashboard/plates/check', headers=owner,
+                       files={'photo': ('a.jpg', jpeg, 'image/jpeg')})
+    data = answer.json()
+    check('номер прочитан, время посчитано', answer.status_code == 200
+          and data['plate'] == 'А123ВВ777' and data['plate_complete'] and 'ms' in data, answer.text)
+    answer = http.post('/dashboard/plates/check', headers=owner,
+                       files={'photo': ('a.txt', b'text', 'text/plain')})
+    check('не фото — отказ', answer.status_code == 400, answer.text)
+    db = SessionLocal()
+    check('снимок проверки не сохраняется', db.query(OrderPhoto).count() == photos_before)
+    db.close()
+
 finish()
