@@ -121,7 +121,7 @@ class BookingApi:
     # День
     # ------------------------------------------------------------------
 
-    def get_day(self, day):
+    def get_day(self, day, direction='tire'):
         """
         Записи на день.
 
@@ -130,12 +130,13 @@ class BookingApi:
         получить, и честно помечаем, когда это было.
         """
         try:
-            answer = self._call('GET', f'/sync/appointments?day={day.isoformat()}')
+            answer = self._call('GET', f'/sync/appointments?day={day.isoformat()}'
+                                       f'&direction={direction}')
         except (Offline, BookingError) as e:
             log.warning(f"Записи на {day:%d.%m} не получены: {e}")
-            return self._from_cache(day, reason=str(e))
+            return self._from_cache(day, reason=str(e), direction=direction)
 
-        rows = self._store(day, answer)
+        rows = self._store(day, answer, direction)
         self.flush_pending(rows)
         return {
             'day': day,
@@ -147,7 +148,7 @@ class BookingApi:
             'reason': None,
         }
 
-    def _store(self, day, answer):
+    def _store(self, day, answer, direction='tire'):
         """Перезаписать кэш дня целиком: правку строк потом всё равно затрёт."""
         from models import Appointment
 
@@ -155,15 +156,18 @@ class BookingApi:
         end = start + timedelta(days=1)
         # Отметки, которые сервер ещё не знает, переносим в новую копию
         kept = {}
+        # Копию дня перезаписываем только своего направления: записи мойки
+        # приходят отдельным запросом и не должны пропадать с шиномонтажом
+        mine = (Appointment.direction == direction)
         for old in self.db.query(Appointment).filter(
-                Appointment.scheduled_at >= start, Appointment.scheduled_at < end,
+                Appointment.scheduled_at >= start, Appointment.scheduled_at < end, mine,
                 Appointment.pending.isnot(None)).all():
             if old.server_id:
                 kept[old.server_id] = (old.pending, old.on_site,
                                        old.called_post, old.called_at)
         self.db.query(Appointment).filter(
             Appointment.scheduled_at >= start,
-            Appointment.scheduled_at < end).delete(synchronize_session=False)
+            Appointment.scheduled_at < end, mine).delete(synchronize_session=False)
         self.db.commit()
 
         # Новые строки займут те же номера, что удалённые. Пока прежние
@@ -190,6 +194,8 @@ class BookingApi:
                 called_post=item.get('called_post'),
                 called_at=_decode_time(item['called_at']) if item.get('called_at') else None,
                 post_column=item.get('column', 0),
+                direction=item.get('direction') or direction,
+                wash_class=item.get('wash_class'),
                 fetched_at=now)
             if row.server_id in kept and row.status == 'scheduled':
                 row.pending, row.on_site, row.called_post, row.called_at = kept[row.server_id]
@@ -201,14 +207,15 @@ class BookingApi:
             self.db.refresh(row)
         return rows
 
-    def _from_cache(self, day, reason):
+    def _from_cache(self, day, reason, direction='tire'):
         from models import Appointment
 
         start = datetime(day.year, day.month, day.day)
         end = start + timedelta(days=1)
         rows = self.db.query(Appointment).filter(
             Appointment.scheduled_at >= start,
-            Appointment.scheduled_at < end).order_by(
+            Appointment.scheduled_at < end,
+            Appointment.direction == direction).order_by(
             Appointment.scheduled_at).all()
 
         fetched = max((as_naive(row.fetched_at) for row in rows
@@ -216,13 +223,21 @@ class BookingApi:
 
         return {
             'day': day,
-            'posts': self._cached_posts(day),
+            'posts': self._cached_posts(day) if direction == 'tire' else self._wash_posts(),
             'is_closed': False,
             'appointments': rows,
             'online': False,
             'fetched_at': fetched,
             'reason': reason,
         }
+
+    def _wash_posts(self):
+        from services import directions
+        return directions.wash_booking_posts(self.db)
+
+    def _wash_posts(self):
+        from services import directions
+        return directions.wash_booking_posts(self.db)
 
     def _cached_posts(self, day):
         from models import BookingPosts
@@ -236,7 +251,7 @@ class BookingApi:
 
     def create(self, scheduled_at, duration_minutes, license_plate=None,
                client_name=None, client_phone=None, wheels_assembled=None,
-               comment=None):
+               comment=None, direction='tire', wash_class=None):
         """
         Записать клиента. Возвращает ответ сервера.
 
@@ -251,6 +266,8 @@ class BookingApi:
             'client_phone': normalize_phone(client_phone) or None,
             'wheels_assembled': wheels_assembled,
             'comment': (comment or '').strip() or None,
+            'direction': direction,
+            'wash_class': wash_class,
         })
 
     def update(self, server_id, **fields):

@@ -563,9 +563,11 @@ class LiveQueueService:
     def _today_bookings(self, now=None):
         now = now or as_naive(get_moscow_time())
         start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        # Записи на мойку постов шиномонтажа не держат
         return self.db.query(Appointment).filter(
             Appointment.scheduled_at >= start,
-            Appointment.scheduled_at < start + timedelta(days=1)).all()
+            Appointment.scheduled_at < start + timedelta(days=1),
+            Appointment.direction != 'wash').all()
 
     def bookings_on_site(self, now=None):
         """Записанные, что нажали «Я на месте» и ещё ждут поста."""

@@ -39,28 +39,97 @@ def clean_diameter(value):
     value = (value or '').strip().upper()
     return value if value in DIAMETERS else None
 
+
+# Направления записи (docs/booking_wash.md). Всё, что было до мойки, —
+# шиномонтаж: поэтому пустое и есть шиномонтаж
+TIRE = 'tire'
+WASH = 'wash'
+DIRECTIONS = (TIRE, WASH)
+
+# Класс машины для мойки — в этом порядке их показывает кабинет
+WASH_CLASSES = {
+    'sedan': 'Седан',
+    'crossover': 'Кроссовер',
+    'jeep': 'Джип',
+    'minivan': 'Минивэн',
+}
+
+
+def clean_direction(value):
+    """
+    «tire» или «wash». Пусто — шиномонтаж; непонятное — None.
+
+    Непонятное не превращаем в шиномонтаж молча: человек, нажавший
+    «Мойка», не должен оказаться записанным на шиномонтаж из-за опечатки
+    в запросе — вызывающий скажет об ошибке.
+    """
+    value = (value or '').strip().lower()
+    if not value:
+        return TIRE
+    return value if value in DIRECTIONS else None
+
+
+def clean_wash_class(value):
+    """«sedan» и т.п. — или None, если пусто или не из списка."""
+    value = (value or '').strip().lower()
+    return value if value in WASH_CLASSES else None
+
+
 class BookingError(Exception):
     """Понятная клиенту причина, почему записаться не вышло."""
 
 
+WASH_OFF = 'Запись на мойку здесь не принимается. Позвоните нам, пожалуйста'
+
+
+def service_for(db, shop, direction=None):
+    """
+    Расчёт записи для кабинета: шиномонтаж или мойка.
+
+    Мойку отдаём, только если точка её записывает: иначе кабинет
+    показал бы окна мойки, которой нет, — по старой ссылке или
+    набранному руками адресу.
+    """
+    cleaned = clean_direction(direction)
+    if cleaned is None:
+        raise BookingError('Не понятно, куда записываться: '
+                           'шиномонтаж или мойка')
+    if cleaned == WASH and not shop_settings.wash_booking_on(db, shop):
+        raise BookingError(WASH_OFF)
+    return BookingService(db, shop, cleaned)
+
+
 class BookingService:
-    def __init__(self, db, shop=None):
+    def __init__(self, db, shop=None, direction=TIRE):
         """
         shop — точка, о которой идёт речь.
 
         Без неё считать нечего: посты, часы работы и занятость у каждой
         точки свои. Когда точка одна, её подставляет вызывающий —
         сервер не угадывает.
+
+        direction — шиномонтаж или мойка. У каждого свои посты, часы и
+        окна, и занятость считается раздельно: запись на мойку не
+        занимает пост шиномонтажа и наоборот (docs/booking_wash.md).
         """
         self.db = db
         self.shop = shop
         self.shop_id = getattr(shop, 'id', shop)
+        self.direction = WASH if direction == WASH else TIRE
+
+    @property
+    def is_wash(self):
+        return self.direction == WASH
 
     # ------------------------------------------------------------------
     # Расчёт окон
     # ------------------------------------------------------------------
 
-    def duration_for(self, wheels_assembled):
+    def duration_for(self, wheels_assembled=None):
+        if self.is_wash:
+            # Мойка занимает одно и то же время, колёса тут ни при чём
+            return max(1, shop_settings.get_int(self.db, 'wash_booking_minutes',
+                                                shop=self.shop))
         if wheels_assembled is True:
             return shop_settings.get_int(self.db, 'booking_minutes_assembled', shop=self.shop)
         if wheels_assembled is False:
@@ -69,6 +138,18 @@ class BookingService:
 
     def day_settings(self, day):
         """Посты и рабочие часы дня. Чего цех не прислал — то по умолчанию."""
+        if self.is_wash:
+            # У мойки отдельной настройки по дням нет: посты и часы —
+            # из её настроек. Дни в booking_days — это посты шиномонтажа,
+            # и перенести их на мойку значило бы выдумать ей расписание
+            return {'posts': max(1, shop_settings.get_int(
+                        self.db, 'wash_booking_posts', shop=self.shop)),
+                    'opens_at': shop_settings.get(
+                        self.db, 'wash_booking_opens_at', shop=self.shop),
+                    'closes_at': shop_settings.get(
+                        self.db, 'wash_booking_closes_at', shop=self.shop),
+                    'is_closed': False}
+
         row = self.db.query(BookingDay).filter(
             BookingDay.day == day,
             BookingDay.shop_id == self.shop_id).first()
@@ -100,12 +181,16 @@ class BookingService:
 
         exclude_id — не считать саму переносимую запись. Иначе сдвиг
         на четверть часа упёрся бы в собственный хвост.
+
+        Считаем только записи своего направления: машина на мойке не
+        держит пост шиномонтажа, и наоборот.
         """
         start = datetime.combine(day, time.min)
         end = start + timedelta(days=1)
 
         query = self.db.query(Appointment).filter(
             Appointment.shop_id == self.shop_id,
+            Appointment.direction == self.direction,
             Appointment.scheduled_at >= start,
             Appointment.scheduled_at < end,
             Appointment.status.in_(BUSY_STATUSES),
@@ -154,7 +239,7 @@ class BookingService:
             minutes=self._minutes_of(settings['opens_at'], 7 * 60))
         closes = midnight + timedelta(
             minutes=self._minutes_of(settings['closes_at'], 24 * 60))
-        step = timedelta(minutes=shop_settings.get_int(self.db, 'booking_slot_step', shop=self.shop))
+        step = timedelta(minutes=max(1, self.slot_step()))
         busy = self._busy_at(day)
         posts = settings['posts']
 
@@ -174,6 +259,11 @@ class BookingService:
             moment += step
 
         return slots
+
+    def slot_step(self):
+        """Шаг сетки окон: у мойки свой, короче — мойка быстрее."""
+        key = 'wash_booking_slot_step' if self.is_wash else 'booking_slot_step'
+        return shop_settings.get_int(self.db, key, shop=self.shop)
 
     def days_ahead(self):
         return max(1, shop_settings.get_int(self.db, 'booking_days_ahead', shop=self.shop))
@@ -206,7 +296,9 @@ class BookingService:
         """
         now = now or shop_now()
         duration = self.duration_for(wheels_assembled)
-        ready_from = self.storage_ready_from(now) if with_storage else None
+        # Мойке комплект со склада не нужен — и закрывать дни незачем
+        ready_from = (self.storage_ready_from(now)
+                      if with_storage and not self.is_wash else None)
 
         days = []
         for offset in range(self.days_ahead()):
@@ -266,10 +358,38 @@ class BookingService:
             return False
         return True
 
+    def check_wash_class(self, wash_class):
+        """
+        Класс машины для мойки — без него запись на мойку не принимаем.
+
+        От класса зависит цена, и приёмщик должен знать её заранее, а не
+        выяснять у ворот. Заодно проверяем, что мойку здесь записывают:
+        запрос приходит из интернета, а не только из нашей страницы.
+        """
+        if not shop_settings.wash_booking_on(self.db, self.shop):
+            raise BookingError(WASH_OFF)
+        cleaned = clean_wash_class(wash_class)
+        if cleaned is None:
+            raise BookingError('Выберите класс машины')
+        return cleaned
+
     def book(self, client, at, license_plate, wheels_assembled=None,
-             comment=None, now=None, storage_ids=None, wheel_diameter=None):
+             comment=None, now=None, storage_ids=None, wheel_diameter=None,
+             wash_class=None):
         """Принять заявку на запись. Проверяет всё, что может пойти не так."""
         now = now or shop_now()
+
+        if self.is_wash:
+            # Мойке не нужны ни колёса, ни диаметр, ни комплекты со
+            # склада: присланное по ошибке не должно попасть ни в запись,
+            # ни в карточку машины
+            wash_class = self.check_wash_class(wash_class)
+            wheels_assembled = None
+            wheel_diameter = None
+            storage_ids = None
+        else:
+            wash_class = None
+
         stored = self.storage_sets(client, storage_ids)
         if stored:
             wheels_assembled = self.wheels_from_storage(stored)
@@ -290,14 +410,15 @@ class BookingService:
         # Машина могла ни разу не быть в цеху — тогда заводим её здесь
         # и привязываем к клиенту; при обмене цех подхватит
         car = self._ensure_car(client, plate, wheels_assembled)
-        if wheels_assembled is None:
+        if wheels_assembled is None and not self.is_wash:
             wheels_assembled = car.wheels_assembled
 
         duration = self.duration_for(wheels_assembled)
 
         settings = self.day_settings(at.date())
         if settings['is_closed']:
-            raise BookingError('В этот день шиномонтаж не работает')
+            raise BookingError('В этот день мойка не работает' if self.is_wash
+                               else 'В этот день шиномонтаж не работает')
 
         # Приложение такие дни не показывает, но полагаться на это
         # нельзя: запрос приходит из интернета, а не из нашей страницы
@@ -328,6 +449,8 @@ class BookingService:
             wheels_assembled=wheels_assembled,
             comment=(comment or '').strip() or None,
             wheel_diameter=clean_diameter(wheel_diameter),
+            direction=self.direction,
+            wash_class=wash_class,
             status='scheduled',
             source='app',
             sync_state=PENDING,
@@ -443,12 +566,16 @@ class BookingService:
 
         Без этой проверки нажатие кнопки дважды подряд создаёт две
         записи, и цех держит два поста под одного человека.
+
+        Смотрим своё направление: шиномонтаж в десять и мойка в
+        одиннадцать — не двойное нажатие, а обычный день человека.
         """
         window_start = at - timedelta(hours=1)
         window_end = at + timedelta(hours=1)
         return self.db.query(Appointment).filter(
             Appointment.client_id == client.id,
             Appointment.shop_id == self.shop_id,
+            Appointment.direction == self.direction,
             Appointment.status == 'scheduled',
             Appointment.scheduled_at >= window_start,
             Appointment.scheduled_at <= window_end,
@@ -530,6 +657,12 @@ def to_public(appointment):
         'status_title': STATUS_TITLES.get(appointment.status, appointment.status),
         'is_confirmed': appointment.sync_state == TAKEN,
         'comment': appointment.comment,
+        # Мойка или шиномонтаж: в «Моих записях» человек должен видеть,
+        # куда записан, — «Мойка · Кроссовер» или «Шиномонтаж · R16»
+        'direction': appointment.direction or TIRE,
+        'wash_class': appointment.wash_class,
+        'wash_class_title': WASH_CLASSES.get(appointment.wash_class or ''),
+        'wheel_diameter': appointment.wheel_diameter,
         # Живая очередь: нажал «Я на месте», позвали ли на пост
         'on_site': appointment.on_site_at is not None,
         # Не сезон — постов не раздаём, «Я на месте» не нужно
@@ -552,6 +685,10 @@ def _queue_on(appointment):
 
 
 def can_check_in(appointment, now=None):
+    # Живой очереди у мойки нет — некому давать «первый свободный пост»,
+    # и «Я на месте» там ничего бы не значило (docs/booking_wash.md)
+    if appointment.direction == WASH:
+        return False
     if appointment.status != 'scheduled' or appointment.on_site_at is not None:
         return False
     now = now or shop_now()

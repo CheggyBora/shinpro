@@ -80,6 +80,8 @@ class AppointmentsTab:
         self.db = db
         self.booking = get_booking(db)
         self.orders_tab = orders_tab
+        # Чья запись на экране: шиномонтаж или мойка (переключатель сверху)
+        self.direction = 'tire'
         self.frame = ttk.Frame(parent, style='BG.TFrame')
 
         self.current_day = get_moscow_time().date()
@@ -166,6 +168,7 @@ class AppointmentsTab:
 
         posts_row = ttk.Frame(inner, style='White.TFrame')
         posts_row.pack(fill='x')
+        self.posts_row = posts_row
 
         styles.create_label(posts_row, "Сделать постов:",
                             'Card.TLabel').pack(side='left', padx=(0, 8))
@@ -365,7 +368,38 @@ class AppointmentsTab:
         self.load_day()
         self.selected_posts = chosen
 
+    def set_direction(self, direction):
+        """
+        Переключили «Шиномонтаж | Мойка»: своя запись и свои посты. Посты
+        мойки под запись — одно число из настроек, по дням их не меняют;
+        живой очереди у мойки нет (docs/booking_wash.md).
+        """
+        from services import booking_gateway
+        self.direction = direction
+        booking_gateway.CURRENT_DIRECTION = direction
+        self.booking = get_booking(self.db)
+        wash = direction == 'wash'
+        if wash:
+            self.posts_row.pack_forget()
+            self.posts_hint.pack_forget()
+        else:
+            if not self.posts_row.winfo_manager():
+                self.posts_row.pack(fill='x', after=self.posts_state)
+                self.posts_hint.pack(anchor='w', pady=(8, 0), after=self.posts_row)
+        try:
+            self.tabs.tab(self.queue.frame, state='hidden' if wash else 'normal')
+            if wash:
+                self.tabs.select(self.day_page)
+        except Exception:
+            pass
+        self.load_day()
+
     def refresh_posts_panel(self, saved=None):
+        if getattr(self, 'direction', 'tire') == 'wash':
+            posts = self.day_state.get('posts', 1)
+            self.posts_state.config(
+                text=f"Мойка: постов под запись — {posts}. Меняется в Настройках → «Направления».")
+            return
         """Показать, что стоит сейчас и что произойдёт при нажатии."""
         if saved is None:
             saved = self.day_state.get('posts', 1)

@@ -86,6 +86,16 @@ class Appointment(Base):
     wheels_assembled = Column(Boolean, nullable=True)
     wheel_diameter = Column(String(10), nullable=True)
 
+    # Шиномонтаж или мойка (docs/booking_wash.md). У мойки свои посты под
+    # запись и класс машины вместо диаметра
+    direction = Column(String(10), default='tire', server_default='tire', nullable=False)
+    wash_class = Column(String(16), nullable=True)
+
+    # Шиномонтаж или мойка (docs/booking_wash.md). У мойки свои посты под
+    # запись и класс машины вместо диаметра
+    direction = Column(String(10), default='tire', server_default='tire', nullable=False)
+    wash_class = Column(String(16), nullable=True)
+
     # Клиент нажал «Я на месте» — первый на свободный пост. И на какой
     # пост его позвали. Хранит сервер, здесь — копия
     on_site = Column(Boolean, default=False, nullable=False)

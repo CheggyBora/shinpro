@@ -95,6 +95,8 @@ class MainWindow:
         self.root.after(5 * 1000, self._live_tick)
 
         self.draw_mode_switch()
+        if self.orders_tab.mode != 'tire':
+            self.appointments_tab.set_direction(self.orders_tab.mode)
         self.apply_mode()
         from services import directions as _directions
         _directions.ON_CHANGE = self.directions_changed
@@ -227,6 +229,7 @@ class MainWindow:
         if mode == self.orders_tab.mode:
             return
         self.orders_tab.set_mode(mode)
+        self.appointments_tab.set_direction(mode)
         self.draw_mode_switch()
         self.apply_mode()
         self._calendar_badge()
@@ -243,6 +246,8 @@ class MainWindow:
         """В настройках включили или выключили направление."""
         self.draw_mode_switch()
         self.orders_tab.set_mode(self.orders_tab.mode)
+        if self.appointments_tab.direction != self.orders_tab.mode:
+            self.appointments_tab.set_direction(self.orders_tab.mode)
         self.apply_mode()
 
     def show_orders(self):
@@ -324,6 +329,9 @@ class MainWindow:
                 from datetime import date
                 from services.booking_api import BookingApi
                 BookingApi(db).get_day(date.today())
+                from services import directions as _directions
+                if _directions.wash_on(db):
+                    BookingApi(db).get_day(date.today(), 'wash')
             except Exception as e:
                 log.warning(f"Записи на сегодня не обновились: {e}")
             finally:

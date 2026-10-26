@@ -174,6 +174,10 @@ input.code {
 .choice button span { font-size: 11.5px; color: var(--muted); }
 .choice button[aria-pressed="true"] { border-color: var(--brand); background: #eff6ff; }
 .choice button[aria-pressed="true"] b { color: var(--brand-dark); }
+/* «Что нужно?» — крупнее: это первый шаг, по нему меняется вся форма */
+.choice.what button { padding: 18px 8px; }
+.choice.what button svg { width: 38px; height: 38px; }
+.choice.what button b { font-size: 16px; }
 
 /* --- Машины и комплекты --- */
 .row-pick {
@@ -403,8 +407,8 @@ input.code {
         </svg>
       </span>
       <span>
-        <b>Записаться на шиномонтаж</b>
-        <span>Приеду со своими колёсами. Без регистрации, минута времени</span>
+        <b id="quickTitle">Записаться на шиномонтаж</b>
+        <span id="quickHint">Приеду со своими колёсами. Без регистрации, минута времени</span>
       </span>
     </button>
 
@@ -606,8 +610,32 @@ input.code {
       <div id="queueBody"></div>
     </div>
 
+    <!-- шиномонтаж или мойка: только когда точка записывает на то и
+         другое. У мойки свои посты и окна, поэтому форма ниже
+         появляется после выбора (docs/booking_wash.md) -->
+    <div class="card" id="whatCard" hidden>
+      <h2>Что нужно?</h2>
+      <div class="choice what">
+        <button type="button" id="dirTire" aria-pressed="false">
+          <svg viewBox="0 0 40 40" fill="none" aria-hidden="true">
+            <circle cx="20" cy="20" r="16" stroke="#0f172a" stroke-width="3"/>
+            <circle cx="20" cy="20" r="8" fill="#94a3b8"/>
+            <circle cx="20" cy="20" r="3" fill="#0f172a"/>
+          </svg>
+          <b>Шиномонтаж</b><span>колёса, шины</span>
+        </button>
+        <button type="button" id="dirWash" aria-pressed="false">
+          <svg viewBox="0 0 40 40" fill="none" aria-hidden="true">
+            <path d="M20 5 C14 14 9 20 9 25.5 A11 11 0 0 0 31 25.5 C31 20 26 14 20 5 Z"
+                  stroke="#2563eb" stroke-width="3" stroke-linejoin="round" fill="#dbeafe"/>
+          </svg>
+          <b>Мойка</b><span id="tWash">кузов, салон</span>
+        </button>
+      </div>
+    </div>
+
     <!-- машина: список для вошедших, поле для остальных -->
-    <div class="card">
+    <div class="card" id="carCard">
       <h2><span class="num">1</span> Автомобиль</h2>
       <p class="hint" id="carHint">Номер нужен, чтобы мастер знал, что готовить.</p>
 
@@ -641,9 +669,28 @@ input.code {
       </div>
 
       <!-- Диаметр: по приезду наряд открывается сразу с ценами пакета -->
-      <div class="field" style="margin:14px 0 0">
+      <div class="field" id="diameterField" style="margin:14px 0 0">
         <label for="bookDiameter">Диаметр колёс</label>
         <select id="bookDiameter"><option value="">Выберите</option><option value="R13">R13</option><option value="R14">R14</option><option value="R15">R15</option><option value="R16">R16</option><option value="R17">R17</option><option value="R18">R18</option><option value="R19">R19</option><option value="R20">R20</option><option value="R21">R21</option><option value="R22">R22</option><option value="R23">R23</option><option value="R24">R24</option></select>
+      </div>
+
+      <!-- Мойка: вместо колёс и диаметра — класс машины, от него цена -->
+      <div class="field" id="washField" style="margin:14px 0 0" hidden>
+        <label>Класс машины</label>
+        <div class="choice" id="washClasses">
+          <button type="button" data-wash="sedan" aria-pressed="false">
+            <b>Седан</b><span>легковая</span>
+          </button>
+          <button type="button" data-wash="crossover" aria-pressed="false">
+            <b>Кроссовер</b><span>паркетник</span>
+          </button>
+          <button type="button" data-wash="jeep" aria-pressed="false">
+            <b>Джип</b><span>внедорожник</span>
+          </button>
+          <button type="button" data-wash="minivan" aria-pressed="false">
+            <b>Минивэн</b><span>микроавтобус</span>
+          </button>
+        </div>
       </div>
     </div>
 
@@ -654,7 +701,7 @@ input.code {
       <div id="storageList"></div>
     </div>
 
-    <div class="card">
+    <div class="card" id="whenCard">
       <h2><span class="num" id="numWhen">2</span> Когда вам удобно</h2>
       <p class="hint" id="daysHint">Показаны только свободные окна.</p>
       <div class="days" id="days"></div>
@@ -730,7 +777,13 @@ var state = {
   paint: null,       // цены на покраску, присланные цехом
   paintSize: null,
   paintWheels: 4,
-  paintPicked: {}
+  paintPicked: {},
+  // Шиномонтаж или мойка (docs/booking_wash.md). Что точка записывает,
+  // приходит в /public/info; пока не пришло — только шиномонтаж, как было
+  tireBooking: true,
+  washBooking: false,
+  direction: 'tire', // null — точка записывает на то и другое, а человек ещё не выбрал
+  washClass: null
 };
 
 var $ = function (id) { return document.getElementById(id); };
@@ -1584,6 +1637,77 @@ $('logout').addEventListener('click', function () {
 });
 
 // ============================================================ ЗАПИСЬ
+// ------------------------------------------------------ шиномонтаж/мойка
+function isWash() { return state.direction === 'wash'; }
+
+function bothDirections() { return state.tireBooking && state.washBooking; }
+
+// Точка записывает на то и другое — человек выбирает сам, первым
+// шагом. Только одно — спрашивать не о чем
+function resetDirection() {
+  state.direction = bothDirections() ? null
+    : (state.washBooking && !state.tireBooking ? 'wash' : 'tire');
+  state.washClass = null;
+}
+
+// Что показывать в форме при выбранном направлении. У мойки нет колёс,
+// диаметра и хранения — вместо них класс машины
+function drawDirection() {
+  var inCabinet = state.mode === 'cabinet' && state.profile;
+  var chosen = !!state.direction;
+  var wash = isWash();
+
+  $('whatCard').hidden = !bothDirections();
+  $('dirTire').setAttribute('aria-pressed', String(state.direction === 'tire'));
+  $('dirWash').setAttribute('aria-pressed', String(wash));
+
+  $('carCard').hidden = !chosen;
+  $('whenCard').hidden = !chosen;
+  $('go').hidden = !chosen;
+  $('contactCard').hidden = !!inCabinet || !chosen;
+
+  var storage = !!inCabinet && state.storage.length > 0 && !wash;
+  $('storageCard').hidden = !storage || !chosen;
+  $('numWhen').textContent = storage ? '3' : '2';
+
+  $('diameterField').hidden = wash;
+  $('washField').hidden = !wash;
+  // Колёса в кабинете известны из карточки выбранной машины
+  $('wheelsField').hidden = wash || !!(inCabinet && state.car);
+
+  [].slice.call($('washClasses').querySelectorAll('[data-wash]'))
+    .forEach(function (button) {
+      button.setAttribute('aria-pressed',
+        String(button.getAttribute('data-wash') === state.washClass));
+    });
+}
+
+function pickDirection(value) {
+  if (state.direction === value) return;
+  state.direction = value;
+  state.washClass = null;
+  // Комплект со склада к мойке не везут: выбранное раньше снимаем,
+  // иначе дни закрылись бы «везём» без всякой причины
+  if (value === 'wash') state.picked = [];
+  state.day = null;
+  state.slot = null;
+  drawDirection();
+  if (value !== 'wash' && state.mode === 'cabinet' && state.profile) drawStorage();
+  loadDays();
+  refreshButton();
+}
+$('dirTire').addEventListener('click', function () { pickDirection('tire'); });
+$('dirWash').addEventListener('click', function () { pickDirection('wash'); });
+
+$('washClasses').addEventListener('click', function (event) {
+  var button = event.target.closest ? event.target.closest('[data-wash]') : null;
+  if (!button) return;
+  state.washClass = button.getAttribute('data-wash');
+  drawDirection();
+  loadDays();
+  refreshButton();
+});
+
 function prepareBooking() {
   var inCabinet = state.mode === 'cabinet' && state.profile;
 
@@ -1592,6 +1716,7 @@ function prepareBooking() {
   $('storageCard').hidden = !inCabinet || !state.storage.length;
   $('numWhen').textContent = (inCabinet && state.storage.length) ? '3' : '2';
   $('numWho').textContent = '3';
+  resetDirection();
 
   if (inCabinet) {
     $('whoName').textContent = (state.profile.name || 'Вы') + ' · '
@@ -1610,6 +1735,7 @@ function prepareBooking() {
     $('carHint').textContent = 'Номер нужен, чтобы мастер знал, что готовить.';
   }
 
+  drawDirection();
   loadDays();
   refreshButton();
 }
@@ -1623,7 +1749,7 @@ function drawCars() {
     // Машин в базе нет — спросим номер как у всех
     list.hidden = true;
     $('plateField').hidden = false;
-    $('wheelsField').hidden = false;
+    $('wheelsField').hidden = isWash();
     return;
   }
 
@@ -1653,7 +1779,7 @@ function drawCars() {
 
   $('plateField').hidden = true;
   // Колёса известны из карточки машины, спрашивать незачем
-  $('wheelsField').hidden = !!state.car;
+  $('wheelsField').hidden = isWash() || !!state.car;
   $('carHint').textContent = cars.length > 1
     ? 'Выберите, на какой машине приедете.'
     : 'Ваш автомобиль.';
@@ -1677,6 +1803,12 @@ function drawMine() {
 
   state.mine.forEach(function (item) {
     var when = new Date(item.at);
+    var wash = item.direction === 'wash';
+    // «Мойка · Кроссовер» или «Шиномонтаж · R16»: записей может быть
+    // две на один день, и человек должен видеть, какая куда
+    var what = wash
+      ? 'Мойка' + (item.wash_class_title ? ' · ' + item.wash_class_title : '')
+      : 'Шиномонтаж' + (item.wheel_diameter ? ' · ' + item.wheel_diameter : '');
     var row = document.createElement('div');
     row.className = 'mine';
     row.innerHTML =
@@ -1684,6 +1816,7 @@ function drawMine() {
       MONTHS[when.getMonth()] + ', ' +
       ('0' + when.getHours()).slice(-2) + ':' +
       ('0' + when.getMinutes()).slice(-2) + '</div>' +
+      '<div class="sub">' + escapeText(what) + '</div>' +
       '<div class="sub">' + escapeText(item.license_plate || '') +
       ' · ' + escapeText(item.status_title) +
       ' · ' + item.duration_minutes + ' мин</div></div>';
@@ -1701,7 +1834,8 @@ function drawMine() {
       wait.className = 'arrived-wait';
       wait.textContent = 'Вы на месте — позовём на первый свободный пост';
       row.appendChild(wait);
-    } else if (item.can_check_in) {
+    } else if (item.can_check_in && !wash) {
+      // У мойки живой очереди нет — и «Я на месте» не нужно
       var here = document.createElement('button');
       here.type = 'button';
       here.className = 'here';
@@ -1767,7 +1901,8 @@ function cancelMine(item, button) {
 function drawStorage() {
   var list = $('storageList');
   list.textContent = '';
-  $('storageCard').hidden = !state.storage.length;
+  // Мойке комплект со склада ни к чему
+  $('storageCard').hidden = !state.storage.length || !state.direction || isWash();
 
   state.storage.forEach(function (set) {
     var on = state.picked.indexOf(set.id) >= 0;
@@ -1839,23 +1974,43 @@ function currentWheels() {
 }
 
 function loadDays() {
-  var wheels = currentWheels();
   var parts = [];
 
-  if (wheels !== null && wheels !== undefined) {
-    parts.push('wheels_assembled=' + wheels);
+  // Пока не выбрано, шиномонтаж или мойка, — показывать нечего: окна
+  // у них разные
+  if (!state.direction) {
+    state.days = [];
+    state.day = null;
+    state.slot = null;
+    drawDays();
+    drawSlots();
+    return;
   }
 
-  // Просят комплект со склада — ближайшие дни отпадают: его надо
-  // найти и привезти. Сервер решает, сколько на это нужно
-  if (state.picked.length) { parts.push('with_storage=true'); }
+  if (isWash()) {
+    // У мойки свои посты и окна; колёса и склад ей ни при чём
+    parts.push('direction=wash');
+    if (state.washClass) parts.push('wash_class=' + state.washClass);
+  } else {
+    var wheels = currentWheels();
+    if (wheels !== null && wheels !== undefined) {
+      parts.push('wheels_assembled=' + wheels);
+    }
+
+    // Просят комплект со склада — ближайшие дни отпадают: его надо
+    // найти и привезти. Сервер решает, сколько на это нужно
+    if (state.picked.length) { parts.push('with_storage=true'); }
+  }
 
   var query = parts.length ? '?' + parts.join('&') : '';
   var path = (state.mode === 'cabinet' && state.token
     ? '/booking/days' : '/public/days') + query;
 
+  var asked = state.direction;
   api(path).then(function (result) {
     if (!result.ok) return;
+    // Пока ответ шёл, человек мог переключиться на другое направление
+    if (asked !== state.direction) return;
     state.days = result.data;
 
     // Если дни закрыты из-за склада — сказать почему. Человек выбрал
@@ -1946,13 +2101,17 @@ function refreshButton() {
   var inCabinet = state.mode === 'cabinet' && state.profile;
   var hasPlate = plateValue().length >= 6;
   var hasPhone = inCabinet || digitsOf($('phone').value).length === 11;
-  var ready = hasPlate && hasPhone && !!state.slot;
+  var needClass = isWash() && !state.washClass;
+  var ready = hasPlate && hasPhone && !!state.slot && !!state.direction
+    && !needClass;
 
   var button = $('go');
   button.disabled = !ready;
 
-  if (!hasPlate) button.textContent = inCabinet
+  if (!state.direction) button.textContent = 'Выберите, что нужно';
+  else if (!hasPlate) button.textContent = inCabinet
     ? 'Выберите автомобиль' : 'Укажите номер машины';
+  else if (needClass) button.textContent = 'Выберите класс машины';
   else if (!state.slot) button.textContent = 'Выберите время';
   else if (!hasPhone) button.textContent = 'Укажите телефон';
   else button.textContent = 'Записаться на ' + state.slot.slice(11, 16);
@@ -1969,7 +2128,12 @@ $('screenBook').addEventListener('submit', function (event) {
   event.preventDefault();
   $('error').hidden = true;
 
-  if (!$('bookDiameter').value) {
+  var wash = isWash();
+  if (wash && !state.washClass) {
+    showError('Выберите класс машины — по нему посчитаем стоимость');
+    return;
+  }
+  if (!wash && !$('bookDiameter').value) {
     showError('Выберите диаметр колёс — по нему посчитаем стоимость');
     $('bookDiameter').focus();
     return;
@@ -1989,6 +2153,15 @@ $('screenBook').addEventListener('submit', function (event) {
        client_phone: digitsOf($('phone').value),
        client_name: $('name').value, wheels_assembled: state.wheels,
        wheel_diameter: $('bookDiameter').value};
+
+  // Мойка: класс машины вместо колёс, диаметра и комплектов
+  body.direction = wash ? 'wash' : 'tire';
+  if (wash) {
+    body.wash_class = state.washClass;
+    delete body.wheels_assembled;
+    delete body.wheel_diameter;
+    delete body.storage_ids;
+  }
 
   api(path, {method: 'POST', body: body}).then(function (result) {
     if (!result.ok) {
@@ -2011,13 +2184,14 @@ function showDone(data) {
   $('doneWhen').textContent = when.getDate() + ' ' + MONTHS[when.getMonth()]
     + ', ' + ('0' + when.getHours()).slice(-2) + ':'
     + ('0' + when.getMinutes()).slice(-2);
-  $('doneDuration').textContent = 'Работы займут около '
-    + data.duration_minutes + ' мин';
+  $('doneDuration').textContent = (isWash() ? 'Мойка займёт около '
+    : 'Работы займут около ') + data.duration_minutes + ' мин';
   $('donePlate').textContent = plateValue();
   $('doneNote').textContent = 'Подъезжайте к назначенному времени. '
     + 'Если планы поменяются — позвоните, освободим окно для другого.';
 
-  if (state.picked.length) {
+  $('doneStorage').hidden = true;
+  if (state.picked.length && !isWash()) {
     $('doneStorage').hidden = false;
     $('doneStorage').textContent = 'Ваш комплект доставим со склада '
       + 'к этому времени — мастер уже знает.';
@@ -2081,6 +2255,26 @@ api('/public/info').then(function (result) {
   $('shopAddress').textContent = info.shop_address || 'Запись на обслуживание';
   $('tAssembled').textContent = '≈ ' + info.minutes_assembled + ' мин';
   $('tTires').textContent = '≈ ' + info.minutes_tires + ' мин';
+
+  // Что точка записывает: шиномонтаж, мойку или то и другое. Старый
+  // сервер этих полей не присылает — тогда только шиномонтаж, как было
+  state.tireBooking = info.tire_booking !== false;
+  state.washBooking = info.wash_booking === true;
+  if (info.wash_minutes) $('tWash').textContent = '≈ ' + info.wash_minutes + ' мин';
+  if (state.washBooking) {
+    $('quickTitle').textContent = state.tireBooking
+      ? 'Записаться' : 'Записаться на мойку';
+    $('quickHint').textContent = (state.tireBooking
+      ? 'Шиномонтаж или мойка. ' : '') + 'Без регистрации, минута времени';
+  }
+  // Форму могли открыть раньше, чем пришёл ответ (вход с прошлого раза):
+  // тогда перестраиваем её под то, что точка записывает
+  if (!$('screenBook').hidden) {
+    resetDirection();
+    drawDirection();
+    loadDays();
+    refreshButton();
+  }
 
   if (info.shop_phone) {
     var clean = info.shop_phone.replace(/[^\d+]/g, '');

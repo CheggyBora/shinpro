@@ -26,7 +26,7 @@ from app.models import Appointment, Car, Client, StoredSet, PENDING
 from app.schemas import DayOut, SlotOut
 from app.services import shop_settings, notify, tenancy
 from app.services.booking_service import (clean_diameter, BookingService, BookingError,
-                                           SLOT_TAKEN)
+                                           SLOT_TAKEN, service_for)
 from app.utils import normalize_plate, normalize_phone, format_phone, now as shop_now
 
 router = APIRouter(prefix='/public', tags=['Запись по ссылке'])
@@ -66,6 +66,11 @@ class PublicInfoOut(BaseModel):
     shop_address: Optional[str] = None
     minutes_assembled: int
     minutes_tires: int
+    # Что можно записать через кабинет (docs/booking_wash.md). Оба —
+    # кабинет первым шагом спрашивает «Шиномонтаж / Мойка»
+    tire_booking: bool = True
+    wash_booking: bool = False
+    wash_minutes: int = 30
 
 
 class PublicBookingIn(BaseModel):
@@ -77,6 +82,9 @@ class PublicBookingIn(BaseModel):
     client_name: Optional[str] = None
     wheels_assembled: Optional[bool] = None
     wheel_diameter: Optional[str] = None
+    # Шиномонтаж (по умолчанию) или мойка; для мойки — класс машины
+    direction: Optional[str] = None
+    wash_class: Optional[str] = None
 
 
 class PublicBookingOut(BaseModel):
@@ -128,7 +136,10 @@ def info(shop: Optional[str] = Query(None, description='Короткое имя 
         shop_address=shop_settings.get(db, 'shop_address', shop=row) or row.address,
         minutes_assembled=shop_settings.get_int(db, 'booking_minutes_assembled',
                                                 shop=row),
-        minutes_tires=shop_settings.get_int(db, 'booking_minutes_tires', shop=row))
+        minutes_tires=shop_settings.get_int(db, 'booking_minutes_tires', shop=row),
+        tire_booking=bool(row.booking_enabled),
+        wash_booking=shop_settings.wash_booking_on(db, row),
+        wash_minutes=shop_settings.get_int(db, 'wash_booking_minutes', shop=row))
 
 
 @router.get('/shops', summary='Точки, куда можно записаться')
@@ -198,8 +209,17 @@ def paint(shop: Optional[str] = Query(None, description='Короткое имя
 @router.get('/days', response_model=List[DayOut], summary='Свободные окна')
 def days(wheels_assembled: Optional[bool] = Query(None),
          shop: Optional[str] = Query(None, description='Короткое имя точки'),
+         direction: Optional[str] = Query(
+             None, description='tire — шиномонтаж (по умолчанию), wash — мойка'),
+         wash_class: Optional[str] = Query(
+             None, description='Класс машины для мойки'),
          db: Session = Depends(get_db)):
-    calendar = BookingService(db, _shop(db, shop)).calendar(wheels_assembled)
+    # Класс машины принимаем, но окна мойки от него пока не зависят
+    try:
+        service = service_for(db, _shop(db, shop), direction)
+    except BookingError as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(e))
+    calendar = service.calendar(wheels_assembled)
     return [
         DayOut(day=day['day'], is_closed=day['is_closed'],
                opens_at=day['opens_at'], closes_at=day['closes_at'],
@@ -257,7 +277,13 @@ def book(payload: PublicBookingIn, request: Request,
     # страницы шлют его в адресе, и заставлять её делать для записи
     # исключение — верный способ однажды его потерять
     shop = _shop(db, payload.shop or shop)
-    service = BookingService(db, shop)
+    try:
+        service = service_for(db, shop, payload.direction)
+        # Мойке нужен класс машины, а колёса, диаметр и склад — нет
+        wash_class = (service.check_wash_class(payload.wash_class)
+                      if service.is_wash else None)
+    except BookingError as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(e))
     now = shop_now()
 
     if payload.at <= now:
@@ -281,8 +307,8 @@ def book(payload: PublicBookingIn, request: Request,
         Car.license_plate == plate,
         Car.account_id == shop.account_id).first()
 
-    wheels = payload.wheels_assembled
-    if wheels is None and car is not None:
+    wheels = None if service.is_wash else payload.wheels_assembled
+    if wheels is None and car is not None and not service.is_wash:
         wheels = car.wheels_assembled
 
     duration = service.duration_for(wheels)
@@ -290,7 +316,9 @@ def book(payload: PublicBookingIn, request: Request,
     settings = service.day_settings(payload.at.date())
     if settings['is_closed']:
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
-                            detail='В этот день шиномонтаж не работает')
+                            detail='В этот день мойка не работает'
+                            if service.is_wash
+                            else 'В этот день шиномонтаж не работает')
 
     if not service._slot_is_free(payload.at, duration, settings['posts']):
         # Тот же ответ, что получит приёмщик в цеху: событие одно, и
@@ -330,7 +358,10 @@ def book(payload: PublicBookingIn, request: Request,
         client_name=name or client.name,
         client_phone=phone,
         wheels_assembled=wheels,
-        wheel_diameter=clean_diameter(payload.wheel_diameter),
+        wheel_diameter=(None if service.is_wash
+                        else clean_diameter(payload.wheel_diameter)),
+        direction=service.direction,
+        wash_class=wash_class,
         status='scheduled',
         source=SOURCE_LINK)
 
@@ -343,7 +374,8 @@ def book(payload: PublicBookingIn, request: Request,
         duration_minutes=duration,
         shop_phone=shop_phone,
         message=f'Записали на {payload.at:%d.%m} в {payload.at:%H:%M}. '
-                f'Работы займут около {duration} мин.')
+                + (f'Мойка займёт около {duration} мин.' if service.is_wash
+                   else f'Работы займут около {duration} мин.'))
 
 
 def _tell_the_shop(db, appointment, stored, client):

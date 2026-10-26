@@ -92,6 +92,20 @@ DEFAULTS = {
     'direction_wash': '0',
     'wash_posts': '2',
     'tire_assign_employees': '0',
+    # Запись на мойку — своя (docs/booking_wash.md)
+    'wash_booking_enabled': '0',
+    'wash_booking_posts': '2',
+    'wash_booking_opens_at': '09:00',
+    'wash_booking_closes_at': '21:00',
+    'wash_booking_slot_step': '30',
+    'wash_booking_minutes': '30',
+    # Запись на мойку — своя (docs/booking_wash.md)
+    'wash_booking_enabled': '0',
+    'wash_booking_posts': '2',
+    'wash_booking_opens_at': '09:00',
+    'wash_booking_closes_at': '21:00',
+    'wash_booking_slot_step': '30',
+    'wash_booking_minutes': '30',
     # Сводка задач владельцу в Telegram (шлёт сервер)
     'task_digest_enabled': '1',
     'task_digest_morning': '09:00',

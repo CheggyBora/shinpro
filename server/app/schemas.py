@@ -139,6 +139,10 @@ class BookingIn(BaseModel):
     # Комплекты со склада, которые достать к приезду. Доступно только
     # вошедшему: что у кого лежит — закрытые сведения
     storage_ids: List[int] = []
+    # Шиномонтаж (по умолчанию) или мойка. Для мойки нужен класс машины:
+    # sedan / crossover / jeep / minivan (docs/booking_wash.md)
+    direction: Optional[str] = None
+    wash_class: Optional[str] = None
 
 
 class AppointmentOut(BaseModel):
@@ -152,6 +156,11 @@ class AppointmentOut(BaseModel):
     # Пока цех не забрал заявку, клиент видит «подтверждаем»
     is_confirmed: bool
     comment: Optional[str] = None
+    # Мойка или шиномонтаж (docs/booking_wash.md)
+    direction: str = 'tire'
+    wash_class: Optional[str] = None
+    wash_class_title: Optional[str] = None
+    wheel_diameter: Optional[str] = None
     on_site: bool = False
     can_check_in: bool = False
     called_post: Optional[int] = None

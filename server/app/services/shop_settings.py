@@ -78,6 +78,17 @@ DEFAULTS = {
     # путает (docs/calendar.md)
     'direction_wash': '0',
 
+    # Запись на мойку (docs/booking_wash.md). Свои посты, часы, шаг и
+    # длительность: мойка — не шиномонтаж, и машина на ней занимает
+    # свой пост, а не пост шиномонтажа. По умолчанию запись выключена —
+    # пока цех не включил её у себя, кабинет её не предлагает
+    'wash_booking_enabled': '0',
+    'wash_booking_posts': '2',
+    'wash_booking_opens_at': '09:00',
+    'wash_booking_closes_at': '21:00',
+    'wash_booking_slot_step': '30',
+    'wash_booking_minutes': '30',
+
     'storage_warn_days': '7',
 
     # За сколько дней записываться с выдачей комплекта со склада.
@@ -191,6 +202,19 @@ def wash_on(db, shop):
     ошибке, лишь показала бы владельцу пустой чужой календарь.
     """
     return is_on(get(db, 'direction_wash', shop=shop) or '0')
+
+
+def wash_booking_on(db, shop):
+    """
+    Принимает ли точка запись на мойку через кабинет.
+
+    Нужны оба выключателя: мойка на объекте работает и запись на неё
+    включена. Пустое здесь тоже выключено — по той же причине, что у
+    wash_on: включённая по ошибке запись привела бы человека на мойку,
+    которой нет.
+    """
+    return (wash_on(db, shop)
+            and is_on(get(db, 'wash_booking_enabled', shop=shop) or '0'))
 
 
 def updated_at(db, key, shop=None):

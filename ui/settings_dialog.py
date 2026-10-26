@@ -729,6 +729,52 @@ class SettingsDialog:
         self._hint(content, "Прайс мойки — в разделе «Прайс-лист», кнопка «Мойка». "
                             "Ставки мойки — в «Сотрудниках», «Изменить ставку».")
 
+        self._section(content, "Запись на мойку")
+        self.wash_booking_var = tk.BooleanVar(value=self.settings.get('wash_booking_enabled') == '1')
+        ttk.Checkbutton(content, text="Принимать запись на мойку через личный кабинет",
+                        variable=self.wash_booking_var,
+                        command=lambda: self.settings.set(
+                            'wash_booking_enabled', '1' if self.wash_booking_var.get() else '0')
+                        ).pack(anchor='w', pady=2)
+        grid = ttk.Frame(content, style='White.TFrame')
+        grid.pack(fill='x', pady=(4, 6))
+        self.wash_booking_fields = {}
+        for row, (key, title) in enumerate((
+                ('wash_booking_posts', 'Постов мойки под запись'),
+                ('wash_booking_opens_at', 'Запись с (ЧЧ:ММ)'),
+                ('wash_booking_closes_at', 'Запись до (ЧЧ:ММ)'),
+                ('wash_booking_slot_step', 'Шаг окон, мин'),
+                ('wash_booking_minutes', 'Сколько занимает мойка, мин'))):
+            styles.create_label(grid, title, 'Card.TLabel').grid(row=row, column=0, sticky='w', pady=2)
+            entry = styles.create_entry(grid, width=8)
+            entry.insert(0, self.settings.get(key) or '')
+            entry.grid(row=row, column=1, sticky='w', padx=(10, 0), pady=2)
+            entry.bind('<FocusOut>', lambda e, k=key, w=entry: self.save_wash_booking(k, w))
+            entry.bind('<Return>', lambda e, k=key, w=entry: self.save_wash_booking(k, w))
+            self.wash_booking_fields[key] = entry
+        self._hint(content, "Живой очереди у мойки нет: клиент записывается на время, "
+                            "«Я на месте» у мойки не показывается.")
+
+    def save_wash_booking(self, key, entry):
+        value = entry.get().strip()
+        if key.endswith('_at'):
+            from services.calendar_service import clean_time, TaskError
+            try:
+                value = clean_time(value)
+            except TaskError as e:
+                messagebox.showerror("Запись на мойку", str(e), parent=self.dialog)
+                return
+        else:
+            try:
+                value = str(max(1, int(value)))
+            except ValueError:
+                messagebox.showerror("Запись на мойку", "Нужно число", parent=self.dialog)
+                return
+        if value:
+            self.settings.set(key, value)
+            entry.delete(0, tk.END)
+            entry.insert(0, value)
+
     def save_directions(self):
         from services import directions
         try:

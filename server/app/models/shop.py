@@ -75,6 +75,14 @@ class Appointment(Base):
     wheels_assembled = Column(Boolean, nullable=True)
     # Диаметр — чтобы по приезду наряд открылся сразу с ценами пакета
     wheel_diameter = Column(String(10), nullable=True)
+    # Шиномонтаж или мойка (docs/booking_wash.md). У мойки свои посты,
+    # часы и окна, и занятость считается отдельно: машина на мойке не
+    # занимает пост шиномонтажа. Всё, что было до мойки, — шиномонтаж
+    direction = Column(String(10), default='tire', nullable=False,
+                       server_default='tire')
+    # Класс машины для мойки: sedan / crossover / jeep / minivan. У
+    # шиномонтажа пусто — там считают по колёсам и диаметру
+    wash_class = Column(String(16), nullable=True)
     # Клиент нажал «Я на месте» — цех даст ему первый свободный пост
     on_site_at = Column(DateTime, nullable=True)
     # Цех позвал на пост: номер и когда (docs/live_queue.md)

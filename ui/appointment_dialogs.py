@@ -144,8 +144,27 @@ class AppointmentDialog:
         if appointment and appointment.client_phone:
             self.phone_entry.insert(0, format_phone(appointment.client_phone))
 
+        # Шиномонтаж или мойка: у записи на мойку — класс машины, а не колёса
+        self.direction = (appointment.direction if appointment is not None
+                          else getattr(self.service, 'direction', 'tire')) or 'tire'
+        self.wash_class_var = tk.StringVar()
+        if self.direction == 'wash':
+            from services import directions as _directions
+            self.dialog.title("Запись на мойку" if appointment is None else "Изменить запись на мойку")
+            known = appointment.wash_class if appointment is not None else None
+            if not known and appointment and appointment.license_plate:
+                car = self.clients.get_car(appointment.license_plate)
+                known = car.wash_class if car is not None else None
+            self.wash_class_var.set(_directions.class_title(known) if known else '')
+            styles.create_label(content, "Класс машины (мойка)*:", 'Card.TLabel').pack(anchor='w', pady=(0, 4))
+            ttk.Combobox(content, textvariable=self.wash_class_var, state='readonly',
+                         values=[_directions.WASH_CLASS_TITLES[k] for k in _directions.WASH_CLASSES],
+                         font=styles.FONTS['normal']).pack(fill='x', pady=(0, 4))
+
         # --- Колёса --------------------------------------------------------
-        styles.create_label(content, "Колёса:", 'Card.TLabel').pack(anchor='w', pady=(0, 4))
+        wheels_title = styles.create_label(content, "Колёса:", 'Card.TLabel')
+        if self.direction != 'wash':
+            wheels_title.pack(anchor='w', pady=(0, 4))
 
         current = WHEELS_UNKNOWN
         if appointment and appointment.license_plate:
@@ -155,7 +174,8 @@ class AppointmentDialog:
         self.wheels_var = tk.StringVar(value=current)
 
         wheels_row = ttk.Frame(content, style='White.TFrame')
-        wheels_row.pack(fill='x', pady=(0, 4))
+        if self.direction != 'wash':
+            wheels_row.pack(fill='x', pady=(0, 4))
         for value in (WHEELS_ASSEMBLED, WHEELS_TIRES, WHEELS_UNKNOWN):
             ttk.Radiobutton(wheels_row, text=WHEELS_TITLES[value],
                             value=value, variable=self.wheels_var,
@@ -182,10 +202,14 @@ class AppointmentDialog:
 
     # ------------------------------------------------------------------
 
+    def _duration(self):
+        if getattr(self, 'direction', 'tire') == 'wash':
+            from services.booking_gateway import wash_duration
+            return wash_duration(self.db)
+        return self.service.duration_for_wheels(wheels_to_flag(self.wheels_var.get()))
+
     def show_duration(self):
-        minutes = self.service.duration_for_wheels(
-            wheels_to_flag(self.wheels_var.get()))
-        self.duration_label.config(text=f"Заложим {minutes} мин")
+        self.duration_label.config(text=f"Заложим {self._duration()} мин")
 
     def lookup_by_plate(self):
         """Подтянуть клиента по номеру машины."""
@@ -222,6 +246,12 @@ class AppointmentDialog:
                 self.name_entry.insert(0, client.name)
             if not self.phone_entry.get().strip() and client.phone:
                 self.phone_entry.insert(0, format_phone(client.phone))
+
+        # Класс для мойки машина уже может знать — не переспрашиваем
+        if getattr(self, 'direction', 'tire') == 'wash' and car.wash_class \
+                and not self.wash_class_var.get():
+            from services import directions as _directions
+            self.wash_class_var.set(_directions.class_title(car.wash_class))
 
         # Про колёса машина уже может знать — не переспрашиваем
         if car.wheels_assembled is not None:
@@ -274,7 +304,16 @@ class AppointmentDialog:
             return
 
         wheels = wheels_to_flag(self.wheels_var.get())
-        duration = self.service.duration_for_wheels(wheels)
+        duration = self._duration()
+        wash_class = None
+        if self.direction == 'wash':
+            from services import directions as _directions
+            wash_class = _directions.class_by_title(self.wash_class_var.get())
+            if not wash_class:
+                messagebox.showerror("Запись", "Выберите класс машины для мойки",
+                                     parent=self.dialog)
+                return
+            wheels = None
 
         exclude = self.appointment.id if self.appointment else None
         free, busy, posts = self.service.check_capacity(
@@ -298,7 +337,14 @@ class AppointmentDialog:
                     client_name=name,
                     client_phone=phone,
                     license_plate=plate,
-                    wheels_assembled=wheels)
+                    wheels_assembled=wheels,
+                    direction=self.direction,
+                    wash_class=wash_class)
+                if wash_class and plate:
+                    car = self.clients.get_car(plate)
+                    if car is not None and not car.wash_class:
+                        car.wash_class = wash_class
+                        self.db.commit()
             else:
                 self.service.update(
                     self.service.key_of(self.appointment),
@@ -448,6 +494,8 @@ class AppointmentDetailsDialog:
 
     def mark_arrived(self):
         appointment = self.service.get(self.appointment_id)
+        if (getattr(appointment, 'direction', None) or 'tire') == 'wash':
+            return self._arrived_for_wash(appointment)
 
         # Приехал, а свободного поста нет: не открываем наряд «в никуда»,
         # а отмечаем «на месте» — программа позовёт его первым на
@@ -489,6 +537,30 @@ class AppointmentDetailsDialog:
                 except Exception as e:
                     self.db.rollback()
                     messagebox.showerror("Ошибка", f"Не удалось открыть наряд: {e}")
+
+    def _arrived_for_wash(self, appointment):
+        """Мойка: живой очереди нет — отмечаем приезд и открываем наряд мойки."""
+        try:
+            self.service.mark_arrived(self.appointment_id)
+        except Exception as e:
+            self.db.rollback()
+            messagebox.showerror("Ошибка", f"Не удалось отметить приезд: {e}",
+                                 parent=self.dialog)
+            return
+        plate = appointment.license_plate
+        wash_class = appointment.wash_class
+        name, phone = appointment.client_name, appointment.client_phone
+        self._done()
+        if not (self.orders_tab and plate):
+            return
+        try:
+            order = self.orders_tab.order_service.create_order(
+                plate, '', 'car', client_name=name, client_phone=phone,
+                directions=['wash'], wash_class=wash_class)
+            self.orders_tab.open_order_tab(order)
+        except Exception as e:
+            self.db.rollback()
+            messagebox.showerror("Ошибка", f"Не удалось открыть наряд мойки: {e}")
 
     def _mark_on_site(self, appointment):
         appointment.on_site = True

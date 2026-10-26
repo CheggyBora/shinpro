@@ -101,6 +101,32 @@ def set_enabled(db, tire, wash):
             pass
 
 
+def wash_booking_on(db):
+    """Принимать запись на мойку через кабинет."""
+    return wash_on(db) and _flag(db, 'wash_booking_enabled', '0')
+
+
+def wash_booking_posts(db):
+    return max(1, _settings(db).get_int('wash_booking_posts', 2))
+
+
+def wash_booking_minutes(db):
+    return max(10, _settings(db).get_int('wash_booking_minutes', 30))
+
+
+def wash_booking_on(db):
+    """Принимать запись на мойку через кабинет."""
+    return wash_on(db) and _flag(db, 'wash_booking_enabled', '0')
+
+
+def wash_booking_posts(db):
+    return max(1, _settings(db).get_int('wash_booking_posts', 2))
+
+
+def wash_booking_minutes(db):
+    return max(10, _settings(db).get_int('wash_booking_minutes', 30))
+
+
 def wash_posts(db):
     return max(1, _settings(db).get_int(WASH_POSTS_KEY, WASH_POSTS_DEFAULT))
 

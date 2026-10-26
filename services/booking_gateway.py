@@ -25,13 +25,26 @@ MAX_POSTS = 3
 DEFAULT_POSTS = 1
 
 
+# Какая запись сейчас на экране: шиномонтаж или мойка. Ставит главное окно
+# по переключателю сверху (docs/booking_wash.md)
+CURRENT_DIRECTION = 'tire'
+
+
 def get_booking(db):
     """Тот способ работы с записями, который сейчас настроен."""
     from services.sync_service import SyncService
 
     if SyncService(db).is_enabled():
-        return RemoteBooking(db)
-    return LocalBooking(db)
+        booking = RemoteBooking(db)
+    else:
+        booking = LocalBooking(db)
+    booking.direction = CURRENT_DIRECTION
+    return booking
+
+
+def wash_duration(db):
+    from services import directions
+    return directions.wash_booking_minutes(db)
 
 
 class LocalBooking:
@@ -49,10 +62,12 @@ class LocalBooking:
     def key_of(row):
         return row.id
 
+    direction = 'tire'
+
     def load_day(self, day):
         return {
-            'placed': self.service.layout_day(day),
-            'posts': self.service.get_posts_for_day(day),
+            'placed': self.service.layout_day(day, direction=self.direction),
+            'posts': self.service.posts_for(day, self.direction),
             # Своя база всегда «на связи»: она лежит на этом же диске
             'online': True,
             'fetched_at': get_moscow_time(),
@@ -63,7 +78,8 @@ class LocalBooking:
         return self.service.duration_for_wheels(wheels_assembled)
 
     def check_capacity(self, at, duration, exclude_id=None):
-        return self.service.check_capacity(at, duration, exclude_id=exclude_id)
+        return self.service.check_capacity(at, duration, exclude_id=exclude_id,
+                                           direction=self.direction)
 
     def create(self, **fields):
         from models import Appointment
@@ -76,7 +92,9 @@ class LocalBooking:
             license_plate=fields.get('license_plate'),
             wheels_assembled=fields.get('wheels_assembled'),
             comment=fields.get('comment'),
-            source=fields.get('source', Appointment.SOURCE_PHONE))
+            source=fields.get('source', Appointment.SOURCE_PHONE),
+            direction=fields.get('direction', 'tire'),
+            wash_class=fields.get('wash_class'))
         return appointment.id
 
     def update(self, key, **fields):
@@ -120,8 +138,10 @@ class RemoteBooking:
     def key_of(row):
         return row.server_id
 
+    direction = 'tire'
+
     def load_day(self, day):
-        answer = self.api.get_day(day)
+        answer = self.api.get_day(day, self.direction)
         posts = answer['posts']
 
         # Колонку посчитал сервер — цех и приложение должны рисовать
@@ -149,6 +169,12 @@ class RemoteBooking:
         отвечаем «свободно», а настоящий ответ даёт сервер в момент
         сохранения — и он окончательный.
         """
+        if self.direction == 'wash':
+            from services import directions
+            return True, 0, directions.wash_booking_posts(self.db)
+        if self.direction == 'wash':
+            from services import directions
+            return True, 0, directions.wash_booking_posts(self.db)
         posts = self.api.get_posts_for_day(at.date())
         return True, 0, posts
 
@@ -160,7 +186,9 @@ class RemoteBooking:
             client_name=fields.get('client_name'),
             client_phone=fields.get('client_phone'),
             wheels_assembled=fields.get('wheels_assembled'),
-            comment=fields.get('comment'))
+            comment=fields.get('comment'),
+            direction=fields.get('direction', 'tire'),
+            wash_class=fields.get('wash_class'))
         return answer['id']
 
     def update(self, key, **fields):

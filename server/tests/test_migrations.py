@@ -89,6 +89,15 @@ for table in ('tasks', 'counterparties'):
           and not direction['nullable']
           and 'tire' in str(direction.get('default')),
           str(direction))
+# Запись на мойку — шаг e7a3b5c9d2f4: направление и класс машины
+columns = {column['name']: column
+           for column in inspector.get_columns('appointments')}
+direction = columns.get('direction')
+check('у записи есть направление', direction is not None
+      and not direction['nullable']
+      and 'tire' in str(direction.get('default')), str(direction))
+check('у записи есть класс машины для мойки',
+      'wash_class' in columns and columns['wash_class']['nullable'])
 
 print('\n=== Схема совпадает с моделями ===')
 # Тот же расчёт, что делает autogenerate: если он находит отличия,

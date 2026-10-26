@@ -581,6 +581,12 @@ class SyncService:
             'live_queue_enabled': '1' if self._live_queue_on() else '0',
             # Мойка включена — в дашборде календарь с переключателем
             'direction_wash': settings.get('direction_wash'),
+            'wash_booking_enabled': settings.get('wash_booking_enabled'),
+            'wash_booking_posts': settings.get('wash_booking_posts'),
+            'wash_booking_opens_at': settings.get('wash_booking_opens_at'),
+            'wash_booking_closes_at': settings.get('wash_booking_closes_at'),
+            'wash_booking_slot_step': settings.get('wash_booking_slot_step'),
+            'wash_booking_minutes': settings.get('wash_booking_minutes'),
             'storage_warn_days': settings.get('storage_warn_days'),
             'storage_lead_days': settings.get('storage_lead_days'),
             'season_autumn_at': settings.get('season_autumn_at'),

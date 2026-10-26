@@ -217,13 +217,22 @@ def send_now(db, client, account, kind, text, about=None, about_id=None):
 
 
 def _out_of_season(db, notice):
-    """«Пост отдали очереди» — неправда, если очередь выключили."""
+    """
+    «Пост отдали очереди» — неправда, если очередь выключили.
+
+    И у мойки: живой очереди там нет вовсе, отдавать пост некому. Такое
+    сообщение не планируется, но запись могли перевести на мойку уже
+    после — проверяем и при отправке.
+    """
     if notice.kind != KIND_LATE or notice.about != 'appointment':
         return False
     from app.models import Appointment
     from app.services import shop_settings
     row = db.get(Appointment, notice.about_id)
-    return row is not None and not shop_settings.live_queue_on(db, row.shop_id)
+    if row is None:
+        return False
+    return (row.direction == 'wash'
+            or not shop_settings.live_queue_on(db, row.shop_id))
 
 
 def send_due(db, limit=100):
@@ -389,7 +398,10 @@ def plan_arrival(db, client, shop_name, appointment):
     """
     from app.services import shop_settings
     made = []
-    queue_on = shop_settings.live_queue_on(db, appointment.shop_id)
+    # У мойки живой очереди нет: ни «Я на месте», ни «пост отдали
+    # очереди» (docs/booking_wash.md). «Подъезжайте» — как у всех
+    queue_on = (appointment.direction != 'wash'
+                and shop_settings.live_queue_on(db, appointment.shop_id))
     arrive_at = appointment.scheduled_at - timedelta(minutes=ARRIVE_BEFORE_MINUTES)
     if arrive_at > shop_now():
         made.append(add(db, client, KIND_ARRIVE,

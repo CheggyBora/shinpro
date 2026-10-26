@@ -41,7 +41,8 @@ class AppointmentService:
     def create(self, scheduled_at, duration_minutes=30, client_name=None,
                client_phone=None, license_plate=None, services_note=None,
                comment=None, source=Appointment.SOURCE_PHONE, client_id=None,
-               wheels_assembled=None, create_client=True):
+               wheels_assembled=None, create_client=True, direction='tire',
+               wash_class=None):
         """
         Записать клиента.
 
@@ -94,6 +95,8 @@ class AppointmentService:
             comment=(comment or '').strip() or None,
             source=source,
             status=Appointment.STATUS_SCHEDULED,
+            direction=direction if direction in ('tire', 'wash') else 'tire',
+            wash_class=wash_class if direction == 'wash' else None,
         )
         self.db.add(appointment)
         self.db.commit()
@@ -186,7 +189,7 @@ class AppointmentService:
     def get(self, appointment_id):
         return self.db.query(Appointment).filter(Appointment.id == appointment_id).first()
 
-    def get_for_day(self, day, include_cancelled=True):
+    def get_for_day(self, day, include_cancelled=True, direction=None):
         """Все записи на указанную дату, по возрастанию времени."""
         start = datetime(day.year, day.month, day.day)
         end = start + timedelta(days=1)
@@ -194,6 +197,9 @@ class AppointmentService:
         query = self.db.query(Appointment).filter(
             and_(Appointment.scheduled_at >= start, Appointment.scheduled_at < end)
         )
+        # Мойка и шиномонтаж занимают разные посты — считаем раздельно
+        if direction:
+            query = query.filter(Appointment.direction == direction)
         if not include_cancelled:
             query = query.filter(Appointment.status.in_(ACTIVE_STATUSES))
 
@@ -307,7 +313,15 @@ class AppointmentService:
         """Постов под запись на сегодня. Оставлено для старых вызовов."""
         return self.get_posts_for_day(get_moscow_time().date())
 
-    def count_overlapping(self, scheduled_at, duration_minutes, exclude_id=None):
+    def posts_for(self, day, direction='tire'):
+        """Постов под запись: у мойки свои, из настроек."""
+        if direction == 'wash':
+            from services import directions
+            return directions.wash_booking_posts(self.db)
+        return self.get_posts_for_day(day)
+
+    def count_overlapping(self, scheduled_at, duration_minutes, exclude_id=None,
+                          direction='tire'):
         """
         Сколько записей пересекается по времени с предполагаемой.
 
@@ -318,7 +332,7 @@ class AppointmentService:
         end = start + timedelta(minutes=int(duration_minutes))
 
         # Берём записи того же дня — их немного, пересечения считаем в Python
-        same_day = self.get_for_day(start.date(), include_cancelled=False)
+        same_day = self.get_for_day(start.date(), include_cancelled=False, direction=direction)
 
         overlapping = 0
         for other in same_day:
@@ -330,18 +344,18 @@ class AppointmentService:
                 overlapping += 1
         return overlapping
 
-    def check_capacity(self, scheduled_at, duration_minutes, exclude_id=None):
+    def check_capacity(self, scheduled_at, duration_minutes, exclude_id=None, direction='tire'):
         """
         Хватает ли свободных постов на это время.
 
         Возвращает (свободно, занято, всего_постов). Свободно=False означает,
         что все посты в это время уже заняты записями.
         """
-        posts = self.get_posts_for_day(as_naive(scheduled_at).date())
-        busy = self.count_overlapping(scheduled_at, duration_minutes, exclude_id)
+        posts = self.posts_for(as_naive(scheduled_at).date(), direction)
+        busy = self.count_overlapping(scheduled_at, duration_minutes, exclude_id, direction)
         return busy < posts, busy, posts
 
-    def layout_day(self, day, include_cancelled=False):
+    def layout_day(self, day, include_cancelled=False, direction='tire'):
         """
         Разложить записи дня по колонкам-постам.
 
@@ -353,8 +367,8 @@ class AppointmentService:
         чем уже записано), получают номер за пределами сетки — вызывающий
         покажет их отдельно, а не потеряет.
         """
-        appointments = self.get_for_day(day, include_cancelled=include_cancelled)
-        posts = self.get_posts_for_day(day)
+        appointments = self.get_for_day(day, include_cancelled=include_cancelled, direction=direction)
+        posts = self.posts_for(day, direction)
 
         # Когда каждая колонка освободится
         free_at = [None] * posts

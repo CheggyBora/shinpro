@@ -38,7 +38,8 @@ from app.models import (Client, Car, Appointment, BookingDay, StoredSet,
 from app.security import require_sync_key
 from app.services import shop_settings
 from app.models.photo import MasterDevice, OpenOrder, OrderPhoto
-from app.services.booking_service import BookingService, SLOT_TAKEN
+from app.services.booking_service import (BookingService, SLOT_TAKEN, WASH,
+                                           clean_direction, clean_wash_class)
 from app.utils import normalize_phone, normalize_plate, normalize_email, now as shop_now
 
 router = APIRouter(prefix='/sync', tags=['Обмен с цехом'])
@@ -619,7 +620,8 @@ def _drop_old_snapshots(db, keep=200):
 # ----------------------------------------------------------------------
 
 @router.get('/appointments', summary='Записи на день — то, что видит приёмщик')
-def day_appointments(day: str, db: Session = Depends(get_db),
+def day_appointments(day: str, direction: Optional[str] = None,
+                     db: Session = Depends(get_db),
                      shop: Shop = Mine):
     """
     Все записи дня, откуда бы они ни пришли, и разложенные по постам.
@@ -627,6 +629,12 @@ def day_appointments(day: str, db: Session = Depends(get_db),
     Это тот же список, что видит клиент в приложении: база одна.
     Раскладку по колонкам считаем здесь, чтобы цех и приложение
     показывали одинаково.
+
+    direction — шиномонтаж (по умолчанию) или мойка: у каждого свои
+    посты, и колонки считаются внутри направления. По умолчанию —
+    шиномонтаж: старая программа цеха о мойке не знает, и записи на
+    мойку не должны занимать у неё посты шиномонтажа
+    (docs/booking_wash.md).
     """
     try:
         target = datetime.strptime(day, '%Y-%m-%d').date()
@@ -634,16 +642,22 @@ def day_appointments(day: str, db: Session = Depends(get_db),
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
                             detail='Дату нужно как ГГГГ-ММ-ДД')
 
+    wanted = clean_direction(direction)
+    if wanted is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            detail='Направление — tire или wash')
+
     start = datetime.combine(target, time.min)
     end = start + timedelta(days=1)
 
     rows = db.query(Appointment).filter(
         Appointment.shop_id == shop.id,
+        Appointment.direction == wanted,
         Appointment.scheduled_at >= start,
         Appointment.scheduled_at < end).order_by(
         Appointment.scheduled_at).all()
 
-    settings = BookingService(db, shop).day_settings(target)
+    settings = BookingService(db, shop, wanted).day_settings(target)
     posts = settings['posts']
 
     # Первая свободная колонка на это время. Записи сверх постов
@@ -669,6 +683,8 @@ def day_appointments(day: str, db: Session = Depends(get_db),
             'client_phone': row.client_phone or (row.client.phone if row.client else None),
             'wheels_assembled': row.wheels_assembled,
             'wheel_diameter': row.wheel_diameter,
+            'direction': row.direction or 'tire',
+            'wash_class': row.wash_class,
             'on_site': row.on_site_at is not None,
             'called_post': row.called_post,
             'called_at': row.called_at,
@@ -678,7 +694,7 @@ def day_appointments(day: str, db: Session = Depends(get_db),
             'column': column,
         })
 
-    return {'day': target.isoformat(), 'posts': posts,
+    return {'day': target.isoformat(), 'direction': wanted, 'posts': posts,
             'is_closed': settings['is_closed'], 'appointments': result}
 
 
@@ -690,6 +706,10 @@ class ShopBookingIn(BaseModel):
     client_phone: Optional[str] = None
     wheels_assembled: Optional[bool] = None
     comment: Optional[str] = None
+    # Шиномонтаж (по умолчанию — так пишет старая программа цеха) или
+    # мойка с классом машины (docs/booking_wash.md)
+    direction: Optional[str] = None
+    wash_class: Optional[str] = None
 
 
 @router.post('/appointments', summary='Приёмщик записывает клиента')
@@ -707,7 +727,27 @@ def create_appointment(payload: ShopBookingIn, db: Session = Depends(get_db),
     phone = normalize_phone(payload.client_phone)
     name = (payload.client_name or '').strip() or None
 
-    service = BookingService(db, shop)
+    direction = clean_direction(payload.direction)
+    if direction is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            detail='Направление — tire или wash')
+
+    # Приёмщик записывает по телефону и тогда, когда запись на мойку в
+    # кабинете выключена, — поэтому её выключатель здесь не проверяем.
+    # Класс машины он может не знать, но непонятный не принимаем: цех
+    # должен узнать об ошибке, а не потерять класс молча
+    wash_class = None
+    wheels_assembled = payload.wheels_assembled
+    if direction == WASH:
+        wash_class = clean_wash_class(payload.wash_class)
+        if payload.wash_class and wash_class is None:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                detail='Класс машины — sedan, crossover, jeep или minivan')
+        # Колёса мойке ни к чему — и в карточку машины их не пишем
+        wheels_assembled = None
+
+    service = BookingService(db, shop, direction)
     settings = service.day_settings(payload.scheduled_at.date())
     free = service._slot_is_free(payload.scheduled_at,
                                  payload.duration_minutes, settings['posts'])
@@ -730,8 +770,8 @@ def create_appointment(payload: ShopBookingIn, db: Session = Depends(get_db),
             db.flush()
         if client is not None and car.client_id is None:
             car.client_id = client.id
-        if payload.wheels_assembled is not None and car.wheels_assembled is None:
-            car.wheels_assembled = payload.wheels_assembled
+        if wheels_assembled is not None and car.wheels_assembled is None:
+            car.wheels_assembled = wheels_assembled
         if client is None and car.client_id:
             client = car.client
 
@@ -744,10 +784,12 @@ def create_appointment(payload: ShopBookingIn, db: Session = Depends(get_db),
         license_plate=plate or None,
         client_name=name or (client.name if client else None),
         client_phone=phone or (client.phone if client else None),
-        wheels_assembled=(payload.wheels_assembled
-                          if payload.wheels_assembled is not None
+        wheels_assembled=(None if direction == WASH
+                          else wheels_assembled if wheels_assembled is not None
                           else (car.wheels_assembled if car else None)),
         comment=(payload.comment or '').strip() or None,
+        direction=direction,
+        wash_class=wash_class,
         status='scheduled',
         source='phone',
         sync_state=TAKEN)
@@ -755,7 +797,8 @@ def create_appointment(payload: ShopBookingIn, db: Session = Depends(get_db),
     db.add(row)
     db.commit()
     db.refresh(row)
-    return {'id': row.id, 'was_free': free, 'posts': settings['posts']}
+    return {'id': row.id, 'was_free': free, 'posts': settings['posts'],
+            'direction': direction}
 
 
 def _client_for(db, phone, name, account_id=None):
@@ -809,7 +852,8 @@ def patch_appointment(appointment_id: int, payload: AppointmentPatchIn,
     moving = (payload.scheduled_at is not None
               or payload.duration_minutes is not None)
     if moving and (payload.status or row.status) == 'scheduled':
-        service = BookingService(db, shop)
+        # Перенос проверяем по постам того же направления, что у записи
+        service = BookingService(db, shop, row.direction)
         at = payload.scheduled_at or row.scheduled_at
         minutes = payload.duration_minutes or row.duration_minutes or 0
         settings = service.day_settings(at.date())
