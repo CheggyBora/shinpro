@@ -134,6 +134,10 @@ function show(answer, preview) {
     var tag = answer.plate_complete
       ? (answer.confidence >= 0.8 ? '<span class="tag ok">уверенно</span>' : '<span class="tag warn">неуверенно</span>')
       : '<span class="tag warn">без региона</span>';
+    if (answer.country) {
+      tag += '<span class="tag warn">' + (answer.country === 'other'
+        ? 'не российский — проверьте' : 'иностранный · ' + esc(answer.country)) + '</span>';
+    }
     head = '<span class="plate">' + esc(answer.plate) + '</span>' + tag;
   }
   var meta = (answer.ms / 1000).toFixed(1).replace('.', ',') + ' с'

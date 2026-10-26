@@ -309,8 +309,12 @@ async def arrival_recognize(request: Request, response: Response,
     return {
         'photo_id': saved.id,
         'plate': plate or None,
-        # Полный ли номер: без региона телефон просит его дописать
-        'plate_complete': bool(plate) and plates.is_valid(plate),
+        # Полный ли номер: без региона телефон просит его дописать.
+        # Номер другой страны полный как есть
+        'plate_complete': bool(plate) and (plates.is_valid(plate)
+                                           or bool(plates.foreign_country(plate))),
+        # Не российский: BY, KZ… или other — пусть проверят глазами
+        'country': plates.foreign_country(plate),
         'confidence': round(confidence or 0.0, 3),
         'known': found['known'],
         'appointment': found['appointment'],

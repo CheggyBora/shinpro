@@ -550,9 +550,12 @@ async def plates_check(photo: UploadFile = File(...),
     first = plates._engine is None
     started = time.monotonic()
     plate, confidence = await run_in_threadpool(plates.recognize, data)
+    country = plates.foreign_country(plate)
     return {
         'plate': plate or None,
-        'plate_complete': bool(plate) and plates.is_valid(plate),
+        # Номер другой страны — полный как есть, региона у него нет
+        'plate_complete': bool(plate) and (plates.is_valid(plate) or bool(country)),
+        'country': country,
         'confidence': round(confidence or 0.0, 3),
         'ms': int((time.monotonic() - started) * 1000),
         # Первый снимок в процессе грузит модели — он дольше остальных

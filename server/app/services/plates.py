@@ -102,6 +102,49 @@ def is_valid(plate):
     return plate_format(plate) is not None
 
 
+# Номера Беларуси и ближних стран СНГ (владелец, 26.10.2026). Их не
+# правим под российский формат — возвращаем как прочитано, с пометкой
+# страны: номер всё равно подтверждает человек на телефоне
+FOREIGN = (
+    ('BY', re.compile(r'^\d{4}[A-Z]{2}\d$')),              # 1234 AB-7
+    ('KZ', re.compile(r'^\d{3}[A-Z]{2,3}\d{2}$')),         # 123 ABC 01
+    ('TJ', re.compile(r'^\d{4}[A-Z]{2}\d{2}$')),           # 1234 AB 01
+    ('UZ', re.compile(r'^\d{2}[A-Z]\d{3}[A-Z]{2}$')),      # 01 A 123 BC
+    ('KG', re.compile(r'^\d{5}[A-Z]{3}$')),                # 01 123 ABC (и Узбекистан)
+    ('AM', re.compile(r'^\d{2}[A-Z]{2}\d{3}$')),           # 12 AB 345 (и Азербайджан)
+    ('GE', re.compile(r'^[A-Z]{2}\d{3}[A-Z]{2}$')),         # AB 123 CD
+)
+# Код страны, который модель иногда читает вместе с номером
+_COUNTRY_CODE = re.compile(r'^(BY|KZ|TJ|UZ|KG|AM|AZ|GE)|(BY|KZ|TJ|UZ|KG|AM|AZ|GE)$')
+# Ни на что не похож, но прочитан уверенно — тоже отдаём, пусть проверят
+OTHER_MIN_CONFIDENCE = 0.85
+
+
+def foreign_country(plate):
+    """Код страны СНГ по виду номера, 'other' — не российский и не из списка, None — российский или пусто."""
+    if not plate or is_valid(plate) or is_main_part(plate):
+        return None
+    text = _JUNK.sub('', str(plate).upper()).translate(_TO_LATIN)
+    for country, pattern in FOREIGN:
+        if pattern.match(text):
+            return country
+    return 'other'
+
+
+def _foreign(full_text, full_conf):
+    """Номер другой страны из прочитанного целиком: (номер, уверенность) или None."""
+    text = _JUNK.sub('', str(full_text or '').upper()).translate(_TO_LATIN)
+    for candidate in (text, _COUNTRY_CODE.sub('', text)):
+        for _country, pattern in FOREIGN:
+            if pattern.match(candidate):
+                return normalize(candidate), round(full_conf, 3)
+    if full_conf >= OTHER_MIN_CONFIDENCE and 5 <= len(text) <= 10 \
+            and re.fullmatch(r'[A-Z0-9]+', text) \
+            and sum(c.isdigit() for c in text) >= 2 and any(c.isalpha() for c in text):
+        return normalize(text), round(full_conf, 3)
+    return None
+
+
 def is_main_part(plate):
     """«А123ВВ» — номер без региона."""
     return bool(_MAIN.match(normalize(plate)))
@@ -199,6 +242,12 @@ def pick(full_text, full_conf, main_text=None, main_conf=0.0,
             if is_valid(joined):
                 return joined, round(min(main_conf, region_conf), 3)
         return full, round(full_conf, 3)
+
+    # Беларусь и ближние страны: российские поправки тут исказили бы
+    # номер, поэтому проверяем до того, как собирать его по частям
+    foreign = _foreign(full_text, full_conf)
+    if foreign is not None and not is_main_part(normalize(_latin(full_text))[:6]):
+        return foreign
 
     if is_main_part(main):
         if region and is_valid(main + region):
