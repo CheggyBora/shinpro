@@ -15,6 +15,7 @@
 """
 import hashlib
 import hmac
+import os
 import re
 import secrets
 
@@ -281,7 +282,8 @@ def shop_contents(db, shop):
     """Что лежит в точке. Нужно, чтобы показать это перед удалением."""
     from app.models import (Appointment, BookingDay, QueueSnapshot,
                             SalaryPayout, ShopEmployee, ShopSetting,
-                            ShopShift, StoredSet, Visit)
+                            ShopShift, StoredSet, Visit, OrderPhoto,
+                            MasterDevice, CashOrder)
 
     counts = {}
     for title, model in (('нарядов', Visit),
@@ -292,6 +294,9 @@ def shop_contents(db, shop):
                          ('выплат', SalaryPayout),
                          ('дней записи', BookingDay),
                          ('снимков очереди', QueueSnapshot),
+                         ('фото', OrderPhoto),
+                         ('телефонов мастеров', MasterDevice),
+                         ('кассовых ордеров', CashOrder),
                          ('настроек', ShopSetting)):
         counts[title] = db.query(model).filter(
             model.shop_id == shop.id).count()
@@ -313,7 +318,9 @@ def drop_shop(db, shop):
     from app.models import (Appointment, BookingDay, QueueSnapshot,
                             SalaryPayout, ShopEmployee, ShopSetting,
                             ShopShift, StockItem, StoredSet, Visit,
-                            Task, Counterparty, CashOrder, Arrival)
+                            Task, Counterparty, CashOrder, Arrival,
+                            OrderPhoto, MasterDevice, OpenOrder)
+    from app.services.photos import full_path
 
     # Наряды через объекты, а не одним запросом: у них есть позиции и
     # начисления, и убрать их должен каскад, описанный в модели
@@ -321,14 +328,31 @@ def drop_shop(db, shop):
         db.delete(visit)
     db.flush()
 
+    # Машины с телефона ссылаются на снимки — их раньше снимков.
+    # Телефоны мастеров и открытые наряды: пропуск в удалённую точку
+    # оставлять нельзя
     for model in (Appointment, BookingDay, StoredSet, SalaryPayout,
                   ShopEmployee, ShopShift, QueueSnapshot, ShopSetting,
-                  StockItem, Task, Counterparty, CashOrder, Arrival):
+                  StockItem, Task, Counterparty, CashOrder, Arrival,
+                  MasterDevice, OpenOrder):
         db.query(model).filter(model.shop_id == shop.id).delete(
             synchronize_session=False)
 
+    # Снимки: строки сейчас, файлы — после того как база согласилась.
+    # Сорвись удаление — файлы остались бы без строк, наоборот хуже
+    photos = db.query(OrderPhoto).filter(OrderPhoto.shop_id == shop.id).all()
+    files = [full_path(photo) for photo in photos]
+    for photo in photos:
+        db.delete(photo)
+
     db.delete(shop)
     db.commit()
+
+    for path in files:
+        try:
+            os.remove(path)
+        except OSError:
+            pass        # файла уже нет — тем лучше
 
 
 def drop_account(db, account):

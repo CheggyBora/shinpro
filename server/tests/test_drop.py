@@ -28,6 +28,7 @@ os.environ['SERVER_DATABASE_URL'] = 'sqlite:///' + _db_path.replace('\\', '/')
 os.environ['SERVER_SECRET_KEY'] = 'test-secret-key-for-drop'
 os.environ['SERVER_SYNC_KEY'] = ''
 os.environ['SERVER_OWNER_PHONE'] = ''
+os.environ['SERVER_PHOTO_DIR'] = tempfile.mkdtemp(prefix='tire_drop_photos_')
 
 from datetime import timedelta
 
@@ -105,18 +106,39 @@ check('позиции и начисления на месте',
       db.query(VisitItem).count() == 2 and db.query(SalaryAccrual).count() == 2,
       f'{db.query(VisitItem).count()} и {db.query(SalaryAccrual).count()}')
 
+# Телефон мастера, открытый наряд, снимок и машина с телефона —
+# у тестовой точки
+from app.models import MasterDevice, OpenOrder, OrderPhoto, Arrival
+from app.services import photos as photo_service
+device = photo_service.register_device(db, test_shop, 'Телефон Игоря')
+db.add(OpenOrder(shop_id=test_id, local_id=5, license_plate='Т777ТТ777'))
+db.commit()
+shot = photo_service.save(db, test_shop, b'\xff\xd8\xff\xe0' + b'0' * 100, 'image/jpeg',
+                          plate='Т777ТТ777', kind='cover')
+db.add(Arrival(shop_id=test_id, photo_id=shot.id, plate='Т777ТТ777', directions='tire'))
+db.commit()
+shot_file = photo_service.full_path(shot)
+check('снимок лёг на диск', os.path.exists(shot_file))
+
 print()
 print('=== Что покажет команда перед удалением ===')
 counts = tenancy.shop_contents(db, db.query(Shop).get(test_id))
 check('наряд посчитан', counts['нарядов'] == 1, str(counts['нарядов']))
 check('комплект посчитан', counts['комплектов'] == 1, str(counts['комплектов']))
 check('запись посчитана', counts['записей'] == 1, str(counts['записей']))
+check('фото и телефон посчитаны', counts['фото'] == 1 and counts['телефонов мастеров'] == 1,
+      str(counts))
 
 print()
 print('=== Убираем тестовую точку ===')
 tenancy.drop_shop(db, db.query(Shop).get(test_id))
 
 check('точки больше нет', db.query(Shop).get(test_id) is None)
+check('её фото нет — ни строк, ни файлов',
+      db.query(OrderPhoto).count() == 0 and not os.path.exists(shot_file))
+check('пропуска её телефонов нет', db.query(MasterDevice).count() == 0)
+check('открытых нарядов и машин с телефона нет',
+      db.query(OpenOrder).count() == 0 and db.query(Arrival).count() == 0)
 check('её нарядов нет',
       db.query(Visit).filter(Visit.shop_id == test_id).count() == 0)
 check('её записей нет',
