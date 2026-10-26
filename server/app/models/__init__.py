@@ -15,6 +15,7 @@ from app.models.task import (Task, Counterparty, CATEGORIES, CATEGORY_TITLES,
                              SOURCES)
 from app.models.stock import StockItem
 from app.models.cash import CashOrder
+from app.models.links import ShopClient, ShopCar
 from app.models.shop import (Appointment, BookingDay, StoredSet, Visit,
                              VisitItem, SalaryAccrual, SalaryPayout,
                              ShopEmployee, ShopShift, QueueSnapshot, ShopSetting,

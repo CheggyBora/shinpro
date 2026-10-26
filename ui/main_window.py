@@ -384,6 +384,9 @@ class MainWindow:
             if not SyncService(self.db).is_enabled():
                 return False
         except Exception:
+            # Без отката сессия после сбоя чтения так и осталась бы
+            # «сломанной», и падали бы все следующие запросы (ревью 26.10.2026)
+            self.db.rollback()
             return False
 
         import threading
@@ -446,6 +449,7 @@ class MainWindow:
                 # Позванные должны узнать сразу, а не через 20 секунд
                 self.root.after(1000, self._start_live_sync)
         except Exception as e:
+            self.db.rollback()
             log.warning(f"Не удалось обновить очередь после обмена: {e}")
 
     def schedule_shift_check(self):
@@ -482,6 +486,9 @@ class MainWindow:
             if not SyncService(self.db).is_enabled():
                 return False
         except Exception:
+            # Без отката сессия после сбоя чтения так и осталась бы
+            # «сломанной», и падали бы все следующие запросы (ревью 26.10.2026)
+            self.db.rollback()
             return False
 
         if self.sync_soon is not None or self.sync_running:

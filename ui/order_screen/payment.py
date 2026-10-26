@@ -26,11 +26,13 @@ class OrderPaymentMixin:
             return
 
         # Мастеров выбирают на наряд, а их нет — делить шиномонтаж некому
-        from services import directions as _directions
-        if _directions.tire_assign(self.db) and not self.order.employee_ids \
-                and self.salary_service._work_of(self.order.id):
+        # Бывает и без тумблера: наряд создали, когда на смене ещё никто
+        # не отметился, — раньше такой нельзя было пробить вовсе (ревью 26.10.2026)
+        if not self.order.employee_ids and self.salary_service._work_of(self.order.id):
             messagebox.showwarning("Мастера наряда",
-                                   "Добавьте мастеров наряда: кнопка «Мастера наряда».")
+                                   "В наряде нет мастеров — отметьте, кто делал шиномонтаж, "
+                                   "и нажмите «Пробить» ещё раз.")
+            self.choose_masters()
             return
 
         missing = self.salary_service.unassigned_wash(self.order.id)
@@ -38,7 +40,7 @@ class OrderPaymentMixin:
             messagebox.showwarning("Кто делал",
                                    "Выберите, кто делал: " + ", ".join(missing) +
                                    "\n(двойной щелчок по колонке «Кто делал» "
-                                   "или кнопка «… — на одного»)")
+                                   "или «Всё на: … ▾» в блоке мойки)")
             return
 
         total = self.order_service.calculate_total(self.order.id)
@@ -75,6 +77,17 @@ class OrderPaymentMixin:
                 # фиксируем время и завершаем работы, даже если мастер
                 # не нажимал «Сохранить наряд»
                 self.order_service.save_order_composition(self.order.id)
+                # Пока окно было открыто, в наряд могли добавить услугу —
+                # тогда клиент заплатил бы старую сумму за новый состав
+                now = self.order_service.calculate_total(self.order.id)
+                if abs(now - total) > 0.009:
+                    pay_button.config(state='normal')
+                    dialog.destroy()
+                    messagebox.showwarning(
+                        "Сумма изменилась",
+                        f"Пока было открыто окно оплаты, наряд поменялся: было "
+                        f"{total:.2f}, стало {now:.2f} руб. Откройте оплату заново.")
+                    return
                 self.order_service.finish_work(self.order.id)
                 self.cancel_autosave()
 

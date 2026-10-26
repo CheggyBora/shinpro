@@ -102,7 +102,6 @@ class OrdersTab:
         self.order_notebook = ttk.Notebook(tabs_frame)
         self.order_notebook.pack(fill='both', expand=True)
 
-        self.order_notebook.bind('<<NotebookTabChanged>>', self.on_tab_change)
 
 
     def load_service_buttons(self):
@@ -261,6 +260,10 @@ class OrdersTab:
             else:
                 self.prefilled_data = None
         
+        # Подсказка — к этому номеру: набрали другой — она не годится
+        if self.prefilled_data is not None:
+            self.prefilled_data['plate'] = selected_plate
+
         # Автоматически открываем диалог создания наряда
         self.create_new_order()
     
@@ -291,6 +294,9 @@ class OrdersTab:
         self._pending_arrival = arrival
         self.license_var.set(normalize_plate(arrival.get('plate') or ''))
         self.select_plate(arrival.get('plate') or '')
+        # Окно не открылось (нет номера) — машина не должна прилипнуть к
+        # следующему наряду, набранному руками
+        self._pending_arrival = None
 
     def _arrival_done(self, arrival, order_id=None):
         """Сказать серверу, что машина разобрана, — в фоне: связь бывает медленной."""
@@ -309,6 +315,15 @@ class OrdersTab:
 
     def create_new_order(self):
         arrival, self._pending_arrival = getattr(self, '_pending_arrival', None), None
+        # Подсказка из списка номеров годится только для этого номера:
+        # раньше выбранная машина А подставляла клиента в наряд машины Б
+        prefilled, self.prefilled_data = getattr(self, 'prefilled_data', None), None
+        open_dialog = getattr(self, 'create_dialog', None)
+        if open_dialog is not None and open_dialog.winfo_exists():
+            # Второе окно — второй наряд на ту же машину
+            open_dialog.lift()
+            open_dialog.focus_force()
+            return
         license = normalize_plate(self.license_entry.get())
         if not license:
             messagebox.showerror("Ошибка", "Введите номер автомобиля")
@@ -354,8 +369,9 @@ class OrdersTab:
             dialog.protocol('WM_DELETE_WINDOW', dismiss)
             dialog.geometry("470x900")
 
-        # Получаем предзаполненные данные если есть
-        prefilled = getattr(self, 'prefilled_data', None)
+        # Предзаполненные данные — только если номер тот же, что выбирали
+        if prefilled is not None and prefilled.get('plate') not in (None, license):
+            prefilled = None
 
         # На что приехал: шиномонтаж, мойка или оба. Если на объекте
         # работает одно направление — выбирать нечего
@@ -789,81 +805,46 @@ class OrdersTab:
             # а обращение к разрушенному виджету уронит программу
             widget.cancel_autosave()
             self.order_notebook.forget(widget.frame)
+            # Без destroy закрытый наряд со всеми виджетами и картинками
+            # оставался в памяти до конца дня
+            widget.frame.destroy()
             del self.active_orders[order_id]
     
+    def current_widget(self):
+        """
+        Наряд на открытой вкладке или None. Пустой select() бывает, когда все
+        вкладки скрыты переключателем направлений: раньше это падало с
+        «Invalid slave specification» (ревью 26.10.2026).
+        """
+        current = self.order_notebook.select()
+        if not current:
+            return None
+        for widget in self.active_orders.values():
+            if str(widget.frame) == str(current):
+                return widget
+        return None
+
     def add_service_to_current_order_by_name(self, service_name):
-        log.debug(f"!!! BUTTON CLICKED: {service_name}")
-        try:
-            log.debug(f"Active orders: {list(self.active_orders.keys())}")
-            log.debug(f"Notebook tabs: {len(self.order_notebook.tabs())}")
-            
-            if len(self.order_notebook.tabs()) == 0:
-                log.debug("No tabs open!")
-                messagebox.showwarning("Предупреждение", "Создайте наряд")
-                return
-            
-            current_index = self.order_notebook.index(self.order_notebook.select())
-            tabs = self.order_notebook.tabs()
-            
-            log.debug(f"Current tab index: {current_index}")
-            log.debug(f"Total tabs: {len(tabs)}")
-            
-            if current_index < 0 or current_index >= len(tabs):
-                messagebox.showwarning("Предупреждение", "Создайте наряд")
-                return
-            
-            current_tab_widget = self.order_notebook.nametowidget(tabs[current_index])
-            log.debug(f"Current tab widget: {current_tab_widget}")
-            
-            for order_id, widget in self.active_orders.items():
-                log.debug(f"Checking order_id={order_id}, widget.frame={widget.frame}")
-                if widget.frame == current_tab_widget:
-                    log.debug(f"MATCH! Calling add_service_by_name for order {order_id}")
-                    widget.add_service_by_name(service_name)
-                    return
-            
-            log.debug("No matching widget found!")
-            messagebox.showwarning("Ошибка", "Не удалось найти активный наряд")
-        except Exception as e:
-            log.error(f"!!! ERROR in add_service_to_current_order_by_name: {e}")
-            import traceback
-            traceback.print_exc()
-            messagebox.showerror("Ошибка", str(e))
-    
-    def add_service_to_current_order(self, service):
-        current_tab = self.order_notebook.select()
-        if not current_tab:
-            messagebox.showwarning("Предупреждение", "Создайте наряд")
+        widget = self.current_widget()
+        if widget is None:
+            messagebox.showwarning("Предупреждение", "Создайте или откройте наряд")
             return
-        
-        for order_id, widget in self.active_orders.items():
-            if str(widget.frame) == current_tab:
-                widget.add_service(service)
-                break
-    
+        try:
+            widget.add_service_by_name(service_name)
+        except Exception as e:
+            self.db.rollback()
+            log.error(f"Услуга «{service_name}» не добавилась: {e}")
+            messagebox.showerror("Ошибка", str(e))
+
     def process_payment_for_current_order(self):
         """Обработать оплату для текущего активного наряда"""
+        widget = self.current_widget()
+        if widget is None:
+            messagebox.showwarning("Предупреждение", "Создайте или откройте наряд")
+            return
         try:
-            current_index = self.order_notebook.index(self.order_notebook.select())
-            tabs = self.order_notebook.tabs()
-            
-            if current_index < 0 or current_index >= len(tabs):
-                messagebox.showwarning("Предупреждение", "Создайте наряд")
-                return
-            
-            current_tab_widget = self.order_notebook.nametowidget(tabs[current_index])
-            
-            for order_id, widget in self.active_orders.items():
-                if widget.frame == current_tab_widget:
-                    widget.process_payment()
-                    return
-            
-            messagebox.showwarning("Ошибка", "Не удалось найти активный наряд")
+            widget.process_payment()
         except Exception as e:
-            log.error(f"ERROR in process_payment_for_current_order: {e}")
-            import traceback
-            traceback.print_exc()
+            self.db.rollback()
+            log.error(f"Оплата не открылась: {e}")
             messagebox.showerror("Ошибка", str(e))
-    
-    def on_tab_change(self, event):
-        pass

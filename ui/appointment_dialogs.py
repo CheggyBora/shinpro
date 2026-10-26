@@ -555,7 +555,7 @@ class AppointmentDetailsDialog:
             return
         try:
             order = self.orders_tab.order_service.create_order(
-                plate, '', 'car', client_name=name, client_phone=phone,
+                plate, '', None, client_name=name, client_phone=phone,
                 directions=['wash'], wash_class=wash_class)
             self.orders_tab.open_order_tab(order)
         except Exception as e:

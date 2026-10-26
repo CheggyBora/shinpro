@@ -124,7 +124,8 @@ def photo_file(photo_id: int, key: str = '', db: Session = Depends(get_db)):
     if row is None or row.client_id is None or row.kind == 'cover':
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail='Фото не найдено')
 
-    if key != photo_key(row.id, row.client_id):
+    import hmac
+    if not hmac.compare_digest(str(key or ''), photo_key(row.id, row.client_id)):
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail='Нельзя')
 
     path = photo_service.full_path(row)

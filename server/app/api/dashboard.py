@@ -32,7 +32,10 @@ def _period(day_from: Optional[date], day_to: Optional[date]):
     Перевёрнутые даты не ругаем, а меняем местами: человек ошибся в
     двух полях, а не совершил преступление.
     """
-    today = date.today()
+    # День шиномонтажа, а не сервера (UTC): после полуночи по Москве
+    # «сегодня» иначе ещё три часа было бы вчерашним
+    from app.utils import today as shop_today
+    today = shop_today()
     day_to = day_to or today
     day_from = day_from or (day_to - timedelta(days=29))
 
@@ -60,7 +63,9 @@ def _service(db, staff, shop=None, direction=None):
     которому относится сам сотрудник.
     """
     shops = tenancy.shops_of(db, staff.account_id)
-    ids = [row.id for row in shops]
+    # Сотрудник без аккаунта бывает только на старом сервере с одним
+    # шиномонтажом — там считаем по всему. У аккаунта без точек — ничего
+    ids = [row.id for row in shops] if staff.account_id is not None else None
 
     if shop:
         chosen = [row.id for row in shops
@@ -250,7 +255,7 @@ def current_shift(shop: Optional[str] = None,
 
     ids = service.shop_ids
     snapshots = db.query(QueueSnapshot)
-    if ids:
+    if ids is not None:
         snapshots = snapshots.filter(QueueSnapshot.shop_id.in_(ids))
     last = snapshots.order_by(QueueSnapshot.taken_at.desc()).first()
 

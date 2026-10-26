@@ -46,6 +46,11 @@ class SalaryPayout(Base):
     source = Column(String(20), default='shop', nullable=False)
     server_id = Column(Integer, nullable=True, unique=True, index=True)
 
+    # Отменённую выдачу не удаляем, а помечаем. Удаление освобождало номер,
+    # SQLite отдавал его следующей выдаче, и отмена той находила ордер
+    # прежней; а сервер про отмену не узнавал вовсе (ревью 26.10.2026)
+    cancelled_at = Column(DateTime(timezone=True), nullable=True)
+
     def __repr__(self):
         return (f"<SalaryPayout #{self.id} сотрудник {self.employee_id} "
                 f"{self.amount:.2f} {self.method}>")

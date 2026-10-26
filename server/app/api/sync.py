@@ -56,7 +56,10 @@ Mine = Depends(require_sync_key)
 
 class ClientIn(BaseModel):
     local_id: int
-    phone: str
+    # У клиента, записанного в цеху по имени, телефона нет. Обязательный
+    # телефон отклонял весь обмен целиком (ревью 26.10.2026) — такого
+    # клиента просто пропускаем ниже
+    phone: Optional[str] = None
     name: Optional[str] = None
 
 
@@ -167,6 +170,11 @@ class PayoutIn(BaseModel):
     comment: Optional[str] = None
     is_advance: bool = False
     source: str = 'shop'
+    # Отменили в цеху — с сервера выдачу убираем (старый цех не шлёт)
+    cancelled: bool = False
+    # Выдача из дашборда: её номер на сервере. По нему узнаём свою же
+    # запись, даже если подтверждение цеха потерялось по дороге
+    server_id: Optional[int] = None
 
 
 class ShiftIn(BaseModel):
@@ -328,17 +336,29 @@ class AckIn(BaseModel):
 # Наверх
 # ----------------------------------------------------------------------
 
-def _client_by_local_id(db, local_id, cache, account_id=None):
+def _client_by_local_id(db, local_id, cache, shop):
+    """Клиент по номеру строки в базе ЭТОЙ точки (models/links.py)."""
     if local_id is None:
         return None
     if local_id in cache:
         return cache[local_id]
 
-    row = db.query(Client).filter(
-        Client.local_id == local_id,
-        Client.account_id == account_id).first()
+    from app.models import ShopClient
+    link = db.query(ShopClient).filter(ShopClient.shop_id == shop.id,
+                                       ShopClient.local_id == local_id).first()
+    row = db.get(Client, link.client_id) if link is not None else None
     cache[local_id] = row
     return row
+
+
+def _link(db, model, shop, local_id, field, target_id):
+    """Запомнить: номер строки этой точки — вот эта запись сервера."""
+    link = db.query(model).filter(model.shop_id == shop.id,
+                                  model.local_id == local_id).first()
+    if link is None:
+        link = model(shop_id=shop.id, local_id=local_id)
+        db.add(link)
+    setattr(link, field, target_id)
 
 
 def _direction(value):
@@ -377,33 +397,37 @@ def push(payload: PushIn, db: Session = Depends(get_db),
     account_id = shop.account_id
 
     # --- Клиенты ------------------------------------------------------
+    # Человек в сети один — его узнаём по телефону. Номер строки у каждой
+    # точки свой и связан через ShopClient, а не через сам клиент
+    from app.models import ShopClient, ShopCar
     for item in payload.clients:
         phone = normalize_phone(item.phone)
         if not phone:
             continue
 
+        # Человек мог зарегистрироваться в приложении раньше, чем
+        # приехал в цех, или бывал в другой точке сети — он уже есть
         row = db.query(Client).filter(
-            Client.local_id == item.local_id,
+            Client.phone == phone,
             Client.account_id == account_id).first()
         if row is None:
-            # Человек мог зарегистрироваться в приложении раньше, чем
-            # приехал в цех. Тогда он уже есть — по телефону
-            row = db.query(Client).filter(
-                Client.phone == phone,
-                Client.account_id == account_id).first()
+            linked = _client_by_local_id(db, item.local_id, {}, shop)
+            # В цеху поменяли телефон — тот же человек, новый номер
+            if linked is not None and linked.account_id == account_id:
+                row = linked
 
         if row is None:
             row = Client(phone=phone, account_id=account_id)
             db.add(row)
 
         row.account_id = account_id
-        row.local_id = item.local_id
         row.phone = phone
         # Имя из цеха главнее: там его записывал человек, а не
         # подставляло приложение
         if item.name:
             row.name = item.name
         db.flush()
+        _link(db, ShopClient, shop, item.local_id, 'client_id', row.id)
         cache[item.local_id] = row
         result.clients += 1
 
@@ -413,21 +437,22 @@ def push(payload: PushIn, db: Session = Depends(get_db),
         if not plate:
             continue
 
+        # Машину в сети узнаём по номеру, номер строки — свой у точки
         row = db.query(Car).filter(
-            Car.local_id == item.local_id,
+            Car.license_plate == plate,
             Car.account_id == account_id).first()
         if row is None:
-            row = db.query(Car).filter(
-                Car.license_plate == plate,
-                Car.account_id == account_id).first()
+            link = db.query(ShopCar).filter(ShopCar.shop_id == shop.id,
+                                            ShopCar.local_id == item.local_id).first()
+            if link is not None:
+                row = db.get(Car, link.car_id)
         if row is None:
             row = Car(license_plate=plate, account_id=account_id)
             db.add(row)
 
         row.account_id = account_id
 
-        owner = _client_by_local_id(db, item.client_local_id, cache, account_id)
-        row.local_id = item.local_id
+        owner = _client_by_local_id(db, item.client_local_id, cache, shop)
         row.license_plate = plate
         row.vehicle_type = item.vehicle_type
         row.wheel_diameter = item.wheel_diameter
@@ -435,6 +460,7 @@ def push(payload: PushIn, db: Session = Depends(get_db),
         if owner is not None:
             row.client_id = owner.id
         db.flush()
+        _link(db, ShopCar, shop, item.local_id, 'car_id', row.id)
         result.cars += 1
 
     # --- Визиты -------------------------------------------------------
@@ -447,7 +473,7 @@ def push(payload: PushIn, db: Session = Depends(get_db),
                         visited_at=item.visited_at)
             db.add(row)
 
-        owner = _client_by_local_id(db, item.client_local_id, cache, account_id)
+        owner = _client_by_local_id(db, item.client_local_id, cache, shop)
         row.visited_at = item.visited_at
         row.license_plate = normalize_plate(item.license_plate) or None
         row.total_amount = item.total_amount
@@ -522,6 +548,19 @@ def push(payload: PushIn, db: Session = Depends(get_db),
         row = db.query(SalaryPayout).filter(
             SalaryPayout.local_id == item.local_id,
             SalaryPayout.shop_id == shop.id).first()
+        if row is None and item.server_id:
+            # Подтверждение потерялось — без этого выдача задвоилась бы
+            row = db.query(SalaryPayout).filter(
+                SalaryPayout.id == item.server_id,
+                SalaryPayout.shop_id == shop.id).first()
+            if row is not None:
+                row.local_id = item.local_id
+        if item.cancelled:
+            if row is not None:
+                db.delete(row)
+                db.flush()
+            result.payouts += 1
+            continue
         if row is None:
             row = SalaryPayout(local_id=item.local_id, shop_id=shop.id)
             db.add(row)
@@ -583,7 +622,7 @@ def push(payload: PushIn, db: Session = Depends(get_db),
             row = StoredSet(local_id=item.local_id, shop_id=shop.id)
             db.add(row)
 
-        owner = _client_by_local_id(db, item.client_local_id, cache, account_id)
+        owner = _client_by_local_id(db, item.client_local_id, cache, shop)
         row.license_plate = normalize_plate(item.license_plate) or None
         row.storage_type = item.storage_type
         row.wheel_type = item.wheel_type
@@ -653,25 +692,27 @@ def push(payload: PushIn, db: Session = Depends(get_db),
             shop.booking_enabled = shop_settings.is_on(value)
 
     db.commit()
-    _drop_old_snapshots(db)
+    _drop_old_snapshots(db, shop.id)
     return result
 
 
-def _drop_old_snapshots(db, keep=200):
+def _drop_old_snapshots(db, shop_id, keep=200):
     """
     Слепков очереди накапливается по одному в минуту.
 
     Нужен только последний, но несколько прошлых полезны, когда
     разбираешься, что происходило. Остальное — мусор в базе.
     """
-    total = db.query(QueueSnapshot).count()
-    if total <= keep:
+    # У каждой точки свои: раньше счёт шёл по всему серверу, и частые
+    # слепки занятой точки вытирали последний слепок тихой (ревью 26.10.2026)
+    mine = db.query(QueueSnapshot).filter(QueueSnapshot.shop_id == shop_id)
+    if mine.count() <= keep:
         return
 
-    edge = db.query(QueueSnapshot).order_by(
-        QueueSnapshot.taken_at.desc()).offset(keep).first()
+    edge = mine.order_by(QueueSnapshot.taken_at.desc()).offset(keep).first()
     if edge is not None:
         db.query(QueueSnapshot).filter(
+            QueueSnapshot.shop_id == shop_id,
             QueueSnapshot.taken_at < edge.taken_at).delete()
         db.commit()
 

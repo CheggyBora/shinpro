@@ -139,8 +139,9 @@ except PayoutError:
     check('без PIN отменить нельзя', True)
 
 payouts.cancel(advance.id, pin=PIN)
-check('запись удалена',
-      db.query(SalaryPayout).filter(SalaryPayout.id == advance.id).first() is None)
+check('запись помечена отменённой, а не удалена: номер не займёт следующая',
+      db.query(SalaryPayout).filter(SalaryPayout.id == advance.id).first().cancelled_at is not None)
+check('отменённой нет в истории', advance.id not in [p.id for p in payouts.history(1)])
 check('остаток вернулся к 300', payouts.balance(1) == 300.0,
       str(payouts.balance(1)))
 check('отмена попала в журнал',

@@ -77,13 +77,15 @@ class DashboardService:
         """
         self.db = db
         self.account_id = account_id
-        self.shop_ids = list(shop_ids) if shop_ids else None
+        # Пустой список — точек нет, показывать нечего. Раньше пустой
+        # становился None, и аккаунт без точек видел всех (ревью 26.10.2026)
+        self.shop_ids = list(shop_ids) if shop_ids is not None else None
         self.direction = clean_direction(direction)
 
     def _only_mine(self, query, model=None):
         """Сузить выборку до выбранных точек."""
         model = model or Visit
-        if self.shop_ids:
+        if self.shop_ids is not None:
             return query.filter(model.shop_id.in_(self.shop_ids))
         return query
 
@@ -477,7 +479,7 @@ class DashboardService:
         №1 из соседней точки — другой человек.
         """
         query = self.db.query(ShopEmployee)
-        if self.shop_ids:
+        if self.shop_ids is not None:
             query = query.filter(ShopEmployee.shop_id.in_(self.shop_ids))
 
         return {(row.shop_id, row.local_id): row for row in query.all()}
@@ -530,7 +532,7 @@ class DashboardService:
 
         query = self.db.query(ShopEmployee).filter(
             ShopEmployee.is_active.is_(True))
-        if self.shop_ids:
+        if self.shop_ids is not None:
             query = query.filter(ShopEmployee.shop_id.in_(self.shop_ids))
 
         rows = []
@@ -592,9 +594,14 @@ class DashboardService:
         query = self.db.query(ShopEmployee).filter(
             ShopEmployee.local_id == employee_local_id)
 
+        # Точку из запроса проверяем по своим: выдать зарплату в чужую
+        # сеть нельзя (ревью 26.10.2026)
+        if shop_id is not None and self.shop_ids is not None \
+                and int(shop_id) not in self.shop_ids:
+            raise ValueError('Такой точки нет')
         if shop_id is not None:
             query = query.filter(ShopEmployee.shop_id == shop_id)
-        elif self.shop_ids:
+        elif self.shop_ids is not None:
             query = query.filter(ShopEmployee.shop_id.in_(self.shop_ids))
 
         people = query.all()
@@ -725,7 +732,7 @@ class DashboardService:
             ShopEmployee.local_id == local_id)
         if shop_id is not None:
             query = query.filter(ShopEmployee.shop_id == shop_id)
-        elif self.shop_ids:
+        elif self.shop_ids is not None:
             query = query.filter(ShopEmployee.shop_id.in_(self.shop_ids))
 
         person = query.first()

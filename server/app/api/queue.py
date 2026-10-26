@@ -27,7 +27,11 @@ router = APIRouter(prefix='/queue', tags=['Очередь'])
 @router.get('', response_model=QueueOut, summary='Что сейчас в шиномонтаже')
 def current_queue(client: Client = Depends(current_client),
                   db: Session = Depends(get_db)):
-    snapshot = db.query(QueueSnapshot).order_by(
+    # Только точки сети этого клиента: раньше показывалась загрузка
+    # последней приславшей точки на всём сервере (ревью 26.10.2026)
+    from app.models import Shop
+    mine = [row.id for row in db.query(Shop.id).filter(Shop.account_id == client.account_id)]
+    snapshot = db.query(QueueSnapshot).filter(QueueSnapshot.shop_id.in_(mine)).order_by(
         QueueSnapshot.taken_at.desc()).first()
 
     if snapshot is None:

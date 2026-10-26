@@ -136,8 +136,9 @@ class OrderItemsMixin:
         if not item:
             return
         
-        # Удаляем предыдущий Entry если он есть
-        if self.edit_entry:
+        # Удаляем предыдущий Entry если он есть. Поле заводится здесь же:
+        # раньше его не было нигде, и двойной щелчок по «Кол-во» падал
+        if getattr(self, 'edit_entry', None):
             self.edit_entry.destroy()
             self.edit_entry = None
         

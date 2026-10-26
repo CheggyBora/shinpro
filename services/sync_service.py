@@ -345,7 +345,9 @@ class SyncService:
 
         query = self.db.query(SalaryPayout)
         if changed_since is not None:
-            query = query.filter(SalaryPayout.paid_at >= changed_since)
+            # Отменённую позже — тоже: серверу надо её убрать
+            query = query.filter((SalaryPayout.paid_at >= changed_since)
+                                 | (SalaryPayout.cancelled_at >= changed_since))
 
         return [{'local_id': row.id,
                  'employee_local_id': row.employee_id,
@@ -354,7 +356,9 @@ class SyncService:
                  'paid_at': as_naive(row.paid_at),
                  'comment': row.comment,
                  'is_advance': bool(row.is_advance),
-                 'source': row.source}
+                 'source': row.source,
+                 'server_id': row.server_id,
+                 'cancelled': row.cancelled_at is not None}
                 for row in query.all()]
 
     def _recent_shifts(self, changed_since):
@@ -486,8 +490,14 @@ class SyncService:
     def _collect_storage(self):
         from models import TireStorage, Car
 
+        # И выданные за последние полгода: сервер узнаёт, что комплект
+        # забрали, — иначе в кабинете он висел бы «на хранении» навсегда,
+        # с напоминаниями о сроке (ревью 26.10.2026)
+        from datetime import timedelta
+        edge = get_moscow_time() - timedelta(days=183)
         rows = self.db.query(TireStorage).filter(
-            TireStorage.status == 'stored').all()
+            (TireStorage.status == 'stored')
+            | ((TireStorage.status != 'stored') & (TireStorage.released_date >= edge))).all()
 
         storage = []
         for row in rows:

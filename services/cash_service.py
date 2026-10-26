@@ -14,7 +14,8 @@ from sqlalchemy import func
 from logger import log
 from models import Shift, WorkOrder
 from models.cash import (CashOrder, KIND_IN, KIND_OUT, KIND_TITLES, METHOD_CASH,
-                         METHOD_NONCASH, DEFAULT_CATEGORIES, SALARY_CATEGORY)
+                         METHOD_NONCASH, DEFAULT_CATEGORIES, SALARY_CATEGORY,
+                         REFUND_CATEGORY)
 from utils import get_moscow_time, as_naive
 
 
@@ -102,13 +103,6 @@ class CashService:
             WorkOrder.shift_id == shift.id, WorkOrder.status == 'paid',
             WorkOrder.is_deleted.isnot(True)).all()
 
-    def refunds(self, shift):
-        """Возвраты наличными за смену: наряды могли быть оплачены раньше."""
-        start, end = self._period(shift)
-        rows = self.db.query(WorkOrder).filter(
-            WorkOrder.refunded_at.isnot(None), WorkOrder.payment_method == 'cash').all()
-        return [o for o in rows if start <= as_naive(o.refunded_at) <= end and (o.refunded_amount or 0) > 0]
-
     def orders(self, shift=None):
         query = self.db.query(CashOrder)
         if shift is not None:
@@ -116,10 +110,9 @@ class CashService:
         return query.order_by(CashOrder.created_at, CashOrder.id).all()
 
     def totals(self, shift):
-        """{'start', 'paid_cash', 'refunds', 'came', 'went', 'expected'}."""
+        """{'start', 'paid_cash', 'came', 'went', 'expected'}. Возвраты — в ордерах."""
         start = shift.cash_start or 0.0
         paid_cash = sum(o.total_amount or 0 for o in self.paid_orders(shift) if o.payment_method == 'cash')
-        refunds = sum(o.refunded_amount or 0 for o in self.refunds(shift))
         came = went = 0.0
         for row in self.orders(shift):
             effect = row.cash_effect
@@ -128,9 +121,9 @@ class CashService:
             else:
                 went -= effect
         came_total = paid_cash + came
-        went_total = refunds + went
+        went_total = went
         return {'start': round(start, 2), 'paid_cash': round(paid_cash, 2),
-                'refunds': round(refunds, 2), 'came': round(came_total, 2),
+                'came': round(came_total, 2),
                 'went': round(went_total, 2),
                 'expected': round(start + came_total - went_total, 2)}
 
@@ -156,10 +149,6 @@ class CashService:
                          'text': f'{plate} · ' + ('оплата наличными' if cash else 'оплата картой — в кассу не идёт'),
                          'amount': o.total_amount or 0, 'effect': (o.total_amount or 0) if cash else 0.0,
                          'order': None})
-        for o in self.refunds(shift):
-            rows.append({'time': as_naive(o.refunded_at), 'tag': 'refund', 'what': f'Возврат №{o.id}',
-                         'text': o.refund_reason or 'возврат наличными',
-                         'amount': o.refunded_amount, 'effect': -(o.refunded_amount or 0), 'order': None})
         for row in self.orders(shift):
             title = f'{KIND_TITLES[row.kind]} №{row.number}'
             text = row.category + (f' · {row.note}' if row.note else '')
@@ -176,6 +165,10 @@ class CashService:
 
     def count(self, shift, counted, reason=None):
         """Пересчёт при закрытии: должно быть против есть."""
+        self.db.refresh(shift)
+        if shift.status != 'open':
+            # Забытую смену программа закрыла сама, пока было открыто окно
+            raise CashError('Смена уже закрыта — пересчитайте кассу при открытии новой')
         counted = parse_amount(counted)
         expected = self.expected(shift)
         diff = round(counted - expected, 2)
@@ -207,7 +200,8 @@ class CashService:
         return (last or 0) + 1
 
     def create(self, kind, category, amount, method=METHOD_CASH, note=None,
-               employee_id=None, payout_id=None, check_category=True):
+               employee_id=None, payout_id=None, check_category=True, commit=True,
+               work_order_id=None):
         if kind not in (KIND_IN, KIND_OUT):
             raise CashError('Приходный или расходный?')
         amount = parse_amount(amount)
@@ -226,15 +220,19 @@ class CashService:
                         category=category[:60], amount=amount, method=method,
                         note=(note or '').strip()[:300] or None, employee_id=employee_id,
                         shift_id=shift.id if shift else None, payout_id=payout_id,
-                        created_at=now, changed_at=now)
+                        work_order_id=work_order_id, created_at=now, changed_at=now)
         self.db.add(row)
+        if not commit:
+            # Вызывающий проводит ордер вместе со своей записью одним commit
+            self.db.flush()
+            return row
         self.db.commit()
         self._log(f'{KIND_TITLES[kind]} ордер №{row.number}: {category}, {money(amount)}'
                   + (' безнал' if method == METHOD_NONCASH else ''))
         self._nudge('кассовый ордер')
         return row
 
-    def reverse(self, row, employee_id=None):
+    def reverse(self, row, employee_id=None, commit=True):
         """Отменить ошибочный ордер: проводим обратный, оба остаются."""
         if row.reverses_id:
             raise CashError('Это уже отмена — отменять её нельзя')
@@ -245,9 +243,12 @@ class CashService:
         back = CashOrder(uid=str(uuid.uuid4()), kind=row.kind, number=self._next_number(row.kind),
                          category=row.category, amount=row.amount, method=row.method,
                          note=row.note, employee_id=employee_id, reverses_id=row.id,
-                         shift_id=shift.id if shift else row.shift_id, payout_id=row.payout_id,
-                         created_at=now, changed_at=now)
+                         shift_id=shift.id if shift else None, payout_id=row.payout_id,
+                         work_order_id=row.work_order_id, created_at=now, changed_at=now)
         self.db.add(back)
+        if not commit:
+            self.db.flush()
+            return back
         self.db.commit()
         self._log(f'Отменён {KIND_TITLES[row.kind].lower()} ордер №{row.number}: '
                   f'{row.category}, {money(row.amount)}')
@@ -261,7 +262,7 @@ class CashService:
     # Зарплата
     # ------------------------------------------------------------------
 
-    def from_payout(self, payout):
+    def from_payout(self, payout, commit=True):
         """Выдали зарплату — расходный ордер сам. На карту — безнал."""
         from models import Employee, METHOD_CASH as PAY_CASH
         employee = self.db.query(Employee).filter(Employee.id == payout.employee_id).first()
@@ -271,13 +272,22 @@ class CashService:
                            METHOD_CASH if payout.method == PAY_CASH else METHOD_NONCASH,
                            note=f'{who} · {way}' + (' · аванс' if payout.is_advance else ''),
                            employee_id=payout.employee_id, payout_id=payout.id,
-                           check_category=False)
+                           check_category=False, commit=commit)
 
-    def payout_cancelled(self, payout_id):
-        row = self.db.query(CashOrder).filter(CashOrder.payout_id == payout_id,
-                                              CashOrder.reverses_id.is_(None)).first()
-        if row is not None and not self.is_reversed(row):
-            self.reverse(row)
+    def payout_cancelled(self, payout_id, commit=True):
+        rows = self.db.query(CashOrder).filter(CashOrder.payout_id == payout_id,
+                                               CashOrder.reverses_id.is_(None)).all()
+        for row in rows:
+            if not self.is_reversed(row):
+                return self.reverse(row, commit=commit)
+        return None
+
+    def from_refund(self, order, amount):
+        """Вернули клиенту наличными — расходный ордер в открытой смене."""
+        plate = order.car.license_plate if order.car else ''
+        return self.create(KIND_OUT, REFUND_CATEGORY, amount, METHOD_CASH,
+                           note=f'Наряд №{order.id} {plate}'.strip(), check_category=False,
+                           commit=False, work_order_id=order.id)
 
     # ------------------------------------------------------------------
     # Сводка и обмен

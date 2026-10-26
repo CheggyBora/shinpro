@@ -17,6 +17,7 @@
 from sqlalchemy import func
 
 from models import SalaryTransaction
+from utils import get_moscow_time
 
 
 class PayoutError(Exception):
@@ -53,7 +54,8 @@ class PayoutService:
         from models import SalaryPayout
 
         query = self.db.query(func.sum(SalaryPayout.amount)).filter(
-            SalaryPayout.employee_id == employee_id)
+            SalaryPayout.employee_id == employee_id,
+            SalaryPayout.cancelled_at.is_(None))
 
         if since is not None:
             query = query.filter(SalaryPayout.paid_at >= since)
@@ -130,6 +132,13 @@ class PayoutService:
         if method not in (METHOD_CASH, METHOD_CARD):
             raise PayoutError(f"Неизвестный способ выплаты: {method}")
 
+        # Наличные выдаются из кассы, а касса считается по сменам: без
+        # открытой смены выдача не попала бы ни в одну (docs/cash.md)
+        from services.cash_service import CashService
+        cash = CashService(self.db)
+        if method == METHOD_CASH and cash.current_shift() is None:
+            raise PayoutError("Откройте смену: наличные выдаются из кассы")
+
         # Выплату из дашборда PIN-кодом подтверждать не у кого: её уже
         # подтвердил владелец, войдя в дашборд под своим ПИНом
         if source == 'shop':
@@ -160,6 +169,10 @@ class PayoutService:
             source=source,
             server_id=server_id)
         self.db.add(payout)
+        self.db.flush()
+        # Выдача и её расходный ордер — одной записью в базу: по отдельности
+        # сбой между ними разводил ведомость и кассу навсегда
+        cash.from_payout(payout, commit=False)
         self.db.commit()
         self.db.refresh(payout)
 
@@ -172,16 +185,6 @@ class PayoutService:
             entity_type='salary_payout',
             entity_id=payout.id,
             employee_id=employee_id)
-
-        # Касса: выдача — это расходный ордер «Зарплата». Наличными —
-        # из кассы, на карту — ордер есть, наличные не меняются
-        try:
-            from services.cash_service import CashService
-            CashService(self.db).from_payout(payout)
-        except Exception as e:
-            self.db.rollback()
-            from logger import log
-            log.error(f"Расходный ордер по выдаче №{payout.id} не проведён: {e}")
 
         return payout
 
@@ -200,22 +203,22 @@ class PayoutService:
             raise PayoutError("Неверный PIN-код")
 
         payout = self.db.query(SalaryPayout).filter(
-            SalaryPayout.id == payout_id).first()
+            SalaryPayout.id == payout_id, SalaryPayout.cancelled_at.is_(None)).first()
         if payout is None:
             raise PayoutError("Выдача не найдена")
 
-        amount, employee_id = payout.amount, payout.employee_id
-        self.db.delete(payout)
-        self.db.commit()
+        from models import METHOD_CASH
+        from services.cash_service import CashService
+        cash = CashService(self.db)
+        # Отмена наличной выдачи возвращает деньги в кассу — в открытую смену
+        if payout.method == METHOD_CASH and cash.current_shift() is None:
+            raise PayoutError("Откройте смену: деньги возвращаются в кассу")
 
-        # Ордер о выдаче не удаляем — проводим обратный
-        try:
-            from services.cash_service import CashService
-            CashService(self.db).payout_cancelled(payout_id)
-        except Exception as e:
-            self.db.rollback()
-            from logger import log
-            log.error(f"Ордер по отменённой выдаче №{payout_id} не отменён: {e}")
+        amount, employee_id = payout.amount, payout.employee_id
+        payout.cancelled_at = get_moscow_time()
+        # Ордер о выдаче не удаляем — проводим обратный, одной записью с отменой
+        cash.payout_cancelled(payout_id, commit=False)
+        self.db.commit()
 
         AuditService(self.db).log(
             AuditService.SALARY_PAYOUT_CANCEL,
@@ -233,7 +236,7 @@ class PayoutService:
     def history(self, employee_id=None, since=None, until=None, limit=500):
         from models import SalaryPayout
 
-        query = self.db.query(SalaryPayout)
+        query = self.db.query(SalaryPayout).filter(SalaryPayout.cancelled_at.is_(None))
         if employee_id is not None:
             query = query.filter(SalaryPayout.employee_id == employee_id)
         if since is not None:

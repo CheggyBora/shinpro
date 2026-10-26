@@ -146,7 +146,11 @@ sent = {row['license_plate']: row['expires_at'] for row in payload}
 
 check('у лежащих срок не пустой',
       sent.get('А123ВВ777') is not None, str(sent.get('А123ВВ777')))
-check('выданный не уехал', 'Е444ЕЕ777' not in sent, str(sorted(sent)))
+# Выданный тоже уходит — со статусом «выдан»: иначе на сервере он висел
+# бы «на хранении» навсегда (ревью 26.10.2026)
+statuses = {row['license_plate']: row['status'] for row in payload}
+check('выданный уходит как выданный', statuses.get('Е444ЕЕ777') not in (None, 'stored'),
+      str(statuses.get('Е444ЕЕ777')))
 
 print('\n=== Срок ноль — и дозаполнять нечего ===')
 months(0)

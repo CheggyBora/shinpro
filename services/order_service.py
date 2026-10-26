@@ -13,7 +13,7 @@ class OrderService:
         self.client_service = ClientService(db)
 
     def create_order(self, license_plate: str, wheel_diameter: str,
-                     vehicle_type: str = 'car', client_number: Optional[str] = None,
+                     vehicle_type: Optional[str] = 'car', client_number: Optional[str] = None,
                      client_name: Optional[str] = None, client_phone: Optional[str] = None,
                      client_id: Optional[int] = None,
                      create_client: bool = True,
@@ -41,6 +41,11 @@ class OrderService:
             chosen = _directions.parse(','.join(directions or ['tire']))
 
             car = self.db.query(Car).filter(Car.license_plate == plate).first()
+            # None — «какой знаем»: наряд из записи или очереди тип не
+            # спрашивает, и затирать джип «легковым» нельзя (ревью 26.10.2026)
+            if vehicle_type is None:
+                vehicle_type = (car.vehicle_type if car is not None and car.vehicle_type
+                                else 'car')
             if not car:
                 car = Car(license_plate=plate, vehicle_type=vehicle_type,
                           wheel_diameter=wheel_diameter or None)
@@ -157,6 +162,13 @@ class OrderService:
             
             if not order or not service:
                 raise ValueError("Наряд или услуга не найдены")
+
+            from services import directions as _directions
+            wanted = getattr(service, 'direction', None) or 'tire'
+            if wanted not in _directions.parse(order.directions):
+                raise ValueError(
+                    "Это услуга мойки — сначала «+ Мойка» в наряде" if wanted == 'wash'
+                    else "Это услуга шиномонтажа — сначала «+ Шиномонтаж» в наряде")
             
             # Проверяем существует ли уже такая услуга
             existing_item = self.db.query(WorkOrderItem).filter(
@@ -801,7 +813,7 @@ class OrderService:
             
             # Помечаем наряд как удалённый
             order.is_deleted = True
-            order.deleted_at = datetime.now()
+            order.deleted_at = get_moscow_time()
             order.deleted_reason = reason if reason else "Не указана"
             
             # Находим все начисления ЗП по этому наряду
@@ -889,8 +901,18 @@ class OrderService:
                 return False, (f"К возврату доступно {available:.2f} руб., "
                                f"запрошено {amount:.2f} руб.")
 
+            # Наличные возвращаются из кассы — нужна открытая смена: в
+            # ней и запишется расходный ордер (docs/cash.md)
+            from services.cash_service import CashService
+            cash = CashService(self.db)
+            if order.payment_method == 'cash' and cash.current_shift() is None:
+                return False, "Откройте смену: наличные возвращаются из кассы"
+
             # Откатываем зарплату соразмерно возвращаемой доле
             share = amount / paid if paid else 0
+            # Последний возврат снимает весь остаток: округление долей
+            # иначе оставляло мастеру копейку с полностью возвращённого
+            final = round(already + amount, 2) >= round(paid, 2)
             transactions = self.db.query(SalaryTransaction).filter_by(
                 work_order_id=order_id).all()
 
@@ -915,7 +937,7 @@ class OrderService:
                     continue
                 # Снимаем ту же долю, что возвращаем клиенту,
                 # но не больше, чем у мастера осталось
-                back = round(min(current, accrued.get(employee_id, 0) * share), 2)
+                back = round(current if final else min(current, accrued.get(employee_id, 0) * share), 2)
                 if back <= 0:
                     continue
                 self.db.add(SalaryTransaction(
@@ -929,6 +951,8 @@ class OrderService:
             order.refunded_at = get_moscow_time()
             order.refund_type = refund_type
             order.refund_reason = (reason or '').strip() or 'Не указана'
+            if order.payment_method == 'cash':
+                cash.from_refund(order, amount)
 
             self.db.commit()
 

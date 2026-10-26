@@ -48,6 +48,9 @@ class MasterDevice(Base):
     created_at = Column(DateTime, default=shop_now, nullable=False)
     last_seen_at = Column(DateTime, nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
+    # Подпись QR-ключа, по которому подключился телефон: второй раз тот же
+    # код не сработает. Держим в базе — процессов у сервера два
+    link_sig = Column(String(32), nullable=True, unique=True)
 
     shop = relationship('Shop')
 

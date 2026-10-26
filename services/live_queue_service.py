@@ -647,7 +647,7 @@ class LiveQueueService:
         wheels = appointment.wheels_assembled
         orders = OrderService(self.db)
         order = orders.create_order(
-            appointment.license_plate, diameter, 'car',
+            appointment.license_plate, diameter, None,
             client_name=appointment.client_name,
             client_phone=appointment.client_phone,
             wheels_assembled=wheels)
@@ -673,6 +673,11 @@ class LiveQueueService:
         self._settings().set(ENABLED_KEY, {'on': '1', 'off': '0'}.get(mode, SEASON))
 
     def enabled(self, today=None):
+        # Очередь — только у шиномонтажа: на объекте без шиномонтажа она
+        # не звала бы никого и не принимала места по QR (ревью 26.10.2026)
+        from services import directions
+        if not directions.tire_on(self.db):
+            return False
         mode = self.mode()
         if mode == SEASON:
             return self.in_season(today)

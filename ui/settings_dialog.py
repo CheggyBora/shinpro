@@ -841,7 +841,10 @@ class SettingsDialog:
             directions.set_enabled(self.db, self.tire_var.get(), self.wash_var.get())
         except ValueError as e:
             messagebox.showerror("Направления", str(e), parent=self.dialog)
-            self.tire_var.set(True)
+            # Вернуть галочки к тому, что сохранено, а не включать шиномонтаж
+            # наугад: у объекта «только мойка» экран и база расходились
+            self.tire_var.set(directions.tire_on(self.db))
+            self.wash_var.set(directions.wash_on(self.db))
 
     def save_wash_posts(self):
         from services import directions

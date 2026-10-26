@@ -319,7 +319,8 @@ def drop_shop(db, shop):
                             SalaryPayout, ShopEmployee, ShopSetting,
                             ShopShift, StockItem, StoredSet, Visit,
                             Task, Counterparty, CashOrder, Arrival,
-                            OrderPhoto, MasterDevice, OpenOrder)
+                            OrderPhoto, MasterDevice, OpenOrder,
+                            ShopClient, ShopCar)
     from app.services.photos import full_path
 
     # Наряды через объекты, а не одним запросом: у них есть позиции и
@@ -334,7 +335,7 @@ def drop_shop(db, shop):
     for model in (Appointment, BookingDay, StoredSet, SalaryPayout,
                   ShopEmployee, ShopShift, QueueSnapshot, ShopSetting,
                   StockItem, Task, Counterparty, CashOrder, Arrival,
-                  MasterDevice, OpenOrder):
+                  MasterDevice, OpenOrder, ShopClient, ShopCar):
         db.query(model).filter(model.shop_id == shop.id).delete(
             synchronize_session=False)
 

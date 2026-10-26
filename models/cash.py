@@ -21,6 +21,10 @@ DEFAULT_CATEGORIES = {
 # Статья выдачи зарплаты. Её могут убрать из списка — ордера о выдаче
 # всё равно идут под ней: иначе зарплата растворится в «Прочем»
 SALARY_CATEGORY = 'Зарплата'
+# Возврат клиенту наличными — тоже расходный ордер, в той смене, где
+# вернули. Раньше возврат брался из наряда целиком и попадал в смену
+# последнего возврата, переписывая закрытые смены (ревью 26.10.2026)
+REFUND_CATEGORY = 'Возврат клиенту'
 
 
 class CashOrder(Base):
@@ -43,6 +47,8 @@ class CashOrder(Base):
     reverses_id = Column(Integer, ForeignKey('cash_orders.id'), nullable=True)
     # Ордер о выдаче зарплаты — какая это выдача
     payout_id = Column(Integer, nullable=True, index=True)
+    # Ордер о возврате клиенту — по какому наряду
+    work_order_id = Column(Integer, nullable=True, index=True)
     changed_at = Column(DateTime(timezone=True), default=get_moscow_time)
 
     @property

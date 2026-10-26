@@ -27,36 +27,39 @@ router = APIRouter(prefix='/m', tags=['Фото из цеха'])
 WEB_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                        'web')
 
-# Ключи из QR живут в памяти: их мало, живут минуты, и ради них заводить
-# таблицу незачем. Перезапустился сервер — приёмщик покажет новый код
-_links = {}
+# Ключ из QR — подписанная строка «точка.срок.подпись», а не запись в
+# памяти: процессов у сервера два, и ключ, выданный одним, второй не
+# узнавал — подключение по QR проходило через раз (ревью 26.10.2026)
+
+
+def _link_signature(shop_id, until):
+    import hashlib
+    import hmac
+
+    from app.config import settings
+    message = f'master-link:{shop_id}:{until}'.encode()
+    return hmac.new(settings.SECRET_KEY.encode(), message, hashlib.sha256).hexdigest()[:32]
 
 
 def issue_link(shop_id):
-    """Выдать одноразовый ключ для QR и убрать протухшие."""
-    token = photos.make_link_token()
-    now = shop_now()
-
-    for old, (_, until) in list(_links.items()):
-        if until < now:
-            _links.pop(old, None)
-
-    from datetime import timedelta
-
-    _links[token] = (shop_id, now + timedelta(minutes=photos.LINK_MINUTES))
-    return token
+    """Выдать ключ для QR: действует LINK_MINUTES минут."""
+    import time
+    until = int(time.time()) + photos.LINK_MINUTES * 60
+    return f'{shop_id}.{until}.{_link_signature(shop_id, until)}'
 
 
 def _shop_by_link(db, token):
-    pair = _links.get(token or '')
-    if pair is None:
+    import hmac
+    import time
+    try:
+        shop_id, until, signature = str(token or '').split('.')
+        shop_id, until = int(shop_id), int(until)
+    except ValueError:
         return None
-
-    shop_id, until = pair
-    if until < shop_now():
-        _links.pop(token, None)
+    if not hmac.compare_digest(signature, _link_signature(shop_id, until)):
         return None
-
+    if until < time.time():
+        return None
     return db.query(Shop).filter(Shop.id == shop_id).first()
 
 
@@ -186,15 +189,25 @@ def connect(payload: dict, request: Request, response: Response,
     Ключ одноразовый и живёт минуты: он показан на экране в цеху, его
     видит кто угодно из стоящих рядом.
     """
-    shop = _shop_by_link(db, (payload or {}).get('link'))
-    if shop is None:
+    link = str((payload or {}).get('link') or '')
+    shop = _shop_by_link(db, link)
+    signature = link.rsplit('.', 1)[-1]
+    used = shop is not None and db.query(MasterDevice).filter(
+        MasterDevice.link_sig == signature).first() is not None
+    if shop is None or used:
         raise HTTPException(
             status.HTTP_410_GONE,
             detail='Код устарел. Попросите приёмщика показать новый')
 
-    _links.pop(payload.get('link'), None)
-
-    device = photos.register_device(db, shop, (payload or {}).get('name'))
+    from sqlalchemy.exc import IntegrityError
+    try:
+        device = photos.register_device(db, shop, (payload or {}).get('name'),
+                                        link_sig=signature)
+    except IntegrityError:
+        # Тот же код в ту же секунду с двух телефонов — второй не пускаем
+        db.rollback()
+        raise HTTPException(status.HTTP_410_GONE,
+                            detail='Код устарел. Попросите приёмщика показать новый')
     _keep(response, device.token, request)
 
     return {
@@ -376,7 +389,8 @@ def show(photo_id: int, key: str = '', db: Session = Depends(get_db)):
 
     device = db.query(MasterDevice).filter(
         MasterDevice.token == key,
-        MasterDevice.shop_id == photo.shop_id).first()
+        MasterDevice.shop_id == photo.shop_id,
+        MasterDevice.is_active.is_(True)).first()
 
     # Либо телефон этой же точки, либо сама программа цеха своим
     # ключом обмена: приёмщик смотрит фото из наряда

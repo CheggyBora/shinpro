@@ -182,5 +182,36 @@ counting.save()
 check('сошлось — можно закрывать', counting.ok and second.cash_diff == 0)
 root.destroy()
 
+print()
+print('=== Ревью 26.10.2026: возврат в другой смене, выдачи ===')
+closed_before = cash.expected(shift)
+second_before = cash.expected(second)
+ok, _ = orders.refund_order(paid_cash.id, amount=300, reason='ещё часть')
+check('частичный возврат в новой смене: закрытая не изменилась',
+      ok and cash.expected(shift) == closed_before, str((cash.expected(shift), closed_before)))
+check('а новая — минус 300', cash.expected(second) == second_before - 300)
+refund_row = db.query(CashOrder).filter(CashOrder.work_order_id == paid_cash.id).order_by(
+    CashOrder.id.desc()).first()
+check('возврат — расходный ордер по наряду', refund_row is not None and refund_row.amount == 300
+      and refund_row.shift_id == second.id)
+
+first = payouts.pay(1, 50, 'cash', pin=PIN)
+payouts.cancel(first.id, PIN)
+again = payouts.pay(1, 70, 'cash', pin=PIN)
+check('номер отменённой выдачи не занят повторно', again.id != first.id)
+payouts.cancel(again.id, PIN)
+check('обе отмены вернули деньги', cash.expected(second) == second_before - 300)
+
+shifts.close_shift(second.id)
+from services.payout_service import PayoutError
+try:
+    payouts.pay(1, 10, 'cash', pin=PIN)
+    check('без смены наличными не выдать', False)
+except PayoutError:
+    db.rollback()
+    check('без смены наличными не выдать', True)
+ok, message = orders.refund_order(paid_cash.id, amount=100, reason='без смены')
+check('без смены наличными не вернуть', not ok and 'смену' in message, message)
+
 db.close()
 finish()

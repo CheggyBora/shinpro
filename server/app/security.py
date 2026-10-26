@@ -131,6 +131,7 @@ def create_token(client_id):
     # остальное время на сервере — время шиномонтажа, см. app/utils.now
     payload = {
         'sub': str(client_id),
+        'kind': 'client',
         'exp': datetime.utcnow() + timedelta(days=settings.TOKEN_DAYS),
         'iat': datetime.utcnow(),
     }
@@ -141,6 +142,12 @@ def decode_token(token):
     """Номер клиента из токена. None, если токен испорчен или просрочен."""
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[ALGORITHM])
+        # Токен сотрудника подписан тем же ключом, и номер в нём — номер
+        # сотрудника. Принять его здесь значило бы открыть кабинет чужого
+        # клиента с тем же номером (ревью 26.10.2026). Старые клиентские
+        # токены без пометки — клиентские
+        if payload.get('kind') not in (None, 'client'):
+            return None
         return int(payload['sub'])
     except (jwt.PyJWTError, KeyError, TypeError, ValueError):
         return None

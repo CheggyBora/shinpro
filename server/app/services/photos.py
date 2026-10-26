@@ -52,7 +52,7 @@ def make_link_token():
     return secrets.token_urlsafe(9)
 
 
-def register_device(db, shop, name=None):
+def register_device(db, shop, name=None, link_sig=None):
     """
     Запомнить телефон, который только что отсканировал QR.
 
@@ -64,6 +64,7 @@ def register_device(db, shop, name=None):
         shop_id=shop.id,
         token=secrets.token_urlsafe(32),
         name=(name or '').strip()[:80] or None,
+        link_sig=link_sig,
         last_seen_at=shop_now())
     db.add(device)
     db.commit()

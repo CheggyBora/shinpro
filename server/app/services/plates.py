@@ -348,6 +348,9 @@ def _frame(image_bytes):
     import numpy as np
     from PIL import Image, ImageOps
 
+    # Картинка на сотни мегапикселей влезает в несколько мегабайт PNG и
+    # съела бы при разборе гигабайт памяти — такие не открываем
+    Image.MAX_IMAGE_PIXELS = 60_000_000
     big = Image.open(io.BytesIO(image_bytes))
     big.draft('RGB', (CROP_SIDE, CROP_SIDE))      # JPEG уменьшается при чтении
     big = ImageOps.exif_transpose(big).convert('RGB')
@@ -453,6 +456,11 @@ def _read(alpr, shot):
     return best
 
 
+# Снимок разбирается одним потоком за раз: процессор у сервера на два
+# ядра, и десяток одновременных снимков отнял бы его у всего остального
+_one_at_a_time = threading.Semaphore(1)
+
+
 def recognize(image_bytes):
     """
     (номер или None, уверенность от 0 до 1).
@@ -467,7 +475,16 @@ def recognize(image_bytes):
     alpr = engine()
     if alpr is None:
         return None, 0.0
+    if not _one_at_a_time.acquire(timeout=20):
+        log.warning('plates: busy, skipped')
+        return None, 0.0
+    try:
+        return _recognize(alpr, image_bytes)
+    finally:
+        _one_at_a_time.release()
 
+
+def _recognize(alpr, image_bytes):
     started = time.monotonic()
     try:
         frame = _frame(image_bytes)

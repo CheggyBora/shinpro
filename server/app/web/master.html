@@ -386,7 +386,7 @@ function loadCars() {
         + 'Машина появится здесь, когда приёмщик заведёт наряд.</div>';
     } else {
       $('cars').innerHTML = data.cars.map(function (car) {
-        return '<button type="button" class="car ' + car.state + '" '
+        return '<button type="button" class="car ' + (car.state === 'work' ? 'work' : 'waiting') + '" '
           + 'data-id="' + car.order_local_id + '" '
           + 'data-plate="' + escape(car.license_plate) + '">'
           + escape(car.license_plate)
