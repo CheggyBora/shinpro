@@ -212,7 +212,18 @@ input.code { letter-spacing: 8px; text-align: center; font-size: 22px; font-weig
   --storage: #0f766e; --storage-bg: #ccfbf1;
   --tires: #c2410c; --tires-bg: #ffedd5;
   --paint: #7c3aed; --paint-bg: #ede9fe;
+  /* Поставки мойки — янтарь: рядом с оранжевыми «Шинами» не
+     встречаются (у мойки их нет), но и спутать их не должно */
+  --supply: #b45309; --supply-bg: #fef3c7;
 }
+/* Переключатель «Шиномонтаж | Мойка» — во всю ширину, пополам: на
+   телефоне в него попадают пальцем, а не целятся */
+.cal-dirs { display: flex; gap: 3px; padding: 3px; margin-bottom: 10px;
+  border: 1.5px solid var(--line); border-radius: 12px; background: var(--card); }
+.cal-dirs button { flex: 1; min-width: 0; border: 0; background: none;
+  padding: 8px 4px; border-radius: 9px; font-size: 14px; color: var(--ink-soft); }
+.cal-dirs button[aria-pressed="true"] { background: var(--brand); color: #fff;
+  font-weight: 600; }
 .cal-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
   margin-bottom: 10px; }
 .cal-head h2 { margin: 0 auto 0 0; font-size: 15px; }
@@ -233,16 +244,19 @@ input.code { letter-spacing: 8px; text-align: center; font-size: 22px; font-weig
 .week .dots i.late { background: var(--bad); }
 .dot-work { background: var(--work); } .dot-storage { background: var(--storage); }
 .dot-tires { background: var(--tires); } .dot-paint { background: var(--paint); }
+.dot-supply { background: var(--supply); }
 .cat { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 7px;
   border-radius: 6px; white-space: nowrap; }
 .cat.work { background: var(--work-bg); color: var(--work); }
 .cat.storage { background: var(--storage-bg); color: var(--storage); }
 .cat.tires { background: var(--tires-bg); color: var(--tires); }
 .cat.paint { background: var(--paint-bg); color: var(--paint); }
+.cat.supply { background: var(--supply-bg); color: var(--supply); }
 .chip.f-work[aria-pressed="true"] { background: var(--work); border-color: var(--work); }
 .chip.f-storage[aria-pressed="true"] { background: var(--storage); border-color: var(--storage); }
 .chip.f-tires[aria-pressed="true"] { background: var(--tires); border-color: var(--tires); }
 .chip.f-paint[aria-pressed="true"] { background: var(--paint); border-color: var(--paint); }
+.chip.f-supply[aria-pressed="true"] { background: var(--supply); border-color: var(--supply); }
 .day-title { font-size: 14px; font-weight: 700; margin: 4px 0 2px; }
 .task { display: flex; align-items: flex-start; gap: 8px;
   border-bottom: 1px solid var(--line); padding: 2px 0; }
@@ -1620,13 +1634,23 @@ function openShift(id) {
 // ближайшим обменом. Неотмеченные прошлых дней висят красными сверху
 // сегодняшнего дня, пока их не отметят.
 
-var CATS = [
-  { key: 'work', title: 'Рабочая' },
-  { key: 'storage', title: 'Хранение' },
-  { key: 'tires', title: 'Шины' },
-  { key: 'paint', title: 'Покраска' }
-];
-var CAT_TITLES = { work: 'Рабочая', storage: 'Хранение', tires: 'Шины', paint: 'Покраска' };
+// У мойки свой слой календаря и свои разделы (docs/calendar.md, «Мойка:
+// свой слой календаря»): хранение и покраска ей ни к чему
+var CATS_BY_DIR = {
+  tire: [
+    { key: 'work', title: 'Рабочая' },
+    { key: 'storage', title: 'Хранение' },
+    { key: 'tires', title: 'Шины' },
+    { key: 'paint', title: 'Покраска' }
+  ],
+  wash: [
+    { key: 'work', title: 'Рабочая' },
+    { key: 'supply', title: 'Поставки' }
+  ]
+};
+var DIRS = [{ key: 'tire', title: 'Шиномонтаж' }, { key: 'wash', title: 'Мойка' }];
+var CAT_TITLES = { work: 'Рабочая', storage: 'Хранение', tires: 'Шины', paint: 'Покраска',
+                   supply: 'Поставки' };
 var SOURCE_TITLES = { shop: 'в цеху', dashboard: 'в дашборде', auto: 'программой',
                       cabinet: 'из кабинета клиента' };
 var WEEKDAYS = ['пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'вс'];
@@ -1636,16 +1660,37 @@ var MONTHS = ['января', 'февраля', 'марта', 'апреля', '�
               'августа', 'сентября', 'октября', 'ноября', 'декабря'];
 
 var cal = { start: null, day: null, today: null, filter: [], data: null,
-            people: [] };
+            people: [], direction: 'tire', wash: false, filters: { tire: [], wash: [] } };
 
-// Фильтр запоминаем на этом устройстве: владелец, которому нужен только
-// склад, не должен выбирать его заново при каждом входе
+function calCats(direction) { return CATS_BY_DIR[direction || cal.direction] || CATS_BY_DIR.tire; }
+
+// Под каким ключом помнить фильтр слоя. У шиномонтажа — прежний ключ:
+// фильтр, выбранный до появления мойки, не должен пропасть
+function filterKey(direction) { return direction === 'wash' ? 'calFilterWash' : 'calFilter'; }
+
+// Фильтр запоминаем на этом устройстве, у каждого слоя свой: владелец,
+// которому нужен только склад, не должен выбирать его заново при каждом
+// входе, а «Поставки» мойки — не сбрасывать его фильтр шиномонтажа
+DIRS.forEach(function (dir) {
+  try {
+    var saved = JSON.parse(localStorage.getItem(filterKey(dir.key)) || '[]');
+    if (Array.isArray(saved)) {
+      var keys = calCats(dir.key).map(function (item) { return item.key; });
+      cal.filters[dir.key] = saved.filter(function (key) { return keys.indexOf(key) >= 0; });
+    }
+  } catch (e) {}
+});
 try {
-  var savedFilter = JSON.parse(localStorage.getItem('calFilter') || '[]');
-  if (Array.isArray(savedFilter)) {
-    cal.filter = savedFilter.filter(function (key) { return CAT_TITLES[key]; });
-  }
+  if (localStorage.getItem('calDirection') === 'wash') cal.direction = 'wash';
 } catch (e) {}
+cal.filter = cal.filters[cal.direction];
+
+function setDirection(direction) {
+  cal.filters[cal.direction] = cal.filter;
+  cal.direction = direction;
+  cal.filter = cal.filters[direction] || [];
+  try { localStorage.setItem('calDirection', direction); } catch (e) {}
+}
 
 function pad(n) { return (n < 10 ? '0' : '') + n; }
 
@@ -1697,10 +1742,22 @@ function loadCalendar() {
   cal.day = cal.day || cal.today;
   cal.start = mondayOf(cal.day);
 
-  var path = '/dashboard/tasks?from=' + cal.start + '&to=' + addDays(cal.start, 6);
-  Promise.all([api(withShop(path)), api(withShop('/dashboard/counterparties'))])
+  var direction = cal.direction;
+  var path = '/dashboard/tasks?from=' + cal.start + '&to=' + addDays(cal.start, 6)
+    + '&direction=' + direction;
+  Promise.all([api(withShop(path)),
+               api(withShop('/dashboard/counterparties?direction=' + direction))])
     .then(function (answers) {
-      if (section !== 'calendar') return;
+      if (section !== 'calendar' || direction !== cal.direction) return;
+      cal.wash = !!answers[0].wash_enabled;
+      // Мойку на точке выключили (или выбрали точку без неё), а на этом
+      // устройстве запомнена мойка — возвращаем шиномонтаж, иначе
+      // владелец смотрел бы в слой, которого не видно в переключателе
+      if (!cal.wash && direction === 'wash') {
+        setDirection('tire');
+        loadCalendar();
+        return;
+      }
       cal.data = answers[0];
       cal.people = answers[1] || [];
       // «Сегодня» — по часам сервера: он считает по Москве, а телефон
@@ -1728,7 +1785,16 @@ function drawCalendar() {
     + (startDate.getMonth() !== endDate.getMonth() ? ' ' + MONTHS[startDate.getMonth()] : '')
     + ' – ' + endDate.getDate() + ' ' + MONTHS[endDate.getMonth()];
 
-  var html = '<div class="card"><div class="cal-head"><h2>' + range + '</h2>'
+  var html = '<div class="card">';
+  // Переключатель — только если точка работает и мойкой: шиномонтажу
+  // без мойки он ни к чему
+  if (cal.wash) {
+    html += '<div class="cal-dirs" id="calDirs">' + DIRS.map(function (dir) {
+      return '<button type="button" data-dir="' + dir.key + '" aria-pressed="'
+        + (dir.key === cal.direction) + '">' + dir.title + '</button>';
+    }).join('') + '</div>';
+  }
+  html += '<div class="cal-head"><h2>' + range + '</h2>'
     + '<button class="chip" type="button" id="calPrev" aria-label="Прошлая неделя">‹</button>'
     + '<button class="chip" type="button" id="calToday">Сегодня</button>'
     + '<button class="chip" type="button" id="calNext" aria-label="Следующая неделя">›</button>'
@@ -1751,7 +1817,7 @@ function drawCalendar() {
   html += '</div>';
 
   html += '<div class="period" id="calFilters" style="padding:10px 0 0;flex-wrap:wrap">'
-    + CATS.map(function (item) {
+    + calCats().map(function (item) {
       return '<button class="chip f-' + item.key + '" type="button" data-cat="' + item.key
         + '" aria-pressed="' + (cal.filter.indexOf(item.key) >= 0) + '">' + item.title + '</button>';
     }).join('')
@@ -1786,6 +1852,17 @@ function drawCalendar() {
   });
   $('calAdd').addEventListener('click', function () { openTask(null); });
 
+  if (cal.wash) {
+    [].slice.call($('calDirs').querySelectorAll('[data-dir]')).forEach(function (button) {
+      button.addEventListener('click', function () {
+        var direction = button.getAttribute('data-dir');
+        if (direction === cal.direction) return;
+        setDirection(direction);
+        loadCalendar();
+      });
+    });
+  }
+
   [].slice.call($('calWeek').querySelectorAll('[data-day]')).forEach(function (button) {
     button.addEventListener('click', function () {
       cal.day = button.getAttribute('data-day');
@@ -1800,9 +1877,12 @@ function drawCalendar() {
       else if (cal.filter.indexOf(key) >= 0) {
         cal.filter = cal.filter.filter(function (item) { return item !== key; });
       } else cal.filter.push(key);
-      // Выбраны все четыре — это и есть «Все»
-      if (cal.filter.length === CATS.length) cal.filter = [];
-      try { localStorage.setItem('calFilter', JSON.stringify(cal.filter)); } catch (e) {}
+      // Выбраны все разделы слоя — это и есть «Все»
+      if (cal.filter.length === calCats().length) cal.filter = [];
+      cal.filters[cal.direction] = cal.filter;
+      try {
+        localStorage.setItem(filterKey(cal.direction), JSON.stringify(cal.filter));
+      } catch (e) {}
       drawCalendar();
     });
   });
@@ -1873,10 +1953,14 @@ function plusHour(task) {
 
 function openTask(task) {
   var adding = !task;
-  task = task || { category: (cal.filter.length === 1 ? cal.filter[0] : 'work'),
+  // Новая задача — в тот слой, что выбран переключателем
+  task = task || { direction: cal.direction,
+                   category: (cal.filter.length === 1 ? cal.filter[0] : 'work'),
                    due_date: cal.day, due_time: null, title: '', note: '',
                    license_plate: '', counterparty_uid: null, amount: null };
   var category = task.category;
+  // Разделы — только своего слоя: «Хранение» у мойки сервер не примет
+  var cats = calCats(task.direction || 'tire');
 
   // Ставить задачу «во все точки сразу» нельзя: у каждой свой склад и
   // свои люди. Точку выбирают здесь, если сверху выбраны все
@@ -1901,7 +1985,7 @@ function openTask(task) {
   }
 
   html += '<label>Раздел</label><div class="segs" id="tCats">'
-    + CATS.map(function (item) {
+    + cats.map(function (item) {
       return '<button class="chip f-' + item.key + '" type="button" data-cat="' + item.key
         + '" aria-pressed="' + (item.key === category) + '">' + item.title + '</button>';
     }).join('') + '</div>';
@@ -2021,6 +2105,7 @@ function openTask(task) {
     var request;
     if (adding) {
       body.shop = shopId;
+      body.direction = task.direction;
       request = api('/dashboard/tasks', { method: 'POST', body: body });
     } else {
       request = patchTask(task.uid, body);

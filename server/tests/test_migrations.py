@@ -81,6 +81,14 @@ check('талонов старой онлайн-очереди нет', 'queue_t
 # Календарь задач и контрагенты — шаг 7b4e2c9d1f05
 check('есть календарь задач и контрагенты',
       {'tasks', 'counterparties'} <= tables)
+# Мойка — свой слой календаря, шаг c4d8a2f6e1b3
+for table in ('tasks', 'counterparties'):
+    columns = {column['name']: column for column in inspector.get_columns(table)}
+    direction = columns.get('direction')
+    check(f'у {table} есть направление', direction is not None
+          and not direction['nullable']
+          and 'tire' in str(direction.get('default')),
+          str(direction))
 
 print('\n=== Схема совпадает с моделями ===')
 # Тот же расчёт, что делает autogenerate: если он находит отличия,

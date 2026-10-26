@@ -11,7 +11,10 @@
   · клиент заказал комплект из кабинета — ровно одна задача кладовщику,
     отменил запись — задача снята, перенесли — едет следом;
   · сообщения о складе — получателям склада, если они заданы;
-  · сводка владельцу: утром раз и вечером раз, своим получателям.
+  · сводка владельцу: утром раз и вечером раз, своим получателям;
+  · мойка — свой слой: направление ездит в обмене, старый цех — это
+    шиномонтаж, у мойки только Рабочая и Поставки, дашборд показывает
+    слой по выбору и знает, включена ли мойка, в сводке — «Мойка:».
 """
 import os
 import sys
@@ -543,5 +546,151 @@ with TestClient(app) as http:
     db.close()
     check('обход всех точек не падает на точке без бота',
           result == {'morning': 0, 'evening': 0}, str(result))
+
+    print()
+    print('=== Мойка: свой слой календаря ===')
+    code, answer = exchange(None, [
+        task_row('w-1', direction='wash', category='supply',
+                 title='Привезти химию', updated_at=iso(shop_now())),
+        task_row('w-old', title='Старый цех', updated_at=iso(shop_now())),
+        task_row('w-odd', direction='гараж', title='Непонятное направление',
+                 updated_at=iso(shop_now())),
+        task_row('w-bad', direction='wash', category='storage',
+                 updated_at=iso(shop_now())),
+        task_row('w-bad2', category='supply', updated_at=iso(shop_now())),
+    ], [{'uid': 'c-wash', 'name': 'АвтоХим', 'direction': 'wash',
+         'updated_at': iso(shop_now())},
+        {'uid': 'c-old', 'name': 'Старый поставщик',
+         'updated_at': iso(shop_now())}])
+    check('обмен с мойкой принят', code == 200, str(answer)[:200])
+    wash_row = by_uid(answer['tasks'], 'w-1')
+    check('направление задачи доехало туда и обратно',
+          wash_row is not None and wash_row['direction'] == 'wash'
+          and wash_row['category'] == 'supply', str(wash_row))
+    check('без направления — шиномонтаж',
+          by_uid(answer['tasks'], 'w-old')['direction'] == 'tire')
+    check('непонятное направление — шиномонтаж',
+          by_uid(answer['tasks'], 'w-odd')['direction'] == 'tire')
+    check('«Хранение» у мойки не принято',
+          'w-bad' in answer['rejected'] and not server_task('w-bad'),
+          str(answer['rejected']))
+    check('«Поставки» у шиномонтажа не приняты',
+          'w-bad2' in answer['rejected'] and not server_task('w-bad2'),
+          str(answer['rejected']))
+    check('у контрагента своё направление',
+          by_uid(answer['counterparties'], 'c-wash')['direction'] == 'wash'
+          and by_uid(answer['counterparties'], 'c-old')['direction'] == 'tire')
+    check('у старых задач — шиномонтаж',
+          all(row['direction'] == 'tire' for row in answer['tasks']
+              if row['uid'] not in ('w-1',)),
+          str({row['uid']: row['direction'] for row in answer['tasks']}))
+
+    # Старый цех отметил задачу мойки, не зная о направлении: она
+    # остаётся мойкой, а не переезжает в шиномонтаж
+    exchange(answer['now'], [task_row('w-1', category='supply', title='Привезти химию',
+                                      done_at=iso(shop_now()), done_by='Пётр',
+                                      updated_at=iso(shop_now() + timedelta(minutes=1)))])
+    kept = server_task('w-1')[0]
+    check('правка старого цеха не переносит задачу из мойки',
+          kept.direction == 'wash' and kept.done_at is not None, kept.direction)
+
+    print()
+    print('=== Мойка в дашборде ===')
+    tire_view = http.get('/dashboard/tasks', headers=owner,
+                         params=dict(week, shop=slug)).json()
+    check('без direction — шиномонтаж, как раньше',
+          tire_view['direction'] == 'tire'
+          and by_uid(tire_view['tasks'], 'w-1') is None
+          and by_uid(tire_view['tasks'], 'w-old') is not None,
+          str([row['uid'] for row in tire_view['tasks']]))
+    wash_view = http.get('/dashboard/tasks', headers=owner,
+                         params=dict(week, shop=slug, direction='wash')).json()
+    check('слой мойки — только её задачи',
+          [row['uid'] for row in wash_view['tasks']] == ['w-1'],
+          str([row['uid'] for row in wash_view['tasks']]))
+    check('и просроченные — только мойки',
+          all(row['direction'] == 'wash' for row in wash_view['overdue']))
+    check('мойка по умолчанию выключена', tire_view['wash_enabled'] is False)
+
+    db = SessionLocal()
+    shop_settings.set_value(db, 'direction_wash', '1', shop=shop_id)
+    db.close()
+    on = http.get('/dashboard/tasks', headers=owner, params=dict(week, shop=slug)).json()
+    check('включили мойку — дашборд это знает', on['wash_enabled'] is True)
+    off = http.get('/dashboard/tasks', headers=owner,
+                   params=dict(week, shop=other_id)).json()
+    check('у другой точки мойки нет', off['wash_enabled'] is False)
+    every = http.get('/dashboard/tasks', headers=owner, params=week).json()
+    check('по всем точкам — есть, если хоть одна с мойкой',
+          every['wash_enabled'] is True)
+    db = SessionLocal()
+    shop_settings.set_value(db, 'direction_wash', '', shop=shop_id)
+    db.close()
+    blank = http.get('/dashboard/tasks', headers=owner, params=dict(week, shop=slug)).json()
+    check('пустая настройка — мойки нет', blank['wash_enabled'] is False)
+
+    people = http.get('/dashboard/counterparties', headers=owner,
+                      params={'shop': slug, 'direction': 'wash'}).json()
+    check('контрагенты мойки — свои', [row['name'] for row in people] == ['АвтоХим'],
+          str(people))
+    people = http.get('/dashboard/counterparties', headers=owner,
+                      params={'shop': slug}).json()
+    check('без direction — контрагенты шиномонтажа',
+          'АвтоХим' not in [row['name'] for row in people]
+          and 'Еврошины' in [row['name'] for row in people], str(people))
+
+    made = http.post(f'/dashboard/tasks?shop={slug}', headers=owner, json={
+        'direction': 'wash', 'category': 'supply', 'due_date': TODAY.isoformat(),
+        'title': 'Заказать шампунь', 'counterparty_uid': 'c-wash'})
+    check('задача мойки из дашборда', made.status_code == 200
+          and made.json()['direction'] == 'wash', made.text[:200])
+    wash_uid = made.json()['uid']
+    check('контрагент мойки по имени', made.json()['counterparty_name'] == 'АвтоХим')
+    plain = http.post(f'/dashboard/tasks?shop={slug}', headers=owner, json={
+        'category': 'work', 'due_date': TODAY.isoformat(), 'title': 'Без слоя'})
+    check('без direction — шиномонтаж', plain.status_code == 200
+          and plain.json()['direction'] == 'tire', plain.text[:200])
+    bad = http.post(f'/dashboard/tasks?shop={slug}', headers=owner, json={
+        'direction': 'wash', 'category': 'paint', 'due_date': TODAY.isoformat(),
+        'title': 'Покраска на мойке'})
+    check('покраска у мойки — отказ с понятной причиной',
+          bad.status_code == 400 and 'мойки' in bad.json().get('detail', ''),
+          bad.text[:200])
+
+    moved = http.patch(f'/dashboard/tasks/{wash_uid}', headers=owner,
+                       json={'category': 'work'})
+    check('раздел меняется внутри слоя', moved.status_code == 200
+          and moved.json()['category'] == 'work'
+          and moved.json()['direction'] == 'wash', moved.text[:200])
+    wrong = http.patch(f'/dashboard/tasks/{wash_uid}', headers=owner,
+                       json={'category': 'storage'})
+    check('в раздел другого слоя — отказ', wrong.status_code == 400
+          and 'мойки' in wrong.json().get('detail', ''), wrong.text[:200])
+    stay = http.patch(f'/dashboard/tasks/{wash_uid}', headers=owner,
+                      json={'direction': 'tire', 'title': 'Заказать шампунь, 2 канистры'})
+    check('правкой слой не меняется', stay.status_code == 200
+          and stay.json()['direction'] == 'wash', stay.text[:200])
+
+    code, answer = exchange(cursor)
+    pulled = by_uid(answer['tasks'], wash_uid)
+    check('задача мойки из дашборда приехала в цех с направлением',
+          pulled is not None and pulled['direction'] == 'wash', str(pulled))
+
+    print()
+    print('=== Мойка в сводке ===')
+    db = SessionLocal()
+    rows = (db.query(Task).filter(Task.shop_id == shop_id,
+                                  Task.uid.in_([wash_uid, 'w-old']))
+            .order_by(Task.uid).all())
+    text = tasks.morning_text(rows, [])
+    evening = tasks.evening_text(rows, [])
+    db.close()
+    lines = text.split('\n')
+    check('задача мойки помечена «Мойка:»',
+          any(line.startswith('Мойка: ') and 'шампунь' in line for line in lines), text)
+    check('задача шиномонтажа — без пометки',
+          any('Старый цех' in line and not line.startswith('Мойка') for line in lines),
+          text)
+    check('и вечером тоже', 'Мойка: ' in evening, evening)
 
 finish()

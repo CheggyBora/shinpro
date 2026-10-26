@@ -14,10 +14,17 @@ from sqlalchemy import Column, Integer, String, Text, Date, DateTime, Boolean, F
 from config import Base
 from utils import get_moscow_time
 
-# Разделы — в том порядке, в каком их показываем
-WORK, STORAGE, TIRES, PAINT = 'work', 'storage', 'tires', 'paint'
-CATEGORIES = [WORK, STORAGE, TIRES, PAINT]
-CATEGORY_TITLES = {WORK: 'Рабочая', STORAGE: 'Хранение', TIRES: 'Шины', PAINT: 'Покраска'}
+# Разделы — в том порядке, в каком их показываем. У мойки свой слой
+# календаря со своими разделами (docs/calendar.md)
+WORK, STORAGE, TIRES, PAINT, SUPPLY = 'work', 'storage', 'tires', 'paint', 'supply'
+CATEGORIES_BY_DIRECTION = {'tire': [WORK, STORAGE, TIRES, PAINT], 'wash': [WORK, SUPPLY]}
+CATEGORIES = [WORK, STORAGE, TIRES, PAINT, SUPPLY]
+CATEGORY_TITLES = {WORK: 'Рабочая', STORAGE: 'Хранение', TIRES: 'Шины', PAINT: 'Покраска',
+                   SUPPLY: 'Поставки'}
+
+
+def categories_of(direction):
+    return CATEGORIES_BY_DIRECTION.get(direction or 'tire', CATEGORIES_BY_DIRECTION['tire'])
 
 SOURCE_SHOP, SOURCE_DASHBOARD, SOURCE_AUTO, SOURCE_CABINET = 'shop', 'dashboard', 'auto', 'cabinet'
 
@@ -33,6 +40,8 @@ class CalendarTask(Base):
     uid = Column(String(40), nullable=False, unique=True, index=True, default=new_uid)
 
     category = Column(String(16), nullable=False, default=WORK)
+    # Слой календаря: шиномонтаж или мойка
+    direction = Column(String(10), nullable=False, default='tire', server_default='tire')
     due_date = Column(Date, nullable=False, index=True)
     due_time = Column(String(5), nullable=True)          # «10:00» или пусто
 
@@ -72,6 +81,7 @@ class Counterparty(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     uid = Column(String(40), nullable=False, unique=True, index=True, default=new_uid)
     name = Column(String(200), nullable=False)
+    direction = Column(String(10), nullable=False, default='tire', server_default='tire')
     kind = Column(String(200), nullable=True)            # чем занимается
     contact = Column(String(200), nullable=True)
     phone = Column(String(50), nullable=True)

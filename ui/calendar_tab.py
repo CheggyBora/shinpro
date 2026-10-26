@@ -10,7 +10,7 @@ from datetime import timedelta
 from tkinter import ttk, messagebox
 
 import styles
-from models.calendar import CATEGORIES, CATEGORY_TITLES
+from models.calendar import CATEGORIES, CATEGORY_TITLES, categories_of
 from services.calendar_service import CalendarService
 from ui.task_dialog import open_task, CATEGORY_COLORS, WHO
 from utils import get_moscow_time, as_naive
@@ -36,6 +36,9 @@ class CalendarTab:
         today = self._today()
         self.selected = today
         self.week_start = today - timedelta(days=today.weekday())
+        # Слой календаря: шиномонтаж или мойка — его выбирает переключатель
+        # сверху (главное окно зовёт set_direction)
+        self.direction = 'tire'
         self.filters = self._load_filters()
         # Главное окно ставит сюда «что-то поменялось» — обновить ленту
         self.on_changed = None
@@ -54,13 +57,23 @@ class CalendarTab:
         from services.settings_service import SettingsService
         return SettingsService(self.db)
 
+    def _filter_key(self):
+        # У каждого слоя свой выбор фильтров
+        return FILTER_KEY if self.direction == 'tire' else f'{FILTER_KEY}_{self.direction}'
+
     def _load_filters(self):
-        raw = self._settings().get(FILTER_KEY, '') or ''
-        chosen = {c for c in raw.split(',') if c in CATEGORIES}
+        raw = self._settings().get(self._filter_key(), '') or ''
+        chosen = {c for c in raw.split(',') if c in categories_of(self.direction)}
         return chosen
 
     def _save_filters(self):
-        self._settings().set(FILTER_KEY, ','.join(c for c in CATEGORIES if c in self.filters))
+        self._settings().set(self._filter_key(), ','.join(
+            c for c in categories_of(self.direction) if c in self.filters))
+
+    def set_direction(self, direction):
+        self.direction = direction
+        self.filters = self._load_filters()
+        self.load()
 
     def toggle_filter(self, key):
         if key == 'all':
@@ -71,7 +84,7 @@ class CalendarTab:
             self.filters.discard(key)
         else:
             self.filters.add(key)
-        if self.filters == set(CATEGORIES):
+        if self.filters == set(categories_of(self.direction)):
             self.filters = set()
         self._save_filters()
         self.load()
@@ -152,7 +165,7 @@ class CalendarTab:
     def _draw_filters(self):
         for child in self.filter_row.winfo_children():
             child.destroy()
-        for key in CATEGORIES + ['all']:
+        for key in categories_of(self.direction) + ['all']:
             on = (not self.filters) if key == 'all' else (not self.filters or key in self.filters)
             fg, bg = CATEGORY_COLORS.get(key, (styles.COLORS['text'], styles.COLORS['bg_subtle']))
             text = 'Все' if key == 'all' else CATEGORY_TITLES[key]
@@ -174,7 +187,7 @@ class CalendarTab:
         else:
             self.range_label.config(text=f'{self.week_start.day} {MONTHS[self.week_start.month - 1]} – '
                                          f'{end.day} {MONTHS[end.month - 1]}')
-        week = self.service.week(self.week_start, self.categories())
+        week = self.service.week(self.week_start, self.categories(), self.direction)
         today = self._today()
         for i, (day, tasks) in enumerate(week.items()):
             chosen = day == self.selected
@@ -212,8 +225,8 @@ class CalendarTab:
         self.day_label.config(text=day_title(self.selected))
         rows = []
         if self.selected == self._today():
-            rows += [(t, True) for t in self.service.overdue(self.selected, self.categories())]
-        rows += [(t, False) for t in self.service.day(self.selected, self.categories())]
+            rows += [(t, True) for t in self.service.overdue(self.selected, self.categories(), self.direction)]
+        rows += [(t, False) for t in self.service.day(self.selected, self.categories(), self.direction)]
         if not rows:
             ttk.Label(self.day_list, text='На этот день задач нет. «+ Задача» — поставить.',
                       font=styles.FONTS['normal'], foreground=styles.COLORS['text_secondary'],
@@ -304,7 +317,8 @@ class CalendarTab:
 
     def new_task(self):
         open_task(self.frame, self.db, on_saved=self._changed, due_date=self.selected,
-                  category=next(iter(self.filters)) if len(self.filters) == 1 else 'work')
+                  category=next(iter(self.filters)) if len(self.filters) == 1 else 'work',
+                  direction=self.direction)
 
     def edit(self, task):
         open_task(self.frame, self.db, task, on_saved=self._changed)

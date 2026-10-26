@@ -604,7 +604,7 @@ class OrdersTab:
             child.destroy()
         try:
             service = CalendarService(self.db)
-            tasks = service.strip()
+            tasks = service.strip(direction=self.mode)
         except Exception:
             self.db.rollback()
             return

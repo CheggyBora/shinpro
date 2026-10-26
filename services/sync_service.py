@@ -579,6 +579,8 @@ class SyncService:
             # Посты и живая очередь на сезон: выключено — по QR не встать,
             # «Я на месте» в кабинете не показывается
             'live_queue_enabled': '1' if self._live_queue_on() else '0',
+            # Мойка включена — в дашборде календарь с переключателем
+            'direction_wash': settings.get('direction_wash'),
             'storage_warn_days': settings.get('storage_warn_days'),
             'storage_lead_days': settings.get('storage_lead_days'),
             'season_autumn_at': settings.get('season_autumn_at'),

@@ -95,6 +95,7 @@ class MainWindow:
         self.root.after(5 * 1000, self._live_tick)
 
         self.draw_mode_switch()
+        self.calendar_tab.set_direction(self.orders_tab.mode)
         self.apply_mode()
         from services import directions as _directions
         _directions.ON_CHANGE = self.directions_changed
@@ -227,8 +228,10 @@ class MainWindow:
         if mode == self.orders_tab.mode:
             return
         self.orders_tab.set_mode(mode)
+        self.calendar_tab.set_direction(mode)
         self.draw_mode_switch()
         self.apply_mode()
+        self._calendar_badge()
 
     def apply_mode(self):
         """Хранение шин и покраска — дела шиномонтажа: в мойке их нет."""
@@ -264,7 +267,7 @@ class MainWindow:
 
     def _calendar_badge(self):
         from services.calendar_service import CalendarService
-        count = CalendarService(self.db).overdue_count()
+        count = CalendarService(self.db).overdue_count(direction=self.orders_tab.mode)
         self.nav.set_title(self.calendar_tab.frame,
                            f'Календарь ({count})' if count else 'Календарь')
 

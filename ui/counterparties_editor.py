@@ -22,6 +22,16 @@ class CounterpartiesEditor:
         self.window = window
         self.service = CalendarService(db)
         self.current = None
+        # У мойки свои контрагенты (химия, расходники) — отдельный слой
+        self.direction = 'tire'
+        from services import directions
+        if directions.wash_on(db):
+            switch = ttk.Frame(parent, style='White.TFrame')
+            switch.pack(anchor='w', pady=(0, 8))
+            self.direction_var = tk.StringVar(value='tire')
+            for value, title in (('tire', 'Шиномонтаж'), ('wash', 'Мойка')):
+                ttk.Radiobutton(switch, text=title, value=value, variable=self.direction_var,
+                                command=self._switch).pack(side='left', padx=(0, 14))
 
         body = ttk.Frame(parent, style='White.TFrame')
         body.pack(fill='both', expand=True)
@@ -61,8 +71,12 @@ class CounterpartiesEditor:
         self.tasks.pack(fill='x')
         self.refresh()
 
+    def _switch(self):
+        self.direction = self.direction_var.get()
+        self.refresh()
+
     def refresh(self, select_uid=None):
-        self.rows = self.service.counterparties()
+        self.rows = self.service.counterparties(self.direction)
         self.listbox.delete(0, tk.END)
         for row in self.rows:
             self.listbox.insert(tk.END, row.name + (f'  ·  {row.kind}' if row.kind else ''))
@@ -97,6 +111,7 @@ class CounterpartiesEditor:
 
     def save(self):
         fields = {key: entry.get() for key, entry in self.entries.items()}
+        fields['direction'] = self.direction
         try:
             row = self.service.save_counterparty(self.current, **fields)
         except TaskError as e:
@@ -120,5 +135,6 @@ class CounterpartiesEditor:
             return
         from ui.task_dialog import open_task
         uid = self.current.uid
-        open_task(self.window, self.db, counterparty_uid=uid, category='tires',
-                  on_saved=lambda: self.refresh(select_uid=uid))
+        open_task(self.window, self.db, counterparty_uid=uid,
+                  category='tires' if self.direction == 'tire' else 'supply',
+                  direction=self.direction, on_saved=lambda: self.refresh(select_uid=uid))

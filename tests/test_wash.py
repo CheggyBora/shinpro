@@ -183,6 +183,32 @@ db.refresh(e1)
 check('ставка мойки поменялась, шиномонтажа — нет', e1.wash_percent == 35 and e1.salary_percent == 40)
 
 print()
+print('=== Календарь и контрагенты мойки — свой слой ===')
+from datetime import date
+from services.calendar_service import CalendarService, TaskError
+calendar = CalendarService(db)
+today = date.today()
+tire_task = calendar.create('Еврошины — 8 шин', today, category='tires')
+wash_task = calendar.create('Химия: шампунь 2 канистры', today, category='supply', direction='wash')
+check('у шиномонтажа — только его задачи', [t.id for t in calendar.day(today, direction='tire')] == [tire_task.id])
+check('у мойки — только её', [t.id for t in calendar.day(today, direction='wash')] == [wash_task.id])
+check('лента мойки', [t.id for t in calendar.strip(direction='wash')] == [wash_task.id])
+try:
+    calendar.create('Не туда', today, category='supply', direction='tire')
+    check('«Поставки» — раздел мойки, в шиномонтаже нельзя', False)
+except TaskError:
+    check('«Поставки» — раздел мойки, в шиномонтаже нельзя', True)
+chem = calendar.save_counterparty(name='ХимПро', direction='wash')
+calendar.save_counterparty(name='Еврошины')
+check('контрагенты мойки отдельно', [c.name for c in calendar.counterparties('wash')] == ['ХимПро'])
+check('шиномонтажа — свои', [c.name for c in calendar.counterparties('tire')] == ['Еврошины'])
+check('в обмен уходит направление', calendar.task_payload(wash_task)['direction'] == 'wash'
+      and calendar.counterparty_payload(chem)['direction'] == 'wash')
+calendar.apply_server({'tasks': [{'uid': 'old-1', 'category': 'work', 'due_date': today.isoformat(),
+                                   'title': 'Без направления', 'updated_at': '2026-10-26T10:00:00'}]})
+check('старый сервер без направления — шиномонтаж', calendar.by_uid('old-1').direction == 'tire')
+
+print()
 print('=== В окне: переключатель и создание наряда ===')
 import tkinter as tk
 from ui import MainWindow
@@ -196,6 +222,10 @@ root.update()
 check('в мойке нет «Хранения» и «Покраски»',
       app.nav._items[app.nav.titles().index('Хранение шин')].get('hidden') is True)
 check('кнопки услуг — мойки', app.orders_tab.mode == 'wash')
+check('календарь — слой мойки', app.calendar_tab.direction == 'wash')
+filters = [w.cget('text') for w in app.calendar_tab.filter_row.winfo_children()]
+check('фильтры мойки: Рабочая, Поставки, Все',
+      [f.replace('● ', '') for f in filters] == ['Рабочая', 'Поставки', 'Все'], str(filters))
 app.set_mode('tire')
 check('вернулись — разделы на месте',
       not app.nav._items[app.nav.titles().index('Хранение шин')].get('hidden'))

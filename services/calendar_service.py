@@ -14,7 +14,7 @@ from datetime import date, datetime, timedelta
 
 from sqlalchemy.orm import Session
 
-from models.calendar import (CalendarTask, Counterparty, CATEGORIES, CATEGORY_TITLES,
+from models.calendar import (CalendarTask, Counterparty, CATEGORIES, CATEGORY_TITLES, categories_of,
                              WORK, STORAGE, PAINT, SOURCE_SHOP, SOURCE_AUTO, new_uid)
 from utils import get_moscow_time, as_naive, normalize_plate
 
@@ -101,14 +101,16 @@ class CalendarService:
     def create(self, title, due_date, category=WORK, due_time=None, note=None,
                license_plate=None, client_name=None, client_phone=None,
                counterparty_uid=None, storage_ref=None, amount=None,
-               source=SOURCE_SHOP, created_by=None, uid=None):
+               source=SOURCE_SHOP, created_by=None, uid=None, direction='tire'):
         title = (title or '').strip()
         if not title:
             raise TaskError('Напишите, что за задача')
-        if category not in CATEGORIES:
+        direction = direction if direction in ('tire', 'wash') else 'tire'
+        if category not in categories_of(direction):
             raise TaskError('Неизвестный раздел задачи')
         task = CalendarTask(
-            uid=uid or new_uid(), category=category, due_date=parse_day(due_date),
+            uid=uid or new_uid(), category=category, direction=direction,
+            due_date=parse_day(due_date),
             due_time=clean_time(due_time), title=title[:200], note=(note or '').strip() or None,
             license_plate=normalize_plate(license_plate) if license_plate else None,
             client_name=client_name or None, client_phone=client_phone or None,
@@ -129,7 +131,7 @@ class CalendarService:
             fields['title'] = (fields['title'] or '').strip()[:200]
             if not fields['title']:
                 raise TaskError('Напишите, что за задача')
-        if 'category' in fields and fields['category'] not in CATEGORIES:
+        if 'category' in fields and fields['category'] not in categories_of(task.direction):
             raise TaskError('Неизвестный раздел задачи')
         if 'license_plate' in fields:
             fields['license_plate'] = normalize_plate(fields['license_plate']) or None
@@ -186,10 +188,12 @@ class CalendarService:
     # Что показать
     # ------------------------------------------------------------------
 
-    def _alive(self, categories=None):
+    def _alive(self, categories=None, direction=None):
         query = self.db.query(CalendarTask).filter(CalendarTask.deleted.is_(False))
         if categories:
             query = query.filter(CalendarTask.category.in_(list(categories)))
+        if direction:
+            query = query.filter(CalendarTask.direction == direction)
         return query
 
     @staticmethod
@@ -197,24 +201,24 @@ class CalendarService:
         # Сначала со временем — по времени, без времени — в конце дня
         return (task.due_date, task.due_time is None, task.due_time or '', task.id)
 
-    def day(self, day, categories=None):
+    def day(self, day, categories=None, direction=None):
         day = parse_day(day)
-        rows = self._alive(categories).filter(CalendarTask.due_date == day).all()
+        rows = self._alive(categories, direction).filter(CalendarTask.due_date == day).all()
         return sorted(rows, key=self._order)
 
-    def overdue(self, today=None, categories=None):
+    def overdue(self, today=None, categories=None, direction=None):
         """Не отмеченные задачи прошлых дней — их нельзя потерять."""
         today = today or _now().date()
-        rows = self._alive(categories).filter(
+        rows = self._alive(categories, direction).filter(
             CalendarTask.due_date < today, CalendarTask.done_at.is_(None)).all()
         return sorted(rows, key=self._order)
 
-    def week(self, start, categories=None):
+    def week(self, start, categories=None, direction=None):
         """{день: [задачи]} на семь дней с понедельника той недели."""
         start = parse_day(start)
         start = start - timedelta(days=start.weekday())
         end = start + timedelta(days=7)
-        rows = self._alive(categories).filter(
+        rows = self._alive(categories, direction).filter(
             CalendarTask.due_date >= start, CalendarTask.due_date < end).all()
         days = {start + timedelta(days=i): [] for i in range(7)}
         for task in sorted(rows, key=self._order):
@@ -240,11 +244,11 @@ class CalendarService:
             return 'soon'
         return 'later'
 
-    def strip(self, now=None):
+    def strip(self, now=None, direction=None):
         """Лента над нарядами: просроченные и сегодняшние неотмеченные."""
         now = now or _now()
-        today = [t for t in self.day(now.date()) if not t.done_at]
-        return self.overdue(now.date()) + today
+        today = [t for t in self.day(now.date(), direction=direction) if not t.done_at]
+        return self.overdue(now.date(), direction=direction) + today
 
     def for_plate(self, plate, now=None, days_ahead=7):
         """Неотмеченные задачи по машине — подсказка в её наряде."""
@@ -257,9 +261,9 @@ class CalendarService:
             CalendarTask.due_date <= now.date() + timedelta(days=days_ahead)).all()
         return sorted(rows, key=self._order)
 
-    def overdue_count(self, now=None):
+    def overdue_count(self, now=None, direction=None):
         now = now or _now()
-        return sum(1 for t in self.strip(now) if self.state(t, now) == 'overdue')
+        return sum(1 for t in self.strip(now, direction) if self.state(t, now) == 'overdue')
 
     @staticmethod
     def title_of(category):
@@ -269,9 +273,11 @@ class CalendarService:
     # Контрагенты
     # ------------------------------------------------------------------
 
-    def counterparties(self):
-        return self.db.query(Counterparty).filter(
-            Counterparty.deleted.is_(False)).order_by(Counterparty.name).all()
+    def counterparties(self, direction=None):
+        query = self.db.query(Counterparty).filter(Counterparty.deleted.is_(False))
+        if direction:
+            query = query.filter(Counterparty.direction == direction)
+        return query.order_by(Counterparty.name).all()
 
     def counterparty(self, uid):
         if not uid:
@@ -283,7 +289,8 @@ class CalendarService:
         if not name:
             raise TaskError('Напишите название контрагента')
         if counterparty is None:
-            counterparty = Counterparty(uid=new_uid(), name=name)
+            direction = fields.get('direction') if fields.get('direction') in ('tire', 'wash') else 'tire'
+            counterparty = Counterparty(uid=new_uid(), name=name, direction=direction)
             self.db.add(counterparty)
         for key in COUNTERPARTY_FIELDS:
             if key in fields:
@@ -344,7 +351,7 @@ class CalendarService:
     @staticmethod
     def task_payload(task):
         return {
-            'uid': task.uid, 'category': task.category,
+            'uid': task.uid, 'category': task.category, 'direction': task.direction or 'tire',
             'due_date': task.due_date.isoformat(), 'due_time': task.due_time,
             'title': task.title, 'note': task.note,
             'license_plate': task.license_plate, 'client_name': task.client_name,
@@ -359,7 +366,8 @@ class CalendarService:
     @staticmethod
     def counterparty_payload(row):
         payload = {key: getattr(row, key) for key in COUNTERPARTY_FIELDS}
-        payload.update(uid=row.uid, deleted=bool(row.deleted), updated_at=_iso(row.updated_at))
+        payload.update(uid=row.uid, deleted=bool(row.deleted), updated_at=_iso(row.updated_at),
+                       direction=row.direction or 'tire')
         return payload
 
     def unsent(self):
@@ -391,7 +399,8 @@ class CalendarService:
                 task = CalendarTask(uid=item['uid'])
                 self.db.add(task)
             try:
-                task.category = item.get('category') if item.get('category') in CATEGORIES else WORK
+                task.direction = item.get('direction') if item.get('direction') in ('tire', 'wash') else 'tire'
+                task.category = item.get('category') if item.get('category') in categories_of(task.direction) else WORK
                 task.due_date = parse_day(item.get('due_date'))
                 task.due_time = clean_time(item.get('due_time'))
             except TaskError:
@@ -425,6 +434,7 @@ class CalendarService:
                 if key in item:
                     setattr(row, key, item[key])
             row.deleted = bool(item.get('deleted'))
+            row.direction = item.get('direction') if item.get('direction') in ('tire', 'wash') else 'tire'
             row.updated_at = theirs or moment
             row.synced_at = row.updated_at
             changed += 1

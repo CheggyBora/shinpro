@@ -21,13 +21,27 @@ WORK = 'work'
 STORAGE = 'storage'
 TIRES = 'tires'
 PAINT = 'paint'
-CATEGORIES = (WORK, STORAGE, TIRES, PAINT)
+SUPPLY = 'supply'
+CATEGORIES = (WORK, STORAGE, TIRES, PAINT, SUPPLY)
 
 CATEGORY_TITLES = {
     WORK: 'Рабочая',
     STORAGE: 'Хранение',
     TIRES: 'Шины',
     PAINT: 'Покраска',
+    SUPPLY: 'Поставки',
+}
+
+# Направление — слой календаря. У мойки свои задачи и свои контрагенты:
+# хранение и покраска ей ни к чему, а поставщик химии шиномонтажу
+# не нужен в списке (docs/calendar.md, «Мойка: свой слой календаря»)
+TIRE = 'tire'
+WASH = 'wash'
+DIRECTIONS = (TIRE, WASH)
+
+DIRECTION_CATEGORIES = {
+    TIRE: (WORK, STORAGE, TIRES, PAINT),
+    WASH: (WORK, SUPPLY),
 }
 
 # Откуда задача взялась
@@ -49,6 +63,9 @@ class Task(Base):
     # («cab-appt-12»): повторный запрос не должен ставить вторую
     uid = Column(String(40), nullable=False)
 
+    # Всё, что было до мойки, — шиномонтаж: так и стоит по умолчанию
+    direction = Column(String(10), default=TIRE, nullable=False,
+                       server_default=TIRE)
     category = Column(String(10), default=WORK, nullable=False)
     due_date = Column(Date, nullable=False)
     # «HH:MM» или пусто: у «заказать грузики» времени нет
@@ -90,6 +107,8 @@ class Counterparty(Base):
     shop_id = Column(Integer, ForeignKey('shops.id'), nullable=False,
                      index=True)
     uid = Column(String(40), nullable=False)
+    direction = Column(String(10), default=TIRE, nullable=False,
+                       server_default=TIRE)
 
     name = Column(String(200), nullable=False)
     kind = Column(String(200), nullable=True)       # чем занимается

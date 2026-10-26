@@ -16,8 +16,10 @@ import logging
 import uuid
 from datetime import date, datetime, time, timedelta, timezone
 
-from app.models import Task, Counterparty, CATEGORIES, CATEGORY_TITLES, SOURCES
-from app.models.task import SOURCE_CABINET, SOURCE_DASHBOARD, SOURCE_SHOP, STORAGE
+from app.models import Task, Counterparty, CATEGORY_TITLES, SOURCES
+from app.models.task import (SOURCE_CABINET, SOURCE_DASHBOARD, SOURCE_SHOP,
+                             STORAGE, TIRE, WASH, DIRECTIONS,
+                             DIRECTION_CATEGORIES)
 from app.utils import (normalize_plate, normalize_phone, now as shop_now,
                        MOSCOW_OFFSET_HOURS)
 
@@ -145,22 +147,54 @@ def _amount(value):
     return round(number, 2)
 
 
-def clean_fields(data, partial=False):
+def parse_direction(value):
+    """
+    Направление задачи или контрагента: tire или wash.
+
+    Пусто и непонятное — шиномонтаж: старый цех направления не присылает,
+    и всё, что он ведёт, — шиномонтаж. Отказывать из-за этого нельзя,
+    иначе обмен со старым цехом встал бы целиком.
+    """
+    value = str(value or '').strip().lower()
+    return value if value in DIRECTIONS else TIRE
+
+
+# Почему раздел не подходит — словами, которые видит владелец
+CATEGORY_ERRORS = {
+    TIRE: 'У шиномонтажа разделы: Рабочая, Хранение, Шины, Покраска '
+          '(work, storage, tires, paint)',
+    WASH: 'У мойки разделы: Рабочая и Поставки (work, supply)',
+}
+
+
+def clean_fields(data, partial=False, direction=None):
     """
     Поля задачи из присланного — проверенные и обрезанные.
 
     partial — правка: берём только то, что прислали. Иначе задача целиком,
     и раздел, дата и заголовок обязательны.
+
+    direction — слой, в котором проверяем раздел. У правки это слой самой
+    задачи: правкой задачу в другой слой не переносят. У целой задачи не
+    задано — берём из присланного.
     """
     fields = {}
 
     def given(key):
         return key in data if partial else True
 
+    if not partial:
+        direction = direction or parse_direction(data.get('direction'))
+        fields['direction'] = direction
+    direction = direction or TIRE
+
     if given('category'):
         category = str(data.get('category') or '').strip().lower()
-        if category not in CATEGORIES:
-            raise TaskError('Раздел задачи: work, storage, tires или paint')
+        # «Хранение» у мойки и «Поставки» у шиномонтажа — ошибка, а не
+        # повод угадывать: задача попала бы в раздел, которого в этом
+        # слое не показывают, и пропала бы с глаз
+        if category not in DIRECTION_CATEGORIES[direction]:
+            raise TaskError(CATEGORY_ERRORS[direction])
         fields['category'] = category
 
     if given('due_date'):
@@ -209,6 +243,7 @@ def _iso(moment):
 def to_dict(task):
     return {
         'uid': task.uid,
+        'direction': task.direction or TIRE,
         'category': task.category,
         'due_date': task.due_date.isoformat() if task.due_date else None,
         'due_time': task.due_time,
@@ -233,6 +268,7 @@ def to_dict(task):
 def counterparty_dict(row):
     return {
         'uid': row.uid,
+        'direction': row.direction or TIRE,
         'name': row.name,
         'kind': row.kind,
         'contact': row.contact,
@@ -257,6 +293,20 @@ def _newer(theirs, mine):
     return theirs > mine
 
 
+def _kept_direction(item, row):
+    """
+    Направление, если цех его не прислал: то, что уже стоит у строки.
+
+    Старый цех направления не знает, но задачу мойки, поставленную из
+    дашборда, получает и может отметить. Без этого его отметка тихо
+    переносила бы задачу в шиномонтаж. Новой строке — None: её
+    направление разберёт clean_fields, и пустое станет шиномонтажом.
+    """
+    if 'direction' in item or row is None:
+        return None
+    return row.direction or TIRE
+
+
 def merge_tasks(db, shop, items, now=None):
     """
     Принять задачи из цеха. Возвращает uid тех, что принять нельзя.
@@ -274,16 +324,17 @@ def merge_tasks(db, shop, items, now=None):
         if not uid:
             continue
 
+        row = db.query(Task).filter(Task.shop_id == shop.id,
+                                    Task.uid == uid).first()
+
         try:
-            fields = clean_fields(item)
+            fields = clean_fields(item, direction=_kept_direction(item, row))
         except TaskError as e:
             log.warning('Точка №%s: задача %s не принята: %s', shop.id, uid, e)
             rejected.append(uid)
             continue
 
         theirs = parse_moment(item.get('updated_at')) or now
-        row = db.query(Task).filter(Task.shop_id == shop.id,
-                                    Task.uid == uid).first()
         if row is not None and not _newer(theirs, row.updated_at):
             continue
 
@@ -333,6 +384,12 @@ def merge_counterparties(db, shop, items, now=None):
             db.add(row)
 
         row.name = name
+        # Не прислал направление — как у задач: у старой строки оставляем
+        # своё, новая — шиномонтаж
+        if 'direction' in item:
+            row.direction = parse_direction(item.get('direction'))
+        else:
+            row.direction = row.direction or TIRE
         for key in ('kind', 'contact', 'phone', 'email', 'address', 'inn',
                     'note'):
             setattr(row, key, _text(item.get(key), COUNTERPARTY_LIMITS[key]))
@@ -402,9 +459,9 @@ def exchange(db, shop, payload, now=None):
 # Дашборд
 # ----------------------------------------------------------------------
 
-def for_range(db, shop_ids, day_from, day_to, today=None):
+def for_range(db, shop_ids, day_from, day_to, today=None, direction=TIRE):
     """
-    Задачи на дни календаря.
+    Задачи на дни календаря — одного слоя: шиномонтажа или мойки.
 
     Если в показанные дни попадает сегодня, сверху ещё и неотмеченные
     прошлые: задача не исчезает оттого, что её день прошёл, — она висит
@@ -412,6 +469,7 @@ def for_range(db, shop_ids, day_from, day_to, today=None):
     """
     today = today or shop_now().date()
     base = db.query(Task).filter(Task.shop_id.in_(shop_ids),
+                                 Task.direction == direction,
                                  Task.deleted.is_(False))
 
     rows = base.filter(Task.due_date >= day_from,
@@ -452,9 +510,12 @@ def patch(db, row, data, author=None, now=None):
 
     Время правки двигаем всегда: по нему цех поймёт, что задача
     изменилась, и заберёт её при ближайшем обмене.
+
+    Направление правкой не меняется: раздел проверяем в слое самой
+    задачи, а присланное direction не трогаем.
     """
     now = now or shop_now()
-    fields = clean_fields(data, partial=True)
+    fields = clean_fields(data, partial=True, direction=row.direction or TIRE)
     for key, value in fields.items():
         setattr(row, key, value)
 
@@ -476,10 +537,17 @@ def patch(db, row, data, author=None, now=None):
     return row
 
 
-def counterparties(db, shop_ids):
-    return db.query(Counterparty).filter(
+def counterparties(db, shop_ids, direction=None):
+    """
+    Живые контрагенты точек. direction — только этого слоя; не задано —
+    все: названия нужны и задачам, у которых контрагент из другого слоя.
+    """
+    query = db.query(Counterparty).filter(
         Counterparty.shop_id.in_(shop_ids),
-        Counterparty.deleted.is_(False)).order_by(Counterparty.name).all()
+        Counterparty.deleted.is_(False))
+    if direction is not None:
+        query = query.filter(Counterparty.direction == direction)
+    return query.order_by(Counterparty.name).all()
 
 
 # ----------------------------------------------------------------------
@@ -693,7 +761,12 @@ def _line(task, with_date=False):
     parts.append(task.title)
     if task.license_plate:
         parts.append(task.license_plate)
-    return html.escape(' · '.join(parts), quote=False)
+    line = ' · '.join(parts)
+    # Сводка одна на точку, а «Рабочая» есть у обоих слоёв: без пометки
+    # владелец не поймёт, чья это задача — мойки или шиномонтажа
+    if task.direction == WASH:
+        line = 'Мойка: ' + line
+    return html.escape(line, quote=False)
 
 
 def _lines(rows, with_date=False):

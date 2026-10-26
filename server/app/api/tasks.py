@@ -15,8 +15,12 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import Shop, StaffUser
 from app.security import current_staff, require_sync_key
-from app.services import tasks as task_service, tenancy
+from app.services import shop_settings, tasks as task_service, tenancy
 from app.utils import now as shop_now
+
+# Слой календаря в адресе: tire или wash. Пусто — шиномонтаж, чтобы
+# дашборд, открытый до появления мойки, видел всё то же, что и раньше
+DIRECTION_HELP = 'Слой: tire (по умолчанию) или wash'
 
 sync_router = APIRouter(prefix='/sync', tags=['Обмен с цехом'])
 router = APIRouter(prefix='/dashboard', tags=['Дашборд: календарь'])
@@ -110,13 +114,19 @@ def list_tasks(day_from: Optional[date] = Query(None, alias='from'),
                day_to: Optional[date] = Query(None, alias='to'),
                shop: Optional[str] = Query(
                    None, description='Точка. Пусто — все точки сети'),
+               direction: Optional[str] = Query(None,
+                                                description=DIRECTION_HELP),
                staff: StaffUser = Depends(current_staff),
                db: Session = Depends(get_db)):
     """
-    Задачи с from по to. Если в эти дни попадает сегодня — ещё и
-    неотмеченные прошлых дней отдельным списком: они висят красными,
-    пока их не отметят.
+    Задачи с from по to одного слоя. Если в эти дни попадает сегодня —
+    ещё и неотмеченные прошлых дней отдельным списком: они висят
+    красными, пока их не отметят.
+
+    wash_enabled — работает ли мойкой хоть одна из показанных точек:
+    только тогда дашборд показывает переключатель «Шиномонтаж | Мойка».
     """
+    direction = task_service.parse_direction(direction)
     today = shop_now().date()
     day_from = day_from or today
     day_to = day_to or (day_from + timedelta(days=6))
@@ -127,12 +137,15 @@ def list_tasks(day_from: Optional[date] = Query(None, alias='from'),
 
     ids = _shop_ids(db, staff, shop)
     overdue, rows = task_service.for_range(db, ids, day_from, day_to,
-                                           today=today)
+                                           today=today, direction=direction)
     names = _names(db, ids)
     return {
         'from': day_from.isoformat(),
         'to': day_to.isoformat(),
         'today': today.isoformat(),
+        'direction': direction,
+        'wash_enabled': any(shop_settings.wash_on(db, shop_id)
+                            for shop_id in ids),
         'overdue': [_view(row, names) for row in overdue],
         'tasks': [_view(row, names) for row in rows],
     }
@@ -177,11 +190,15 @@ def patch_task(uid: str, payload: dict,
 
 @router.get('/counterparties', summary='Контрагенты — для выбора в задаче')
 def list_counterparties(shop: Optional[str] = Query(None),
+                        direction: Optional[str] = Query(
+                            None, description=DIRECTION_HELP),
                         staff: StaffUser = Depends(current_staff),
                         db: Session = Depends(get_db)):
+    # У мойки свои поставщики: в задаче мойки выбирать склад шин незачем
     ids = _shop_ids(db, staff, shop)
+    direction = task_service.parse_direction(direction)
     result = []
-    for row in task_service.counterparties(db, ids):
+    for row in task_service.counterparties(db, ids, direction=direction):
         item = task_service.counterparty_dict(row)
         item['shop_id'] = row.shop_id
         result.append(item)

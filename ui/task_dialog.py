@@ -9,7 +9,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 
 import styles
-from models.calendar import CATEGORIES, CATEGORY_TITLES, WORK
+from models.calendar import CATEGORIES, CATEGORY_TITLES, WORK, categories_of
 from services.calendar_service import CalendarService, TaskError
 from ui.plate_picker import PlatePicker, owner_of, owner_text
 from utils import get_moscow_time, as_naive
@@ -23,6 +23,7 @@ CATEGORY_COLORS = {
     'storage': ('#0f766e', '#ccfbf1'),
     'tires': ('#c2410c', '#ffedd5'),
     'paint': ('#6d28d9', '#ede9fe'),
+    'supply': ('#b45309', '#fef3c7'),
 }
 
 WHO = 'Цех'
@@ -56,11 +57,15 @@ class TaskDialog:
 
         today = as_naive(get_moscow_time()).date()
 
+        # Слой календаря: у мойки свои разделы и контрагенты
+        self.direction = (task.direction if task else defaults.get('direction')) or 'tire'
         label(0, 'Раздел')
         self.category = tk.StringVar(value=task.category if task else defaults.get('category', WORK))
+        if self.category.get() not in categories_of(self.direction):
+            self.category.set(WORK)
         cats = ttk.Frame(form, style='White.TFrame')
         cats.grid(row=0, column=1, sticky='w', pady=4)
-        for key in CATEGORIES:
+        for key in categories_of(self.direction):
             ttk.Radiobutton(cats, text=CATEGORY_TITLES[key], value=key,
                             variable=self.category).pack(side='left', padx=(0, 10))
 
@@ -97,7 +102,7 @@ class TaskDialog:
         self.client_phone = task.client_phone if task else defaults.get('client_phone')
 
         label(3, 'Контрагент')
-        self.parties = self.service.counterparties()
+        self.parties = self.service.counterparties(self.direction)
         names = ['—'] + [c.name for c in self.parties]
         self.party = tk.StringVar(value='—')
         uid = task.counterparty_uid if task else defaults.get('counterparty_uid')
@@ -201,7 +206,7 @@ class TaskDialog:
         try:
             fields = self.fields()
             if self.task is None:
-                self.task = self.service.create(created_by=WHO, **fields)
+                self.task = self.service.create(created_by=WHO, direction=self.direction, **fields)
             else:
                 self.service.update(self.task, **fields)
         except TaskError as e:
