@@ -1,0 +1,10 @@
+# fast-plate-ocr plate config: cct-s-v2-global fine-tuned on Russian plates (incl. 3-digit regions).
+# Same input/alphabet/slots as cct_s_v2_global so it is a drop-in replacement; no region (country) head.
+max_plate_slots: 10
+alphabet: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_'
+pad_char: '_'
+img_height: 64
+img_width: 128
+keep_aspect_ratio: false
+interpolation: linear
+image_color_mode: rgb

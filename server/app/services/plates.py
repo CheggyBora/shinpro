@@ -37,6 +37,13 @@ log = logging.getLogger('tire_server')
 
 DETECTOR_MODEL = 'yolo-v9-t-384-license-plate-end2end'
 OCR_MODEL = 'cct-s-v2-global-model'
+# Своя модель под российские номера (app/plate_ocr/README.md): общая не
+# училась на них и путала регион. Лежит в коде — скачивать её неоткуда
+import os as _os
+RU_OCR_DIR = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))),
+                           'plate_ocr')
+RU_OCR_MODEL = _os.path.join(RU_OCR_DIR, 'cct_s_v2_ru.onnx')
+RU_OCR_CONFIG = _os.path.join(RU_OCR_DIR, 'cct_s_v2_ru_plate_config.yaml')
 
 # Больше этого по длинной стороне не нужно: номер на снимке машины с
 # двух-трёх метров остаётся в сотни точек шириной, а 12-мегапиксельный
@@ -300,13 +307,17 @@ def _load():
     options.inter_op_num_threads = 1
 
     started = time.monotonic()
-    engine = ALPR(detector_model=DETECTOR_MODEL, ocr_model=OCR_MODEL,
+    # Российская модель, если её файлы на месте; иначе — общая
+    own = _os.path.exists(RU_OCR_MODEL) and _os.path.exists(RU_OCR_CONFIG)
+    ocr = (dict(ocr_model=None, ocr_model_path=RU_OCR_MODEL, ocr_config_path=RU_OCR_CONFIG)
+           if own else dict(ocr_model=OCR_MODEL))
+    engine = ALPR(detector_model=DETECTOR_MODEL, **ocr,
                   ocr_device='cpu',
                   detector_providers=['CPUExecutionProvider'],
                   ocr_providers=['CPUExecutionProvider'],
                   detector_sess_options=options, ocr_sess_options=options)
-    log.info('plates: models loaded in %d ms (%s)',
-             (time.monotonic() - started) * 1000, root)
+    log.info('plates: models loaded in %d ms (%s, OCR: %s)',
+             (time.monotonic() - started) * 1000, root, 'ru' if own else 'global')
     return engine
 
 
@@ -361,29 +372,6 @@ def _frame(image_bytes):
     return np.ascontiguousarray(np.asarray(small)[:, :, ::-1]), big, scale
 
 
-def _pad(image, ratio=2.0):
-    """Поля по бокам до пропорции модели — без них цифры растягиваются."""
-    import cv2
-    height, width = image.shape[:2]
-    need = int(height * ratio)
-    if width >= need:
-        return image
-    left = (need - width) // 2
-    return cv2.copyMakeBorder(image, 0, 0, left, need - width - left, cv2.BORDER_REPLICATE)
-
-
-def confirmed_region(plate, votes):
-    """
-    Регион номера подтверждён, если его прочитали хотя бы дважды разными
-    способами (или трёхзначный, где в другом прочтении те же две цифры).
-    Неподтверждённый — отдаём основную часть: дописать две-три цифры
-    быстрее, чем найти ошибку в уверенно подставленном чужом номере
-    (проверка на настоящих снимках 26.10.2026).
-    """
-    region = plate[6:]
-    return [v for v in votes if v].count(region) >= 2
-
-
 def _read(alpr, shot):
     import numpy as np
 
@@ -411,41 +399,17 @@ def _read(alpr, shot):
         crop = np.asarray(big.crop((
             max(0, int((x1 - pad_x) * scale)), max(0, int((y1 - pad_y) * scale)),
             int((x2 + pad_x) * scale), int((y2 + pad_y) * scale))))[:, :, ::-1].copy()
-        width, height = crop.shape[1], crop.shape[0]
 
+        # Российская модель читает табличку целиком, с регионом. Чтения по
+        # частям и голосование были нужны общей модели — российская на
+        # обрезках не училась и только сбивалась бы
         full = alpr.ocr.predict(crop)
-        main = alpr.ocr.predict(crop[:, :int(width * 0.78)])
-        region_crop = crop[:int(height * 0.75), int(width * 0.76):]
-        region = alpr.ocr.predict(region_crop)
-        region_padded = alpr.ocr.predict(_pad(region_crop))
         if full is None:
             continue
+        plate, confidence = pick(full.text, _mean(full.confidence))
 
-        plate, confidence = pick(
-            full.text, _mean(full.confidence),
-            main.text if main else None, _mean(main.confidence) if main else 0.0,
-            region.text if region else None,
-            _mean(region.confidence) if region else 0.0)
-        # Регион подтверждаем вторым прочтением: эта модель не училась на
-        # российских номерах и мелкие цифры региона читает неуверенно
-        if plate and plate_format(plate) == 'standard':
-            full_latin = _latin(full.text)
-            votes = [_region(full_latin[6:]) if len(full_latin) > 6 else '',
-                     _region(region.text) if region else '',
-                     _region(region_padded.text) if region_padded else '']
-            if not confirmed_region(plate, votes):
-                agreed = [v for v in votes if v and votes.count(v) >= 2 and is_valid(plate[:6] + v)]
-                if agreed:
-                    plate = plate[:6] + agreed[0]
-                else:
-                    plate, confidence = plate[:6], round(confidence * 0.5, 3)
-
-        # Что модель увидела каждым способом — по журналу видно, где
-        # она ошибается на настоящих снимках
-        log.info('plates raw: full=%s main=%s region=%s/%s -> %s',
-                 full.text, main.text if main else '-',
-                 region.text if region else '-',
-                 region_padded.text if region_padded else '-', plate or 'none')
+        # Что прочитала модель — по журналу видно, где она ошибается
+        log.info('plates raw: full=%s -> %s', full.text, plate or 'none')
 
         # Полный номер всегда лучше куска, даже менее уверенный
         better = (plate is not None and (
