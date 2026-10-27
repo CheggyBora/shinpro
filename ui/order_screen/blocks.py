@@ -35,10 +35,10 @@ class OrderBlocksMixin:
     # Шапка наряда: «Ещё ▾»
     # ------------------------------------------------------------------
 
-    def build_more_menu(self, parent):
+    def build_more_menu(self, parent, side='left'):
         self.more_button = styles.create_button(parent, "Ещё ▾", self.show_more_menu,
                                                 'Compact.Secondary.TButton')
-        self.more_button.pack(side='left', padx=(10, 0))
+        self.more_button.pack(side=side, padx=(10, 0))
         # Кнопка «готово» живёт в меню, но её состояние (идёт отправка)
         # по-прежнему держим тут: tell_ready выключает её на время
         self.ready_button = ttk.Button(parent)

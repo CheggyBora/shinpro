@@ -40,21 +40,21 @@ class OrderWidget(OrderItemsMixin, OrderPaymentMixin, OrderTimingMixin, OrderBlo
         card.pack(fill='both', expand=True, padx=2, pady=(6, 2))
 
         main_container = ttk.Frame(card, style='White.TFrame')
-        main_container.pack(fill='both', expand=True, padx=18, pady=(12, 10))
+        main_container.pack(fill='both', expand=True, padx=16, pady=(8, 8))
 
-        # Справа крупно: список позиций — 8 строк, остальное место отдано
-        # шапке и низу (решение владельца 28.10.2026). На мониторе 1366×768
-        # крупнее не влезает — там чуть мельче
+        # Список позиций — 8 строк (решение владельца 28.10.2026). Шапка —
+        # одна строка: номер, машина, клиент; низ — крупно: суммы и кнопки.
+        # На мониторе 1366×768 низ чуть мельче
         big = frame.winfo_screenheight() >= 900
         self._big = big
 
         # Верхняя строка: машина, скидки, цены
         top_frame = ttk.Frame(main_container, style='White.TFrame')
-        top_frame.pack(fill='x', pady=(0, 8))
+        top_frame.pack(fill='x', pady=(0, 4))
 
         # Машина и клиент (слева)
         info_frame = ttk.Frame(top_frame, style='White.TFrame')
-        info_frame.pack(side='left')
+        info_frame.pack(side='left', fill='x', expand=True)
 
         vehicle_type_map = {
             'car': 'Легковой',
@@ -73,7 +73,7 @@ class OrderWidget(OrderItemsMixin, OrderPaymentMixin, OrderTimingMixin, OrderBlo
         # Щелчок — на весь экран (docs/order_photo.md)
         from services.arrival_service import cover_file, load_image, show_full
         cover = cover_file(order, self.db)
-        image = load_image(cover, 64, 48) if cover else None
+        image = load_image(cover, 40, 30) if cover else None
         if image is not None:
             thumb = tk.Label(header_row, image=image, cursor='hand2', bd=0,
                              bg=styles.COLORS['bg_card'])
@@ -83,14 +83,14 @@ class OrderWidget(OrderItemsMixin, OrderPaymentMixin, OrderTimingMixin, OrderBlo
                 self.frame, p, f'Наряд №{order.id} · {order.car.license_plate}'))
 
         ttk.Label(header_row, text=f"Наряд №{order.id}",
-                  font=(styles.DEFAULT_FONT, 20 if big else 15, 'bold'),
+                  font=(styles.DEFAULT_FONT, 14, 'bold'),
                   background=styles.COLORS['bg_card'],
                   foreground=styles.COLORS['text']).pack(side='left')
 
         ttk.Label(header_row, text=order.car.license_plate,
-                  font=(styles.DEFAULT_FONT, 18 if big else 13, 'bold'),
+                  font=(styles.DEFAULT_FONT, 13, 'bold'),
                   background=styles.COLORS['bg_card'],
-                  foreground=styles.COLORS['primary']).pack(side='left', padx=(14, 0))
+                  foreground=styles.COLORS['primary']).pack(side='left', padx=(10, 0))
 
         # Гарантийная переделка — видно сразу, почему услуги по 0 ₽
         if getattr(order, 'is_warranty', False):
@@ -99,13 +99,13 @@ class OrderWidget(OrderItemsMixin, OrderPaymentMixin, OrderTimingMixin, OrderBlo
                      bg='#fef3c7', fg='#92400e', padx=8, pady=1,
                      font=(styles.DEFAULT_FONT, 10, 'bold')).pack(side='left', padx=(12, 0))
 
-        # Редкое — в одном меню: хранение, фото, «готово», удалить
-        # (макеты от 26.10.2026). Диаметр и пост — в шапке блока шиномонтажа
-        self.build_more_menu(header_row)
+        # «Ещё» — у правого края и раньше клиента: в узкой колонке не
+        # хватает места, и сжаться должно имя клиента, а не кнопка
+        self.build_more_menu(header_row, side='right')
 
         if order.client:
-            client_row = ttk.Frame(info_frame, style='White.TFrame')
-            client_row.pack(anchor='w', fill='x', pady=(6, 0))
+            # Клиент — в той же строке, что номер наряда: шапка в одну строку
+            client_row = header_row
 
             client_info = order.client.name or ""
             if order.client.phone:
@@ -113,22 +113,26 @@ class OrderWidget(OrderItemsMixin, OrderPaymentMixin, OrderTimingMixin, OrderBlo
             client_text = client_info
             if order.auto_discount:
                 client_text += "  (автоскидка 5%)"
-            ttk.Label(client_row, text=client_text, font=(styles.DEFAULT_FONT, 12 if big else 10),
-                      background=styles.COLORS['bg_card'],
-                      foreground=styles.COLORS['success'] if order.auto_discount
-                      else styles.COLORS['text']).pack(side='left')
 
-            # Группа клиента — кому предлагать допы: код виден сразу,
-            # что он значит — нигде на экране (решение владельца 28.10.2026)
-            from ui.client_group_badge import create_group_badge
-            create_group_badge(client_row, self.db,
-                               order.client_id).pack(side='left', padx=(8, 0))
+            # Справа налево: «Ещё», «Клиент», код группы — их не сжимаем.
+            # Не хватает места — сжимается текст с именем и телефоном
 
             # Из наряда сразу в карточку: поправить телефон или добавить
             # ещё одну машину, не выходя из работы
             styles.create_button(client_row, "Клиент",
                                  self.open_client_card, 'Compact.Secondary.TButton').pack(
-                                     side='left', padx=(10, 0))
+                                     side='right', padx=(10, 0))
+
+            # Группа клиента — кому предлагать допы: код виден сразу,
+            # что он значит — нигде на экране (решение владельца 28.10.2026)
+            from ui.client_group_badge import create_group_badge
+            create_group_badge(client_row, self.db,
+                               order.client_id).pack(side='right', padx=(8, 0))
+
+            ttk.Label(client_row, text=client_text, font=(styles.DEFAULT_FONT, 10),
+                      background=styles.COLORS['bg_card'],
+                      foreground=styles.COLORS['success'] if order.auto_discount
+                      else styles.COLORS['text']).pack(side='left', padx=(16, 0))
 
             self.told_label = ttk.Label(
                 client_row, text="", font=(styles.DEFAULT_FONT, 9),
@@ -147,7 +151,7 @@ class OrderWidget(OrderItemsMixin, OrderPaymentMixin, OrderTimingMixin, OrderBlo
         # Наряд стоит справа узкой колонкой, и каждая строка шапки — это
         # строка позиций, которую пришлось бы листать (решение 28.10.2026)
         recommendations_frame = ttk.Frame(main_container, style='White.TFrame')
-        recommendations_frame.pack(fill='x', pady=(6, 4))
+        recommendations_frame.pack(fill='x', pady=(2, 4))
 
         self.recommendations_text = tk.Text(recommendations_frame, height=1, font=styles.FONTS['normal'],
                                            bg=styles.COLORS['bg_card'], fg=styles.COLORS['text'],

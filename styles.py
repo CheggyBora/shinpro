@@ -377,7 +377,8 @@ class NavBar(tk.Frame):
         tk.Frame(self, bg=COLORS['border'], height=1).pack(fill='x')
 
         self._pad_x = 14 if compact else 20
-        self._pad_y = 8 if compact else 13
+        # Ниже, чем было (13): разделы читаются и так, а место нужно нарядам
+        self._pad_y = 6 if compact else 8
         self._font = (DEFAULT_FONT, 10 if compact else 11)
 
     def add(self, title, frame):
@@ -481,18 +482,20 @@ class NavBar(tk.Frame):
 
 def create_app_bar(parent, title, subtitle=''):
     """Верхняя полоса с названием программы."""
-    bar = tk.Frame(parent, bg=COLORS['primary_dark'], height=58)
+    # Узкая: название точки не главное на экране, главное — наряды
+    # (решение владельца 28.10.2026; было 58 точек и 14-й шрифт)
+    bar = tk.Frame(parent, bg=COLORS['primary_dark'], height=34)
     bar.pack_propagate(False)
 
     inner = tk.Frame(bar, bg=COLORS['primary_dark'])
-    inner.pack(fill='both', expand=True, padx=24)
+    inner.pack(fill='both', expand=True, padx=20)
 
-    tk.Label(inner, text=title, font=(DEFAULT_FONT, 14, 'bold'),
-             bg=COLORS['primary_dark'], fg='#ffffff').pack(side='left', pady=14)
+    tk.Label(inner, text=title, font=(DEFAULT_FONT, 11, 'bold'),
+             bg=COLORS['primary_dark'], fg='#ffffff').pack(side='left')
 
-    subtitle_label = tk.Label(inner, text=subtitle, font=(DEFAULT_FONT, 10),
+    subtitle_label = tk.Label(inner, text=subtitle, font=(DEFAULT_FONT, 9),
                               bg=COLORS['primary_dark'], fg='#bfdbfe')
-    subtitle_label.pack(side='right', pady=16)
+    subtitle_label.pack(side='right')
 
     bar.subtitle_label = subtitle_label
     return bar
