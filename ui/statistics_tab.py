@@ -47,7 +47,9 @@ class StatisticsTab:
         styles.create_label(period, "По:", 'Card.TLabel').pack(side='left', padx=(0, 8))
         self.date_to = DateEntry(period, width=12, date_pattern='dd.mm.yyyy',
                                  font=styles.FONTS['normal'])
-        self.date_to.set_date(get_moscow_time())
+        # «По» — рабочий день: открыта смена со вчерашнего вечера — её день
+        from services import workday
+        self.date_to.set_date(workday.work_day(db))
         self.date_to.pack(side='left', padx=(0, 18))
 
         styles.create_button(period, "Показать", self.reload,
@@ -61,6 +63,13 @@ class StatisticsTab:
                                      background=styles.COLORS['bg_card'],
                                      foreground=styles.COLORS['text_secondary'])
         self.send_status.pack(side='left', padx=(12, 0))
+
+        # Решение владельца 27.10.2026: считаем сменами, а не сутками
+        ttk.Label(period_card,
+                  text="День — это смены, открытые в этот день: что пробили после полуночи "
+                       "в открытую смену, считается в ней. «По» — сегодняшняя смена.",
+                  font=(styles.DEFAULT_FONT, 9), background=styles.COLORS['bg_card'],
+                  foreground=styles.COLORS['text_secondary']).pack(anchor='w', padx=20, pady=(0, 12))
 
         # --- Подразделы -----------------------------------------------
         self.nav = styles.NavBar(main, compact=True, on_select=self.on_section)

@@ -243,15 +243,21 @@ def now_in_cash(db, shops, titles):
     return answer
 
 
-def orders_for(db, shop_ids, start, end, titles):
-    """Ордера за период, новые сверху. Отменённые и отмены — оба."""
+def orders_for(db, shop_ids, start, end, titles, period=None):
+    """
+    Ордера за период, новые сверху. Отменённые и отмены — оба.
+
+    period (app/services/workday.py) — дни как смены: ордер из смены,
+    где его пробили. Без него — по календарным дням, как раньше.
+    """
     if not shop_ids:
         return []
 
+    when = (period.where(CashOrder.shop_id, CashOrder.shift_local_id, CashOrder.created_at)
+            if period is not None
+            else (CashOrder.created_at >= start) & (CashOrder.created_at <= end))
     rows = db.query(CashOrder).filter(
-        CashOrder.shop_id.in_(shop_ids),
-        CashOrder.created_at >= start,
-        CashOrder.created_at <= end).order_by(
+        CashOrder.shop_id.in_(shop_ids), when).order_by(
         CashOrder.created_at.desc(), CashOrder.id.desc()).all()
 
     # Кто кого отменил. Пара может разойтись по периодам: отменили на

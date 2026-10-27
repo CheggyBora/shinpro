@@ -917,9 +917,23 @@ function drawPeriod() {
   });
 }
 
+// Рабочий день — это смена (решение владельца 27.10.2026): открыта смена
+// со вчерашнего вечера — в час ночи «Сегодня» значит её. Сервер говорит,
+// какой день сейчас рабочий (/dashboard/workday); пока не сказал — сегодня
+var workDay = null;
+
 function applyPeriod() {
   var today = new Date();
-  var iso = function (date) { return date.toISOString().slice(0, 10); };
+  if (workDay) {
+    var parts = workDay.split('-');
+    today = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+  }
+  // По местной дате, а не toISOString: тот отдаёт UTC, и после полуночи
+  // по Москве «сегодня» три часа было бы вчерашним
+  var iso = function (date) {
+    return date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0')
+      + '-' + String(date.getDate()).padStart(2, '0');
+  };
 
   if (period.key === 'today') { period.from = period.to = iso(today); }
   else if (period.key === 'yesterday') {
@@ -3255,13 +3269,22 @@ function start() {
   api('/platform/me').then(function () { platformOn = true; drawTabs(); })
     .catch(function () { platformOn = false; });
 
-  // Точки узнаём один раз: их немного, и меняются они редко
-  api('/dashboard/shops').then(function (rows) {
-    shops = rows || [];
+  // Точки узнаём один раз: их немного, и меняются они редко. Вместе с
+  // ними — какой сейчас рабочий день: от него «Сегодня» и «Вчера»
+  Promise.all([
+    api('/dashboard/workday').catch(function () { return null; }),
+    api('/dashboard/shops').catch(function () { return null; })
+  ]).then(function (both) {
+    if (both[0] && both[0].day) {
+      workDay = both[0].day;
+      if (period.key !== 'custom') applyPeriod();
+      drawPeriod();
+    }
+    shops = both[1] || [];
     drawShops();
     drawTabs();
     load();
-  }).catch(function () { load(); });
+  });
 }
 
 fetch('/public/info').then(function (answer) { return answer.json(); })

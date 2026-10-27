@@ -90,6 +90,20 @@ def shops(staff: StaffUser = Depends(current_staff),
             for row in tenancy.shops_of(db, staff.account_id)]
 
 
+@router.get('/workday', summary='Какой сейчас рабочий день')
+def workday(staff: StaffUser = Depends(current_staff),
+            db: Session = Depends(get_db)):
+    """
+    Рабочий день — это смена (решение владельца 27.10.2026). Открыта смена
+    со вчерашнего вечера — в час ночи «Сегодня» значит её, а не пустой
+    новый день. Дашборд берёт отсюда, что такое «Сегодня» и «Вчера».
+    """
+    from app.services.workday import work_day
+
+    ids = [row.id for row in tenancy.shops_of(db, staff.account_id)]
+    return {'day': work_day(db, ids).isoformat()}
+
+
 @router.get('/summary', summary='Сводка за период')
 def summary(day_from: Optional[date] = Query(None, alias='from'),
             day_to: Optional[date] = Query(None, alias='to'),

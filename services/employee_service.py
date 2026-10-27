@@ -237,10 +237,15 @@ class EmployeeService:
         return self.db.query(WorkShift).filter(WorkShift.end_time.is_(None)).all()
     
     def get_salary_report(self, employee_id: int, date_from: datetime, date_to: datetime):
-        transactions = self.db.query(SalaryTransaction).filter(
+        # День — это смены, открытые в этот день (решение владельца
+        # 27.10.2026): начисление — в смене, где оплатили наряд
+        from models import WorkOrder
+        from services import workday
+
+        transactions = self.db.query(SalaryTransaction).join(
+            WorkOrder, SalaryTransaction.work_order_id == WorkOrder.id).filter(
             SalaryTransaction.employee_id == employee_id,
-            SalaryTransaction.transaction_date >= date_from,
-            SalaryTransaction.transaction_date <= date_to
+            workday.orders_filter(self.db, date_from, date_to)
         ).all()
         
         return transactions

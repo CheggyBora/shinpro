@@ -61,7 +61,11 @@ def cash(day_from: Optional[date] = Query(None, alias='from'),
     ids = [row.id for row in chosen]
     titles = {row.id: shop_settings.title(db, row) for row in chosen}
 
-    orders = cash_service.orders_for(db, ids, start, end, titles)
+    # Дни — это смены (решение владельца 27.10.2026): ордер ночью после
+    # полуночи — в той смене, которая шла, а не в завтрашнем дне
+    from app.services.workday import Period
+    orders = cash_service.orders_for(db, ids, start, end, titles,
+                                     period=Period(db, day_from, day_to, ids))
     return {
         'from': day_from,
         'to': day_to,

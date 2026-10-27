@@ -750,10 +750,20 @@ class EmployeesTab:
             for item in self.salary_tree.get_children():
                 self.salary_tree.delete(item)
             
-            # Группируем транзакции по дням
+            # Группируем по рабочим дням: день — это смена, где оплатили
+            # наряд (решение владельца 27.10.2026)
+            from services import workday
+            opened = {}
             daily_data = {}
             for trans in transactions:
-                date_key = trans.transaction_date.date()
+                order = trans.work_order
+                shift_id = getattr(order, 'shift_id', None)
+                if shift_id is not None and shift_id not in opened:
+                    from models import Shift
+                    shift = self.db.query(Shift).get(shift_id)
+                    opened[shift_id] = (as_naive(shift.start_time).date()
+                                        if shift is not None and shift.start_time else None)
+                date_key = (opened.get(shift_id) if shift_id is not None else None)                     or as_naive(getattr(order, 'paid_at', None) or trans.transaction_date).date()
                 if date_key not in daily_data:
                     daily_data[date_key] = {'count': 0, 'total': 0}
                 daily_data[date_key]['count'] += 1

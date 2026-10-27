@@ -6,6 +6,8 @@ from models import WorkOrder, WorkOrderItem, SalaryTransaction
 from sqlalchemy import func
 from sqlalchemy.orm import joinedload
 
+from services import workday
+
 class StatisticsService:
     def __init__(self, db):
         self.db = db
@@ -53,8 +55,8 @@ class StatisticsService:
         from services.order_service import OrderService
 
         orders = self.db.query(WorkOrder).filter(
-            WorkOrder.paid_at >= date_from,
-            WorkOrder.paid_at <= date_to,
+            # День — это смены, открытые в этот день (services/workday.py)
+            workday.orders_filter(self.db, date_from, date_to),
             WorkOrder.status == 'paid',
             WorkOrder.is_deleted == False
         ).order_by(WorkOrder.paid_at.desc()).all()
@@ -110,8 +112,8 @@ class StatisticsService:
         Сводка по мастерам за период: сколько нарядов и сколько заработано.
         """
         orders = self.db.query(WorkOrder).filter(
-            WorkOrder.paid_at >= date_from,
-            WorkOrder.paid_at <= date_to,
+            # День — это смены, открытые в этот день (services/workday.py)
+            workday.orders_filter(self.db, date_from, date_to),
             WorkOrder.status == 'paid',
             WorkOrder.is_deleted == False
         ).all()
@@ -246,8 +248,8 @@ class StatisticsService:
         """
         # Получаем все неудалённые оплаченные наряды за период
         orders = self.db.query(WorkOrder).filter(
-            WorkOrder.paid_at >= date_from,
-            WorkOrder.paid_at <= date_to,
+            # День — это смены, открытые в этот день (services/workday.py)
+            workday.orders_filter(self.db, date_from, date_to),
             WorkOrder.status == 'paid',
             WorkOrder.is_deleted == False  # Исключаем удалённые
         ).all()

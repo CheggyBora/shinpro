@@ -650,20 +650,24 @@ def earnings(db, device, shop):
         raise MasterError('Заработок в кабинете выключен владельцем')
     person = _need_login(db, device)
 
-    today = shop_now().date()
-    week_start = datetime.combine(today - timedelta(days=6), time.min)
+    # «Сегодня» — это текущая смена, неделя — семь последних рабочих дней
+    # (решение владельца 27.10.2026: везде считаем сменами)
+    from app.services.workday import Period, work_day
+
+    today = work_day(db, [shop.id])
+    period = Period(db, today - timedelta(days=6), today, [shop.id])
 
     rows = db.query(SalaryAccrual, Visit).join(
         Visit, SalaryAccrual.visit_id == Visit.id).filter(
         Visit.shop_id == shop.id,
         Visit.is_deleted.is_(False),
         SalaryAccrual.employee_local_id == person.local_id,
-        Visit.visited_at >= week_start).all()
+        period.where(Visit.shop_id, Visit.shift_local_id, Visit.visited_at)).all()
 
     days = {today - timedelta(days=offset): 0.0 for offset in range(7)}
     visits = {}
     for accrual, visit in rows:
-        day = visit.visited_at.date()
+        day = period.day(visit.shop_id, visit.shift_local_id, visit.visited_at)
         if day in days:
             days[day] += accrual.amount or 0.0
         if day == today:

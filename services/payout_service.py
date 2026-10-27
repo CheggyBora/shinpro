@@ -254,12 +254,27 @@ class PayoutService:
         нужны обе цифры. «Начислено в марте» отвечает на вопрос, сколько
         человек заработал, а остаток — сколько ему ещё должны.
         """
-        from models import Employee, METHOD_CASH, METHOD_CARD
+        from datetime import timedelta
+
+        from models import Employee, METHOD_CASH, METHOD_CARD, WorkOrder
+        from services import workday
+
+        # Дни — это смены (решение владельца 27.10.2026): начислено — по
+        # нарядам, оплаченным в сменах этих дней; выдано — в сменах, которые
+        # шли в момент выдачи
+        first, last = since.date(), until.date()
+        windows = workday.shift_windows(self.db)
+        in_days = workday.orders_filter(self.db, since, until)
 
         rows = []
         for employee in self.db.query(Employee).order_by(Employee.id).all():
-            accrued = self.accrued(employee.id, since, until)
-            payouts = self.history(employee.id, since, until)
+            accrued = round(float(self.db.query(func.sum(SalaryTransaction.amount)).join(
+                WorkOrder, SalaryTransaction.work_order_id == WorkOrder.id).filter(
+                SalaryTransaction.employee_id == employee.id,
+                WorkOrder.is_deleted.is_(False), in_days).scalar() or 0.0), 2)
+            payouts = [item for item in self.history(employee.id, since - timedelta(days=3),
+                                                     until + timedelta(days=4))
+                       if first <= workday.moment_day(self.db, item.paid_at, windows) <= last]
             paid = round(sum(item.amount for item in payouts), 2)
 
             if not accrued and not paid:

@@ -206,42 +206,55 @@ class DashboardService:
     # Общее
     # ------------------------------------------------------------------
 
-    def _orders_query(self, start, end):
+    def _period(self, day_from, day_to):
+        """
+        Выбранные дни как смены (app/services/workday.py): день — это
+        смены, открытые в этот день, решение владельца 27.10.2026.
+        """
+        from app.services.workday import Period
+        return Period(self.db, day_from, day_to, self.shop_ids)
+
+    def _in_period(self, period):
+        """Наряд из смен периода: оплачен в одной из них."""
+        return period.where(Visit.shop_id, Visit.shift_local_id, Visit.visited_at)
+
+    def _orders_query(self, period):
         """Наряды периода: оплаченные, не удалённые, из выбранных точек."""
         return self._with_lines(self._in_direction(self._only_mine(
             self.db.query(Visit).filter(
                 Visit.is_deleted.is_(False),
-                Visit.visited_at >= start,
-                Visit.visited_at <= end))))
+                self._in_period(period)))))
 
-    def _refunds_in(self, start, end):
+    def _refunds_in(self, period):
         """
-        Возвраты, оформленные в этом периоде.
+        Возвраты, проведённые в сменах периода.
 
         Отдельным запросом: сам наряд мог быть месяц назад, а деньги
-        вернули сегодня — и вычесть их надо из сегодняшнего дня.
+        вернули сегодня — и вычесть их надо из сегодняшней смены. Своей
+        смены у возврата нет, есть время — по нему и ищем смену.
         """
-        return self._with_lines(self._in_direction(self._only_mine(
+        rows = self._with_lines(self._in_direction(self._only_mine(
             self.db.query(Visit).filter(
                 Visit.is_deleted.is_(False),
                 Visit.refunded_amount > 0,
                 Visit.refunded_at.isnot(None),
-                Visit.refunded_at >= start,
-                Visit.refunded_at <= end))))
+                Visit.refunded_at >= period.wide_start,
+                Visit.refunded_at <= period.wide_end)))).all()
+        return [row for row in rows if period.has_moment(row.shop_id, row.refunded_at)]
 
     # ------------------------------------------------------------------
     # Сводка
     # ------------------------------------------------------------------
 
     def summary(self, day_from, day_to):
-        start, end = day_bounds(day_from, day_to)
-        orders = self._orders_query(start, end).all()
+        period = self._period(day_from, day_to)
+        orders = self._orders_query(period).all()
 
         # Без направления каждая из этих функций — ровно прежнее поле
         # наряда: total_amount, refunded_amount, consumables_amount
         revenue = sum(self._revenue(order) for order in orders)
         refunded = sum(self._refund(order)
-                       for order in self._refunds_in(start, end).all())
+                       for order in self._refunds_in(period))
 
         cash = sum(self._revenue(order) for order in orders
                    if order.payment_method == 'cash')
@@ -255,8 +268,7 @@ class DashboardService:
             self.db.query(func.sum(SalaryAccrual.amount)).join(
                 Visit, SalaryAccrual.visit_id == Visit.id).filter(
                 Visit.is_deleted.is_(False),
-                Visit.visited_at >= start,
-                Visit.visited_at <= end))).scalar() or 0.0
+                self._in_period(period)))).scalar() or 0.0
 
         paid_orders = [order for order in orders if self._revenue(order) > 0]
         average = round(revenue / len(paid_orders), 2) if paid_orders else 0.0
@@ -279,12 +291,15 @@ class DashboardService:
             # Что осталось цеху после зарплаты и материалов. Не прибыль:
             # аренду, налоги и прочее программа не знает и знать не должна
             'left': round(revenue - refunded - float(salary) - consumables, 2),
-            'by_day': self.by_day(day_from, day_to),
+            'by_day': self.by_day(day_from, day_to, period),
         }
 
-    def by_day(self, day_from, day_to):
-        """Выручка и машины по дням — для графика."""
-        start, end = day_bounds(day_from, day_to)
+    def by_day(self, day_from, day_to, period=None):
+        """
+        Выручка и машины по рабочим дням — для графика. Смена, открытая
+        вечером и закрытая ночью, — один столбик, день её открытия.
+        """
+        period = period or self._period(day_from, day_to)
 
         buckets = {}
         day = day_from
@@ -293,15 +308,16 @@ class DashboardService:
                                         'revenue': 0.0, 'cars': 0}
             day += timedelta(days=1)
 
-        for order in self._orders_query(start, end).all():
-            key = order.visited_at.date().isoformat()
+        for order in self._orders_query(period).all():
+            day = period.day(order.shop_id, order.shift_local_id, order.visited_at)
+            key = day.isoformat() if day else None
             if key not in buckets:
                 continue
             buckets[key]['revenue'] += self._revenue(order)
             buckets[key]['cars'] += 1
 
-        for order in self._refunds_in(start, end).all():
-            key = order.refunded_at.date().isoformat()
+        for order in self._refunds_in(period):
+            key = period.moment_day(order.shop_id, order.refunded_at).isoformat()
             if key in buckets:
                 buckets[key]['revenue'] -= self._refund(order)
 
@@ -322,7 +338,7 @@ class DashboardService:
         на диски — уже сидят в цене позиции, и вычитать их второй раз
         значило бы занизить выручку.
         """
-        start, end = day_bounds(day_from, day_to)
+        period = self._period(day_from, day_to)
 
         rows = self.db.query(
             VisitItem.service_name,
@@ -334,8 +350,7 @@ class DashboardService:
             VisitItem.is_goods,
         ).join(Visit, VisitItem.visit_id == Visit.id).filter(
             Visit.is_deleted.is_(False),
-            Visit.visited_at >= start,
-            Visit.visited_at <= end,
+            self._in_period(period),
         )
         if self.direction is not None:
             rows = rows.filter(VisitItem.direction == self.direction)
@@ -420,14 +435,13 @@ class DashboardService:
         возврате, — и один наряд иначе посчитался бы дважды вместе с
         его базой и выручкой.
         """
-        start, end = day_bounds(day_from, day_to)
+        period = self._period(day_from, day_to)
 
         query = self._accruals_only(self._only_mine(self.db.query(
             SalaryAccrual, Visit,
         ).join(Visit, SalaryAccrual.visit_id == Visit.id).filter(
             Visit.is_deleted.is_(False),
-            Visit.visited_at >= start,
-            Visit.visited_at <= end,
+            self._in_period(period),
         )))
         if self.direction is not None:
             query = query.options(selectinload(Visit.items))
@@ -645,8 +659,7 @@ class DashboardService:
 
     def orders(self, day_from, day_to, employee_local_id=None,
                payment_method=None, limit=500):
-        start, end = day_bounds(day_from, day_to)
-        query = self._orders_query(start, end)
+        query = self._orders_query(self._period(day_from, day_to))
 
         if payment_method:
             query = query.filter(Visit.payment_method == payment_method)
