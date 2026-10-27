@@ -42,6 +42,12 @@ class OrderWidget(OrderItemsMixin, OrderPaymentMixin, OrderTimingMixin, OrderBlo
         main_container = ttk.Frame(card, style='White.TFrame')
         main_container.pack(fill='both', expand=True, padx=18, pady=(12, 10))
 
+        # Справа крупно: список позиций — 8 строк, остальное место отдано
+        # шапке и низу (решение владельца 28.10.2026). На мониторе 1366×768
+        # крупнее не влезает — там чуть мельче
+        big = frame.winfo_screenheight() >= 900
+        self._big = big
+
         # Верхняя строка: машина, скидки, цены
         top_frame = ttk.Frame(main_container, style='White.TFrame')
         top_frame.pack(fill='x', pady=(0, 8))
@@ -77,12 +83,12 @@ class OrderWidget(OrderItemsMixin, OrderPaymentMixin, OrderTimingMixin, OrderBlo
                 self.frame, p, f'Наряд №{order.id} · {order.car.license_plate}'))
 
         ttk.Label(header_row, text=f"Наряд №{order.id}",
-                  font=(styles.DEFAULT_FONT, 15, 'bold'),
+                  font=(styles.DEFAULT_FONT, 20 if big else 15, 'bold'),
                   background=styles.COLORS['bg_card'],
                   foreground=styles.COLORS['text']).pack(side='left')
 
         ttk.Label(header_row, text=order.car.license_plate,
-                  font=(styles.DEFAULT_FONT, 13, 'bold'),
+                  font=(styles.DEFAULT_FONT, 18 if big else 13, 'bold'),
                   background=styles.COLORS['bg_card'],
                   foreground=styles.COLORS['primary']).pack(side='left', padx=(14, 0))
 
@@ -107,7 +113,7 @@ class OrderWidget(OrderItemsMixin, OrderPaymentMixin, OrderTimingMixin, OrderBlo
             client_text = client_info
             if order.auto_discount:
                 client_text += "  (автоскидка 5%)"
-            ttk.Label(client_row, text=client_text, font=(styles.DEFAULT_FONT, 10),
+            ttk.Label(client_row, text=client_text, font=(styles.DEFAULT_FONT, 12 if big else 10),
                       background=styles.COLORS['bg_card'],
                       foreground=styles.COLORS['success'] if order.auto_discount
                       else styles.COLORS['text']).pack(side='left')
@@ -174,21 +180,22 @@ class OrderWidget(OrderItemsMixin, OrderPaymentMixin, OrderTimingMixin, OrderBlo
 
         disc_row = ttk.Frame(first_row, style='White.TFrame')
         disc_row.pack(side='left')
+        size = 12 if big else 10
         ttk.Label(disc_row, text="Скидки:", background=styles.COLORS['bg_card'],
-                  font=(styles.DEFAULT_FONT, 10, 'bold')).pack(side='left', padx=(0, 8))
+                  font=(styles.DEFAULT_FONT, size, 'bold')).pack(side='left', padx=(0, 8))
         ttk.Label(disc_row, text="диски", background=styles.COLORS['bg_card'],
-                  font=(styles.DEFAULT_FONT, 10)).pack(side='left', padx=(0, 3))
+                  font=(styles.DEFAULT_FONT, size)).pack(side='left', padx=(0, 3))
         self.rim_discount_var = tk.StringVar(value='0')
         rim_combo = ttk.Combobox(disc_row, textvariable=self.rim_discount_var, values=['0', '10', '20'],
-                                 width=4, font=(styles.DEFAULT_FONT, 10), state='readonly')
+                                 width=4, font=(styles.DEFAULT_FONT, size), state='readonly')
         rim_combo.pack(side='left', padx=(0, 3))
         ttk.Button(disc_row, text="OK", command=self.apply_rim_discount, width=3).pack(side='left', padx=(0, 10))
 
         ttk.Label(disc_row, text="общая", background=styles.COLORS['bg_card'],
-                  font=(styles.DEFAULT_FONT, 10)).pack(side='left', padx=(0, 3))
+                  font=(styles.DEFAULT_FONT, size)).pack(side='left', padx=(0, 3))
         self.general_discount_var = tk.StringVar(value='0')
         general_combo = ttk.Combobox(disc_row, textvariable=self.general_discount_var, values=['0', '10', '15'],
-                                      width=4, font=(styles.DEFAULT_FONT, 10), state='readonly')
+                                      width=4, font=(styles.DEFAULT_FONT, size), state='readonly')
         general_combo.pack(side='left', padx=(0, 3))
         ttk.Button(disc_row, text="OK", command=self.apply_general_discount, width=3).pack(side='left')
 
@@ -198,41 +205,48 @@ class OrderWidget(OrderItemsMixin, OrderPaymentMixin, OrderTimingMixin, OrderBlo
         time_row = ttk.Frame(first_row, style='White.TFrame')
         time_row.pack(side='right')
 
-        self.time_label = ttk.Label(time_row, text="", background=styles.COLORS['bg_card'], font=(styles.DEFAULT_FONT, 10, 'bold'),
-                                    foreground='#2563eb')
-        self.time_label.pack(side='left', padx=(0, 8))
-
+        # Синяя и крупная: забытое «Сохранить» занижает время всей очереди
         self.save_order_button = styles.create_button(
-            time_row, "Сохранить наряд", self.save_composition, 'Secondary.TButton')
+            time_row, "Сохранить наряд", self.save_composition, 'Big.Primary.TButton')
         self.save_order_button.pack(side='left')
 
         second_row = ttk.Frame(bottom, style='White.TFrame')
-        second_row.pack(fill='x', pady=(6, 0))
+        second_row.pack(fill='x', pady=(10 if big else 6, 0))
 
         notes = ttk.Frame(second_row, style='White.TFrame')
         notes.pack(side='left', fill='x', expand=True)
 
+        # Время — рядом с «Сохранить» на большом мониторе; на маленьком
+        # туда не влезает, и оно уходит строкой ниже, к пометкам
+        self.time_label = ttk.Label(time_row if big else notes, text="",
+                                    background=styles.COLORS['bg_card'],
+                                    font=(styles.DEFAULT_FONT, size, 'bold'), foreground='#2563eb')
+        if big:
+            self.time_label.pack(side='left', padx=(0, 8), before=self.save_order_button)
+        else:
+            self.time_label.pack(anchor='w')
+
         # Расходники и база для зарплаты: механик и кассир видят цифру сразу,
         # а не узнают её в конце месяца
-        self.salary_base_label = ttk.Label(notes, text="", background=styles.COLORS['bg_card'], font=(styles.DEFAULT_FONT, 9),
+        self.salary_base_label = ttk.Label(notes, text="", background=styles.COLORS['bg_card'], font=(styles.DEFAULT_FONT, 10 if big else 9),
                                            foreground='#64748b')
         self.salary_base_label.pack(anchor='w')
 
-        self.unsaved_label = ttk.Label(notes, text="", background=styles.COLORS['bg_card'], font=(styles.DEFAULT_FONT, 9),
+        self.unsaved_label = ttk.Label(notes, text="", background=styles.COLORS['bg_card'], font=(styles.DEFAULT_FONT, 10 if big else 9),
                                        foreground='#d97706')
         self.unsaved_label.pack(anchor='w')
 
         # «Пробить» — здесь же, под итогом: проверил сумму — пробил
         styles.create_button(second_row, "Пробить", self.process_payment,
-                             'Success.TButton').pack(side='right', padx=(14, 0))
+                             'Big.Success.TButton').pack(side='right', padx=(16, 0))
 
         price_frame = ttk.Frame(second_row, style='White.TFrame')
         price_frame.pack(side='right')
 
-        self.price_label = ttk.Label(price_frame, text="0.00 руб.", background=styles.COLORS['bg_card'], font=(styles.DEFAULT_FONT, 14, 'bold'), foreground='#2563eb')
+        self.price_label = ttk.Label(price_frame, text="0.00 руб.", background=styles.COLORS['bg_card'], font=(styles.DEFAULT_FONT, 22 if big else 15, 'bold'), foreground='#2563eb')
         self.price_label.pack(anchor='e')
 
-        self.discount_price_label = ttk.Label(price_frame, text="", background=styles.COLORS['bg_card'], font=(styles.DEFAULT_FONT, 12, 'bold'), foreground='#059669')
+        self.discount_price_label = ttk.Label(price_frame, text="", background=styles.COLORS['bg_card'], font=(styles.DEFAULT_FONT, 17 if big else 12, 'bold'), foreground='#059669')
         self.discount_price_label.pack(anchor='e')
 
         # Идентификатор отложенного автосохранения, чтобы отменять предыдущее

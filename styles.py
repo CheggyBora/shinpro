@@ -198,6 +198,16 @@ def apply_modern_styles(root):
     # --- Кнопки -------------------------------------------------------
     _button_style(style, 'Primary.TButton', COLORS['primary'], COLORS['primary_hover'])
     _button_style(style, 'Success.TButton', COLORS['success'], COLORS['success_hover'])
+
+    # Крупные кнопки низа наряда: «Сохранить наряд» и «Пробить» — в них
+    # попадают сто раз за смену (решение владельца 28.10.2026)
+    big_screen = root.winfo_screenheight() >= 900
+    _button_style(style, 'Big.Primary.TButton', COLORS['primary'], COLORS['primary_hover'],
+                  padding=(22, 12) if big_screen else (14, 7))
+    _button_style(style, 'Big.Success.TButton', COLORS['success'], COLORS['success_hover'],
+                  padding=(30, 12) if big_screen else (18, 7))
+    for name in ('Big.Primary.TButton', 'Big.Success.TButton'):
+        style.configure(name, font=(DEFAULT_FONT, 13 if big_screen else 11, 'bold'))
     _button_style(style, 'Danger.TButton', COLORS['danger'], COLORS['danger_hover'])
 
     # Второстепенная кнопка — светлая с рамкой, чтобы не спорить с основной

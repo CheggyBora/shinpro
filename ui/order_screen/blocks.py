@@ -126,7 +126,9 @@ class OrderBlocksMixin:
         collapsed = self._is_collapsed(direction, have)
         block = tk.Frame(self.blocks_holder, bg=styles.COLORS['bg_card'],
                          highlightthickness=1, highlightbackground=styles.COLORS['border_strong'])
-        block.pack(fill='both' if not collapsed else 'x', expand=not collapsed, pady=(0, 6))
+        # Список — ровно 8 строк, не тянется на всё место: остальное
+        # отдано крупной шапке и низу (решение владельца 28.10.2026)
+        block.pack(fill='x', pady=(0, 6))
         head = tk.Frame(block, bg=bg)
         head.pack(fill='x')
 
@@ -191,8 +193,8 @@ class OrderBlocksMixin:
 
         body = ttk.Frame(block, style='White.TFrame')
         if not collapsed:
-            body.pack(fill='both', expand=True)
-        tree = ttk.Treeview(body, columns=COLUMNS, show='headings', height=4)
+            body.pack(fill='x')
+        tree = ttk.Treeview(body, columns=COLUMNS, show='headings', height=8)
         for column, title, width, anchor in (('Услуга', 'Услуга', 250, 'w'), ('Кол-во', 'Кол-во', 60, 'center'),
                                              ('Цена', 'Цена', 90, 'center'), ('Скидка', 'Скидка %', 90, 'center'),
                                              ('Итого', 'Итого', 90, 'center'), ('Кто', 'Кто делал', 120, 'center')):
@@ -201,7 +203,7 @@ class OrderBlocksMixin:
         # Кто делал — только у мойки: её начисляют тому, кто мыл
         if not directions.assigned(self.db, direction):
             tree.configure(displaycolumns=COLUMNS[:5])
-        tree.pack(side='left', fill='both', expand=True)
+        tree.pack(side='left', fill='x', expand=True)
         scroll = ttk.Scrollbar(body, orient='vertical', command=tree.yview)
         scroll.pack(side='right', fill='y')
         tree.config(yscrollcommand=scroll.set)
