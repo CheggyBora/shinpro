@@ -104,7 +104,7 @@ def _shop(db, wanted=None):
     сервере одна, имя можно не писать — но как только их становится
     больше, угадывать нельзя: человек записался бы не туда, куда думал.
     """
-    shop = tenancy.shop_by_slug(db, wanted) if wanted else tenancy.only_shop(db)
+    shop = tenancy.page_shop(db, wanted)
 
     if shop is None:
         raise HTTPException(

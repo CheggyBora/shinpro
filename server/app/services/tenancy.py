@@ -18,9 +18,13 @@ import hmac
 import os
 import re
 import secrets
+import time
+from contextvars import ContextVar
 
 from app.config import settings
-from app.models import Account, Shop
+from app.models import Account, Shop, AccountDomain
+from app.models.account import (ROLE_LK, ROLE_ADMIN, KIND_OWN,
+                                DOMAIN_WAITING)
 from app.utils import now as shop_now
 
 
@@ -65,11 +69,28 @@ def make_slug(name, taken=()):
     # Имя занято — добавляем номер, а не отказываем: две точки могут
     # называться одинаково, и это нормально
     base, number = result, 2
-    while result in taken:
+    while result in taken or not _slug_fits_address(result):
         result = f'{base}-{number}'
         number += 1
 
     return result
+
+
+# Имена, которые не может получить организация: lk.rif-service.ru и
+# admin.rif-service.ru — свои адреса сервера, остальные просто служебные
+RESERVED_LABELS = {'lk', 'admin', 'www', 'api', 'mail', 'smtp', 'ftp',
+                   'ns1', 'ns2', 'static', 'cdn', 'd', 'z'}
+ADMIN_SUFFIX = '-admin'
+
+
+def _slug_fits_address(slug):
+    """
+    Годится ли имя для адреса организации: koleso -> koleso.rif-service.ru.
+
+    «-admin» в конце занято под дашборд: у «x» дашборд x-admin, и
+    организация «x admin» получила бы чужой адрес.
+    """
+    return slug not in RESERVED_LABELS and not slug.endswith(ADMIN_SUFFIX)
 
 
 def taken_slugs(db):
@@ -160,16 +181,40 @@ def bootstrap(db):
     return shop
 
 
-def only_shop(db):
+def only_shop(db, account_id=None):
     """
     Единственная точка, если она одна.
 
     Нужно там, где точку неоткуда взять: публичная страница записи без
     имени в адресе. Когда точек несколько, возвращаем None — пусть
     вызывающий спросит, о какой речь, а не гадает.
+
+    account_id — точки только этой организации: на её адресе «одна
+    точка» значит одна у неё, а не на всём сервере.
     """
-    shops = db.query(Shop).filter(Shop.is_active.is_(True)).limit(2).all()
+    query = db.query(Shop).filter(Shop.is_active.is_(True))
+    if account_id is not None:
+        query = query.filter(Shop.account_id == account_id)
+    shops = query.limit(2).all()
     return shops[0] if len(shops) == 1 else None
+
+
+def page_shop(db, wanted=None, host=None):
+    """
+    Точка, о которой открыта страница: из адреса /z/имя или, если имени
+    нет, единственная точка организации, на чей адрес зашли.
+
+    Точку другой организации на чужом адресе не отдаём.
+    """
+    by_host = account_of_host(db, current_host() if host is None else host)
+
+    if wanted:
+        shop = shop_by_slug(db, wanted)
+        if shop is not None and by_host is not None and shop.account_id != by_host:
+            return None
+        return shop
+
+    return only_shop(db, by_host)
 
 
 def shop_by_slug(db, slug):
@@ -242,27 +287,40 @@ def key_matches_legacy(key):
     return hmac.compare_digest(key, settings.SYNC_KEY)
 
 
-def account_for(db, wanted=None):
+def account_for(db, wanted=None, host=None):
     """
     Аккаунт, о котором идёт речь в запросе.
 
-    wanted — короткое имя точки или сети из заголовка X-Shop. Пусто и
-    аккаунт на сервере один — берём его: заставлять единственный
+    wanted — короткое имя точки или сети из заголовка X-Shop. host —
+    адрес, на который зашли: у каждой организации свой (koleso.rif-
+    service.ru, zapis.koleso.ru), и по нему ясно, чей это кабинет.
+
+    Пусто и аккаунт на сервере один — берём его: заставлять единственный
     шиномонтаж всюду писать своё имя незачем.
 
-    Пусто и аккаунтов несколько — отказываем. Угадывать, в чей кабинет
-    человек хотел войти, нельзя ни в коем случае.
+    Пусто, адрес не наш и аккаунтов несколько — отказываем. Угадывать,
+    в чей кабинет человек хотел войти, нельзя ни в коем случае.
     """
+    by_host = account_of_host(db, current_host() if host is None else host)
+
     if wanted:
         shop = shop_by_slug(db, wanted)
         if shop is not None:
-            return shop.account_id
+            found = shop.account_id
+        else:
+            account = db.query(Account).filter(Account.slug == wanted).first()
+            if account is None:
+                raise ShopNeeded('Такого шиномонтажа нет')
+            found = account.id
 
-        account = db.query(Account).filter(Account.slug == wanted).first()
-        if account is not None:
-            return account.id
+        # На адресе «Колеса» точку «РИФа» не открываем: страница
+        # показала бы чужое название под своим логотипом
+        if by_host is not None and found != by_host:
+            raise ShopNeeded('Такого шиномонтажа нет')
+        return found
 
-        raise ShopNeeded('Такого шиномонтажа нет')
+    if by_host is not None:
+        return by_host
 
     accounts = db.query(Account).filter(
         Account.is_active.is_(True)).limit(2).all()
@@ -402,3 +460,204 @@ def drop_account(db, account):
 
     db.delete(account)
     db.commit()
+
+
+# ----------------------------------------------------------------------
+# Адреса организаций
+# ----------------------------------------------------------------------
+#
+# У каждой организации свой сайт записи и свой дашборд (решение
+# владельца 27.10.2026). Сервер один, и чей кабинет открыт, он узнаёт по
+# адресу:
+#
+#     koleso.rif-service.ru        -> запись «Колеса»   (наш поддомен)
+#     koleso-admin.rif-service.ru  -> дашборд «Колеса»
+#     zapis.koleso.ru              -> запись «Колеса»   (свой домен)
+#     lk.rif-service.ru            -> запись того, кто держит сервер
+
+# Адрес текущего запроса. Ставит прослойка в main.py: передавать его
+# через каждую функцию, которой нужна точка, значило бы протащить его в
+# два десятка мест и где-нибудь забыть
+REQUEST_HOST = ContextVar('request_host', default='')
+
+
+def current_host():
+    return REQUEST_HOST.get()
+
+
+_HOST_RE = re.compile(
+    r'^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,61}[a-z0-9]$')
+
+# Адрес -> (аккаунт, роль) на минуту. Спрашивается на каждом входе и
+# каждой странице записи, а адреса меняются раз в месяцы
+_host_cache = {}
+_HOST_CACHE_SECONDS = 60
+
+
+def clean_host(host):
+    """«Koleso.Rif-Service.ru:443» -> «koleso.rif-service.ru». Мусор — пусто."""
+    name = (host or '').strip().lower()
+    if name.startswith('['):
+        return ''
+    name = name.split(':', 1)[0].rstrip('.')
+    return name if _HOST_RE.match(name) else ''
+
+
+def our_names(account):
+    """Наши адреса организации: запись и дашборд. Пусто — домен сервера не задан."""
+    base = settings.PLATFORM_DOMAIN
+    if not base or not account.slug or not _slug_fits_address(account.slug):
+        return {}
+    return {ROLE_LK: f'{account.slug}.{base}',
+            ROLE_ADMIN: f'{account.slug}{ADMIN_SUFFIX}.{base}'}
+
+
+def home_account(db):
+    """Организация того, кто держит сервер: ей принадлежат lk. и admin."""
+    slug = os.environ.get('SERVER_HOME_ACCOUNT', '').strip()
+    query = db.query(Account)
+    if slug:
+        return query.filter(Account.slug == slug).first()
+    return query.order_by(Account.id).first()
+
+
+def host_target(db, host):
+    """
+    Чей это адрес и для чего: (аккаунт, роль). Не наш адрес — (None, None).
+
+    Роль: ROLE_LK — запись и кабинет клиента, ROLE_ADMIN — дашборд.
+    """
+    name = clean_host(host)
+    if not name:
+        return None, None
+
+    cached = _host_cache.get(name)
+    if cached and time.monotonic() - cached[0] < _HOST_CACHE_SECONDS:
+        return cached[1]
+
+    result = _host_target(db, name)
+    _host_cache[name] = (time.monotonic(), result)
+    return result
+
+
+def _host_target(db, name):
+    row = db.query(AccountDomain).filter(AccountDomain.name == name).first()
+    if row is not None:
+        return row.account_id, row.role
+
+    if name in settings.HOME_HOSTS:
+        account = home_account(db)
+        if account is None:
+            return None, None
+        # Дашборд — тот из домашних адресов, что начинается с admin.
+        role = ROLE_ADMIN if name.startswith('admin.') else ROLE_LK
+        return account.id, role
+
+    base = settings.PLATFORM_DOMAIN
+    if base and name.endswith('.' + base):
+        label = name[:-len(base) - 1]
+        if '.' not in label:
+            role = ROLE_LK
+            if label.endswith(ADMIN_SUFFIX):
+                label, role = label[:-len(ADMIN_SUFFIX)], ROLE_ADMIN
+            if _slug_fits_address(label):
+                account = db.query(Account).filter(Account.slug == label).first()
+                if account is not None:
+                    return account.id, role
+
+    return None, None
+
+
+def account_of_host(db, host):
+    return host_target(db, host)[0]
+
+
+def forget_hosts():
+    """Сбросить запомненные адреса: после правки адресов в дашборде."""
+    _host_cache.clear()
+
+
+class DomainError(ValueError):
+    """Адрес не подходит. Текст — для человека."""
+
+
+def add_domain(db, account, name, role=ROLE_LK):
+    """
+    Подключить свой домен организации. Работать он начнёт, когда у
+    регистратора появится запись на наш сервер и выпустится сертификат —
+    это делает tire-domains по таймеру.
+    """
+    name = (name or '').strip().lower()
+    for prefix in ('https://', 'http://'):
+        if name.startswith(prefix):
+            name = name[len(prefix):]
+    name = name.split('/', 1)[0].rstrip('.')
+
+    if role not in (ROLE_LK, ROLE_ADMIN):
+        raise DomainError('Непонятно, для чего адрес')
+    if clean_host(name) != name:
+        raise DomainError('Адрес выглядит неправильно. Пример: zapis.koleso.ru')
+
+    base = settings.PLATFORM_DOMAIN
+    if name in settings.HOME_HOSTS or (base and (name == base or name.endswith('.' + base))):
+        raise DomainError('Это наш адрес, его подключать не нужно')
+
+    taken = db.query(AccountDomain).filter(AccountDomain.name == name).first()
+    if taken is not None:
+        if taken.account_id == account.id:
+            raise DomainError('Этот адрес уже подключён')
+        raise DomainError('Этот адрес занят')
+
+    row = AccountDomain(account_id=account.id, name=name, role=role,
+                        kind=KIND_OWN, status=DOMAIN_WAITING,
+                        note='Ждём запись в настройках домена')
+    db.add(row)
+    db.commit()
+    forget_hosts()
+    return row
+
+
+def remove_domain(db, account, domain_id):
+    row = db.query(AccountDomain).filter(
+        AccountDomain.id == domain_id,
+        AccountDomain.account_id == account.id,
+        AccountDomain.kind == KIND_OWN).first()
+    if row is None:
+        raise DomainError('Такого адреса нет')
+    db.delete(row)
+    db.commit()
+    forget_hosts()
+
+
+def domains_plan(db):
+    """
+    Какие адреса должны работать: для tire-domains, который заводит их
+    в nginx и выпускает сертификаты. [(имя, роль, свой ли)].
+
+    Наши поддомены — у каждой работающей организации, кроме той, что
+    держит сервер: у неё свои lk. и admin.
+    """
+    plan = []
+    home = home_account(db) if settings.HOME_HOSTS else None
+    accounts = db.query(Account).filter(
+        Account.is_active.is_(True)).order_by(Account.id).all()
+    for account in accounts:
+        if home is None or account.id != home.id:
+            for role, name in our_names(account).items():
+                plan.append((name, role, False))
+        for row in account.domains:
+            if row.kind == KIND_OWN:
+                plan.append((row.name, row.role, True))
+    return plan
+
+
+def set_domain_status(db, name, status_value, note=None):
+    """Что вышло с адресом — пишет tire-domains, видно в дашборде."""
+    row = db.query(AccountDomain).filter(AccountDomain.name == name).first()
+    if row is None:
+        return None
+    row.status = status_value
+    row.note = (note or '')[:255] or None
+    row.checked_at = shop_now()
+    db.commit()
+    return row

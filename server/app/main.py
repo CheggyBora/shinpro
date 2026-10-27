@@ -55,7 +55,10 @@ async def lifespan(app: FastAPI):
             # без аккаунта учётка повиснет ни на чём
             from app.services import tenancy as _tenancy
 
-            account_id = _tenancy.account_for(session)
+            # Владелец — того, кто держит сервер. account_for при
+            # второй организации отказал бы: адреса у запуска нет
+            home = _tenancy.home_account(session)
+            account_id = home.id if home is not None else None
 
             # Без заказчика владельца не заводим вовсе. Иначе учётка
             # повиснет ни на чём: войти по ней можно, а данных не
@@ -97,6 +100,31 @@ app = FastAPI(
     version='1.0.0',
     lifespan=lifespan,
 )
+
+class _RequestHost:
+    """
+    Запоминает адрес, на который зашли: по нему ясно, чей кабинет
+    открыт — у каждой организации свой (tenancy.host_target).
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope.get('type') not in ('http', 'websocket'):
+            await self.app(scope, receive, send)
+            return
+
+        from app.services import tenancy as _tenancy
+        host = dict(scope.get('headers') or []).get(b'host', b'').decode('latin-1')
+        token = _tenancy.REQUEST_HOST.set(host)
+        try:
+            await self.app(scope, receive, send)
+        finally:
+            _tenancy.REQUEST_HOST.reset(token)
+
+
+app.add_middleware(_RequestHost)
 
 if settings.CORS_ORIGINS:
     app.add_middleware(
@@ -207,8 +235,7 @@ def booking_manifest(shop: str = ''):
 
     session = SessionLocal()
     try:
-        row = (tenancy.shop_by_slug(session, shop) if shop
-               else tenancy.only_shop(session))
+        row = tenancy.page_shop(session, shop)
         if row is not None:
             name = shop_settings.title(session, row)
             start = f'/z/{row.slug}'

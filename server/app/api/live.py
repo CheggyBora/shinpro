@@ -52,7 +52,7 @@ STATES = (WAITING, CALLED, SERVING, DONE, LEFT)
 # ----------------------------------------------------------------------
 
 def _shop(db, slug):
-    shop = tenancy.shop_by_slug(db, slug) if slug else tenancy.only_shop(db)
+    shop = tenancy.page_shop(db, slug)
     if shop is None or not shop.is_active:
         raise HTTPException(status.HTTP_404_NOT_FOUND,
                             detail='Шиномонтаж не найден. Проверьте ссылку')

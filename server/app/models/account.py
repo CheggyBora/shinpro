@@ -78,6 +78,9 @@ class Account(Base):
 
     shops = relationship('Shop', back_populates='account',
                          cascade='all, delete-orphan')
+    domains = relationship('AccountDomain', back_populates='account',
+                           cascade='all, delete-orphan',
+                           order_by='AccountDomain.id')
     payments = relationship('AccountPayment', back_populates='account',
                             cascade='all, delete-orphan',
                             order_by='AccountPayment.paid_at.desc()')
@@ -181,3 +184,48 @@ class Shop(Base):
 
     def __repr__(self):
         return f"<Shop #{self.id} {self.name}>"
+
+
+# Для чего адрес: кабинет клиента с записью или дашборд
+ROLE_LK = 'lk'
+ROLE_ADMIN = 'admin'
+
+# Чей адрес: наш поддомен (koleso.rif-service.ru) или домен организации
+KIND_OURS = 'ours'
+KIND_OWN = 'own'
+
+# Что с адресом: ждём запись в настройках домена, работает, не вышло
+DOMAIN_WAITING = 'waiting'
+DOMAIN_ACTIVE = 'active'
+DOMAIN_ERROR = 'error'
+
+
+class AccountDomain(Base):
+    """
+    Адрес, по которому открываются запись и дашборд организации.
+
+    По адресу сервер и понимает, чей это кабинет: у каждой организации
+    свой сайт записи и свой дашборд (решение владельца 27.10.2026). Наш
+    поддомен заводится сразу, свой домен организация подключает сама:
+    вписывает в дашборде, делает запись у регистратора, сервер
+    выпускает сертификат и ставит «работает».
+    """
+    __tablename__ = 'account_domains'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    account_id = Column(Integer, ForeignKey('accounts.id'), nullable=False,
+                        index=True)
+
+    # Без «https://» и без пути, маленькими буквами: zapis.koleso.ru
+    name = Column(String(253), nullable=False, unique=True, index=True)
+    role = Column(String(8), nullable=False, default=ROLE_LK)
+    kind = Column(String(8), nullable=False, default=KIND_OWN)
+
+    status = Column(String(16), nullable=False, default=DOMAIN_WAITING)
+    # Что сказать владельцу: «запись в настройках домена ещё не видна»
+    note = Column(String(255), nullable=True)
+    checked_at = Column(DateTime, nullable=True)
+
+    created_at = Column(DateTime, default=shop_now, nullable=False)
+
+    account = relationship('Account', back_populates='domains')

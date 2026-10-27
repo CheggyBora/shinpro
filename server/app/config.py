@@ -16,6 +16,26 @@ def _bool(name, default=False):
     return value.strip().lower() in ('1', 'true', 'yes', 'да')
 
 
+def _hosts_of(origins):
+    """«https://lk.rif-service.ru» -> «lk.rif-service.ru»."""
+    hosts = []
+    for origin in origins:
+        host = origin.split('://', 1)[-1].split('/', 1)[0].split(':', 1)[0]
+        host = host.strip().lower().rstrip('.')
+        if host and host not in hosts:
+            hosts.append(host)
+    return hosts
+
+
+def _parent_domain(hosts):
+    """«lk.rif-service.ru» -> «rif-service.ru»: под ним заводятся адреса организаций."""
+    for host in hosts:
+        parts = host.split('.')
+        if len(parts) >= 3:
+            return '.'.join(parts[1:])
+    return ''
+
+
 class Settings:
     # --- База -------------------------------------------------------
     # На боевом сервере — PostgreSQL. Для разработки хватает SQLite:
@@ -170,6 +190,23 @@ class Settings:
         for origin in os.environ.get('SERVER_CORS_ORIGINS', '').split(',')
         if origin.strip()
     ]
+
+    # --- Адреса организаций ---------------------------------------------
+    #
+    # Свои адреса шиномонтажа, который держит сервер: lk.rif-service.ru
+    # и admin.rif-service.ru. Пришёл запрос на них — это он. По умолчанию
+    # берутся из SERVER_CORS_ORIGINS: их пишет install.sh, и на рабочем
+    # сервере вписывать ничего не нужно
+    HOME_HOSTS = _hosts_of(
+        [h for h in os.environ.get('SERVER_HOME_HOSTS', '').split(',') if h.strip()]
+        or CORS_ORIGINS)
+
+    # Под этим доменом организации получают свой адрес сразу при
+    # заведении: koleso.rif-service.ru — запись, koleso-admin.rif-service.ru
+    # — дашборд. Пусто — берётся из домашних адресов (lk.rif-service.ru
+    # -> rif-service.ru)
+    PLATFORM_DOMAIN = (os.environ.get('SERVER_PLATFORM_DOMAIN', '').strip().lower().rstrip('.')
+                       or _parent_domain(HOME_HOSTS))
 
     @classmethod
     def warnings(cls):
