@@ -515,7 +515,8 @@ class MainWindow:
             log.warning(f"Не удалось обновить очередь после обмена: {e}")
 
     def schedule_shift_check(self):
-        self.root.after(10 * 60 * 1000, self._periodic_shift_check)
+        # Раз в минуту: смена закрывается в 9:05, а не «где-то до 9:15»
+        self.root.after(60 * 1000, self._periodic_shift_check)
 
     # ------------------------------------------------------------------
     # Обмен с сервером приложения

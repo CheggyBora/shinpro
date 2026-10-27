@@ -75,6 +75,13 @@ class OrderTimingMixin:
         Она означает «состав согласован с клиентом, можно менять время».
         """
         self.cancel_autosave()
+        # Без открытой смены наряд не меняется (правило владельца 27.10.2026):
+        # автосохранение молча пропускаем, по кнопке — подсказка
+        from ui.order_screen.shift_guard import shift_open, SHIFT_CLOSED
+        if not shift_open(self.db):
+            if not silent:
+                messagebox.showwarning("Смена закрыта", SHIFT_CLOSED)
+            return
         try:
             minutes = self.order_service.save_order_composition(self.order.id)
             self.db.refresh(self.order)

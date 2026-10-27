@@ -12,6 +12,7 @@ from tkinter import ttk, messagebox
 import styles
 from logger import log
 from services import directions
+from ui.order_screen.shift_guard import needs_shift
 
 
 def employee_name(db, employee_id):
@@ -53,6 +54,7 @@ class OrderDirectionsMixin:
 
     # ------------------------------------------------------------------
 
+    @needs_shift
     def add_direction(self, direction):
         wash_class = None
         diameter = None
@@ -82,6 +84,7 @@ class OrderDirectionsMixin:
         self.refresh_directions()
         self.pick_services(direction)
 
+    @needs_shift
     def pick_services(self, direction):
         """Список услуг направления — отметить нужные и добавить в наряд."""
         from models import Service
@@ -129,6 +132,7 @@ class OrderDirectionsMixin:
         dialog.box = box
         self._services_dialog = dialog
 
+    @needs_shift
     def change_wash_post(self):
         from services.wash_posts import WashPosts
         posts = WashPosts(self.db)
@@ -155,6 +159,7 @@ class OrderDirectionsMixin:
             return None
         return ask_choice(self.frame, 'Мойка', prompt, [(p.id, p.title) for p in people])
 
+    @needs_shift
     def assign_all_wash(self, direction=directions.WASH):
         what = 'мойки' if direction == directions.WASH else 'шиномонтажа'
         who = self._choose_person(f'Все услуги {what} в наряде — на кого?')
@@ -163,6 +168,7 @@ class OrderDirectionsMixin:
         self.order_service.assign_wash(self.order.id, who, direction)
         self.refresh_items()
 
+    @needs_shift
     def choose_masters(self):
         """Кто работает на посту — им и делится шиномонтаж наряда."""
         people = wash_people(self.db)
@@ -196,6 +202,7 @@ class OrderDirectionsMixin:
         dialog.marks, dialog.save = marks, save
         self._masters_dialog = dialog
 
+    @needs_shift
     def choose_item_employee(self, item):
         if not directions.assigned(self.db, item.direction or 'tire'):
             return

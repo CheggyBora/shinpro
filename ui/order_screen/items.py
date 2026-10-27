@@ -13,10 +13,12 @@ from services.wheel_service import WheelSettings, item_title
 from services.wheel_service import parse as parse_wheels
 from utils import retry_after_rollback
 from ui import wheel_picker
+from ui.order_screen.shift_guard import needs_shift
 
 class OrderItemsMixin:
     """Работа со списком услуг наряда."""
 
+    @needs_shift
     def add_service_by_name(self, service_name):
         from models import Service
         vehicle_type = self.order.vehicle_type
@@ -46,6 +48,7 @@ class OrderItemsMixin:
         else:
             messagebox.showerror("Ошибка", f"Услуга '{service_name}' не найдена")
 
+    @needs_shift
     def add_service(self, service):
         # Ремонт и правка: сначала — на каком колесе. «Пропустить» —
         # добавить без колеса, «Отмена» — не добавлять: пробили по ошибке
@@ -76,6 +79,7 @@ class OrderItemsMixin:
         except Exception as e:
             messagebox.showerror("Ошибка", str(e))
 
+    @needs_shift
     def on_double_click(self, event):
         # Определяем на какую колонку кликнули
         region = self.items_tree.identify_region(event.x, event.y)
@@ -104,6 +108,7 @@ class OrderItemsMixin:
             if item is not None:
                 self.choose_item_employee(item)
 
+    @needs_shift
     def edit_wheels(self, item_id_str):
         """Ошиблись колесом — двойной клик по названию и отметить заново."""
         from models import WorkOrderItem
@@ -128,6 +133,7 @@ class OrderItemsMixin:
             return
         self.refresh_items()
 
+    @needs_shift
     def edit_quantity_inline(self, item_id_str, event):
         # Получаем данные позиции
         item_id = int(self.items_tree.item(item_id_str)['tags'][0])
@@ -186,6 +192,7 @@ class OrderItemsMixin:
         self.edit_entry.bind('<Escape>', cancel_inline)
         self.edit_entry.bind('<FocusOut>', save_inline)
 
+    @needs_shift
     def edit_price_inline(self, item_id_str, event):
         # Получаем данные позиции
         item_id = int(self.items_tree.item(item_id_str)['tags'][0])
@@ -229,6 +236,7 @@ class OrderItemsMixin:
             except Exception as e:
                 messagebox.showerror("Ошибка", f"Не удалось изменить цену: {str(e)}")
 
+    @needs_shift
     def edit_discount(self, item_id_str):
         """
         Скидка по отдельной услуге: двойной клик по колонке «Скидка %».
@@ -270,6 +278,7 @@ class OrderItemsMixin:
             self.db.rollback()
             messagebox.showerror("Ошибка", f"Не удалось изменить скидку: {e}")
 
+    @needs_shift
     def delete_item(self, event):
         selected = self.items_tree.selection()
         if not selected:
@@ -279,12 +288,14 @@ class OrderItemsMixin:
         self.order_service.delete_item(item_id)
         self.refresh_items()
 
+    @needs_shift
     def apply_rim_discount(self):
         discount = int(self.rim_discount_var.get())
         self.order_service.update_rim_discount(self.order.id, discount)
         self.db.refresh(self.order)
         self.refresh_items()
 
+    @needs_shift
     def apply_general_discount(self):
         discount = int(self.general_discount_var.get())
         self.order_service.update_general_discount(self.order.id, discount)

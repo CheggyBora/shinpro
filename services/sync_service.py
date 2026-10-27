@@ -190,6 +190,12 @@ class SyncService:
         """
         from models import WorkOrder
         from services.order_service import OrderService
+        from services.shift_service import ShiftService
+
+        # Без открытой смены наряд не меняется (правило владельца
+        # 27.10.2026): нажатия и ответы ждут на сервере, пока смену откроют
+        if ShiftService(self.db).get_current_shift() is None:
+            return {'changed': False, 'orders': set(), 'notes': []}
 
         orders = OrderService(self.db)
         changed = False

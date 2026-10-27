@@ -18,6 +18,7 @@ from .payment import OrderPaymentMixin
 from .timing import OrderTimingMixin
 from .directions import OrderDirectionsMixin
 from .blocks import OrderBlocksMixin
+from ui.order_screen.shift_guard import needs_shift
 
 class OrderWidget(OrderItemsMixin, OrderPaymentMixin, OrderTimingMixin, OrderBlocksMixin,
                   OrderDirectionsMixin):
@@ -375,6 +376,7 @@ class OrderWidget(OrderItemsMixin, OrderPaymentMixin, OrderTimingMixin, OrderBlo
         post = getattr(self.order, 'post_number', None)
         return f"Пост {post}" if post else "Пост не выбран"
 
+    @needs_shift
     def change_post(self):
         """Переставить машину на другой свободный пост."""
         from services.live_queue_service import LiveQueueService, QueueError
@@ -425,6 +427,15 @@ class OrderWidget(OrderItemsMixin, OrderPaymentMixin, OrderTimingMixin, OrderBlo
     def on_recommendations_focus_out(self, event):
         """Сохраняем рекомендации при потере фокуса"""
         content = self.recommendations_text.get('1.0', 'end-1c').strip()
+
+        # Без открытой смены наряд не меняется: возвращаем, как было
+        from ui.order_screen.shift_guard import shift_open, SHIFT_CLOSED
+        if not shift_open(self.db):
+            if content != (self.order.recommendations or '') and content != 'Рекомендации для клиента...':
+                self.recommendations_text.delete('1.0', 'end')
+                self.recommendations_text.insert('1.0', self.order.recommendations or '')
+                messagebox.showwarning("Смена закрыта", SHIFT_CLOSED)
+            return
         
         if not content:
             # Если пусто, показываем placeholder
@@ -444,6 +455,7 @@ class OrderWidget(OrderItemsMixin, OrderPaymentMixin, OrderTimingMixin, OrderBlo
             self.db.rollback()
             log.error(f"Ошибка сохранения рекомендаций: {e}")
 
+    @needs_shift
     def delete_order(self):
         """Удаляет непробитый наряд с подтверждением"""
         # Проверяем, что наряд - черновик (только черновики можно удалять)

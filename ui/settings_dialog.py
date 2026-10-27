@@ -560,9 +560,9 @@ class SettingsDialog:
         styles.create_label(time_row, "Время закрытия:", 'Card.TLabel').pack(side='left', padx=(0, 10))
 
         self.autoclose_time = tk.StringVar(
-            value=self.settings.get('shift_autoclose_time', '09:00'))
+            value=self.settings.get('shift_autoclose_time', '09:05'))
         ttk.Combobox(time_row, textvariable=self.autoclose_time, width=8,
-                     values=[f"{h:02d}:00" for h in range(24)],
+                     values=sorted([f"{h:02d}:00" for h in range(24)] + ['09:05']),
                      font=styles.FONTS['normal']).pack(side='left')
 
         self.report_var = tk.BooleanVar(

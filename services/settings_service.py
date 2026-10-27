@@ -56,7 +56,8 @@ DEFAULTS = {
 
     # Во сколько закрывается забытая смена. Программа закроет её сама
     # и посчитает итоги до того, как откроют новую.
-    'shift_autoclose_time': '09:00',
+    # Смена закрывается каждое утро в 9:05 (правило владельца 27.10.2026)
+    'shift_autoclose_time': '09:05',
     'shift_autoclose_enabled': '1',
 
     # Отправлять ли сводку по смене в Telegram при закрытии
@@ -268,6 +269,18 @@ class SettingsService:
             if not self.db.query(Settings).filter(Settings.key == key).first():
                 self.db.add(Settings(key=key, value=value))
                 created += 1
+
+        # Смена закрывается в 9:05 (правило владельца 27.10.2026). Прежнее
+        # значение по умолчанию 09:00 переводим один раз; если владелец
+        # потом поставит своё время, второй раз не тронем
+        moved = self.db.query(Settings).filter(Settings.key == 'shift_autoclose_905').first()
+        if moved is None:
+            row = self.db.query(Settings).filter(Settings.key == 'shift_autoclose_time').first()
+            if row is not None and row.value == '09:00':
+                row.value = '09:05'
+            self.db.add(Settings(key='shift_autoclose_905', value='1'))
+            created += 1
+
         if created:
             self.db.commit()
         return created

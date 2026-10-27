@@ -174,12 +174,12 @@ class ShiftReportService:
         """Час и минута автозакрытия из настроек."""
         from services.settings_service import SettingsService
 
-        raw = SettingsService(self.db).get(AUTOCLOSE_TIME_KEY, '09:00') or '09:00'
+        raw = SettingsService(self.db).get(AUTOCLOSE_TIME_KEY, '09:05') or '09:05'
         try:
             hours, minutes = raw.split(':')
             return int(hours), int(minutes)
         except (ValueError, AttributeError):
-            return 9, 0
+            return 9, 5
 
     def is_autoclose_enabled(self):
         from services.settings_service import SettingsService
@@ -189,9 +189,11 @@ class ShiftReportService:
         """
         Найти смену, которую пора закрыть.
 
-        Смена считается забытой, если она открыта и уже наступило время
-        автозакрытия следующего календарного дня после её начала.
-        Смену, открытую сегодня утром, не трогаем.
+        Правило владельца 27.10.2026: смена закрывается каждое утро в
+        9:05, когда бы её ни открыли, — в ближайшие 9:05 после открытия.
+        Открыли меньше чем за час до них (закрыли вручную и открыли снова
+        в 9:02) — до следующего утра: закрывать её через три минуты
+        было бы издевательством.
         """
         if not self.is_autoclose_enabled():
             return None
@@ -207,9 +209,10 @@ class ShiftReportService:
         if not start:
             return None
 
-        # Момент автозакрытия — заданное время СЛЕДУЮЩЕГО дня после открытия
-        deadline = datetime(start.year, start.month, start.day,
-                            hours, minutes) + timedelta(days=1)
+        # Момент автозакрытия — ближайшее заданное время после открытия
+        deadline = datetime(start.year, start.month, start.day, hours, minutes)
+        if deadline - start < timedelta(hours=1):
+            deadline += timedelta(days=1)
 
         return shift if now >= deadline else None
 

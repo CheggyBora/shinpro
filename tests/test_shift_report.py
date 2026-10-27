@@ -88,7 +88,7 @@ check('теперь считается настроенным', telegram.is_conf
 telegram.save_settings('', '')
 
 print('\n=== Правило автозакрытия ===')
-check('время автозакрытия 9:00', report_service.get_autoclose_time() == (9, 0),
+check('время автозакрытия 9:05', report_service.get_autoclose_time() == (9, 5),
       str(report_service.get_autoclose_time()))
 
 # Смена открыта сегодня — закрывать рано
@@ -105,9 +105,9 @@ before_deadline = datetime(yesterday.year, yesterday.month, yesterday.day,
 after_deadline = datetime(yesterday.year, yesterday.month, yesterday.day,
                           9, 15) + timedelta(days=1)
 
-check('до 9:00 не закрываем',
+check('до 9:05 не закрываем',
       report_service.find_overdue_shift(now=before_deadline) is None)
-check('после 9:00 смена подлежит закрытию',
+check('после 9:05 смена подлежит закрытию',
       report_service.find_overdue_shift(now=after_deadline) is not None)
 
 print('\n=== Автозакрытие срабатывает ===')
