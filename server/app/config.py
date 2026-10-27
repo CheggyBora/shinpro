@@ -177,6 +177,16 @@ class Settings:
         os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                      'plate-models'))
 
+    # --- Программа цеха для скачивания -----------------------------
+    # Последняя версия TireShop.exe: её загружают в «Заказчиках», а
+    # отдаёт страница setup. по коду подключения. Рядом с кодом, как
+    # и модели номеров: служба пишет только в свою папку. Раскатка её
+    # не стирает — см. deploy/post-receive
+    DOWNLOAD_DIR = os.environ.get(
+        'SERVER_DOWNLOAD_DIR',
+        os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                     'downloads'))
+
     # --- Шиномонтаж ---------------------------------------------------
     SHOP_NAME = os.environ.get('SERVER_SHOP_NAME', 'Шиномонтаж')
 

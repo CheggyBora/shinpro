@@ -46,6 +46,11 @@ INTERVAL_MINUTES = 10
 # Насколько назад отдавать историю визитов при первом обмене
 HISTORY_DAYS = 730
 
+# Куда стучаться с кодом подключения, если адрес сервера ещё не задан.
+# Код из 8 цифр выдают в дашборде («Заказчики» или «Точки»), по нему
+# сервер сам отдаёт ключ обмена — вписывать его руками не нужно
+DEFAULT_URL = 'https://admin.rif-service.ru'
+
 
 class SyncError(Exception):
     pass
@@ -128,6 +133,47 @@ class SyncService:
             raise SyncError(f'Нет связи с сервером: {e.reason}')
         except Exception as e:
             raise SyncError(f'Ошибка обмена: {e}')
+
+    def connect_by_code(self, code, url=None):
+        """
+        Подключить точку по коду из дашборда: сервер отдаёт ключ обмена,
+        программа сохраняет его и включает обмен. Код срабатывает один
+        раз. Возвращает, чья это точка и куда идти в дашборд.
+        """
+        from config import offline_test_mode
+        if offline_test_mode():
+            raise SyncError('Тестовый режим без связи')
+        url = (url or self.get_url() or DEFAULT_URL).strip().rstrip('/')
+        digits = ''.join(ch for ch in (code or '') if ch.isdigit())
+        if len(digits) != 8:
+            raise SyncError('В коде 8 цифр')
+
+        request = urllib.request.Request(
+            f'{url}/connect',
+            data=json.dumps({'code': digits}).encode('utf-8'),
+            headers={'Content-Type': 'application/json'},
+            method='POST')
+        try:
+            with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:
+                answer = json.loads(response.read().decode('utf-8'))
+        except urllib.error.HTTPError as e:
+            detail = ''
+            try:
+                detail = json.loads(e.read().decode('utf-8')).get('detail', '')
+            except Exception:
+                pass
+            raise SyncError(detail or f'Сервер отказал: {e.code}')
+        except urllib.error.URLError as e:
+            raise SyncError(f'Нет связи с сервером: {e.reason}')
+        except Exception as e:
+            raise SyncError(f'Не получилось подключиться: {e}')
+
+        key = answer.pop('key', '')
+        if not key:
+            raise SyncError('Сервер не прислал ключ обмена')
+        self.save_settings(url, key, True)
+        log.info(f"Точка подключена по коду: {answer.get('account')} — {answer.get('shop')}")
+        return answer
 
     def test_connection(self):
         """Проверить адрес и ключ. Возвращает сводку с сервера."""

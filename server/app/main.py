@@ -137,7 +137,7 @@ if settings.CORS_ORIGINS:
 
 from app.api import (auth, booking, storage, history, queue, sync, public,  # noqa: E402
                      photos, live, tasks, stock, cash,
-                     staff, dashboard, telegram, push, branding)
+                     staff, dashboard, telegram, push, branding, platform)
 
 app.include_router(auth.router)
 app.include_router(booking.router)
@@ -148,6 +148,9 @@ app.include_router(sync.router)
 app.include_router(staff.router)
 app.include_router(dashboard.router)
 app.include_router(branding.router)
+app.include_router(platform.router)
+app.include_router(platform.points_router)
+app.include_router(platform.connect_router)
 app.include_router(telegram.router)
 app.include_router(push.router)
 app.include_router(public.router)
@@ -357,7 +360,14 @@ def booking_page():
     """
     Страница записи. Короткий адрес — её отправляют в переписке,
     и «/z» помещается даже в SMS.
+
+    На setup.ДОМЕН вместо записи — скачивание программы: nginx ведёт
+    «/» этого адреса сюда же, как у любого адреса записи.
     """
+    from app.services import tenancy
+    if tenancy.setup_host() and tenancy.clean_host(tenancy.current_host()) == tenancy.setup_host():
+        return platform.setup_page()
+
     path = os.path.join(WEB_DIR, 'booking.html')
     with open(path, encoding='utf-8') as page:
         return HTMLResponse(page.read())

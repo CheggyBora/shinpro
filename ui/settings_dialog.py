@@ -308,6 +308,10 @@ class SettingsDialog:
 
         sync_row = ttk.Frame(content, style='White.TFrame')
         sync_row.pack(fill='x', pady=(0, 6))
+        # Код из 8 цифр вместо адреса с ключом: его выдают в дашборде,
+        # ключ программа получает сама
+        styles.create_button(sync_row, "Подключить по коду…", self.connect_by_code,
+                             'Primary.TButton').pack(side='left', padx=(0, 8))
         styles.create_button(sync_row, "Проверить связь", self.test_sync,
                              'Secondary.TButton').pack(side='left')
         styles.create_button(sync_row, "Обменяться сейчас", self.run_sync,
@@ -1168,6 +1172,55 @@ class SettingsDialog:
     def _save_sync_settings(self):
         self.sync.save_settings(self.sync_url.get(), self.sync_key.get(),
                                 self.sync_var.get())
+
+    def connect_by_code(self):
+        from tkinter import simpledialog
+        code = simpledialog.askstring(
+            "Подключить по коду",
+            "Код подключения — 8 цифр.\n"
+            "Его выдают в дашборде: «Точки» → «Переподключить»\n"
+            "или «Заказчики» → «Код».",
+            parent=self.dialog)
+        if not code:
+            return
+
+        url = self.sync_url.get().strip()
+        self.sync_status.config(text="Подключаемся…",
+                                foreground=styles.COLORS['text_secondary'])
+
+        def worker():
+            from services.sync_service import SyncError
+            try:
+                answer = self.sync.connect_by_code(code, url or None)
+            except SyncError as e:
+                self._sync_answer(False, str(e))
+                return
+            except Exception as e:
+                self._sync_answer(False, f"Не получилось подключиться: {e}")
+                return
+            self.dialog.after(0, lambda: self._connected(answer))
+
+        import threading
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _connected(self, answer):
+        """Код сработал: поля — как сохранил обмен, и куда идти дальше."""
+        self.sync_url.delete(0, 'end')
+        self.sync_url.insert(0, self.sync.get_url())
+        self.sync_key.delete(0, 'end')
+        self.sync_key.insert(0, self.sync.get_key())
+        self.sync_var.set(True)
+        self._sync_answer(True, f"Подключено: {answer.get('account')} — {answer.get('shop')}")
+
+        lines = [f"Точка «{answer.get('shop')}» подключена к «{answer.get('account')}»."]
+        if answer.get('admin_url'):
+            line = f"\nДашборд: {answer['admin_url']}"
+            if answer.get('owner_phone'):
+                line += f"\nВход по номеру {answer['owner_phone']}, код придёт звонком."
+            lines.append(line)
+        if answer.get('lk_url'):
+            lines.append(f"\nЗапись для клиентов: {answer['lk_url']}")
+        messagebox.showinfo("Подключено", '\n'.join(lines), parent=self.dialog)
 
     def test_sync(self):
         if not self.sync_url.get().strip() or not self.sync_key.get().strip():

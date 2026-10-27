@@ -23,7 +23,7 @@ from contextvars import ContextVar
 
 from app.config import settings
 from app.models import Account, Shop, AccountDomain
-from app.models.account import (ROLE_LK, ROLE_ADMIN, KIND_OWN,
+from app.models.account import (ROLE_LK, ROLE_ADMIN, ROLE_SETUP, KIND_OWN,
                                 DOMAIN_WAITING)
 from app.utils import now as shop_now
 
@@ -79,7 +79,7 @@ def make_slug(name, taken=()):
 # Имена, которые не может получить организация: lk.rif-service.ru и
 # admin.rif-service.ru — свои адреса сервера, остальные просто служебные
 RESERVED_LABELS = {'lk', 'admin', 'www', 'api', 'mail', 'smtp', 'ftp',
-                   'ns1', 'ns2', 'static', 'cdn', 'd', 'z'}
+                   'ns1', 'ns2', 'static', 'cdn', 'd', 'z', 'setup'}
 ADMIN_SUFFIX = '-admin'
 
 
@@ -115,7 +115,7 @@ def shop_by_sync_key(db, key):
     return shop
 
 
-def create_account(db, name, shop_name=None, key=None):
+def create_account(db, name, shop_name=None, key=None, slug=None):
     """
     Завести аккаунт с первой точкой. Возвращает (аккаунт, точка, ключ).
 
@@ -124,7 +124,9 @@ def create_account(db, name, shop_name=None, key=None):
     """
     taken = taken_slugs(db)
 
-    account = Account(name=name, slug=make_slug(name, taken))
+    # slug — короткое имя, выбранное в «Заказчиках» (проверено там):
+    # занимаем его до точки, чтобы точка «Колесо» не получила то же имя
+    account = Account(name=name, slug=slug or make_slug(name, taken))
     db.add(account)
     db.flush()
 
@@ -378,7 +380,7 @@ def drop_shop(db, shop):
                             ShopShift, StockItem, StoredSet, Visit,
                             Task, Counterparty, CashOrder, Arrival,
                             OrderPhoto, MasterDevice, OpenOrder,
-                            ShopClient, ShopCar)
+                            ShopClient, ShopCar, ConnectCode)
     from app.services.photos import full_path
 
     # Наряды через объекты, а не одним запросом: у них есть позиции и
@@ -393,7 +395,7 @@ def drop_shop(db, shop):
     for model in (Appointment, BookingDay, StoredSet, SalaryPayout,
                   ShopEmployee, ShopShift, QueueSnapshot, ShopSetting,
                   StockItem, Task, Counterparty, CashOrder, Arrival,
-                  MasterDevice, OpenOrder, ShopClient, ShopCar):
+                  MasterDevice, OpenOrder, ShopClient, ShopCar, ConnectCode):
         db.query(model).filter(model.shop_id == shop.id).delete(
             synchronize_session=False)
 
@@ -540,7 +542,20 @@ def host_target(db, host):
     return result
 
 
+def setup_host():
+    """
+    Адрес страницы скачивания программы: setup.rif-service.ru. Общий на
+    сервер, не организации: скачивают по коду, а код и говорит, чья точка.
+    """
+    base = settings.PLATFORM_DOMAIN
+    return f'setup.{base}' if base else None
+
+
 def _host_target(db, name):
+    if name == setup_host():
+        account = home_account(db)
+        return (account.id, ROLE_SETUP) if account is not None else (None, None)
+
     row = db.query(AccountDomain).filter(AccountDomain.name == name).first()
     if row is not None:
         return row.account_id, row.role
@@ -643,6 +658,9 @@ def domains_plan(db):
     держит сервер: у неё свои lk. и admin.
     """
     plan = []
+    # Страница скачивания — правила те же, что у записи (lk.inc)
+    if setup_host() and db.query(Account).count():
+        plan.append((setup_host(), ROLE_LK, False))
     home = home_account(db) if settings.HOME_HOSTS else None
     accounts = db.query(Account).filter(
         Account.is_active.is_(True)).order_by(Account.id).all()

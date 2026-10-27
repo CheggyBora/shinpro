@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Программа для шиномонтажа</title>
+<style>
+  :root {
+    --bg: #f1f5f9; --card: #ffffff; --ink: #0f172a; --muted: #475569; --line: #e2e8f0;
+    --brand: #2563eb; --brand-dark: #1d4ed8; --ok-bg: #ecfdf5; --ok: #065f46;
+    --bad-bg: #fef2f2; --bad: #991b1b;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; }
+  main { max-width: 960px; margin: 0 auto; padding: 32px 16px;
+         display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start; }
+  .card { flex: 1 1 420px; background: var(--card); border: 1px solid var(--line);
+          border-radius: 16px; padding: 28px; display: flex; flex-direction: column; gap: 16px; }
+  h1 { margin: 0; font-size: 26px; font-weight: 600; }
+  h2 { margin: 0; font-size: 18px; font-weight: 600; }
+  p { margin: 0; line-height: 1.5; color: var(--muted); }
+  label { display: flex; flex-direction: column; gap: 6px; font-size: 14px; color: #334155; }
+  input { height: 60px; border: 2px solid var(--line); border-radius: 10px; font: inherit;
+          font-size: 30px; font-weight: 600; letter-spacing: 6px; text-align: center;
+          color: var(--ink); width: 100%; }
+  input:focus { outline: none; border-color: var(--brand); }
+  button { height: 54px; border: 0; border-radius: 10px; background: var(--brand); color: #fff;
+           font: inherit; font-size: 17px; font-weight: 600; cursor: pointer; }
+  button:hover { background: var(--brand-dark); }
+  button:disabled { background: #94a3b8; cursor: default; }
+  .note { border-radius: 10px; padding: 12px 14px; font-size: 14px; line-height: 1.5; }
+  .note.ok { background: var(--ok-bg); color: var(--ok); }
+  .note.bad { background: var(--bad-bg); color: var(--bad); }
+  .small { font-size: 12px; color: #64748b; }
+  .steps { flex: 1 1 340px; display: flex; flex-direction: column; gap: 12px; }
+  .step { background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+          padding: 16px 18px; display: flex; gap: 14px; font-size: 14px; line-height: 1.5; }
+  .step b { display: block; }
+  .step span { color: var(--muted); }
+  .num { width: 30px; height: 30px; flex-shrink: 0; border-radius: 15px; background: var(--brand);
+         color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 600; }
+  .smart { margin-top: 8px; background: #1e3a8a; color: #dbeafe; border-radius: 6px;
+           padding: 8px 10px; font-size: 12px; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <form class="card" id="form" method="post" action="/setup/download">
+    <h1>Программа для шиномонтажа</h1>
+    <p>Введите код подключения из сообщения. Без кода программу не скачать: по нему она узнает, чья это точка.</p>
+    <label>Код подключения
+      <input id="code" name="code" inputmode="numeric" autocomplete="off" maxlength="9"
+             placeholder="0000 0000" autofocus>
+    </label>
+    <div class="note ok" id="ok" hidden></div>
+    <div class="note bad" id="bad" hidden></div>
+    <button type="submit" id="go" disabled>Скачать программу</button>
+    <p class="small">Скачивание код не тратит — он сработает, когда его введут в самой программе.</p>
+  </form>
+
+  <section class="steps" aria-label="Что дальше">
+    <h2>Что дальше — 3 шага</h2>
+    <div class="step"><span class="num">1</span>
+      <div><b>Откройте скачанный файл</b><span>TireShop.exe — внизу или вверху браузера, или в папке «Загрузки».</span></div>
+    </div>
+    <div class="step"><span class="num">2</span>
+      <div><b>Синее окно «Windows защитила компьютер»</b>
+        <span>Нажмите «Подробнее» → «Выполнить в любом случае». Так Windows встречает любую новую программу.</span>
+        <div class="smart">Windows защитила ваш компьютер<br><u>Подробнее</u> → [ Выполнить в любом случае ]</div>
+      </div>
+    </div>
+    <div class="step"><span class="num">3</span>
+      <div><b>Введите этот же код в программе</b><span>Она подключится к вашей организации и дальше всё спросит сама.</span></div>
+    </div>
+  </section>
+</main>
+<script>
+(function () {
+  var input = document.getElementById('code');
+  var ok = document.getElementById('ok');
+  var bad = document.getElementById('bad');
+  var go = document.getElementById('go');
+  var asked = '';
+
+  function show(box, text) {
+    ok.hidden = bad.hidden = true;
+    if (box) { box.textContent = text; box.hidden = false; }
+  }
+
+  function digits() { return input.value.replace(/\D/g, ''); }
+
+  function check() {
+    var code = digits();
+    go.disabled = true;
+    if (code.length !== 8) { show(null); asked = ''; return; }
+    if (code === asked) return;
+    asked = code;
+    fetch('/connect/check', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ code: code }) })
+      .then(function (answer) {
+        return answer.json().then(function (body) { return { ok: answer.ok, body: body }; });
+      })
+      .then(function (result) {
+        if (digits() !== code) return;
+        if (!result.ok) { show(bad, result.body.detail || 'Код не подошёл'); return; }
+        var until = new Date(result.body.expires_at);
+        var when = until.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit',
+                                                   hour: '2-digit', minute: '2-digit' });
+        if (!result.body.program) {
+          show(bad, 'Код подходит, но программа ещё не загружена на сервер. Напишите тому, кто прислал код.');
+          return;
+        }
+        show(ok, '✓ Код подходит: ' + result.body.account + ' — ' + result.body.shop
+                 + '. Действует до ' + when + '.');
+        go.disabled = false;
+      })
+      .catch(function () { asked = ''; show(bad, 'Нет связи с сервером. Проверьте интернет'); });
+  }
+
+  input.addEventListener('input', function () {
+    var code = digits().slice(0, 8);
+    var pretty = code.length > 4 ? code.slice(0, 4) + ' ' + code.slice(4) : code;
+    if (input.value !== pretty) input.value = pretty;
+    check();
+  });
+})();
+</script>
+</body>
+</html>

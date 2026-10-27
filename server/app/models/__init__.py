@@ -1,5 +1,6 @@
 """Таблицы сервера."""
-from app.models.account import Account, AccountPayment, Shop, AccountDomain
+from app.models.account import (Account, AccountPayment, Shop, AccountDomain,
+                                ConnectCode, ConnectAttempt)
 from app.models.client import Client, Car, Device, LoginCode
 from app.models.notice import (Notice, TITLES, KIND_BOOKED, KIND_REMINDER,
                                KIND_CANCELLED, KIND_MOVED, KIND_STORAGE,
@@ -29,7 +30,7 @@ from app.models.staff import (StaffUser, StaffAction, ROLE_OWNER, ROLE_ADMIN,
                               PERM_STAFF)
 
 __all__ = [
-    'Account', 'AccountPayment', 'Shop', 'AccountDomain',
+    'Account', 'AccountPayment', 'Shop', 'AccountDomain', 'ConnectCode', 'ConnectAttempt',
     'Client', 'Car', 'Device', 'LoginCode',
     'Notice', 'TITLES', 'BY_TELEGRAM', 'BY_PUSH', 'KIND_BOOKED', 'KIND_REMINDER', 'KIND_CANCELLED', 'KIND_MOVED',
     'KIND_STORAGE', 'KIND_SEASON', 'KIND_READY', 'KIND_QUEUE', 'KIND_ARRIVE', 'KIND_LATE',

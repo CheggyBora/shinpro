@@ -155,6 +155,20 @@ def cmd_new_key(db, args):
     print('программы в цеху, иначе обмен встанет.')
 
 
+def cmd_connect_code(db, args):
+    """
+    Код подключения точки — то же, что кнопка «Код» в «Заказчиках».
+    Программа цеха вводит его и получает ключ обмена сама.
+    """
+    from app.services import onboarding
+
+    shop = db.query(Shop).filter(Shop.slug == args.shop).first()
+    if shop is None:
+        sys.exit(f'Нет такой точки: {args.shop}')
+    row = onboarding.issue_code(db, shop)
+    print(onboarding.invite_text(db, shop, row))
+
+
 def cmd_pay(db, args):
     account = find_account(db, args.account)
     payment = billing.record_payment(
@@ -642,6 +656,9 @@ def main():
     key = commands.add_parser('new-key', help='сменить ключ обмена')
     key.add_argument('shop', help='короткое имя точки')
 
+    code = commands.add_parser('connect-code', help='код подключения точки (8 цифр)')
+    code.add_argument('shop', help='короткое имя точки')
+
     pay = commands.add_parser('pay', help='записать платёж')
     pay.add_argument('account')
     pay.add_argument('amount', type=float)
@@ -716,6 +733,7 @@ def main():
             'add-account': cmd_add_account,
             'add-shop': cmd_add_shop,
             'new-key': cmd_new_key,
+            'connect-code': cmd_connect_code,
             'pay': cmd_pay,
             'payments': cmd_payments,
             'block': cmd_block,

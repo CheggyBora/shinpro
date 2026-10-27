@@ -201,6 +201,8 @@ class Shop(Base):
 # Для чего адрес: кабинет клиента с записью или дашборд
 ROLE_LK = 'lk'
 ROLE_ADMIN = 'admin'
+# Страница скачивания программы (setup.ДОМЕН) — одна на сервер
+ROLE_SETUP = 'setup'
 
 # Чей адрес: наш поддомен (koleso.rif-service.ru) или домен организации
 KIND_OURS = 'ours'
@@ -241,3 +243,50 @@ class AccountDomain(Base):
     created_at = Column(DateTime, default=shop_now, nullable=False)
 
     account = relationship('Account', back_populates='domains')
+
+
+class ConnectCode(Base):
+    """
+    Код подключения точки: 8 цифр вместо ключа обмена.
+
+    Решение владельца 27.10.2026: точки ставят люди, которые плохо
+    разбираются в компьютере, поэтому ни SSH, ни ключа из 43 знаков.
+    Код выдаётся в «Заказчиках» (или в «Точках» организации), вводится
+    в программе цеха один раз, и программа получает ключ сама — его не
+    видит никто.
+
+    Код лежит открытым, а не отпечатком: восемь цифр перебираются за
+    секунды, и отпечаток ничего бы не спрятал. Защищает другое — срок
+    48 часов, одно срабатывание и предел неверных попыток
+    (ConnectAttempt).
+    """
+    __tablename__ = 'connect_codes'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    shop_id = Column(Integer, ForeignKey('shops.id'), nullable=False,
+                     index=True)
+    code = Column(String(8), nullable=False, index=True)
+
+    created_at = Column(DateTime, default=shop_now, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    # Сработал или отменён — дальше не действует
+    used_at = Column(DateTime, nullable=True)
+    cancelled_at = Column(DateTime, nullable=True)
+    # Кто выдал — для журнала: «код выдал такой-то»
+    created_by = Column(Integer, nullable=True)
+
+    shop = relationship('Shop')
+
+
+class ConnectAttempt(Base):
+    """
+    Неверный код подключения: с какого адреса и когда.
+
+    В базе, а не в памяти: у сервера два процесса, и счётчик в памяти
+    у каждого был бы свой — предел выходил бы вдвое выше.
+    """
+    __tablename__ = 'connect_attempts'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    address = Column(String(64), nullable=False, index=True)
+    at = Column(DateTime, default=shop_now, nullable=False, index=True)

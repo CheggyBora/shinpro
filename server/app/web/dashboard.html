@@ -173,6 +173,8 @@ input.code { letter-spacing: 8px; text-align: center; font-size: 22px; font-weig
   font-size: 14px; border-bottom: 1px solid var(--line); }
 .line span { color: var(--ink-soft); }
 .line b { font-weight: 600; white-space: nowrap; }
+/* Адреса длинные — на телефоне переносятся, а не уезжают за край */
+.line b.url { white-space: normal; word-break: break-all; text-align: right; }
 .line.total b { font-size: 17px; }
 .block-title { font-size: 12.5px; color: var(--muted); text-transform: uppercase;
   letter-spacing: .04em; margin: 16px 0 4px; }
@@ -514,6 +516,8 @@ input.code { letter-spacing: 8px; text-align: center; font-size: 22px; font-weig
 var $ = function (id) { return document.getElementById(id); };
 var token = null;
 var me = null;
+// Видит ли вошедший «Заказчиков» — владелец сервера (/platform/me)
+var platformOn = false;
 var period = { key: '30', from: null, to: null };
 var shops = [];          // точки этого аккаунта
 var currentShop = '';    // пусто — считаем по всем сразу
@@ -786,6 +790,8 @@ $('logout').addEventListener('click', function () { forget(); });
 function forget() {
   token = null;
   me = null;
+  platformOn = false;
+  shownCode = null;
   try { localStorage.removeItem('staffToken'); } catch (e) {}
   $('screenMain').hidden = true;
   $('screenLogin').hidden = false;
@@ -811,6 +817,8 @@ var ICONS = {
   staff: '<circle cx="9" cy="8" r="3"/><path d="M3 20c0-3 3-5 6-5s6 2 6 5"/>'
        + '<path d="M16 5l2 2 4-4"/>',
   brand: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/>',
+  points: '<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/>',
+  customers: '<path d="M3 21V8l9-5 9 5v13"/><path d="M9 21v-6h6v6"/>',
   salary: '<rect x="2" y="6" width="20" height="12" rx="2"/>'
         + '<circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/>',
   booking: '<rect x="3" y="5" width="18" height="16" rx="2"/>'
@@ -856,6 +864,9 @@ function sections() {
   if (can('staff')) list.push({ key: 'staff', title: 'Доступ' });
   // Как организацию видят клиенты и по каким адресам она открывается
   if (can('staff')) list.push({ key: 'brand', title: 'Оформление' });
+  // Связь точек и коды подключения компьютера в цеху
+  if (can('staff')) list.push({ key: 'points', title: 'Точки' });
+  if (platformOn) list.push({ key: 'customers', title: 'Заказчики' });
 
   return list;
 }
@@ -1062,7 +1073,8 @@ function load() {
   // На экране доступа период ни при чём: люди не относятся к месяцу
   var aboutPeople = section === 'staff' || section === 'salary'
                  || section === 'booking' || section === 'calendar'
-                 || section === 'stock' || section === 'brand';
+                 || section === 'stock' || section === 'brand'
+                 || section === 'points' || section === 'customers';
   $('period').style.display = aboutPeople ? 'none' : '';
   $('dates').style.display = aboutPeople ? 'none' : '';
   // Переключатель — после смены точки или раздела: у новой точки мойки
@@ -1074,6 +1086,8 @@ function load() {
   if (section === 'booking') return loadBooking();
   if (section === 'staff') return loadStaff();
   if (section === 'brand') return loadBrand();
+  if (section === 'points') return loadPoints();
+  if (section === 'customers') return loadCustomers();
   if (section === 'salary') return loadSalary();
   if (section === 'cash') return loadCash();
   if (section === 'summary') return loadSummary();
@@ -1694,6 +1708,236 @@ function drawBrand(data) {
         .then(drawBrand).catch(function (e) { fail(e.message); });
     });
   });
+}
+
+// ------------------------------------------------------------------
+// Коды подключения: «Точки» и «Заказчики»
+// ------------------------------------------------------------------
+//
+// Решение владельца 27.10.2026: новую точку ставят без SSH и ключа.
+// Здесь выдаётся код из 8 цифр и готовое сообщение со ссылкой на
+// страницу скачивания; в программе цеха вводят тот же код
+// (app/services/onboarding.py)
+
+var shownCode = null;     // { title, code } — только что выданный код
+
+function copyText(text) {
+  if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(text);
+  var area = document.createElement('textarea');
+  area.value = text;
+  document.body.appendChild(area);
+  area.select();
+  try { document.execCommand('copy'); } catch (e) {}
+  document.body.removeChild(area);
+  return Promise.resolve();
+}
+
+function codeCard() {
+  if (!shownCode || !shownCode.code) return '';
+  var code = shownCode.code;
+  return '<div class="card" style="border:2px solid var(--brand)"><h2>Код для «'
+    + escape(shownCode.title) + '»</h2>'
+    + '<div style="font-size:34px;font-weight:700;letter-spacing:6px;text-align:center;margin:6px 0">'
+    + escape(code.code) + '</div>'
+    + '<div class="hint" style="text-align:center">Срабатывает один раз · действует до '
+    + escape(stampText(code.expires_at)) + '</div>'
+    + '<div class="hint" style="white-space:pre-line;background:var(--bg);border-radius:10px;padding:10px 12px">'
+    + escape(code.text) + '</div>'
+    + '<button class="go" type="button" id="cCopy">Скопировать сообщение</button>'
+    + '<div class="hint">Перешлите его в WhatsApp или Telegram тому, кто будет ставить программу.</div>'
+    + '</div>';
+}
+
+function bindCodeCard() {
+  if (!$('cCopy')) return;
+  $('cCopy').addEventListener('click', function () {
+    copyText(shownCode.code.text).then(function () {
+      $('cCopy').textContent = 'Скопировано ✓';
+    }).catch(function () { fail('Не получилось скопировать — выделите текст вручную'); });
+  });
+}
+
+function pointRow(point, codePath) {
+  var kind = point.state === 'online' ? 'ok' : (point.state === 'offline' ? 'bad' : 'warn');
+  var about = point.state === 'waiting'
+    ? (point.code ? 'код ' + point.code.code + ' до ' + stampText(point.code.expires_at) : 'кода нет')
+    : 'обмен ' + stampText(point.last_sync_at);
+  return '<div class="row"><div class="main"><b>' + escape(point.name)
+    + ' <span class="tag ' + kind + '">' + escape(point.state_title) + '</span></b>'
+    + '<span>' + escape(about) + '</span></div>'
+    + '<button class="chip" type="button" data-code="' + codePath + point.id + '" data-title="'
+    + attr(point.name) + '">' + (point.state === 'waiting' ? 'Код' : 'Переподключить') + '</button>'
+    + (point.code ? '<button class="link" type="button" style="width:auto;padding:0 0 0 10px" data-uncode="'
+      + codePath + point.id + '">Отменить код</button>' : '')
+    + '</div>';
+}
+
+function bindPointRows(reload) {
+  [].slice.call($('view').querySelectorAll('[data-code]')).forEach(function (button) {
+    button.addEventListener('click', function () {
+      var title = button.getAttribute('data-title');
+      api(button.getAttribute('data-code') + '/code', { method: 'POST' }).then(function (code) {
+        shownCode = { title: title, code: code };
+        reload();
+      }).catch(function (e) { fail(e.message); });
+    });
+  });
+  [].slice.call($('view').querySelectorAll('[data-uncode]')).forEach(function (button) {
+    button.addEventListener('click', function () {
+      if (!confirm('Отменить код? По нему больше нельзя будет подключиться.')) return;
+      api(button.getAttribute('data-uncode') + '/code', { method: 'DELETE' }).then(function () {
+        shownCode = null;
+        reload();
+      }).catch(function (e) { fail(e.message); });
+    });
+  });
+}
+
+function loadPoints() {
+  api('/dashboard/points').then(function (data) {
+    show(codeCard() + '<div class="card"><h2>Точки</h2>'
+      + data.points.map(function (point) { return pointRow(point, '/dashboard/points/'); }).join('')
+      + '<div class="hint">«Переподключить» — когда в цеху меняют компьютер. Выдаётся код; '
+      + 'старый компьютер работает, пока код не введут на новом, — обмен не встаёт.</div></div>');
+    bindCodeCard();
+    bindPointRows(loadPoints);
+  }).catch(function (e) { show(''); fail(e.message); });
+}
+
+// --- Заказчики: видит только владелец сервера -------------------------
+
+function sizeText(bytes) {
+  return (bytes / 1024 / 1024).toFixed(1).replace('.', ',') + ' МБ';
+}
+
+function loadCustomers() {
+  api('/platform/accounts').then(drawCustomers).catch(function (e) { show(''); fail(e.message); });
+}
+
+function drawCustomers(data) {
+  var program = data.program || {};
+  var html = codeCard();
+
+  html += '<div class="card"><h2>Программа для точек</h2>'
+    + (program.exists
+      ? '<div class="line"><span>Загружена</span><b>' + escape(stampText(program.uploaded_at))
+        + ' · ' + sizeText(program.size) + '</b></div>'
+      : '<div class="hint" style="color:var(--bad)">Не загружена — по коду её пока не скачать.</div>')
+    + '<div class="line"><span>Страница скачивания</span><b class="url">' + escape(data.setup_url) + '</b></div>'
+    + '<label class="chip" style="cursor:pointer;display:inline-block;margin-top:10px">'
+    + 'Загрузить новую версию<input id="pFile" type="file" accept=".exe" hidden></label>'
+    + '<div class="hint" id="pState">Файл dist/TireShop.exe после сборки. Новые точки сразу получат его.</div></div>';
+
+  html += '<div class="card"><h2>Новый заказчик</h2><div class="form">'
+    + '<div class="field"><label for="nName">Название</label><input id="nName" maxlength="200" placeholder="Сеть «Колесо»"></div>'
+    + '<div class="field"><label for="nSlug">Короткое имя для адреса — необязательно</label>'
+    + '<input id="nSlug" maxlength="48" placeholder="koleso" autocapitalize="off" spellcheck="false"></div>'
+    + '<div class="field"><label for="nPhone">Телефон владельца — он первым войдёт в дашборд</label>'
+    + '<input id="nPhone" type="tel" placeholder="+7 900 000-00-00"></div>'
+    + '<div class="field"><label for="nUntil">Оплачено до — пусто, если без срока</label><input id="nUntil" type="date"></div>'
+    + '<button class="go" type="button" id="nGo">Завести и выдать код первой точки</button>'
+    + '</div></div>';
+
+  data.accounts.forEach(function (account) {
+    var bill = account.billing;
+    var kind = bill.state === 'paid' || bill.state === 'free' ? 'ok'
+      : (bill.state === 'grace' ? 'warn' : 'bad');
+    html += '<div class="card"><h2>' + escape(account.name) + ' <span class="tag ' + kind + '">'
+      + escape(bill.title) + (bill.paid_until ? ' до ' + escape(shortDay(bill.paid_until.slice(0, 10))) : '')
+      + '</span></h2>'
+      + '<div class="line"><span>Запись</span><b class="url">' + escape(account.lk_url || '—') + '</b></div>'
+      + '<div class="line"><span>Дашборд</span><b class="url">' + escape(account.admin_url || '—') + '</b></div>'
+      + '<div class="line"><span>Владелец</span><b class="url">' + escape(account.owners.join(', ') || '—') + '</b></div>'
+      + account.shops.map(function (point) { return pointRow(point, '/platform/shops/'); }).join('')
+      + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">'
+      + '<button class="chip" type="button" data-add="' + account.id + '">+ Точка</button>'
+      + '<button class="chip" type="button" data-pay="' + account.id + '">Записать оплату</button>'
+      + (account.is_home ? '' : (bill.state === 'blocked'
+        ? '<button class="chip" type="button" data-open="' + account.id + '">Открыть доступ</button>'
+        : '<button class="chip" type="button" data-close="' + account.id + '">Закрыть доступ</button>'))
+      + '</div></div>';
+  });
+
+  show(html);
+  bindCodeCard();
+  bindPointRows(loadCustomers);
+
+  $('nGo').addEventListener('click', function () {
+    var body = { name: $('nName').value.trim(), owner_phone: $('nPhone').value.trim(),
+                 slug: $('nSlug').value.trim() || null, paid_until: $('nUntil').value || null };
+    if (!body.name || !body.owner_phone) { fail('Впишите название и телефон владельца'); return; }
+    $('nGo').disabled = true;
+    api('/platform/accounts', { method: 'POST', body: body }).then(function (answer) {
+      shownCode = { title: answer.account.shops[0].name, code: answer.code };
+      loadCustomers();
+    }).catch(function (e) { $('nGo').disabled = false; fail(e.message); });
+  });
+
+  function each(attrName, act) {
+    [].slice.call($('view').querySelectorAll('[' + attrName + ']')).forEach(function (button) {
+      button.addEventListener('click', function () { act(button.getAttribute(attrName)); });
+    });
+  }
+
+  each('data-add', function (id) {
+    var name = prompt('Название новой точки');
+    if (!name || !name.trim()) return;
+    api('/platform/accounts/' + id + '/shops', { method: 'POST', body: { name: name.trim() } })
+      .then(function (answer) { shownCode = { title: name.trim(), code: answer.code }; loadCustomers(); })
+      .catch(function (e) { fail(e.message); });
+  });
+  each('data-pay', function (id) {
+    var amount = prompt('Сколько пришло, ₽');
+    if (amount === null) return;
+    var months = prompt('За сколько месяцев', '1');
+    if (months === null) return;
+    api('/platform/accounts/' + id + '/pay', { method: 'POST',
+        body: { amount: Number(String(amount).replace(',', '.')) || 0, months: parseInt(months, 10) || 1 } })
+      .then(loadCustomers).catch(function (e) { fail(e.message); });
+  });
+  each('data-close', function (id) {
+    var reason = prompt('Закрыть кабинет, запись и дашборд организации. Причина (необязательно):', '');
+    if (reason === null) return;
+    api('/platform/accounts/' + id + '/block', { method: 'POST', body: { reason: reason } })
+      .then(loadCustomers).catch(function (e) { fail(e.message); });
+  });
+  each('data-open', function (id) {
+    api('/platform/accounts/' + id + '/unblock', { method: 'POST' })
+      .then(loadCustomers).catch(function (e) { fail(e.message); });
+  });
+
+  $('pFile').addEventListener('change', function () {
+    var file = $('pFile').files[0];
+    if (file) uploadProgram(file);
+  });
+}
+
+// 40 МБ одним запросом nginx не пропустит (до 10 МБ) — режем на куски
+function uploadProgram(file) {
+  function say(text) { if ($('pState')) $('pState').textContent = text; }
+  api('/platform/program/start', { method: 'POST' }).then(function (start) {
+    var step = start.part_bytes;
+    function next(offset) {
+      if (offset >= file.size) {
+        say('Проверяем файл…');
+        return api('/platform/program/finish?upload=' + start.upload + '&size=' + file.size,
+                   { method: 'POST' });
+      }
+      say('Загружаем… ' + Math.floor(offset * 100 / file.size) + '%');
+      return fetch('/platform/program/part?upload=' + start.upload + '&offset=' + offset, {
+        method: 'POST', body: file.slice(offset, offset + step),
+        headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/octet-stream' }
+      }).then(function (answer) {
+        return answer.json().catch(function () { return {}; }).then(function (body) {
+          if (!answer.ok) throw new Error(body.detail || 'Кусок файла не принят');
+          return next(body.size);
+        });
+      });
+    }
+    return next(0);
+  }).then(function () {
+    loadCustomers();
+  }).catch(function (e) { say(''); fail(e.message); });
 }
 
 function loadStaff() {
@@ -3006,6 +3250,10 @@ function start() {
   applyPeriod();
   drawPeriod();
   drawTabs();
+
+  // «Заказчики» — только владельцу сервера; остальным раздела нет
+  api('/platform/me').then(function () { platformOn = true; drawTabs(); })
+    .catch(function () { platformOn = false; });
 
   // Точки узнаём один раз: их немного, и меняются они редко
   api('/dashboard/shops').then(function (rows) {
