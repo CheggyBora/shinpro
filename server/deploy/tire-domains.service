@@ -1,0 +1,10 @@
+[Unit]
+Description=Адреса организаций: nginx и сертификаты
+After=network-online.target tire-server.service
+
+[Service]
+Type=oneshot
+# От root: правит списки nginx, перезагружает его и выпускает
+# сертификаты. Базу спрашивает через manage.py от имени службы
+ExecStart=/usr/local/bin/tire-domains
+SyslogIdentifier=tire-domains

@@ -20,6 +20,8 @@
     python manage.py booking риф off                   закрыть запись на точку
     python manage.py drop-shop тест --yes              убрать точку насовсем
     python manage.py drop-account тест --yes           убрать заказчика
+    python manage.py domains-plan                      какие адреса завести (для tire-domains)
+    python manage.py domain-status имя active «Работает»  что вышло с адресом
 
 Ключ обмена показывается один раз — при создании точки или смене
 ключа. В базе от него остаётся только отпечаток, и подсмотреть его
@@ -590,6 +592,36 @@ def cmd_plate_models(db, args):
               'Причина — в журнале выше')
 
 
+def cmd_domains_plan(db, args):
+    """
+    Какие адреса организаций должны работать — строками «роль имя чей».
+
+    Читает deploy/domains.sh (от root, по таймеру): заводит адреса в
+    nginx и выпускает сертификаты. Сам ничего, кроме строк в базе для
+    статуса, не меняет.
+    """
+    from app.services import tenancy
+
+    for name, role, own in tenancy.domains_plan(db):
+        tenancy.ensure_domain_row(db, name, role)
+        print(f"{role}\t{name}\t{'own' if own else 'ours'}")
+
+
+def cmd_platform_domain(db, args):
+    """Домен, под которым организации получают адреса. Для update.sh."""
+    from app.config import settings
+    print(settings.PLATFORM_DOMAIN)
+
+
+def cmd_domain_status(db, args):
+    from app.services import tenancy
+
+    if args.status not in ('waiting', 'active', 'error'):
+        sys.exit('Статус: waiting, active или error')
+    if tenancy.set_domain_status(db, args.name, args.status, args.note) is None:
+        sys.exit(f'Нет такого адреса: {args.name}')
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='Аккаунты, точки и оплата',
@@ -665,6 +697,15 @@ def main():
     commands.add_parser('plate-models',
                         help='скачать модели распознавания номеров')
 
+    commands.add_parser('platform-domain',
+                        help='домен сервера для адресов организаций')
+    commands.add_parser('domains-plan',
+                        help='какие адреса организаций завести в nginx')
+    domain = commands.add_parser('domain-status', help='что вышло с адресом')
+    domain.add_argument('name')
+    domain.add_argument('status')
+    domain.add_argument('note', nargs='?', default='')
+
     args = parser.parse_args()
 
     init_db()
@@ -688,6 +729,9 @@ def main():
             'drop-shop': cmd_drop_shop,
             'drop-account': cmd_drop_account,
             'plate-models': cmd_plate_models,
+            'platform-domain': cmd_platform_domain,
+            'domains-plan': cmd_domains_plan,
+            'domain-status': cmd_domain_status,
         }[args.command]
         handler(db, args)
     finally:

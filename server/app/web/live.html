@@ -27,6 +27,7 @@ main { max-width: 460px; margin: 0 auto; display: grid; gap: 14px; }
 .logo { background: var(--accent); color: var(--accent-ink); font-weight: 800; padding: 6px 9px;
         border-radius: 6px; letter-spacing: .04em; }
 .brand b { font-size: 17px; }
+.logo-img { width: 36px; height: 36px; border-radius: 8px; object-fit: contain; }
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px; display: grid; gap: 12px; }
 h1 { margin: 0; font-size: 22px; line-height: 1.25; }
 p { margin: 0; color: var(--muted); }
@@ -56,7 +57,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 </head>
 <body>
 <main>
-  <div class="brand"><span class="logo">РИФ</span><b id="shopName">Шиномонтаж</b></div>
+  <div class="brand"><img class="logo-img" id="brandLogo" alt="" hidden><b id="shopName">Шиномонтаж</b></div>
 
   <section class="card" id="screenLoading"><p>Загружаем очередь…</p></section>
 
@@ -192,8 +193,27 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   $('wTires').addEventListener('click', function () { pickWheels(false); });
   $('signIn').href = '/z/' + SLUG + '?next=q';
 
+  // Оформление организации — то же, что на её странице записи
+  var brandDone = false;
+  function applyBrand(brand) {
+    if (brandDone) return;
+    brandDone = true;
+    if (brand.name) $('shopName').textContent = brand.name;
+    if (/^#[0-9a-f]{6}$/i.test(brand.color || '')) {
+      document.documentElement.style.setProperty('--accent', brand.color);
+    }
+    if (brand.has_logo) {
+      var logo = $('brandLogo');
+      logo.onerror = function () { logo.hidden = true; };
+      logo.src = '/z/logo.jpg?shop=' + encodeURIComponent(SLUG)
+        + '&v=' + encodeURIComponent(brand.logo_version || '');
+      logo.hidden = false;
+    }
+  }
+
   function draw(data) {
     if (data.shop) $('shopName').textContent = data.shop;
+    if (data.brand) applyBrand(data.brand);
     if (!formReady && data.diameters) prepareForm(data);
     var t = data.ticket;
     if (!t) {

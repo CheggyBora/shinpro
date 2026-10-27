@@ -71,6 +71,11 @@ class PublicInfoOut(BaseModel):
     tire_booking: bool = True
     wash_booking: bool = False
     wash_minutes: int = 30
+    # Как видят организацию клиенты: своё название, цвет и логотип
+    brand_name: Optional[str] = None
+    brand_color: str = '#2563eb'
+    has_logo: bool = False
+    logo_version: str = ''
 
 
 class PublicBookingIn(BaseModel):
@@ -128,8 +133,15 @@ def _shop(db, wanted=None):
 @router.get('/info', response_model=PublicInfoOut, summary='О шиномонтаже')
 def info(shop: Optional[str] = Query(None, description='Короткое имя точки'),
          db: Session = Depends(get_db)):
+    from app.services import branding
+
     row = _shop(db, shop)
+    brand = branding.brand_of(db, row.account, row)
     return PublicInfoOut(
+        brand_name=brand['name'],
+        brand_color=brand['color'],
+        has_logo=brand['has_logo'],
+        logo_version=brand['logo_version'],
         shop=row.slug,
         shop_name=shop_settings.title(db, row),
         shop_phone=shop_settings.get(db, 'shop_phone', shop=row) or row.phone,

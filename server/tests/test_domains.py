@@ -209,6 +209,85 @@ with TestClient(app) as client:
     check('убранный домен больше ничей',
           tenancy.host_target(db, 'admin.koleso.ru') == (None, None))
 
+    print('\n=== Оформление: у каждой организации своё ===')
+    import io
+    from PIL import Image
+    from app.models import LiveTicket
+    from app.services import branding
+
+    koleso_token = client.post('/staff/login', json={'phone': PHONE, 'pin': '1470'},
+                               headers=host('koleso-admin.rif-test.ru')).json()['token']
+    auth = {**host('koleso-admin.rif-test.ru'), 'Authorization': f'Bearer {koleso_token}'}
+
+    logo = client.get('/z/logo.jpg', headers=host('koleso.rif-test.ru'))
+    check('у «Колеса» без своего логотипа — никакого, а не логотип «РИФа»',
+          logo.status_code == 404, str(logo.status_code))
+
+    brand = client.get('/dashboard/brand', headers=auth)
+    check('раздел «Оформление» открывается', brand.status_code == 200, brand.text[:200])
+    ours = {row['name']: row for row in brand.json()['ours']}
+    check('наши адреса «Колеса» показаны',
+          set(ours) == {'koleso.rif-test.ru', 'koleso-admin.rif-test.ru'}, str(list(ours)))
+    own = brand.json()['own']
+    check('свой домен — с подсказкой, что вписать у регистратора',
+          bool(own) and own[0]['record'] == {'type': 'CNAME', 'host': 'zapis',
+                                             'value': 'koleso.rif-test.ru'}, str(own))
+
+    answer = client.put('/dashboard/brand', headers=auth,
+                        json={'name': '  Шиномонтаж   «Колесо» ', 'color': '#DC2626'})
+    check('название и цвет сохранены',
+          answer.status_code == 200 and answer.json()['name'] == 'Шиномонтаж «Колесо»'
+          and answer.json()['color'] == '#dc2626', answer.text[:200])
+    bad = client.put('/dashboard/brand', headers=auth, json={'color': 'red; x'})
+    check('цвет не в виде #rrggbb — отказ', bad.status_code == 400, bad.text)
+
+    picture = io.BytesIO()
+    Image.new('RGB', (900, 300), (200, 30, 30)).save(picture, format='JPEG')
+    answer = client.post('/dashboard/brand/logo', headers=auth,
+                         files={'file': ('logo.jpg', picture.getvalue(), 'image/jpeg')})
+    check('логотип загружен', answer.status_code == 200 and answer.json()['has_logo'],
+          answer.text[:200])
+    answer = client.post('/dashboard/brand/logo', headers=auth,
+                         files={'file': ('x.jpg', b'not an image', 'image/jpeg')})
+    check('не картинка — отказ', answer.status_code == 400, answer.text)
+
+    logo = client.get('/z/logo.jpg', headers=host('koleso.rif-test.ru'))
+    shape = Image.open(io.BytesIO(logo.content)).size if logo.status_code == 200 else None
+    check('на адресе «Колеса» — его логотип, квадрат 512',
+          logo.status_code == 200 and logo.headers['content-type'] == 'image/png'
+          and shape == (512, 512), f'{logo.status_code} {shape}')
+
+    info = client.get('/public/info', headers=host('koleso.rif-test.ru')).json()
+    check('страница записи получает своё название, цвет и логотип',
+          info['brand_name'] == 'Шиномонтаж «Колесо»' and info['brand_color'] == '#dc2626'
+          and info['has_logo'] and bool(info['logo_version']), str(info))
+    info = client.get('/public/info', headers=host('lk.rif-test.ru')).json()
+    check('у «РИФа» цвет прежний, чужое название не подставилось',
+          info['brand_color'] == '#2563eb' and info['brand_name'] == 'РИФ', str(info))
+
+    manifest = client.get('/z/manifest.webmanifest', headers=host('koleso.rif-test.ru')).json()
+    check('значок на экран телефона — логотип «Колеса»',
+          manifest['icons'][0]['type'] == 'image/png' and 'Колесо' in manifest['name'],
+          str(manifest)[:200])
+
+    state = client.get('/live/state', headers=host('koleso.rif-test.ru')).json()
+    check('экран очереди получает оформление «Колеса»',
+          state.get('brand', {}).get('name') == 'Шиномонтаж «Колесо»', str(state)[:200])
+
+    print('\n=== Схема парковки — только на площадке, с которой нарисована ===')
+    db.expire_all()
+    home_ticket = LiveTicket(shop_id=db.get(Account, rif_id).shops[0].id,
+                             token='t-home', license_plate='А111АА77')
+    alien_ticket = LiveTicket(shop_id=db.get(Account, koleso_id).shops[0].id,
+                              token='t-alien', license_plate='В222ВВ77')
+    db.add_all([home_ticket, alien_ticket])
+    db.flush()
+    check('своя точка — схема со стрелкой до поста',
+          branding.parking_scene(home_ticket, 2) == '/parking?client=1#post2')
+    check('у «Колеса» схемы нет: там нарисован двор «РИФа»',
+          branding.parking_scene(alien_ticket, 2) is None)
+    db.rollback()
+
     print('\n=== Имена, которые организация получить не может ===')
     taken = tenancy.taken_slugs(db)
     check('admin занято сервером', tenancy.make_slug('Admin', taken) != 'admin')

@@ -25,7 +25,7 @@
 from datetime import datetime
 
 from sqlalchemy import (Column, Integer, String, Boolean, DateTime, Float,
-                        Text, ForeignKey)
+                        Text, ForeignKey, LargeBinary)
 from sqlalchemy.orm import relationship
 
 from app.database import Base
@@ -75,6 +75,18 @@ class Account(Base):
     # Без неё любой, кто узнал адрес сервера, мог бы слать боту всё что
     # угодно от имени телеграма
     telegram_secret = Column(String(64), nullable=True, index=True)
+
+    # --- Как видят клиенты -----------------------------------------------
+    #
+    # Свои у каждой организации: на странице записи «Колеса» не должно
+    # быть ничего от «РИФа». Задаётся в дашборде, раздел «Оформление»
+    brand_name = Column(String(200), nullable=True)
+    brand_color = Column(String(9), nullable=True)
+    # Квадрат PNG 512×512 — десятки КБ, держим в базе: копия базы
+    # уносит его с собой, а файл рядом потерялся бы при переезде
+    logo = Column(LargeBinary, nullable=True)
+    logo_type = Column(String(32), nullable=True)
+    logo_at = Column(DateTime, nullable=True)
 
     shops = relationship('Shop', back_populates='account',
                          cascade='all, delete-orphan')

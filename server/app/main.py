@@ -137,7 +137,7 @@ if settings.CORS_ORIGINS:
 
 from app.api import (auth, booking, storage, history, queue, sync, public,  # noqa: E402
                      photos, live, tasks, stock, cash,
-                     staff, dashboard, telegram, push)
+                     staff, dashboard, telegram, push, branding)
 
 app.include_router(auth.router)
 app.include_router(booking.router)
@@ -147,6 +147,7 @@ app.include_router(queue.router)
 app.include_router(sync.router)
 app.include_router(staff.router)
 app.include_router(dashboard.router)
+app.include_router(branding.router)
 app.include_router(telegram.router)
 app.include_router(push.router)
 app.include_router(public.router)
@@ -172,13 +173,27 @@ WEB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'web')
 
 
 @app.get('/z/logo.jpg', include_in_schema=False)
-def booking_logo():
-    """Логотип шиномонтажа. Нет файла — страница просто обойдётся без него."""
-    path = os.environ.get('SERVER_LOGO_PATH') or os.path.join(WEB_DIR, 'logo.jpg')
-    if not os.path.exists(path):
+def booking_logo(shop: str = ''):
+    """
+    Логотип организации, чья страница открыта. Нет своего — 404, и
+    страница обойдётся без картинки: чужой логотип хуже, чем никакого.
+    """
+    from fastapi.responses import Response
+    from app.database import SessionLocal
+    from app.services import branding
+
+    session = SessionLocal()
+    try:
+        account, _ = branding.page_account(session, shop)
+        found = branding.logo_of(session, account)
+    finally:
+        session.close()
+
+    if found is None:
         return HTMLResponse(status_code=404, content='')
-    return FileResponse(path, media_type='image/jpeg',
-                        headers={'Cache-Control': 'public, max-age=86400'})
+    data, kind = found
+    return Response(content=data, media_type=kind,
+                    headers={'Cache-Control': 'public, max-age=86400'})
 
 
 @app.get('/d', response_class=HTMLResponse, include_in_schema=False)
@@ -230,15 +245,31 @@ def booking_manifest(shop: str = ''):
     from app.database import SessionLocal
     from app.services import shop_settings, tenancy
 
+    from app.services import branding
+
     name = settings.SHOP_NAME
     start = '/z'
+    color = '#0f172a'
+    icons = [{'src': '/z/icon.svg', 'sizes': 'any', 'type': 'image/svg+xml',
+              'purpose': 'any maskable'}]
 
     session = SessionLocal()
     try:
-        row = tenancy.page_shop(session, shop)
+        account, row = branding.page_account(session, shop)
         if row is not None:
             name = shop_settings.title(session, row)
             start = f'/z/{row.slug}'
+        if account is not None:
+            brand = branding.brand_of(session, account, row)
+            name = brand['name'] or name
+            if account.brand_color:
+                color = brand['color']
+            # Значок на экране телефона — логотип организации, если есть
+            if account.logo:
+                icons = [{'src': f'/z/logo.jpg?shop={row.slug if row else ""}'
+                                 f'&v={brand["logo_version"]}',
+                          'sizes': '512x512', 'type': 'image/png',
+                          'purpose': 'any'}] + icons
     finally:
         session.close()
 
@@ -259,12 +290,9 @@ def booking_manifest(shop: str = ''):
         'display': 'standalone',
         'orientation': 'portrait',
         'background_color': '#f1f5f9',
-        'theme_color': '#0f172a',
+        'theme_color': color,
         'lang': 'ru',
-        'icons': [
-            {'src': '/z/icon.svg', 'sizes': 'any', 'type': 'image/svg+xml',
-             'purpose': 'any maskable'},
-        ],
+        'icons': icons,
     }, headers={'Cache-Control': 'public, max-age=3600'})
 
 

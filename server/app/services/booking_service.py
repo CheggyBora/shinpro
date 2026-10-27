@@ -10,7 +10,7 @@
 from datetime import datetime, timedelta, date, time
 
 from app.models import Appointment, BookingDay, Car, Client, PENDING, TAKEN
-from app.services import shop_settings
+from app.services import branding, shop_settings
 from app.utils import normalize_plate, now as shop_now
 
 # Состояния, при которых машина занимает пост
@@ -668,8 +668,8 @@ def to_public(appointment):
         # Не сезон — постов не раздаём, «Я на месте» не нужно
         'can_check_in': can_check_in(appointment) and _queue_on(appointment),
         'called_post': appointment.called_post,
-        'scene': (f'/parking?client=1#post{appointment.called_post}'
-                  if appointment.called_post else None),
+        # Схема — только для площадки, с которой нарисована
+        'scene': branding.parking_scene(appointment, appointment.called_post),
     }
 
 

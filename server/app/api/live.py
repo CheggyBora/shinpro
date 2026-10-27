@@ -22,7 +22,7 @@ from app.database import get_db
 from app.models import Client, Shop, KIND_QUEUE
 from app.models.live import LiveTicket, WAITING, CALLED, SERVING, DONE, LEFT, ACTIVE
 from app.security import decode_token, require_sync_key
-from app.services import notices, shop_settings, tenancy
+from app.services import branding, notices, shop_settings, tenancy
 from app.utils import normalize_phone, normalize_plate, now as shop_now
 
 router = APIRouter(prefix='/live', tags=['Живая очередь'])
@@ -130,7 +130,7 @@ def view(ticket):
         'eta': ticket.eta_at.strftime('%H:%M') if ticket.eta_at else None,
         'post': post,
         # Схема площадки со стрелками до поста
-        'scene': f'/parking?client=1#post{post}' if post else None,
+        'scene': branding.parking_scene(ticket, post),
         'seen_by_shop': ticket.local_id is not None,
     }
 
@@ -156,6 +156,8 @@ def state(request: Request, shop: Optional[str] = Query(None),
     mine = _mine(db, place, request)
     return {
         'shop': place.name,
+        # Своё оформление организации: название, цвет, логотип
+        'brand': branding.brand_of(db, place.account, place),
         'online': _online(place),
         # Не сезон — очередь не ведётся, встать нельзя
         'enabled': shop_settings.live_queue_on(db, place),

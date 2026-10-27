@@ -2238,6 +2238,25 @@ function askWhichShop() {
   });
 }
 
+// Своё оформление организации: цвет кнопок и логотип из «Оформления»
+// в её дашборде. У «Колеса» на странице не должно быть ничего от «РИФа»
+function applyBrand(info) {
+  var color = /^#[0-9a-f]{6}$/i.test(info.brand_color || '') ? info.brand_color : '';
+  if (color) {
+    var n = parseInt(color.slice(1), 16);
+    var dark = [n >> 16, (n >> 8) & 255, n & 255].map(function (c) {
+      return ('0' + Math.round(c * 0.85).toString(16)).slice(-2);
+    }).join('');
+    document.documentElement.style.setProperty('--brand', color);
+    document.documentElement.style.setProperty('--brand-dark', '#' + dark);
+  }
+  var logo = document.querySelector('img.logo');
+  if (logo && info.has_logo && info.logo_version) {
+    logo.src = '/z/logo.jpg?shop=' + encodeURIComponent(info.shop || '')
+      + '&v=' + encodeURIComponent(info.logo_version);
+  }
+}
+
 // -------------------------------------------------------------- запуск
 api('/public/info').then(function (result) {
   if (!result.ok) {
@@ -2250,8 +2269,10 @@ api('/public/info').then(function (result) {
   }
   var info = result.data;
   window.shopPhone = info.shop_phone;
-  document.title = 'Запись — ' + info.shop_name;
-  $('shopName').textContent = info.shop_name;
+  var title = info.brand_name || info.shop_name;
+  document.title = 'Запись — ' + title;
+  $('shopName').textContent = title;
+  applyBrand(info);
   $('shopAddress').textContent = info.shop_address || 'Запись на обслуживание';
   $('tAssembled').textContent = '≈ ' + info.minutes_assembled + ' мин';
   $('tTires').textContent = '≈ ' + info.minutes_tires + ' мин';

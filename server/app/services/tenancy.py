@@ -592,6 +592,11 @@ def add_domain(db, account, name, role=ROLE_LK):
         if name.startswith(prefix):
             name = name[len(prefix):]
     name = name.split('/', 1)[0].rstrip('.')
+    # «запись.колесо.рф» — в том виде, в каком его знает интернет
+    try:
+        name = name.encode('idna').decode('ascii')
+    except UnicodeError:
+        raise DomainError('Адрес выглядит неправильно. Пример: zapis.koleso.ru')
 
     if role not in (ROLE_LK, ROLE_ADMIN):
         raise DomainError('Непонятно, для чего адрес')
@@ -649,6 +654,27 @@ def domains_plan(db):
             if row.kind == KIND_OWN:
                 plan.append((row.name, row.role, True))
     return plan
+
+
+def ensure_domain_row(db, name, role):
+    """
+    Строка для нашего поддомена — чтобы было куда записать, выпущен ли
+    сертификат. Чей он, видно и без неё: по имени организации.
+    """
+    from app.models.account import KIND_OURS
+
+    row = db.query(AccountDomain).filter(AccountDomain.name == name).first()
+    if row is not None:
+        return row
+    account_id, found_role = _host_target(db, name)
+    if account_id is None:
+        return None
+    row = AccountDomain(account_id=account_id, name=name, role=found_role or role,
+                        kind=KIND_OURS, status=DOMAIN_WAITING,
+                        note='Сертификат выпускается')
+    db.add(row)
+    db.commit()
+    return row
 
 
 def set_domain_status(db, name, status_value, note=None):

@@ -810,6 +810,7 @@ var ICONS = {
   shifts: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
   staff: '<circle cx="9" cy="8" r="3"/><path d="M3 20c0-3 3-5 6-5s6 2 6 5"/>'
        + '<path d="M16 5l2 2 4-4"/>',
+  brand: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/>',
   salary: '<rect x="2" y="6" width="20" height="12" rx="2"/>'
         + '<circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/>',
   booking: '<rect x="3" y="5" width="18" height="16" rx="2"/>'
@@ -853,6 +854,8 @@ function sections() {
   if (can('revenue')) list.push({ key: 'cash', title: 'Касса' });
   if (can('booking')) list.push({ key: 'booking', title: 'Запись' });
   if (can('staff')) list.push({ key: 'staff', title: 'Доступ' });
+  // Как организацию видят клиенты и по каким адресам она открывается
+  if (can('staff')) list.push({ key: 'brand', title: 'Оформление' });
 
   return list;
 }
@@ -1059,7 +1062,7 @@ function load() {
   // На экране доступа период ни при чём: люди не относятся к месяцу
   var aboutPeople = section === 'staff' || section === 'salary'
                  || section === 'booking' || section === 'calendar'
-                 || section === 'stock';
+                 || section === 'stock' || section === 'brand';
   $('period').style.display = aboutPeople ? 'none' : '';
   $('dates').style.display = aboutPeople ? 'none' : '';
   // Переключатель — после смены точки или раздела: у новой точки мойки
@@ -1070,6 +1073,7 @@ function load() {
   if (section === 'stock') return loadStock();
   if (section === 'booking') return loadBooking();
   if (section === 'staff') return loadStaff();
+  if (section === 'brand') return loadBrand();
   if (section === 'salary') return loadSalary();
   if (section === 'cash') return loadCash();
   if (section === 'summary') return loadSummary();
@@ -1553,6 +1557,144 @@ function saveBooking(body) {
 // ------------------------------------------------------------------
 
 var roles = null;   // справочник ролей и прав, спрашиваем один раз
+
+// ------------------------------------------------------------------
+// Оформление и адреса
+// ------------------------------------------------------------------
+//
+// У каждой организации своё название, логотип и цвет на странице
+// записи и свой адрес (решение владельца 27.10.2026). Свой домен
+// подключается здесь: вписал, сделал запись у регистратора — сервер
+// сам проверит и выпустит сертификат (deploy/domains.sh)
+
+var BRAND_COLORS = ['#2563eb', '#dc2626', '#059669', '#ea580c', '#7c3aed', '#1e293b'];
+
+function domainTag(item) {
+  var kind = item.status === 'active' ? 'ok' : (item.status === 'error' ? 'bad' : 'warn');
+  return '<span class="tag ' + kind + '">' + escape(item.status_title) + '</span>';
+}
+
+function loadBrand() {
+  api('/dashboard/brand').then(drawBrand).catch(function (e) { show(''); fail(e.message); });
+}
+
+function drawBrand(data) {
+  var colors = BRAND_COLORS.slice();
+  if (colors.indexOf(data.color) < 0) colors.push(data.color);
+
+  var html = '<div class="card"><h2>Как вас видят клиенты</h2>'
+    + '<div class="field"><label for="bName">Название на странице записи</label>'
+    + '<input id="bName" maxlength="200" value="' + escape(data.name) + '" placeholder="'
+    + escape(data.shown_name) + '"></div>'
+    + '<div class="field"><label>Логотип</label>'
+    + '<div style="display:flex;gap:12px;align-items:center">'
+    + '<img id="bLogo" alt="Логотип" style="width:64px;height:64px;border-radius:12px;'
+    + 'object-fit:contain;background:var(--line)"' + (data.has_logo ? '' : ' hidden') + '>'
+    + '<div style="display:flex;flex-direction:column;gap:6px">'
+    + '<label class="chip" style="cursor:pointer">Загрузить<input id="bFile" type="file"'
+    + ' accept="image/png,image/jpeg,image/webp" hidden></label>'
+    + (data.has_logo ? '<button class="link" type="button" id="bNoLogo" style="padding:0">Убрать</button>' : '')
+    + '</div></div>'
+    + '<div class="hint">Квадратный JPG или PNG. Он же — значок кабинета на экране телефона.</div></div>'
+    + '<div class="field"><label>Цвет кнопок</label><div style="display:flex;gap:8px;flex-wrap:wrap">'
+    + colors.map(function (color) {
+        return '<button type="button" data-color="' + color + '" aria-label="Цвет ' + color
+          + '" aria-pressed="' + (color === data.color) + '" style="width:40px;height:40px;'
+          + 'border-radius:20px;background:' + color + ';border:' + (color === data.color
+            ? '3px solid var(--ink)' : '0') + '"></button>';
+      }).join('')
+    + '</div></div>'
+    + '<div class="hint">Видно на странице записи, в кабинете клиента и на экране очереди.</div>'
+    + '</div>';
+
+  html += '<div class="card"><h2>Адреса</h2>'
+    + data.ours.map(function (item) {
+        return '<div class="row"><div class="main"><b>' + escape(item.name) + ' ' + domainTag(item)
+          + '</b><span>' + escape(item.role_title) + '</span></div></div>';
+      }).join('')
+    + data.own.map(function (item) {
+        var how = '';
+        if (item.status !== 'active') {
+          how = '<span>Там, где покупали домен, добавьте запись: тип <b style="display:inline">'
+            + item.record.type + '</b>, имя <b style="display:inline">' + escape(item.record.host)
+            + '</b>, значение <b style="display:inline">' + escape(item.record.value) + '</b>.'
+            + (item.record_a.value ? ' Если CNAME нельзя — тип A, значение '
+              + escape(item.record_a.value) + '.' : '')
+            + ' Проверяем сами каждые 5 минут.</span>';
+        }
+        return '<div class="row"><div class="main"><b>' + escape(item.name) + ' ' + domainTag(item)
+          + '</b><span>' + escape(item.role_title) + (item.note ? ' · ' + escape(item.note) : '')
+          + '</span>' + how + '</div>'
+          + '<button class="link" type="button" data-drop="' + item.id + '">Отключить</button></div>';
+      }).join('')
+    + '<h2 style="margin-top:16px">Подключить свой домен</h2>'
+    + '<div class="form"><div class="field"><label for="dName">Адрес</label>'
+    + '<input id="dName" placeholder="zapis.vash-domen.ru" autocapitalize="off" spellcheck="false"></div>'
+    + '<div class="field"><label for="dRole">Для чего</label><select id="dRole">'
+    + '<option value="lk">Запись и кабинет клиента</option><option value="admin">Дашборд</option>'
+    + '</select></div></div>'
+    + '<button class="go" type="button" id="dAdd">Подключить</button>'
+    + '<div class="hint">Наш адрес продолжает работать и после подключения своего — '
+    + 'старые ссылки у клиентов не сломаются.</div></div>';
+
+  show(html);
+
+  if (data.has_logo) {
+    fetch('/dashboard/brand/logo?v=' + encodeURIComponent(data.logo_version),
+          { headers: { Authorization: 'Bearer ' + token } })
+      .then(function (answer) { return answer.ok ? answer.blob() : null; })
+      .then(function (blob) { if (blob && $('bLogo')) $('bLogo').src = URL.createObjectURL(blob); })
+      .catch(function () {});
+  }
+
+  function save(body) {
+    api('/dashboard/brand', { method: 'PUT', body: body }).then(drawBrand)
+      .catch(function (e) { fail(e.message); });
+  }
+
+  $('bName').addEventListener('change', function () { save({ name: $('bName').value }); });
+  [].slice.call($('view').querySelectorAll('[data-color]')).forEach(function (button) {
+    button.addEventListener('click', function () { save({ color: button.getAttribute('data-color') }); });
+  });
+
+  $('bFile').addEventListener('change', function () {
+    var file = $('bFile').files[0];
+    if (!file) return;
+    var form = new FormData();
+    form.append('file', file);
+    fetch('/dashboard/brand/logo', { method: 'POST', body: form,
+                                     headers: { Authorization: 'Bearer ' + token } })
+      .then(function (answer) {
+        return answer.json().then(function (body) {
+          if (!answer.ok) throw new Error(body.detail || 'Не получилось загрузить');
+          return body;
+        });
+      })
+      .then(drawBrand).catch(function (e) { fail(e.message); });
+  });
+
+  if ($('bNoLogo')) {
+    $('bNoLogo').addEventListener('click', function () {
+      api('/dashboard/brand/logo', { method: 'DELETE' }).then(drawBrand)
+        .catch(function (e) { fail(e.message); });
+    });
+  }
+
+  $('dAdd').addEventListener('click', function () {
+    var name = $('dName').value.trim();
+    if (!name) return;
+    api('/dashboard/domains', { method: 'POST', body: { name: name, role: $('dRole').value } })
+      .then(drawBrand).catch(function (e) { fail(e.message); });
+  });
+
+  [].slice.call($('view').querySelectorAll('[data-drop]')).forEach(function (button) {
+    button.addEventListener('click', function () {
+      if (!confirm('Отключить этот адрес? По нему перестанут открываться страницы.')) return;
+      api('/dashboard/domains/' + button.getAttribute('data-drop'), { method: 'DELETE' })
+        .then(drawBrand).catch(function (e) { fail(e.message); });
+    });
+  });
+}
 
 function loadStaff() {
   var need = roles ? Promise.resolve(roles) : api('/staff/roles');
