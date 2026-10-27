@@ -12,6 +12,19 @@ from logger import log
 # полутора тысяч строк вместе с этим файлом
 from ui.order_screen import OrderWidget
 
+def _two_lines(name, limit):
+    """
+    Длинное название — в две строки по пробелу ближе к середине: плитка
+    узкая, а «Подкачка/проверка давления» иначе обрезается.
+    """
+    if len(name) <= limit or ' ' not in name:
+        return name
+    middle = len(name) // 2
+    spaces = [i for i, ch in enumerate(name) if ch == ' ']
+    cut = min(spaces, key=lambda i: abs(i - middle))
+    return name[:cut] + '\n' + name[cut + 1:]
+
+
 class OrdersTab:
     def __init__(self, parent, db, employees_tab=None):
         self.db = db
@@ -81,23 +94,30 @@ class OrdersTab:
         self.tasks_strip.pack(fill='x', padx=15, pady=(0, 10))
         self.refresh_tasks()
 
-        top_card = styles.create_card_frame(self.frame)
-        top_card.pack(fill='x', padx=15, pady=(0, 10))
-        
+        # Кнопки услуг слева, наряд справа — оба на всю высоту (решение
+        # владельца 28.10.2026). Раньше кнопки стояли над нарядом, и наряду
+        # оставалась нижняя треть: на мониторе 1920×1080 была видна одна
+        # позиция, на 1366×768 — ни одной
+        body = ttk.Frame(self.frame, style='BG.TFrame')
+        body.pack(fill='both', expand=True, padx=15, pady=(0, 15))
+        body.columnconfigure(0, weight=9, uniform='halves')
+        body.columnconfigure(1, weight=11, uniform='halves')
+        body.rowconfigure(0, weight=1)
+
+        top_card = styles.create_card_frame(body)
+        top_card.grid(row=0, column=0, sticky='nsew', padx=(0, 10))
+
         top_inner = ttk.Frame(top_card, style='White.TFrame')
-        top_inner.pack(fill='both', expand=True, padx=15, pady=10)
-        
+        top_inner.pack(fill='both', expand=True, padx=12, pady=10)
+
         self.services_frame = ttk.Frame(top_inner, style='White.TFrame')
-        self.services_frame.pack(fill='x')
-        
+        self.services_frame.pack(fill='both', expand=True)
+
         self.load_service_buttons()
-        
-        # Область нарядов должна занимать всё оставшееся место.
-        # Раньше она паковалась как fill='x' и получала только свою
-        # естественную высоту, а всё свободное пространство забирал
-        # пустой фрейм под ней — из-за этого таблица услуг схлопывалась.
-        tabs_frame = ttk.Frame(self.frame, style='BG.TFrame')
-        tabs_frame.pack(fill='both', expand=True, padx=15, pady=(0, 15))
+
+        # Наряды — справа, на всю оставшуюся высоту
+        tabs_frame = ttk.Frame(body, style='BG.TFrame')
+        tabs_frame.grid(row=0, column=1, sticky='nsew')
 
         self.order_notebook = ttk.Notebook(tabs_frame)
         self.order_notebook.pack(fill='both', expand=True)
@@ -112,7 +132,7 @@ class OrdersTab:
         а порядок по колонкам — из настроек. Поэтому услуга, добавленная
         в прайс-лист, сразу получает кнопку, а удалённая — теряет её.
         """
-        from services.service_layout import build_columns, COLUMN_COUNT
+        from services.service_layout import build_columns
 
         services = [s for s in self.order_service.get_all_services()
                     if (getattr(s, 'direction', None) or 'tire') == self.mode]
@@ -130,21 +150,38 @@ class OrdersTab:
         for child in self.services_frame.winfo_children():
             child.destroy()
 
-        for index in range(COLUMN_COUNT):
-            # У последней колонки отступа справа нет — иначе она
-            # отъезжает от края
-            right_padding = 0 if index == COLUMN_COUNT - 1 else 5
-            frame = ttk.Frame(self.services_frame, style='White.TFrame')
-            frame.pack(side='left', fill='both', expand=True, padx=(0, right_padding))
-            frame.columnconfigure(0, weight=1)
+        # Крупные плитки в три колонки на всю высоту (решение владельца
+        # 28.10.2026). Порядок — как в раскладке из настроек: колонка за
+        # колонкой, сверху вниз. Шрифт — по экрану: на 1366×768 крупный
+        # не влезает
+        names = [name for column in columns for name in column]
+        tiles = 3
+        rows = max(1, (len(names) + tiles - 1) // tiles)
+        style = ttk.Style()
+        style.configure('Tile.Service.TButton', font=(styles.DEFAULT_FONT, 11, 'bold'),
+                        padding=(4, 0), anchor='center', justify='center')
 
-            for row, service_name in enumerate(columns[index]):
-                ttk.Button(
-                    frame, text=service_name,
-                    command=lambda name=service_name: self.add_service_to_current_order_by_name(name),
-                    style='Service.TButton'
-                ).grid(row=row, column=0, padx=3 if index == 0 else 2,
-                       pady=2, sticky='ew')
+        def fit(event, rows=rows):
+            # Две строки шрифта должны влезть в плитку: на 1920×1080 плитка
+            # высокая — 11 жирным, на 1366×768 низкая — мельче
+            tile = event.height / rows - 6
+            size = 11 if tile >= 46 else 10 if tile >= 40 else 9 if tile >= 35 else 8
+            if size != getattr(self, '_tile_font', None):
+                self._tile_font = size
+                style.configure('Tile.Service.TButton', font=(styles.DEFAULT_FONT, size, 'bold'))
+
+        self.services_frame.bind('<Configure>', fit)
+
+        for index, service_name in enumerate(names):
+            ttk.Button(
+                self.services_frame, text=_two_lines(service_name, 20),
+                command=lambda name=service_name: self.add_service_to_current_order_by_name(name),
+                style='Tile.Service.TButton'
+            ).grid(row=index % rows, column=index // rows, padx=3, pady=3, sticky='nsew')
+        for column in range(tiles):
+            self.services_frame.columnconfigure(column, weight=1, uniform='tile')
+        for row in range(rows):
+            self.services_frame.rowconfigure(row, weight=1, uniform='tile')
 
     def update_license_plates_list(self):
         """Загрузить список всех номеров машин"""

@@ -288,7 +288,9 @@ def apply_modern_styles(root):
                     foreground=COLORS['text'],
                     fieldbackground=COLORS['bg_card'],
                     font=FONTS['normal'],
-                    rowheight=32,
+                    # На мониторе 1366×768 строки ниже: иначе в наряде видно
+                    # только четыре позиции (решение владельца 28.10.2026)
+                    rowheight=32 if root.winfo_screenheight() >= 900 else 24,
                     bordercolor=COLORS['border'],
                     borderwidth=0,
                     relief='flat')

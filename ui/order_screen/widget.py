@@ -137,17 +137,17 @@ class OrderWidget(OrderItemsMixin, OrderPaymentMixin, OrderTimingMixin, OrderBlo
         self.tasks_box.pack(anchor='w', fill='x')
         self.refresh_tasks()
         
-        # Рекомендации (под сотрудниками)
+        # Рекомендации — одной строкой, без подписи: подсказка внутри поля.
+        # Наряд стоит справа узкой колонкой, и каждая строка шапки — это
+        # строка позиций, которую пришлось бы листать (решение 28.10.2026)
         recommendations_frame = ttk.Frame(main_container, style='White.TFrame')
-        recommendations_frame.pack(fill='x', pady=(2, 0))
-        
-        ttk.Label(recommendations_frame, text="Рекомендации:", background=styles.COLORS['bg_card'], foreground=styles.COLORS['text_secondary'], font=(styles.DEFAULT_FONT, 9, 'bold')).pack(anchor='w')
-        
-        self.recommendations_text = tk.Text(recommendations_frame, height=2, font=styles.FONTS['normal'], 
+        recommendations_frame.pack(fill='x', pady=(6, 4))
+
+        self.recommendations_text = tk.Text(recommendations_frame, height=1, font=styles.FONTS['normal'],
                                            bg=styles.COLORS['bg_card'], fg=styles.COLORS['text'],
                                            relief='solid', borderwidth=1, wrap='word')
-        self.recommendations_text.pack(fill='x', pady=(2, 5))
-        
+        self.recommendations_text.pack(fill='x')
+
         # Устанавливаем placeholder и загружаем существующие рекомендации
         if order.recommendations:
             self.recommendations_text.insert('1.0', order.recommendations)
@@ -156,67 +156,84 @@ class OrderWidget(OrderItemsMixin, OrderPaymentMixin, OrderTimingMixin, OrderBlo
             self.recommendations_text.insert('1.0', 'Рекомендации для клиента...')
             self.recommendations_text.tag_add('placeholder', '1.0', 'end')
             self.recommendations_text.tag_configure('placeholder', foreground='#94a3b8')
-        
+
         # Обработчики для placeholder и автосохранения
         self.recommendations_text.bind('<FocusIn>', self.on_recommendations_focus_in)
         self.recommendations_text.bind('<FocusOut>', self.on_recommendations_focus_out)
-        
-        # Скидки (левее)
-        discount_frame = ttk.Frame(top_frame, style='White.TFrame')
-        discount_frame.pack(side='left', padx=(15, 0))
-        
-        ttk.Label(discount_frame, text="Скидки:", background=styles.COLORS['bg_card'], font=(styles.DEFAULT_FONT, 11, 'bold')).pack(anchor='w')
-        
-        disc_row = ttk.Frame(discount_frame, style='White.TFrame')
-        disc_row.pack()
-        
-        ttk.Label(disc_row, text="Диски:", background=styles.COLORS['bg_card'], font=(styles.DEFAULT_FONT, 10)).pack(side='left', padx=(0, 3))
+
+        # --- Низ наряда: скидки, время, итог, «Пробить» -------------------
+        # Под позициями и всегда на виду: раньше суммы стояли в шапке справа
+        # и в узкой колонке наряда обрезались (решение владельца 28.10.2026).
+        # Пакуется до позиций, снизу — тогда позиции забирают всё, что между
+        bottom = ttk.Frame(main_container, style='White.TFrame')
+        bottom.pack(side='bottom', fill='x', pady=(6, 0))
+        ttk.Separator(bottom, orient='horizontal').pack(fill='x', pady=(0, 6))
+
+        first_row = ttk.Frame(bottom, style='White.TFrame')
+        first_row.pack(fill='x')
+
+        disc_row = ttk.Frame(first_row, style='White.TFrame')
+        disc_row.pack(side='left')
+        ttk.Label(disc_row, text="Скидки:", background=styles.COLORS['bg_card'],
+                  font=(styles.DEFAULT_FONT, 10, 'bold')).pack(side='left', padx=(0, 8))
+        ttk.Label(disc_row, text="диски", background=styles.COLORS['bg_card'],
+                  font=(styles.DEFAULT_FONT, 10)).pack(side='left', padx=(0, 3))
         self.rim_discount_var = tk.StringVar(value='0')
-        rim_combo = ttk.Combobox(disc_row, textvariable=self.rim_discount_var, values=['0', '10', '20'], 
-                                 width=5, font=(styles.DEFAULT_FONT, 10), state='readonly')
+        rim_combo = ttk.Combobox(disc_row, textvariable=self.rim_discount_var, values=['0', '10', '20'],
+                                 width=4, font=(styles.DEFAULT_FONT, 10), state='readonly')
         rim_combo.pack(side='left', padx=(0, 3))
         ttk.Button(disc_row, text="OK", command=self.apply_rim_discount, width=3).pack(side='left', padx=(0, 10))
-        
-        ttk.Label(disc_row, text="Общ:", background=styles.COLORS['bg_card'], font=(styles.DEFAULT_FONT, 10)).pack(side='left', padx=(0, 3))
+
+        ttk.Label(disc_row, text="общая", background=styles.COLORS['bg_card'],
+                  font=(styles.DEFAULT_FONT, 10)).pack(side='left', padx=(0, 3))
         self.general_discount_var = tk.StringVar(value='0')
-        general_combo = ttk.Combobox(disc_row, textvariable=self.general_discount_var, values=['0', '10', '15'], 
-                                      width=5, font=(styles.DEFAULT_FONT, 10), state='readonly')
+        general_combo = ttk.Combobox(disc_row, textvariable=self.general_discount_var, values=['0', '10', '15'],
+                                      width=4, font=(styles.DEFAULT_FONT, 10), state='readonly')
         general_combo.pack(side='left', padx=(0, 3))
         ttk.Button(disc_row, text="OK", command=self.apply_general_discount, width=3).pack(side='left')
-        
-        # Цены (справа)
-        price_frame = ttk.Frame(top_frame, style='White.TFrame')
-        price_frame.pack(side='right')
-        
-        self.price_label = ttk.Label(price_frame, text="0.00 руб.", background=styles.COLORS['bg_card'], font=(styles.DEFAULT_FONT, 14, 'bold'), foreground='#2563eb')
-        self.price_label.pack(anchor='e')
-        
-        self.discount_price_label = ttk.Label(price_frame, text="", background=styles.COLORS['bg_card'], font=(styles.DEFAULT_FONT, 12, 'bold'), foreground='#059669')
-        self.discount_price_label.pack(anchor='e')
-
-        # Расходники и база для зарплаты: механик и кассир видят цифру сразу,
-        # а не узнают её в конце месяца
-        self.salary_base_label = ttk.Label(price_frame, text="", background=styles.COLORS['bg_card'], font=(styles.DEFAULT_FONT, 9),
-                                           foreground='#64748b')
-        self.salary_base_label.pack(anchor='e')
 
         # Плановое время и его сохранение.
         # Время меняется только по кнопке: пока мастер прикидывает стоимость,
         # прогноз для очереди не должен прыгать туда-сюда.
-        time_row = ttk.Frame(price_frame, style='White.TFrame')
-        time_row.pack(anchor='e', pady=(4, 0))
+        time_row = ttk.Frame(first_row, style='White.TFrame')
+        time_row.pack(side='right')
 
         self.time_label = ttk.Label(time_row, text="", background=styles.COLORS['bg_card'], font=(styles.DEFAULT_FONT, 10, 'bold'),
                                     foreground='#2563eb')
         self.time_label.pack(side='left', padx=(0, 8))
 
         self.save_order_button = styles.create_button(
-        time_row, "Сохранить наряд", self.save_composition, 'Primary.TButton')
+            time_row, "Сохранить наряд", self.save_composition, 'Secondary.TButton')
         self.save_order_button.pack(side='left')
 
-        self.unsaved_label = ttk.Label(price_frame, text="", background=styles.COLORS['bg_card'], font=(styles.DEFAULT_FONT, 9),
+        second_row = ttk.Frame(bottom, style='White.TFrame')
+        second_row.pack(fill='x', pady=(6, 0))
+
+        notes = ttk.Frame(second_row, style='White.TFrame')
+        notes.pack(side='left', fill='x', expand=True)
+
+        # Расходники и база для зарплаты: механик и кассир видят цифру сразу,
+        # а не узнают её в конце месяца
+        self.salary_base_label = ttk.Label(notes, text="", background=styles.COLORS['bg_card'], font=(styles.DEFAULT_FONT, 9),
+                                           foreground='#64748b')
+        self.salary_base_label.pack(anchor='w')
+
+        self.unsaved_label = ttk.Label(notes, text="", background=styles.COLORS['bg_card'], font=(styles.DEFAULT_FONT, 9),
                                        foreground='#d97706')
-        self.unsaved_label.pack(anchor='e')
+        self.unsaved_label.pack(anchor='w')
+
+        # «Пробить» — здесь же, под итогом: проверил сумму — пробил
+        styles.create_button(second_row, "Пробить", self.process_payment,
+                             'Success.TButton').pack(side='right', padx=(14, 0))
+
+        price_frame = ttk.Frame(second_row, style='White.TFrame')
+        price_frame.pack(side='right')
+
+        self.price_label = ttk.Label(price_frame, text="0.00 руб.", background=styles.COLORS['bg_card'], font=(styles.DEFAULT_FONT, 14, 'bold'), foreground='#2563eb')
+        self.price_label.pack(anchor='e')
+
+        self.discount_price_label = ttk.Label(price_frame, text="", background=styles.COLORS['bg_card'], font=(styles.DEFAULT_FONT, 12, 'bold'), foreground='#059669')
+        self.discount_price_label.pack(anchor='e')
 
         # Идентификатор отложенного автосохранения, чтобы отменять предыдущее
         self._autosave_job = None

@@ -96,7 +96,10 @@ check('свежую смену не закрываем',
       report_service.find_overdue_shift() is None)
 
 # Отматываем открытие на вчера
-yesterday = as_naive(shift.start_time) - timedelta(days=1)
+# Вчера вечером, а не «сутки назад от сейчас»: иначе в час ночи смена
+# оказывалась открытой вчера в час ночи и закрывалась в 9:05 того же дня
+yesterday = (as_naive(shift.start_time) - timedelta(days=1)).replace(
+    hour=18, minute=0, second=0, microsecond=0)
 shift.start_time = yesterday
 db.commit()
 
