@@ -112,8 +112,8 @@ class OrderWidget(OrderItemsMixin, OrderPaymentMixin, OrderTimingMixin, OrderBlo
                       foreground=styles.COLORS['success'] if order.auto_discount
                       else styles.COLORS['text']).pack(side='left')
 
-            # Группа клиента — кому предлагать допы. Значок одинаковый
-            # у всех, пока не нажмёшь: клиент у стойки ничего не прочтёт
+            # Группа клиента — кому предлагать допы: код виден сразу,
+            # что он значит — нигде на экране (решение владельца 28.10.2026)
             from ui.client_group_badge import create_group_badge
             create_group_badge(client_row, self.db,
                                order.client_id).pack(side='left', padx=(8, 0))

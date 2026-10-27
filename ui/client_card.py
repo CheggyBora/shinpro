@@ -75,7 +75,7 @@ class ClientCard:
         styles.create_button(fields, "Сохранить", self.save_client,
                              'Primary.TButton').grid(row=0, column=4, padx=(0, 0))
 
-        # Внутренняя группа: по значку ничего не видно, пока не нажмёшь
+        # Внутренняя группа: код виден сразу, расшифровки на экране нет
         create_group_badge(fields, db, client_id).grid(
             row=0, column=5, padx=(8, 0))
 

@@ -1,10 +1,10 @@
 """
-Значок группы клиента: в наряде и в карточке.
+Группа клиента: в наряде и в карточке.
 
-Сам значок одинаковый у всех — стоит группа или нет, какая она. По
-нему ничего не прочесть, пока не нажмёшь: клиент у стойки видит
-обычную кнопку «⋯». Нажал — открылось окошко с кодом группы, тем,
-как с человеком говорить, и кнопками, чтобы поменять.
+Код группы (11, 22, 33…) виден сразу, без нажатия, рядом с кнопкой «⋯»
+(решение владельца 28.10.2026). Что код значит, на экране не пишем
+нигде — ни рядом, ни в окошке: клиент у стойки видит только цифры.
+Расшифровка — в Настройках → Группы клиентов.
 """
 import tkinter as tk
 from tkinter import ttk, messagebox
@@ -16,12 +16,38 @@ BADGE_TEXT = '⋯'
 
 
 def create_group_badge(parent, db, client_id, on_change=None):
-    """Кнопка-значок. Возвращает её — разместить, как удобно."""
-    button = ttk.Button(parent, text=BADGE_TEXT, width=2,
+    """
+    Код группы и кнопка «⋯», чтобы поставить или поменять. Возвращает
+    рамку с ними — разместить, как удобно.
+    """
+    frame = ttk.Frame(parent, style='White.TFrame')
+    code = ttk.Label(frame, text='', font=(styles.DEFAULT_FONT, 12, 'bold'),
+                     background=styles.COLORS['bg_card'],
+                     foreground=styles.COLORS['text'])
+    button = ttk.Button(frame, text=BADGE_TEXT, width=2,
                         style='Badge.Secondary.TButton')
-    button.configure(command=lambda: open_group_popup(
-        button, db, client_id, on_change))
-    return button
+
+    def show_code():
+        try:
+            group = ClientGroupService(db).group_of(client_id)
+        except Exception:
+            db.rollback()
+            group = None
+        code.configure(text=group.code if group is not None else '')
+        if group is not None:
+            code.pack(side='left', padx=(0, 4), before=button)
+        else:
+            code.pack_forget()
+
+    def changed():
+        show_code()
+        if on_change:
+            on_change()
+
+    button.pack(side='left')
+    show_code()
+    button.configure(command=lambda: open_group_popup(button, db, client_id, changed))
+    return frame
 
 
 def open_group_popup(anchor, db, client_id, on_change=None):
@@ -85,46 +111,13 @@ class GroupPopup:
         groups = self.service.groups()
         current = self.service.group_of(self.client_id)
 
-        # --- Что стоит сейчас ---------------------------------------
-        if current is not None:
-            top = ttk.Frame(self.body, style='White.TFrame')
-            top.pack(fill='x')
-            ttk.Label(top, text=current.code,
-                      font=(styles.DEFAULT_FONT, 22, 'bold'),
-                      background=styles.COLORS['bg_card'],
-                      foreground=styles.COLORS['text']).pack(side='left')
-            ttk.Label(top, text=current.title,
-                      font=(styles.DEFAULT_FONT, 11, 'bold'),
-                      background=styles.COLORS['bg_card'],
-                      foreground=styles.COLORS['text']).pack(
-                          side='left', padx=(10, 0))
+        # Только коды: что они значат, здесь не пишем (решение владельца
+        # 28.10.2026) — окошко видно клиенту через стойку
+        ttk.Label(self.body, text='Группа клиента',
+                  font=(styles.DEFAULT_FONT, 10, 'bold'),
+                  background=styles.COLORS['bg_card'],
+                  foreground=styles.COLORS['text']).pack(anchor='w', pady=(0, 8))
 
-            if current.hint:
-                ttk.Label(self.body, text=current.hint, wraplength=300,
-                          justify='left', font=(styles.DEFAULT_FONT, 10),
-                          background=styles.COLORS['bg_card'],
-                          foreground=styles.COLORS['text']).pack(
-                              anchor='w', pady=(6, 0))
-
-            client = self._client()
-            if client is not None and client.group_set_at:
-                ttk.Label(self.body,
-                          text='Поставлена ' +
-                          client.group_set_at.strftime('%d.%m.%Y'),
-                          font=(styles.DEFAULT_FONT, 9),
-                          background=styles.COLORS['bg_card'],
-                          foreground=styles.COLORS['text_secondary']).pack(
-                              anchor='w', pady=(4, 0))
-        else:
-            ttk.Label(self.body, text='Группа не поставлена',
-                      font=(styles.DEFAULT_FONT, 11, 'bold'),
-                      background=styles.COLORS['bg_card'],
-                      foreground=styles.COLORS['text']).pack(anchor='w')
-
-        ttk.Separator(self.body, orient='horizontal').pack(
-            fill='x', pady=(12, 10))
-
-        # --- Поменять -----------------------------------------------
         if not groups:
             ttk.Label(self.body,
                       text='Групп нет. Заведите их в Настройках → '
@@ -134,14 +127,16 @@ class GroupPopup:
                       background=styles.COLORS['bg_card'],
                       foreground=styles.COLORS['text_secondary']).pack(
                           anchor='w')
-        for group in groups:
+        grid = ttk.Frame(self.body, style='White.TFrame')
+        grid.pack(fill='x')
+        for index, group in enumerate(groups):
             is_current = current is not None and group.id == current.id
             styles.create_button(
-                self.body, f'{group.code}  ·  {group.title}',
+                grid, group.code,
                 lambda g=group.id: self.choose(g),
                 'Compact.Primary.TButton' if is_current
                 else 'Compact.Secondary.TButton'
-            ).pack(fill='x', pady=(0, 3))
+            ).grid(row=index // 4, column=index % 4, sticky='ew', padx=(0, 4), pady=(0, 4))
 
         bottom = ttk.Frame(self.body, style='White.TFrame')
         bottom.pack(fill='x', pady=(8, 0))

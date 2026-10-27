@@ -183,15 +183,15 @@ check('наряд того же клиента', open_order.client_id == client_
 
 marked_texts = texts(marked.frame)
 plain_texts = texts(plain.frame)
-check('значок в наряде есть', badge_module.BADGE_TEXT in marked_texts)
-check('у клиента без группы — такой же значок',
-      badge_module.BADGE_TEXT in plain_texts)
-check('кода группы на экране нет', '55' not in marked_texts,
+check('кнопка «⋯» в наряде есть', badge_module.BADGE_TEXT in marked_texts)
+check('у клиента без группы — тоже', badge_module.BADGE_TEXT in plain_texts)
+check('код группы виден сразу, без нажатия', '55' in marked_texts,
       str([t for t in marked_texts if '55' in t]))
-check('названия тоже', not any('Негатив' in t for t in marked_texts))
+check('у клиента без группы кода нет', '55' not in plain_texts and '11' not in plain_texts)
+check('что код значит — на экране нет', not any('Негатив' in t for t in marked_texts))
 
 print()
-print('=== Нажали — видно и можно поменять ===')
+print('=== Нажали «⋯» — только коды, можно поменять ===')
 button = next(w for w in all_widgets(marked.frame)
               if isinstance(w, tk.ttk.Button)
               and w.cget('text') == badge_module.BADGE_TEXT)
@@ -201,19 +201,23 @@ popup = next(w for w in all_widgets(root)
              if isinstance(w, tk.Toplevel) and w.winfo_exists()
              and 'Клиент' == w.title())
 popup_texts = texts(popup)
-check('в окошке код', '55' in popup_texts, str(popup_texts))
-check('и название', 'Негатив' in popup_texts)
-check('и как говорить', 'Ничего не предлагать' in popup_texts)
+check('в окошке коды', '55' in popup_texts and '11' in popup_texts, str(popup_texts))
+check('названия нет', not any('Негатив' in t or 'лояльный' in t for t in popup_texts),
+      str(popup_texts))
+check('как говорить — тоже нет', not any('Ничего не предлагать' in t for t in popup_texts))
 check('заголовок окна ничего не выдаёт', popup.title() == 'Клиент')
 
 choose_11 = next(w for w in all_widgets(popup)
                  if isinstance(w, tk.ttk.Button)
-                 and str(w.cget('text')).startswith('11'))
+                 and str(w.cget('text')) == '11')
 choose_11.invoke()
 root.update()
 check('окошко закрылось', not popup.winfo_exists())
 ui_db.expire_all()
 check('теперь клиент в 11', ui_groups.group_of(client_id).code == '11')
+marked_texts = texts(marked.frame)
+check('новый код виден сразу, старого нет', '11' in marked_texts and '55' not in marked_texts,
+      str([t for t in marked_texts if t in ('11', '55')]))
 
 print()
 print('=== В настройках группы правятся ===')
