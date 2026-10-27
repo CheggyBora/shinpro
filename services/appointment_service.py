@@ -30,6 +30,16 @@ MAX_POSTS = 3
 DEFAULT_POSTS = 1
 
 
+
+def hourly_booking(db):
+    """
+    Запись «N машин в час», а не по постам: так в режиме «Без постов».
+    N — то же число, что «постов под запись» по дням (1–3).
+    """
+    from services.live_queue_service import LiveQueueService
+    return LiveQueueService(db).no_posts()
+
+
 class AppointmentService:
     def __init__(self, db):
         self.db = db
@@ -334,11 +344,20 @@ class AppointmentService:
         # Берём записи того же дня — их немного, пересечения считаем в Python
         same_day = self.get_for_day(start.date(), include_cancelled=False, direction=direction)
 
+        # Без постов запись — «N машин в час» (решение владельца
+        # 28.10.2026): считаем записи того же часа, а не наложения
+        hourly = direction != 'wash' and hourly_booking(self.db)
+
         overlapping = 0
         for other in same_day:
             if exclude_id and other.id == exclude_id:
                 continue
             other_start = as_naive(other.scheduled_at)
+            if hourly:
+                if other_start.replace(minute=0, second=0, microsecond=0) == \
+                        start.replace(minute=0, second=0, microsecond=0):
+                    overlapping += 1
+                continue
             other_end = other_start + timedelta(minutes=other.duration_minutes or 0)
             if other_start < end and start < other_end:
                 overlapping += 1

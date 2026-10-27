@@ -828,8 +828,11 @@ class EmployeesTab:
             hours = int(duration.total_seconds() // 3600)
             minutes = int((duration.total_seconds() % 3600) // 60)
             
+            from services.live_queue_service import LiveQueueService
+            posts_text = ('' if LiveQueueService(self.db).no_posts()
+                          else f" · постов: {current_shift.open_posts}")
             status_text = (f"Смена открыта: {start_time.strftime('%d.%m.%Y %H:%M')} "
-                           f"(работает {hours}ч {minutes}м) · постов: {current_shift.open_posts}")
+                           f"(работает {hours}ч {minutes}м){posts_text}")
             
             self.shift_status_label.config(text=status_text)
             self.shift_status_frame.config(bg='#10b981')
@@ -872,15 +875,21 @@ class EmployeesTab:
             default_posts = 2
 
         # Сколько постов работает сегодня — от этого зависит расчёт
-        # очереди и то, сколько машин можно записать на одно время
-        posts = simpledialog.askinteger(
-            "Открытие смены",
-            "Сколько постов работает в эту смену?",
-            initialvalue=default_posts, minvalue=1, maxvalue=20,
-            parent=self.frame
-        )
-        if posts is None:
-            return  # передумали открывать смену
+        # очереди. Без постов (базовый режим) не спрашиваем: машину
+        # принимают мастера, постов нет (решение владельца 28.10.2026)
+        from services.live_queue_service import LiveQueueService
+        no_posts = LiveQueueService(self.db).no_posts()
+        if no_posts:
+            posts = default_posts
+        else:
+            posts = simpledialog.askinteger(
+                "Открытие смены",
+                "Сколько постов работает в эту смену?",
+                initialvalue=default_posts, minvalue=1, maxvalue=20,
+                parent=self.frame
+            )
+            if posts is None:
+                return  # передумали открывать смену
 
         # Касса: сколько наличных фактически (docs/cash.md)
         from ui.cash_tab import ask_start
@@ -895,8 +904,8 @@ class EmployeesTab:
                 "Успех",
                 f"Смена #{shift.id} открыта\n"
                 f"Время: {shift.start_time.strftime('%d.%m.%Y %H:%M')}\n"
-                f"Открыто постов: {shift.open_posts}\n"
-                f"В кассе: {money(cash_start)}")
+                + ("" if no_posts else f"Открыто постов: {shift.open_posts}\n")
+                + f"В кассе: {money(cash_start)}")
             self.update_shift_status()
             self.refresh_employees()
         except ValueError as e:

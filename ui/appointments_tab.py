@@ -109,9 +109,28 @@ class AppointmentsTab:
 
         self.queue = LiveQueuePanel(self.tabs, db, orders_tab)
         self.tabs.add(self.queue.frame, text='  Живая очередь  ')
+        self.sync_queue_tab()
 
         self.load_day()
         self.schedule_refresh()
+
+    def sync_queue_tab(self):
+        """
+        Вкладка «Живая очередь» — только когда есть посты. В режиме «Без
+        постов» её нет: машину просто принимают (решение 28.10.2026).
+        """
+        from services.live_queue_service import LiveQueueService
+        from services.appointment_service import hourly_booking
+        no_posts = LiveQueueService(self.db).no_posts()
+        self._hourly = hourly_booking(self.db)
+        # У мойки живой очереди нет никогда (docs/booking_wash.md)
+        hidden = no_posts or getattr(self, 'direction', 'tire') == 'wash'
+        try:
+            self.tabs.tab(self.queue.frame, state='hidden' if hidden else 'normal')
+            if hidden and self.tabs.select() == str(self.queue.frame):
+                self.tabs.select(self.day_page)
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------
     # Каркас
@@ -170,8 +189,12 @@ class AppointmentsTab:
         posts_row.pack(fill='x')
         self.posts_row = posts_row
 
-        styles.create_label(posts_row, "Сделать постов:",
-                            'Card.TLabel').pack(side='left', padx=(0, 8))
+        from services.appointment_service import hourly_booking
+        # Без постов — «машин в час», с постами — «постов» (решение 28.10.2026)
+        self.posts_title = styles.create_label(
+            posts_row, "Машин в час:" if hourly_booking(self.db) else "Сделать постов:",
+            'Card.TLabel')
+        self.posts_title.pack(side='left', padx=(0, 8))
 
         self.post_buttons = {}
         for count in range(MIN_POSTS, MAX_POSTS + 1):
@@ -284,6 +307,12 @@ class AppointmentsTab:
         счётчик и ещё не нажать «Применить», и затирать его правку
         было бы хуже, чем показать устаревшее число.
         """
+        # Режим могли сменить в настройках: вкладка очереди и подписи —
+        # по нему (решение 28.10.2026)
+        if hasattr(self, 'queue'):
+            self.sync_queue_tab()
+            if hasattr(self, 'posts_title'):
+                self.posts_title.config(text="Машин в час:" if self._hourly else "Сделать постов:")
         keep_posts = self.selected_posts if silent else None
 
         self.date_picker.set_date(self.current_day)
@@ -386,12 +415,8 @@ class AppointmentsTab:
             if not self.posts_row.winfo_manager():
                 self.posts_row.pack(fill='x', after=self.posts_state)
                 self.posts_hint.pack(anchor='w', pady=(8, 0), after=self.posts_row)
-        try:
-            self.tabs.tab(self.queue.frame, state='hidden' if wash else 'normal')
-            if wash:
-                self.tabs.select(self.day_page)
-        except Exception:
-            pass
+        # Вкладку очереди прячет/показывает load_day → sync_queue_tab: там же
+        # учитывается и режим «Без постов»
         self.load_day()
 
     def refresh_posts_panel(self, saved=None):
@@ -562,7 +587,10 @@ class AppointmentsTab:
         self.header.delete('all')
         for index in range(columns):
             x = GUTTER + index * column_width
-            title = f"Пост {index + 1}" if index < posts else "Сверх постов"
+            if getattr(self, '_hourly', False):
+                title = f"Место {index + 1}" if index < posts else "Сверх нормы"
+            else:
+                title = f"Пост {index + 1}" if index < posts else "Сверх постов"
             colour = (styles.COLORS['text_secondary'] if index < posts
                       else styles.COLORS['danger'])
             self.header.create_text(x + column_width / 2, 14, text=title,

@@ -328,12 +328,62 @@ class OrdersTab:
         """
         if self.app is not None:
             self.app.show_orders()
+        # Записан на сегодня — наряд сразу по записи, а запись отмечается
+        # «приехал» (решение владельца 28.10.2026)
+        if self._open_booked_arrival(arrival):
+            return
         self._pending_arrival = arrival
         self.license_var.set(normalize_plate(arrival.get('plate') or ''))
         self.select_plate(arrival.get('plate') or '')
         # Окно не открылось (нет номера) — машина не должна прилипнуть к
         # следующему наряду, набранному руками
         self._pending_arrival = None
+
+    def _open_booked_arrival(self, arrival):
+        """
+        Машина с телефона, а номер есть в сегодняшней записи шиномонтажа:
+        отметить приезд и открыть наряд по записи — клиент, диаметр,
+        комплект услуг уже там. Не вышло — False, и откроется обычное окно
+        создания наряда.
+        """
+        from models import Appointment
+        from utils import as_naive, get_moscow_time
+        from services.booking_gateway import get_booking
+        from services.live_queue_service import LiveQueueService
+        from services.arrival_service import ArrivalService
+
+        plate = normalize_plate(arrival.get('plate') or '')
+        if not plate:
+            return False
+        today = get_moscow_time().date()
+        booked = None
+        for row in self.db.query(Appointment).filter(
+                Appointment.status == Appointment.STATUS_SCHEDULED).all():
+            when = as_naive(row.scheduled_at)
+            if (when is not None and when.date() == today
+                    and (row.direction or 'tire') == 'tire'
+                    and normalize_plate(row.license_plate or '') == plate):
+                booked = row
+                break
+        if booked is None:
+            return False
+
+        queue = LiveQueueService(self.db)
+        if not queue.booking_diameter(booked):
+            return False
+        try:
+            booking = get_booking(self.db)
+            booking.mark_arrived(booking.key_of(booked))
+            order = queue.open_booking_order(booked)
+        except Exception as e:
+            self.db.rollback()
+            log.warning(f"Машина с телефона по записи не открылась: {e}")
+            return False
+        ArrivalService(self.db).attach(order, arrival.get('photo'))
+        self._arrival_done(arrival, order.id)
+        self.open_order_tab(order)
+        self.update_license_plates_list()
+        return True
 
     def _arrival_done(self, arrival, order_id=None):
         """Сказать серверу, что машина разобрана, — в фоне: связь бывает медленной."""

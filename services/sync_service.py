@@ -738,6 +738,9 @@ class SyncService:
             free_in = int(min(remaining)) if remaining else None
         elif len(in_work) < posts:
             free_in = 0
+        # Без постов «ближайший пост освободится через…» обещать нечего
+        if self._no_posts():
+            free_in = None
 
         return {
             'cars_in_work': len(in_work),
@@ -789,6 +792,10 @@ class SyncService:
                 'told_at': as_naive(order.client_told_at) if order.client_told_at else None,
             })
         return cars
+
+    def _no_posts(self):
+        from services.live_queue_service import LiveQueueService
+        return LiveQueueService(self.db).no_posts()
 
     def _live_queue_on(self):
         """Посты и живая очередь сейчас — с учётом «по сезону»."""
@@ -843,6 +850,8 @@ class SyncService:
             'stock_enabled': settings.get('stock_enabled'),
             # Видят ли мастера свой заработок в кабинете на телефоне
             'master_salary_visible': settings.get('master_salary_visible') or '0',
+            # Без постов запись — «N машин в час» (решение 28.10.2026)
+            'booking_mode': 'hourly' if self._no_posts() else 'posts',
             # Наряд по фото: телефон предлагает только включённые направления
             'arrival_photo_tire': '1' if _directions.photo_on(self.db, 'tire') else '0',
             'arrival_photo_wash': '1' if _directions.photo_on(self.db, 'wash') else '0',

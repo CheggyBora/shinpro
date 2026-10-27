@@ -220,6 +220,24 @@ class BookingService:
             pass
         return fallback_minutes
 
+    def hourly(self):
+        """
+        Запись «N машин в час», без постов (решение владельца 28.10.2026):
+        цех прислал booking_mode = hourly. N — то же число, что посты под
+        запись (1–3). Машины физически к постам не привязаны: сколько
+        записались на этот час — столько и приедет, примут мастера.
+        """
+        return (not self.is_wash
+                and shop_settings.get(self.db, 'booking_mode', shop=self.shop) == 'hourly')
+
+    def _taken(self, busy, at, finish):
+        """Сколько мест занято: по постам — наложения, по часам — записи этого часа."""
+        if self.hourly():
+            hour = at.replace(minute=0, second=0, microsecond=0)
+            return sum(1 for start, _end in busy
+                       if start.replace(minute=0, second=0, microsecond=0) == hour)
+        return sum(1 for start, end in busy if start < finish and at < end)
+
     def free_slots(self, day, duration_minutes, now=None):
         """
         Свободные окна дня.
@@ -252,8 +270,7 @@ class BookingService:
                 continue
 
             finish = moment + timedelta(minutes=duration_minutes)
-            overlapping = sum(1 for start, end in busy
-                              if start < finish and moment < end)
+            overlapping = self._taken(busy, moment, finish)
             if overlapping < posts:
                 slots.append({'at': moment, 'free_posts': posts - overlapping})
             moment += step
@@ -556,8 +573,7 @@ class BookingService:
 
     def _slot_is_free(self, at, duration_minutes, posts, exclude_id=None):
         finish = at + timedelta(minutes=duration_minutes)
-        overlapping = sum(1 for start, end in self._busy_at(at.date(), exclude_id)
-                          if start < finish and at < end)
+        overlapping = self._taken(self._busy_at(at.date(), exclude_id), at, finish)
         return overlapping < posts
 
     def _already_booked(self, client, at):

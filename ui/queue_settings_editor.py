@@ -25,11 +25,16 @@ class QueueSettingsEditor:
 
         # Посты и живая очередь нужны в ажиотаж. Вне его — наряды как
         # обычно. «По сезону» включает и выключает само по датам
-        styles.create_label(parent, 'Посты и живая очередь:', 'Card.TLabel').pack(anchor='w')
+        # «Без постов» — базовый режим (решение владельца 28.10.2026):
+        # онлайн-запись N машин в час, машина просто приезжает, мастера
+        # принимают и работают в общий котёл
+        styles.create_label(parent, 'Как принимаем машины:', 'Card.TLabel').pack(anchor='w')
         modes = ttk.Frame(parent, style='White.TFrame')
         modes.pack(anchor='w', pady=(4, 4))
         self.mode_var = tk.StringVar(value=self.service.mode())
-        for value, title in (('on', 'Всегда'), (SEASON, 'По сезону'), ('off', 'Выключены')):
+        for value, title in (('off', 'Без постов — только запись'),
+                             (SEASON, 'Посты и очередь по сезону'),
+                             ('on', 'Посты и очередь всегда')):
             ttk.Radiobutton(modes, text=title, value=value, variable=self.mode_var,
                             command=self.save_mode).pack(side='left', padx=(0, 14))
 

@@ -640,9 +640,11 @@ class LiveQueueService:
             raise QueueError('В записи нет диаметра')
         if post is None:
             post = appointment.called_post
-        if post is None:
+        if post is None and self.enabled():
             free = [s['post'] for s in self.posts() if s['state'] == 'free']
             post = free[0] if free else None
+        # Без постов (или очередь выключена по сезону) машина на пост не
+        # встаёт: её принимают мастера, кто свободен
 
         wheels = appointment.wheels_assembled
         orders = OrderService(self.db)
@@ -661,6 +663,14 @@ class LiveQueueService:
         order.planned_minutes = orders.calculate_planned_minutes(order.id)
         self.db.commit()
         return order
+
+    def no_posts(self):
+        """
+        Режим «Без постов — только запись» (решение владельца 28.10.2026):
+        постов нет совсем, запись — N машин в час, машину принимают мастера.
+        Отличается от «По сезону» вне сезона: там посты просто отдыхают.
+        """
+        return self.mode() == 'off'
 
     def mode(self):
         """'on', 'off' или 'season'."""

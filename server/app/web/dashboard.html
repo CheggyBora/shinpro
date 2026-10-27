@@ -1126,7 +1126,7 @@ function loadSummary() {
       html += '<div class="card"><h2>Сейчас в цеху</h2>'
         + '<div class="line"><span>В работе</span><b>' + q.cars_in_work + '</b></div>'
         + '<div class="line"><span>Ждут</span><b>' + q.cars_waiting + '</b></div>'
-        + '<div class="line"><span>Открыто постов</span><b>' + q.open_posts + '</b></div>'
+        + (now.no_posts ? '' : '<div class="line"><span>Открыто постов</span><b>' + q.open_posts + '</b></div>')
         + '<div class="line"><span>Данные получены</span><b>' + timeText(q.taken_at) + '</b></div>'
         + '</div>';
     }
@@ -1510,12 +1510,13 @@ function drawBooking(data) {
   }
   html += '</div>';
 
-  html += '<div class="card"><h2>Постов под запись</h2>'
+  // Без постов — «машин в час»: машины к постам не привязаны
+  html += '<div class="card"><h2>' + (data.hourly ? 'Машин в час по записи' : 'Постов под запись') + '</h2>'
     + '<div class="period" id="bPosts" style="padding:0;margin:4px 0 2px">'
     + posts + '</div>'
     + '<p class="note">Это запас на дни, которые в цеху отдельно не '
-    + 'настраивали. Если приёмщик задал посты на конкретный день, '
-    + 'главнее его число: он видит, кто в тот день работает.</p></div>';
+    + 'настраивали. Если приёмщик задал число на конкретный день, '
+    + 'главнее его: он видит, кто в тот день работает.</p></div>';
 
   html += '<div class="card"><h2>Часы записи</h2>'
     + '<div class="clock">'

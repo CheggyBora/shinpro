@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import (StaffUser, PERM_REVENUE, PERM_ORDERS,
                         PERM_SALARY_ALL, PERM_SALARY_PAY, PERM_BOOKING,
-                        QueueSnapshot)
+                        QueueSnapshot, Shop)
 from app.security import current_staff, require
 from app.services.dashboard_service import DashboardService
 from app.services import tenancy, shop_settings
@@ -287,6 +287,9 @@ def current_shift(shop: Optional[str] = None,
             'free_in_minutes': last.free_in_minutes,
             'shift_is_open': last.shift_is_open,
         } if last else None,
+        # Без постов «Открыто постов» не показываем (решение 28.10.2026)
+        'no_posts': bool(last) and shop_settings.get(
+            db, 'booking_mode', shop=db.get(Shop, last.shop_id)) == 'hourly',
     }
 
 
@@ -460,6 +463,8 @@ def booking_settings(shop: Optional[str] = None,
                  'takes_bookings': chosen.takes_bookings},
         'booking_enabled': shop_settings.is_on(values['booking_enabled']),
         'booking_posts': int(float(values['booking_posts'] or 1)),
+        # Без постов это «машин в час» (решение владельца 28.10.2026)
+        'hourly': shop_settings.get(db, 'booking_mode', shop=chosen) == 'hourly',
         'booking_opens_at': values['booking_opens_at'],
         'booking_closes_at': values['booking_closes_at'],
         'changed_at': {key: shop_settings.updated_at(db, key, shop=chosen)

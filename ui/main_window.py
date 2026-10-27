@@ -661,7 +661,9 @@ class MainWindow:
 
             shift = ShiftService(self.db).get_current_shift()
             if shift:
-                text = f"Смена открыта  ·  постов: {shift.open_posts}"
+                from services.live_queue_service import LiveQueueService
+                text = ("Смена открыта" if LiveQueueService(self.db).no_posts()
+                        else f"Смена открыта  ·  постов: {shift.open_posts}")
                 # В мойке — посты мойки: у неё свои
                 from services import directions
                 if getattr(self, 'orders_tab', None) is not None and \

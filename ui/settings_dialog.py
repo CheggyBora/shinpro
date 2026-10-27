@@ -60,6 +60,11 @@ def _looks_like_day_month(value):
     return 1 <= day <= 31
 
 
+def _no_posts(db):
+    from services.live_queue_service import LiveQueueService
+    return LiveQueueService(db).no_posts()
+
+
 def open_settings(parent, db):
     """Открыть окно настроек. Возвращает окно."""
     return SettingsDialog(parent, db).dialog
@@ -669,7 +674,9 @@ class SettingsDialog:
         grid.pack(fill='x', pady=(6, 10))
 
         self._numeric_grid(grid, [
-            ('booking_posts', 'Постов под запись'),
+            # Без постов — сколько машин в час принимаем по записи
+            ('booking_posts', 'Машин в час под запись' if _no_posts(self.db)
+             else 'Постов под запись'),
             ('booking_slot_step', 'Шаг окон, мин'),
             ('booking_minutes_assembled', 'На колёса в сборе, мин'),
             ('booking_minutes_tires', 'На шины россыпью, мин'),
