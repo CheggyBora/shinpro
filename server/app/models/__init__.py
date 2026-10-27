@@ -9,7 +9,8 @@ from app.models.notice import (Notice, TITLES, KIND_BOOKED, KIND_REMINDER,
                                ABOUT_AUTUMN, ABOUT_SPRING,
                                WAITING, SENT, FAILED, SKIPPED,
                                BY_TELEGRAM, BY_PUSH)
-from app.models.photo import MasterDevice, OpenOrder, OrderPhoto, Arrival
+from app.models.photo import (MasterDevice, OpenOrder, OrderPhoto, Arrival,
+                              ShopService, WorkOffer, MasterEvent)
 from app.models.push import PushSubscription
 from app.models.live import LiveTicket
 from app.models.task import (Task, Counterparty, CATEGORIES, CATEGORY_TITLES,
@@ -36,7 +37,7 @@ __all__ = [
     'KIND_STORAGE', 'KIND_SEASON', 'KIND_READY', 'KIND_QUEUE', 'KIND_ARRIVE', 'KIND_LATE',
     'ABOUT_AUTUMN', 'ABOUT_SPRING',
     'WAITING', 'SENT', 'FAILED', 'SKIPPED',
-    'MasterDevice', 'OpenOrder', 'OrderPhoto', 'Arrival',
+    'MasterDevice', 'OpenOrder', 'OrderPhoto', 'Arrival', 'ShopService', 'WorkOffer', 'MasterEvent',
     'PushSubscription', 'LiveTicket',
     'Task', 'Counterparty', 'CATEGORIES', 'CATEGORY_TITLES', 'SOURCES',
     'StockItem', 'CashOrder',

@@ -125,11 +125,26 @@ class EmployeesTab:
         styles.create_button(header_frame, "Категория", self.change_role,
                              'Secondary.TButton').pack(side='right', padx=(0, 8))
         styles.create_button(header_frame, "Имя", self.change_name, 'Secondary.TButton').pack(side='right', padx=(0, 8))
+        # Кабинет мастера на телефоне: вход своим именем и этим ПИН
+        styles.create_button(header_frame, "ПИН для телефона", self.change_phone_pin,
+                             'Secondary.TButton').pack(side='right', padx=(0, 8))
+
+        # Видят ли мастера на телефоне свой заработок. Решает владелец —
+        # поэтому по админскому PIN
+        from services.settings_service import SettingsService
+        self.salary_visible_var = tk.BooleanVar(
+            value=SettingsService(self.db).get('master_salary_visible', '0') == '1')
+        ttk.Checkbutton(emp_inner, text="Мастера видят свой заработок в телефоне "
+                                        "(сегодня, неделя, к выплате)",
+                        variable=self.salary_visible_var,
+                        command=self.toggle_salary_visible).pack(anchor='w', pady=(0, 8))
         
         tree_frame = ttk.Frame(emp_inner, style='White.TFrame')
         tree_frame.pack(fill='both', expand=True)
         
-        self.employees_tree = ttk.Treeview(tree_frame, columns=('ID', 'Имя', 'Категория', 'Ставка %', 'Дата регистрации'), show='headings', height=6)
+        self.employees_tree = ttk.Treeview(tree_frame, columns=('ID', 'Имя', 'Категория', 'Ставка %', 'Телефон', 'Дата регистрации'), show='headings', height=6)
+        self.employees_tree.heading('Телефон', text='Телефон')
+        self.employees_tree.column('Телефон', width=110)
         self.employees_tree.heading('ID', text='Номер')
         self.employees_tree.heading('Имя', text='Имя')
         self.employees_tree.heading('Категория', text='Категория')
@@ -527,6 +542,60 @@ class EmployeesTab:
         except ValueError as e:
             messagebox.showerror("Ошибка", str(e))
     
+    def change_phone_pin(self):
+        """
+        ПИН для кабинета мастера на телефоне: мастер выбирает себя в списке
+        и входит этим ПИН. Пусто — снять, телефон сам выйдет из кабинета.
+        """
+        selected = self.employees_tree.selection()
+        if not selected:
+            messagebox.showwarning("Предупреждение", "Выберите сотрудника")
+            return
+        emp_id = int(self.employees_tree.item(selected[0])['values'][0])
+        employee = next((e for e in self.service.get_all_employees() if e.id == emp_id), None)
+        title = employee.title if employee else f"№{emp_id}"
+
+        phone_pin = simpledialog.askstring(
+            "ПИН для телефона",
+            f"ПИН для телефона — {title}.\n\n4 цифры. Скажите их мастеру: он выберет себя\n"
+            f"на телефоне и введёт этот ПИН. Пусто — снять ПИН.",
+            show='*', parent=self.frame.winfo_toplevel())
+        if phone_pin is None:
+            return
+        admin_pin = simpledialog.askstring("PIN-код", "Введите админский PIN-код:",
+                                           show='*', parent=self.frame.winfo_toplevel())
+        if not admin_pin:
+            return
+        try:
+            self.service.set_phone_pin(emp_id, phone_pin, admin_pin)
+        except ValueError as e:
+            messagebox.showerror("Ошибка", str(e))
+            return
+        self.refresh_employees()
+        messagebox.showinfo("ПИН для телефона",
+                            f"{'ПИН задан' if phone_pin.strip() else 'ПИН снят'}: {title}.\n"
+                            "На телефоне он заработает после ближайшего обмена — через минуту-две.")
+
+    def toggle_salary_visible(self):
+        from services.settings_service import SettingsService
+
+        wanted = self.salary_visible_var.get()
+        settings = SettingsService(self.db)
+        admin_pin = simpledialog.askstring("PIN-код", "Введите админский PIN-код:",
+                                           show='*', parent=self.frame.winfo_toplevel())
+        from services.auth_service import AuthService
+        if not admin_pin or not AuthService(self.db).verify_pin(admin_pin):
+            if admin_pin:
+                messagebox.showerror("Ошибка", "Неверный PIN-код")
+            self.salary_visible_var.set(not wanted)
+            return
+        settings.set('master_salary_visible', '1' if wanted else '0')
+        try:
+            from services import sync_nudge
+            sync_nudge.request('заработок мастеров в телефоне')
+        except Exception:
+            pass
+
     def fill_role_box(self):
         """Категории в выпадающем списке при создании сотрудника."""
         from services.employee_role_service import EmployeeRoleService
@@ -726,6 +795,7 @@ class EmployeesTab:
                 emp.name or '',
                 roles.role_title(emp),
                 self._percent_text(emp),
+                'ПИН есть' if getattr(emp, 'phone_pin_hash', None) else '—',
                 emp.created_at.strftime('%d.%m.%Y')
             ))
     

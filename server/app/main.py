@@ -137,7 +137,8 @@ if settings.CORS_ORIGINS:
 
 from app.api import (auth, booking, storage, history, queue, sync, public,  # noqa: E402
                      photos, live, tasks, stock, cash,
-                     staff, dashboard, telegram, push, branding, platform)
+                     staff, dashboard, telegram, push, branding, platform,
+                     master)
 
 app.include_router(auth.router)
 app.include_router(booking.router)
@@ -151,6 +152,8 @@ app.include_router(branding.router)
 app.include_router(platform.router)
 app.include_router(platform.points_router)
 app.include_router(platform.connect_router)
+app.include_router(master.router)
+app.include_router(master.offer_router)
 app.include_router(telegram.router)
 app.include_router(push.router)
 app.include_router(public.router)

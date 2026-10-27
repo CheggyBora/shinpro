@@ -140,9 +140,9 @@ def manifest():
     from fastapi.responses import JSONResponse
 
     return JSONResponse({
-        'name': 'Фото в наряд',
-        'short_name': 'Фото в наряд',
-        'description': 'Снять и отправить клиенту фото из цеха',
+        'name': 'Кабинет мастера',
+        'short_name': 'Мастер',
+        'description': 'Мои машины, фото и видео клиенту, заработок',
         'start_url': '/m',
         'scope': '/m',
         'display': 'browser',
@@ -220,13 +220,16 @@ def connect(payload: dict, request: Request, response: Response,
 @router.get('/cars', summary='Машины, которые сейчас в цеху')
 def cars(request: Request, response: Response,
          db: Session = Depends(get_db)):
+    from app.services import master
+
     device = _device(request, db, response)
     shop = db.query(Shop).filter(Shop.id == device.shop_id).first()
 
     return {
         'shop': shop_settings.title(db, shop),
-        'name': device.name,
-        'cars': photos.cars_for(db, shop),
+        'name': master.author_of(db, device),
+        # Свои машины — сверху, с составом наряда (кабинет мастера)
+        'cars': master.cars(db, device, shop),
         # «Новая машина» на телефоне — только если наряд по фото включён
         # хоть для одного направления (docs/order_photo.md)
         'arrival_directions': shop_settings.arrival_photo_directions(db, shop),
@@ -253,16 +256,20 @@ async def upload(request: Request,
     Ответ честный. Не дошло — так и говорим: приёмщик увидит это в
     наряде и позвонит.
     """
+    from app.services import master
+
     device = _device(request, db)
     shop = db.query(Shop).filter(Shop.id == device.shop_id).first()
 
     data = await file.read()
+    person = master.employee_of(db, device)
 
     try:
         photo = photos.save(db, shop, data, file.content_type,
                             order_local_id=order_local_id,
                             plate=license_plate, comment=comment,
-                            author=device.name)
+                            author=master.author_of(db, device),
+                            employee_local_id=person.local_id if person else None)
     except photos.PhotoError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(e))
 

@@ -434,7 +434,13 @@ def cmd_notify(db, args):
     и это, и напоминания о записи, которые лежат с момента записи.
     """
     from app.models import BY_PUSH, BY_TELEGRAM
-    from app.services import campaigns, notices
+    from app.services import campaigns, notices, photos
+
+    # Видео из кабинета мастера живёт две недели, фото — год. Таймер
+    # ходит каждые 5 минут, а запрос пустой почти всегда — это дёшево
+    gone = photos.drop_old_videos(db) + photos.drop_old(db)
+    if gone:
+        print(f'Убрано старых фото и видео: {gone}')
 
     planned = campaigns.plan_all(db)
     if planned['storage'] or planned['season']:

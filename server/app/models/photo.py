@@ -52,6 +52,18 @@ class MasterDevice(Base):
     # код не сработает. Держим в базе — процессов у сервера два
     link_sig = Column(String(32), nullable=True, unique=True)
 
+    # --- Кабинет мастера (решение владельца 27.10.2026) ------------------
+    #
+    # Кто держит телефон: сотрудник цеха (его номер в базе точки). Мастер
+    # выбирает себя один раз и вводит ПИН, который ему поставил приёмщик.
+    # Пусто — телефон анонимный, как раньше: шлёт фото, но своих машин,
+    # заработка и согласований у него нет
+    employee_local_id = Column(Integer, nullable=True)
+    # Неверный ПИН подряд и до какого времени вход закрыт: четыре цифры
+    # перебираются за минуты, если не останавливать
+    pin_fails = Column(Integer, default=0, nullable=False, server_default='0')
+    locked_until = Column(DateTime, nullable=True)
+
     shop = relationship('Shop')
 
 
@@ -83,7 +95,29 @@ class OpenOrder(Base):
     planned_minutes = Column(Integer, default=0, nullable=False)
     updated_at = Column(DateTime, default=shop_now, nullable=False)
 
+    # Для кабинета мастера: чьи это машины и что с ними делают. Мастера —
+    # номера сотрудников через запятую, как в наряде цеха
+    masters = Column(String(200), nullable=True)
+    car = Column(String(120), nullable=True)
+    client_name = Column(String(200), nullable=True)
+    wheel_diameter = Column(String(10), nullable=True)
+    wash_class = Column(String(16), nullable=True)
+    directions = Column(String(20), nullable=True)
+    services = Column(Text, nullable=True)
+    post = Column(Integer, nullable=True)
+    # Работа закончена; клиенту сказали «готово»
+    finished_at = Column(DateTime, nullable=True)
+    told_at = Column(DateTime, nullable=True)
+
     shop = relationship('Shop')
+
+    def master_ids(self):
+        result = []
+        for part in (self.masters or '').split(','):
+            part = part.strip()
+            if part.isdigit():
+                result.append(int(part))
+        return result
 
 
 class OrderPhoto(Base):
@@ -125,6 +159,18 @@ class OrderPhoto(Base):
 
     created_at = Column(DateTime, default=shop_now, nullable=False, index=True)
 
+    # photo или video. Видео живёт две недели (решение владельца
+    # 27.10.2026): оно в десятки раз тяжелее снимка, а спорят о нём,
+    # пока машина в цеху
+    media = Column(String(8), default='photo', nullable=False,
+                   server_default='photo')
+    content_type = Column(String(60), nullable=True)
+    size = Column(Integer, nullable=True)
+    # Кто снял — номер сотрудника, если телефон знает своего мастера
+    employee_local_id = Column(Integer, nullable=True)
+    # Клиент открыл файл в кабинете — мастеру «посмотрел»
+    viewed_at = Column(DateTime, nullable=True)
+
     # Когда и чем сказали клиенту. Пусто — значит сказать было нечем:
     # ни Телеграма, ни кабинета. Это видно в наряде, и приёмщик
     # понимает, что надо звонить
@@ -138,6 +184,110 @@ class OrderPhoto(Base):
 
 PHOTO = 'photo'
 COVER = 'cover'
+
+MEDIA_PHOTO = 'photo'
+MEDIA_VIDEO = 'video'
+
+
+class ShopService(Base):
+    """
+    Прайс точки — копия из цеха, чтобы мастер мог предложить работу.
+
+    Цены по радиусам и классам мойки: какую взять, сервер решает по
+    наряду. Скидки цех применит сам, когда услуга встанет в наряд, —
+    клиенту обещаем цену по прайсу.
+    """
+    __tablename__ = 'shop_services'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    shop_id = Column(Integer, ForeignKey('shops.id'), nullable=False,
+                     index=True)
+    local_id = Column(Integer, nullable=False)
+    name = Column(String(200), nullable=False)
+    direction = Column(String(10), default='tire', nullable=False)
+    # {"R16": 650, "sedan": 500, "": 300} — JSON строкой
+    prices = Column(Text, nullable=True)
+    editable = Column(Boolean, default=False, nullable=False)
+
+
+# Что ответил клиент на предложение мастера
+OFFER_PENDING = 'pending'
+OFFER_YES = 'yes'
+OFFER_CALL = 'call'
+OFFER_NO = 'no'
+
+
+class WorkOffer(Base):
+    """
+    Мастер предлагает работу: «грыжа — замена шины 650 ₽».
+
+    Клиент получает ссылку со снимком и кнопками «Согласен» / «Позвоните
+    мне» / «Не надо». Ответ забирает цех при живом обмене: согласие —
+    услуга встаёт в наряд, «позвоните» — приёмщику напоминание.
+    """
+    __tablename__ = 'work_offers'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    shop_id = Column(Integer, ForeignKey('shops.id'), nullable=False,
+                     index=True)
+    client_id = Column(Integer, ForeignKey('clients.id'), nullable=True,
+                       index=True)
+    order_local_id = Column(Integer, nullable=False, index=True)
+    license_plate = Column(String(20), nullable=True)
+    photo_id = Column(Integer, ForeignKey('order_photos.id'), nullable=True)
+
+    # [{"local_id": 12, "name": "Замена шины R16", "price": 650}]
+    items = Column(Text, nullable=False)
+    total = Column(Integer, default=0, nullable=False)
+    comment = Column(String(500), nullable=True)
+
+    # Ссылка для клиента: /o/<token>. Входа не нужно — ссылка и есть
+    # пропуск, её получает только он
+    token = Column(String(64), nullable=False, unique=True, index=True)
+
+    employee_local_id = Column(Integer, nullable=True)
+    author = Column(String(80), nullable=True)
+
+    state = Column(String(10), default=OFFER_PENDING, nullable=False)
+    created_at = Column(DateTime, default=shop_now, nullable=False, index=True)
+    sent_at = Column(DateTime, nullable=True)
+    channel = Column(String(16), nullable=True)
+    last_error = Column(String(255), nullable=True)
+    answered_at = Column(DateTime, nullable=True)
+    # Цех забрал ответ (или напоминание «клиент молчит»)
+    taken_at = Column(DateTime, nullable=True)
+    reminded_at = Column(DateTime, nullable=True)
+
+    photo = relationship('OrderPhoto')
+
+
+# Что нажал мастер на машине
+EVENT_START = 'start'
+EVENT_DONE = 'done'
+
+
+class MasterEvent(Base):
+    """
+    «Начал» или «Готово» с телефона мастера.
+
+    Наряд живёт в цеху, поэтому сервер его не меняет: событие ждёт, пока
+    цех заберёт его при живом обмене (раз в 20 секунд) и сам начнёт или
+    закончит работу. «Готово» клиенту сервер говорит сразу — человек
+    ждёт машину сейчас.
+    """
+    __tablename__ = 'master_events'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    shop_id = Column(Integer, ForeignKey('shops.id'), nullable=False,
+                     index=True)
+    order_local_id = Column(Integer, nullable=False)
+    kind = Column(String(10), nullable=False)
+    employee_local_id = Column(Integer, nullable=True)
+    author = Column(String(80), nullable=True)
+    created_at = Column(DateTime, default=shop_now, nullable=False)
+    # Клиенту сказали «готово» — цеху не надо говорить второй раз
+    told = Column(Boolean, default=False, nullable=False)
+    taken_at = Column(DateTime, nullable=True, index=True)
 
 
 class Arrival(Base):

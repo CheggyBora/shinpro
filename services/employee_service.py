@@ -1,7 +1,18 @@
+import hashlib
+
 from models import Employee, WorkShift, SalaryTransaction
 from sqlalchemy.orm import Session
 from datetime import datetime
 from utils import get_moscow_time
+
+# Слишком простые ПИН для телефона мастера: их угадает любой, кто
+# взял телефон со стола
+SIMPLE_PINS = {'1234', '4321', '0123', '3210', '1212', '2580', '0852'}
+
+
+def phone_pin_hash(pin):
+    """Отпечаток ПИН — так же его считает сервер (app/services/master.py)."""
+    return hashlib.sha256(f'tire-master-pin:{str(pin).strip()}'.encode('utf-8')).hexdigest()
 
 class EmployeeService:
     def __init__(self, db: Session):
@@ -45,6 +56,46 @@ class EmployeeService:
         employee.name = (name or '').strip() or None
         self.db.commit()
         self.db.refresh(employee)
+        return employee
+
+    def set_phone_pin(self, employee_id: int, phone_pin: str, admin_pin: str) -> Employee:
+        """
+        ПИН для кабинета мастера на телефоне. Пусто — снять: телефон этого
+        сотрудника сам выйдет из кабинета при ближайшем обмене.
+
+        По админскому PIN: по ПИН мастера видно его заработок, и ставить
+        его коллеге за спиной нельзя.
+        """
+        from services.auth_service import AuthService
+        from services.audit_service import AuditService
+
+        audit = AuditService(self.db)
+        if not AuthService(self.db).verify_pin(admin_pin):
+            audit.log(AuditService.PIN_FAILED,
+                      f"Неверный PIN при попытке задать ПИН телефона сотруднику №{employee_id}")
+            raise ValueError("Неверный PIN-код")
+
+        employee = self.db.query(Employee).filter(Employee.id == employee_id).first()
+        if employee is None:
+            raise ValueError(f"Сотрудник №{employee_id} не найден")
+
+        value = (phone_pin or '').strip()
+        if value:
+            if len(value) != 4 or not value.isdigit():
+                raise ValueError("ПИН — ровно 4 цифры")
+            if len(set(value)) == 1 or value in SIMPLE_PINS:
+                raise ValueError("Слишком простой ПИН — его угадают. Придумайте другой")
+        employee.phone_pin_hash = phone_pin_hash(value) if value else None
+        self.db.commit()
+
+        audit.log('employee.phone_pin',
+                  f"Сотрудник №{employee_id}: ПИН телефона {'задан' if value else 'снят'}",
+                  entity_type='employee', entity_id=employee_id)
+        try:
+            from services import sync_nudge
+            sync_nudge.request('ПИН телефона мастера')
+        except Exception:
+            pass
         return employee
 
     def get_all_employees(self):

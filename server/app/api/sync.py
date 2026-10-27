@@ -159,6 +159,9 @@ class EmployeeIn(BaseModel):
     name: Optional[str] = None
     salary_percent: float = 40.0
     is_active: bool = True
+    # ПИН для телефона мастера — отпечатком. Старая программа не шлёт:
+    # тогда ПИН на сервере не трогаем
+    pin_hash: Optional[str] = None
 
 
 class PayoutIn(BaseModel):
@@ -219,6 +222,29 @@ class OpenCarIn(BaseModel):
     # присылают: лишнее pydantic молча отбрасывает
     planned_minutes: int = 0
 
+    # Для кабинета мастера: чьи машины и что с ними делают. Старая
+    # программа не шлёт — тогда «мои» не выделяются
+    masters: Optional[str] = None
+    car: Optional[str] = None
+    client_name: Optional[str] = None
+    wheel_diameter: Optional[str] = None
+    wash_class: Optional[str] = None
+    directions: Optional[str] = None
+    services: Optional[str] = None
+    post: Optional[int] = None
+    finished_at: Optional[datetime] = None
+    told_at: Optional[datetime] = None
+
+
+class ServiceIn(BaseModel):
+    """Строка прайса: мастер предлагает работу по этим ценам."""
+    local_id: int
+    name: str
+    direction: str = 'tire'
+    # {"R16": 650, "sedan": 500} — по радиусам и классам мойки
+    prices: Dict[str, float] = {}
+    editable: bool = False
+
 
 class QueueIn(BaseModel):
     cars_in_work: int = 0
@@ -248,6 +274,10 @@ class PushIn(BaseModel):
     # роняет весь обмен. Старая программа не шлёт — пусто
     cash_orders: List[Any] = []
     settings: dict = {}
+
+    # Прайс целиком (кабинет мастера). Пусто — прайс не трогаем:
+    # старая программа его не шлёт
+    services: Optional[List[ServiceIn]] = None
 
     # Когда каждую настройку поменяли в цеху. Старая версия программы
     # этого не присылает — тогда её значения принимаются как раньше,
@@ -587,8 +617,26 @@ def push(payload: PushIn, db: Session = Depends(get_db),
         row.name = item.name
         row.salary_percent = item.salary_percent
         row.is_active = item.is_active
+        if 'pin_hash' in item.model_fields_set:
+            row.pin_hash = (item.pin_hash or '').strip()[:64] or None
         db.flush()
         result.employees += 1
+
+    # --- Прайс (кабинет мастера) ------------------------------------------
+    if payload.services is not None:
+        import json
+
+        from app.models import ShopService
+        db.query(ShopService).filter(ShopService.shop_id == shop.id).delete()
+        for item in payload.services:
+            prices = {str(key)[:16]: float(value) for key, value in item.prices.items()
+                      if value is not None and float(value) > 0}
+            db.add(ShopService(shop_id=shop.id, local_id=item.local_id,
+                               name=item.name[:200],
+                               direction=(item.direction or 'tire')[:10],
+                               prices=json.dumps(prices, ensure_ascii=False),
+                               editable=bool(item.editable)))
+        db.flush()
 
     # --- Смены ----------------------------------------------------------
     for item in payload.shifts:
@@ -662,7 +710,17 @@ def push(payload: PushIn, db: Session = Depends(get_db),
                 state=car.state if car.state in ('work', 'waiting') else 'waiting',
                 started_at=car.started_at,
                 planned_minutes=max(0, car.planned_minutes),
-                updated_at=shop_now()))
+                updated_at=shop_now(),
+                masters=(car.masters or '')[:200] or None,
+                car=(car.car or '')[:120] or None,
+                client_name=(car.client_name or '')[:200] or None,
+                wheel_diameter=(car.wheel_diameter or '')[:10] or None,
+                wash_class=(car.wash_class or '')[:16] or None,
+                directions=(car.directions or '')[:20] or None,
+                services=car.services or None,
+                post=car.post,
+                finished_at=car.finished_at,
+                told_at=car.told_at))
 
     # --- Настройки ------------------------------------------------------
     stamps = payload.settings_changed_at or {}
@@ -1428,7 +1486,50 @@ def order_photos(order_local_id: int, db: Session = Depends(get_db),
         'sent_at': row.sent_at,
         'channel': row.channel,
         'error': row.last_error,
+        # Видео — две недели, и цех его не показывает картинкой
+        'media': row.media or 'photo',
     } for row in rows]
+
+
+# ----------------------------------------------------------------------
+# Кабинет мастера: «Начал» / «Готово» и ответы клиентов
+# ----------------------------------------------------------------------
+
+@router.get('/master-events', summary='Что нажали мастера на телефонах')
+def master_events(db: Session = Depends(get_db), shop: Shop = Mine):
+    """Цех забирает при живом обмене и сам начинает или заканчивает работу."""
+    from app.services import master
+
+    return {'events': [master.event_dict(row) for row in master.pending_events(db, shop)]}
+
+
+@router.post('/master-events/{event_id}/done', summary='Цех применил нажатие')
+def master_event_done(event_id: int, db: Session = Depends(get_db), shop: Shop = Mine):
+    from app.services import master
+
+    if not master.take_event(db, shop, event_id):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail='Нет такого события')
+    return {'ok': True}
+
+
+@router.get('/offers', summary='Ответы клиентов на предложения мастеров')
+def offers(db: Session = Depends(get_db), shop: Shop = Mine):
+    """
+    Ответившие и не забранные, плюс молчащие дольше 10 минут — о них
+    приёмщику напоминание позвонить.
+    """
+    from app.services import master
+
+    return {'offers': master.offers_for_shop(db, shop)}
+
+
+@router.post('/offers/{offer_id}/taken', summary='Цех разобрал ответ клиента')
+def offer_taken(offer_id: int, db: Session = Depends(get_db), shop: Shop = Mine):
+    from app.services import master
+
+    if not master.take_offer(db, shop, offer_id):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail='Нет такого предложения')
+    return {'ok': True}
 
 
 # ----------------------------------------------------------------------

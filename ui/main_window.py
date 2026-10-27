@@ -253,6 +253,54 @@ class MainWindow:
         self.telegram_running.start()
         return True
 
+    def _master_refresh(self):
+        """
+        Мастер нажал «Начал» / «Готово» или клиент согласился на работу —
+        обновить открытые вкладки этих нарядов и сказать приёмщику.
+        """
+        result = getattr(self, 'master_result', None)
+        self.master_result = None
+        if not result:
+            return
+        try:
+            for order_id in result.get('orders') or ():
+                widget = self.orders_tab.active_orders.get(order_id)
+                if widget is None:
+                    continue
+                self.db.refresh(widget.order)
+                for name in ('refresh_items', 'refresh_time_display', 'refresh_told'):
+                    method = getattr(widget, name, None)
+                    if method is not None:
+                        method()
+        except Exception as e:
+            self.db.rollback()
+            log.warning(f"Наряд после нажатия мастера не обновился: {e}")
+        for title, text in result.get('notes') or ():
+            self._master_note(title, text)
+
+    def _master_note(self, title, text):
+        """
+        Окно поверх программы, но не блокирующее: приёмщик может дописать
+        наряд и закрыть его, когда прочтёт. Звонок клиенту — его дело.
+        """
+        window = tk.Toplevel(self.root)
+        window.title(title)
+        window.configure(bg=styles.COLORS['bg_card'])
+        window.attributes('-topmost', True)
+        body = ttk.Frame(window, style='White.TFrame')
+        body.pack(fill='both', expand=True, padx=20, pady=16)
+        styles.create_label(body, title, 'CardHeading.TLabel').pack(anchor='w', pady=(0, 8))
+        tk.Label(body, text=text, justify='left', wraplength=440,
+                 font=(styles.DEFAULT_FONT, 11), bg=styles.COLORS['bg_card'],
+                 fg=styles.COLORS['text']).pack(anchor='w')
+        styles.create_button(body, "Понятно", window.destroy,
+                             'Primary.TButton').pack(anchor='e', pady=(14, 0))
+        window.bind('<Escape>', lambda e: window.destroy())
+        try:
+            window.bell()
+        except Exception:
+            pass
+
     def _calendar_refresh(self):
         """Лента задач над нарядами, календарь и счётчик в меню."""
         try:
@@ -411,6 +459,13 @@ class MainWindow:
             except Exception as e:
                 log.warning(f"Задачи календаря не обменялись: {e}")
             try:
+                # Кабинет мастера: «Начал» / «Готово» с телефона и ответы
+                # клиентов на предложения мастеров
+                self.master_result = SyncService(db).master_exchange()
+            except Exception as e:
+                db.rollback()
+                log.warning(f"Нажатия мастеров и ответы клиентов не получены: {e}")
+            try:
                 SyncService(db).stock_exchange()
             except Exception as e:
                 log.warning(f"Остатки склада не отправлены: {e}")
@@ -450,6 +505,7 @@ class MainWindow:
                     self.db.expire(obj)
 
             self._calendar_refresh()
+            self._master_refresh()
             changed = self._queue_housekeeping(refresh=bool(self.live_result))
             if changed:
                 # Позванные должны узнать сразу, а не через 20 секунд

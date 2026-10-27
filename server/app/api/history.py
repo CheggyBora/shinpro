@@ -100,8 +100,19 @@ def photos(limit: int = Query(30, le=100),
         'at': row.created_at,
         'license_plate': row.license_plate,
         'comment': row.comment,
+        'author': row.author,
+        # photo или video: видео в кабинете играет плеером
+        'media': row.media or 'photo',
         'url': f'/history/photo/{row.id}?key={photo_key(row.id, client.id)}',
     } for row in rows]
+
+
+@router.get('/offers', summary='Мастер предлагает — ждёт ответа')
+def offers(client: Client = Depends(current_client),
+           db: Session = Depends(get_db)):
+    from app.services import master
+
+    return master.client_offers(db, client)
 
 
 @router.get('/photo/{photo_id}', include_in_schema=False)
@@ -132,5 +143,12 @@ def photo_file(photo_id: int, key: str = '', db: Session = Depends(get_db)):
     if not os.path.exists(path):
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail='Файл не найден')
 
-    return FileResponse(path, media_type='image/jpeg',
+    # Открыл — мастер увидит «посмотрел». Только первый раз: видео
+    # браузер тянет кусками, и каждый кусок — это запрос
+    if row.viewed_at is None:
+        from app.utils import now as shop_now
+        row.viewed_at = shop_now()
+        db.commit()
+
+    return FileResponse(path, media_type=photo_service.media_type(row),
                         headers={'Cache-Control': 'private, max-age=86400'})

@@ -119,13 +119,21 @@ def set_webhook(account, base_url):
     })
 
 
-def send_message(account, chat_id, text):
-    return call(account.telegram_bot_token, 'sendMessage', {
+def send_message(account, chat_id, text, buttons=None):
+    """
+    buttons — [(надпись, адрес)]: кнопки-ссылки под сообщением. Адрес
+    только https, иначе телеграм откажет всему сообщению.
+    """
+    payload = {
         'chat_id': chat_id,
         'text': text,
         'parse_mode': 'HTML',
         'disable_web_page_preview': True,
-    })
+    }
+    if buttons:
+        payload['reply_markup'] = {'inline_keyboard': [
+            [{'text': title, 'url': url}] for title, url in buttons]}
+    return call(account.telegram_bot_token, 'sendMessage', payload)
 
 
 def send_photo(account, chat_id, data, caption=None):
@@ -139,12 +147,31 @@ def send_photo(account, chat_id, data, caption=None):
     Собираем multipart руками: ради одного запроса в день тянуть
     библиотеку незачем, а телеграм принимает обычную форму.
     """
+    return _send_file(account, chat_id, 'sendPhoto', 'photo', 'photo.jpg',
+                      'image/jpeg', data, caption, PHOTO_TIMEOUT)
+
+
+# Видео до 50 МБ телеграм принимает от бота файлом и показывает
+# плеером прямо в переписке (кабинет мастера, решение 27.10.2026)
+VIDEO_LIMIT = 49 * 1024 * 1024
+VIDEO_TIMEOUT = 180
+
+
+def send_video(account, chat_id, data, caption=None):
+    return _send_file(account, chat_id, 'sendVideo', 'video', 'video.mp4',
+                      'video/mp4', data, caption, VIDEO_TIMEOUT,
+                      extra={'supports_streaming': 'true'})
+
+
+def _send_file(account, chat_id, method, field, filename, content_type, data,
+               caption, timeout, extra=None):
     token = account.telegram_bot_token
     if not token:
         raise TelegramError('Бот не подключён')
 
     boundary = '----tire' + secrets.token_hex(12)
     fields = {'chat_id': str(chat_id)}
+    fields.update(extra or {})
     if caption:
         # Телеграм режет подпись на 1024 знаках, и режет грубо —
         # обрываем сами, чтобы не оборвалось посреди слова
@@ -159,21 +186,21 @@ def send_photo(account, chat_id, data, caption=None):
         body += value.encode('utf-8') + b'\r\n'
 
     body += f'--{boundary}\r\n'.encode('utf-8')
-    body += (b'Content-Disposition: form-data; name="photo"; '
-             b'filename="photo.jpg"\r\n')
-    body += b'Content-Type: image/jpeg\r\n\r\n'
+    body += (f'Content-Disposition: form-data; name="{field}"; '
+             f'filename="{filename}"\r\n').encode('utf-8')
+    body += f'Content-Type: {content_type}\r\n\r\n'.encode('utf-8')
     body += data + b'\r\n'
     body += f'--{boundary}--\r\n'.encode('utf-8')
 
     request = urllib.request.Request(
-        API.format(token=token, method='sendPhoto'),
+        API.format(token=token, method=method),
         data=bytes(body),
         headers={'Content-Type':
                  f'multipart/form-data; boundary={boundary}'},
         method='POST')
 
     try:
-        with urllib.request.urlopen(request, timeout=PHOTO_TIMEOUT) as answer:
+        with urllib.request.urlopen(request, timeout=timeout) as answer:
             result = json.loads(answer.read().decode('utf-8'))
     except urllib.error.HTTPError as e:
         detail = ''

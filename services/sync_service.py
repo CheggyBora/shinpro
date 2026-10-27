@@ -175,6 +175,105 @@ class SyncService:
         log.info(f"Точка подключена по коду: {answer.get('account')} — {answer.get('shop')}")
         return answer
 
+    # ------------------------------------------------------------------
+    # Кабинет мастера: «Начал» / «Готово» и ответы клиентов
+    # ------------------------------------------------------------------
+
+    def master_exchange(self):
+        """
+        Забрать, что нажали мастера на телефонах и что ответили клиенты
+        на их предложения. Применяет сам: начинает и заканчивает работу,
+        ставит согласованные услуги в наряд.
+
+        Возвращает {'changed': наряды изменились, 'notes': [(заголовок,
+        текст)]} — что сказать приёмщику окном.
+        """
+        from models import WorkOrder
+        from services.order_service import OrderService
+
+        orders = OrderService(self.db)
+        changed = False
+        touched = set()
+        notes = []
+
+        for event in self._call('GET', '/sync/master-events').get('events', []):
+            order = self.db.query(WorkOrder).filter(
+                WorkOrder.id == event.get('order_local_id')).first()
+            try:
+                if order is not None and order.status != 'paid':
+                    if event.get('kind') == 'start' and order.started_at is None:
+                        orders.start_work(order.id)
+                        changed = True
+                        touched.add(order.id)
+                    elif event.get('kind') == 'done' and order.finished_at is None:
+                        if order.started_at is None:
+                            orders.start_work(order.id)
+                        orders.finish_work(order.id)
+                        if event.get('told') and order.client_told_at is None:
+                            order.client_told_at = get_moscow_time()
+                            self.db.commit()
+                        changed = True
+                        touched.add(order.id)
+            except Exception as e:
+                self.db.rollback()
+                log.warning(f"Нажатие мастера по наряду №{event.get('order_local_id')} "
+                            f"не применилось: {e}")
+            self._call('POST', f"/sync/master-events/{event['id']}/done", {})
+
+        for offer in self._call('GET', '/sync/offers').get('offers', []):
+            note = self._apply_offer(offer, orders)
+            if note:
+                notes.append(note)
+                if offer.get('state') == 'yes' and offer.get('kind') == 'answer':
+                    changed = True
+                    touched.add(offer.get('order_local_id'))
+            self._call('POST', f"/sync/offers/{offer['id']}/taken", {})
+
+        return {'changed': changed, 'orders': touched, 'notes': notes}
+
+    def _apply_offer(self, offer, orders):
+        """Согласие — услуги в наряд; остальное — что сказать приёмщику."""
+        from models import WorkOrder
+
+        who = offer.get('client_name') or 'Клиент'
+        phone = offer.get('client_phone') or ''
+        plate = offer.get('license_plate') or ''
+        master = offer.get('author') or 'мастер'
+        what = ', '.join(f"{item['name']} — {int(item['price'])} ₽" for item in offer.get('items', []))
+        head = f"{plate} · наряд №{offer.get('order_local_id')}"
+
+        offered = f"{head}\nМастер {master} предложил: {what}"
+        if offer.get('kind') == 'silent':
+            return ('Клиент молчит',
+                    f"{offered}\n{who} 10 минут не отвечает.\n\nПозвоните: {phone}")
+        if offer.get('state') == 'call':
+            return ('Клиент просит позвонить',
+                    f"{offered}\n{who} просит позвонить.\n\nТелефон: {phone}")
+        if offer.get('state') == 'no':
+            return ('Клиент отказался', f"{offered}\n{who} отказался.")
+        if offer.get('state') != 'yes':
+            return None
+
+        order = self.db.query(WorkOrder).filter(
+            WorkOrder.id == offer.get('order_local_id')).first()
+        added, failed = [], []
+        for item in offer.get('items', []):
+            if order is None or order.status == 'paid':
+                failed.append(item['name'])
+                continue
+            try:
+                orders.add_service_to_order(order.id, item['local_id'])
+                added.append(item['name'])
+            except Exception as e:
+                self.db.rollback()
+                failed.append(f"{item['name']} ({e})")
+        text = f"{offered}\n{who} согласен."
+        if added:
+            text += "\n\nДобавлено в наряд: " + ', '.join(added)
+        if failed:
+            text += "\n\nДобавьте вручную: " + ', '.join(failed)
+        return ('Клиент согласен', text)
+
     def test_connection(self):
         """Проверить адрес и ключ. Возвращает сводку с сервера."""
         return self._call('GET', '/sync/state')
@@ -341,7 +440,9 @@ class SyncService:
                       'name': row.name,
                       'salary_percent': row.salary_percent,
                       'wash_percent': getattr(row, 'wash_percent', None),
-                      'is_active': bool(row.is_active)}
+                      'is_active': bool(row.is_active),
+                      # Кабинет мастера: пусто — ПИН снят, телефон выйдет
+                      'pin_hash': getattr(row, 'phone_pin_hash', None) or ''}
                      for row in self.db.query(Employee).all()]
 
         # Касса: у открытой смены «должно быть» — текущий остаток
@@ -376,9 +477,36 @@ class SyncService:
             'cash_orders': cash.payload(changed_since),
             'storage': self._collect_storage(),
             'queue': self._collect_queue(),
+            # Прайс — мастер предлагает клиенту работу по этим ценам
+            'services': self._collect_services(),
             'settings': self._collect_settings(),
             'settings_changed_at': self._settings_changed_at(),
         }
+
+    def _collect_services(self):
+        """
+        Прайс для кабинета мастера: цены по радиусам и классам мойки.
+        Какую взять, сервер решит по наряду. Скидки цех применит сам,
+        когда услуга встанет в наряд.
+        """
+        from models import Service
+
+        result = []
+        for row in self.db.query(Service).filter(Service.is_active == True).all():  # noqa: E712
+            prices = {}
+            for size in range(13, 25):
+                value = getattr(row, f'price_r{size}', None)
+                if value:
+                    prices[f'R{size}'] = float(value)
+            for kind in ('sedan', 'crossover', 'jeep', 'minivan'):
+                value = getattr(row, f'price_{kind}', None)
+                if value:
+                    prices[kind] = float(value)
+            result.append({'local_id': row.id, 'name': row.name,
+                           'direction': getattr(row, 'direction', None) or 'tire',
+                           'prices': prices,
+                           'editable': bool(getattr(row, 'editable_price', False))})
+        return result
 
     def _collect_payouts(self, changed_since):
         """
@@ -626,6 +754,13 @@ class SyncService:
             plate = getattr(order.car, 'license_plate', None) if order.car else None
             if not plate:
                 continue
+            client = getattr(order, 'client', None)
+            names = []
+            for item in getattr(order, 'items', None) or []:
+                service = getattr(item, 'service', None)
+                name = getattr(service, 'name', None) or getattr(item, 'name', None)
+                if name and name not in names:
+                    names.append(name)
             cars.append({
                 'local_id': order.id,
                 'license_plate': plate,
@@ -635,6 +770,17 @@ class SyncService:
                 # Сколько ещё займёт работа — по этому видно, когда
                 # освободится пост
                 'planned_minutes': order.planned_minutes or 0,
+
+                # Кабинет мастера: чьи это машины и что с ними делают
+                'masters': order.employee_ids or '',
+                'client_name': getattr(client, 'name', None),
+                'wheel_diameter': order.wheel_diameter,
+                'wash_class': order.wash_class or getattr(order.car, 'wash_class', None),
+                'directions': order.directions,
+                'services': '\n'.join(names[:8]),
+                'post': order.post_number,
+                'finished_at': as_naive(order.finished_at) if order.finished_at else None,
+                'told_at': as_naive(order.client_told_at) if order.client_told_at else None,
             })
         return cars
 
@@ -689,6 +835,8 @@ class SyncService:
             # Мойка включена — в дашборде календарь с переключателем
             'direction_wash': settings.get('direction_wash'),
             'stock_enabled': settings.get('stock_enabled'),
+            # Видят ли мастера свой заработок в кабинете на телефоне
+            'master_salary_visible': settings.get('master_salary_visible') or '0',
             # Наряд по фото: телефон предлагает только включённые направления
             'arrival_photo_tire': '1' if _directions.photo_on(self.db, 'tire') else '0',
             'arrival_photo_wash': '1' if _directions.photo_on(self.db, 'wash') else '0',

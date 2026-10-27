@@ -3,30 +3,31 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Фото в наряд</title>
+<title>Кабинет мастера</title>
 <link rel="manifest" href="/m/manifest.webmanifest">
 <meta name="theme-color" content="#2563eb">
 <style>
 /*
-  Страница для телефона мастера. Всё крупное: на неё смотрят в боксе,
+  Кабинет мастера на телефоне. Всё крупное: на него смотрят в боксе,
   в перчатках, одной рукой, при плохом свете. Мелкая кнопка здесь —
   это кнопка, в которую не попадут.
 */
 :root {
   --ink: #0f172a;
   --ink-soft: #475569;
-  --muted: #94a3b8;
+  --muted: #64748b;
   --line: #e2e8f0;
   --bg: #f1f5f9;
   --card: #ffffff;
   --brand: #2563eb;
-  --ok: #16a34a;
+  --ok: #047857;
   --bad: #dc2626;
   --ok-bg: #dcfce7;
   --warn: #92400e;
   --warn-bg: #fef3c7;
   --accent-bg: #dbeafe;
   --accent: #1d4ed8;
+  --dark: #0f172a;
   --plate-font: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
 
@@ -34,15 +35,17 @@
   :root:not([data-theme="light"]) {
     --ink: #e2e8f0;
     --ink-soft: #94a3b8;
-    --muted: #64748b;
+    --muted: #94a3b8;
     --line: #1e293b;
     --bg: #0b1220;
     --card: #111a2e;
+    --ok: #4ade80;
     --ok-bg: #12301f;
     --warn: #f0c46a;
     --warn-bg: #3b2f14;
     --accent-bg: #1e3350;
     --accent: #93c5fd;
+    --dark: #334155;
   }
 }
 
@@ -52,11 +55,14 @@ body {
   margin: 0; background: var(--bg); color: var(--ink);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   font-size: 17px; line-height: 1.45;
-  padding: env(safe-area-inset-top) 16px calc(env(safe-area-inset-bottom) + 24px);
+  padding: env(safe-area-inset-top) 16px calc(env(safe-area-inset-bottom) + 88px);
 }
 
-header { padding: 18px 0 10px; }
+header { padding: 16px 0 10px; display: flex; align-items: center; gap: 12px; }
+header .who { flex: 1; min-width: 0; }
 h1 { margin: 0; font-size: 20px; }
+h2.section { margin: 18px 0 8px; font-size: 13px; font-weight: 600; color: var(--ink-soft);
+  text-transform: uppercase; letter-spacing: .04em; }
 .sub { color: var(--ink-soft); font-size: 14px; margin-top: 2px; }
 
 .card {
@@ -66,63 +72,133 @@ h1 { margin: 0; font-size: 20px; }
 
 label { display: block; font-size: 14px; color: var(--ink-soft); margin-bottom: 6px; }
 
-input[type="text"], textarea {
+input[type="text"], input[type="password"], input[type="search"], textarea, select {
   width: 100%; padding: 14px; font-size: 17px; font-family: inherit;
   color: var(--ink); background: var(--card);
   border: 1.5px solid var(--line); border-radius: 12px;
 }
-textarea { min-height: 80px; resize: vertical; }
-input:focus, textarea:focus { outline: none; border-color: var(--brand); }
+textarea { min-height: 70px; resize: vertical; }
+input:focus, textarea:focus, select:focus { outline: none; border-color: var(--brand); }
 
 button {
   width: 100%; padding: 16px; font-size: 17px; font-family: inherit;
   font-weight: 600; border: 0; border-radius: 14px;
-  background: var(--brand); color: #fff;
+  background: var(--brand); color: #fff; cursor: pointer;
 }
 button:disabled { opacity: .55; }
 button.ghost { background: var(--card); color: var(--ink); border: 1.5px solid var(--line); }
+button.dark { background: var(--dark); }
+button.okb { background: var(--ok); }
+button.small { width: auto; padding: 10px 14px; font-size: 15px; }
+.link-btn { background: none; color: var(--brand); font-weight: 600; padding: 14px; }
 
-/* Машина — большая строка во всю ширину: по ней попадают пальцем */
-.car {
-  display: flex; align-items: center; gap: 12px;
-  width: 100%; text-align: left; padding: 16px;
-  background: var(--card); border: 1.5px solid var(--line);
-  border-radius: 14px; margin-bottom: 10px; font-size: 19px;
-  font-weight: 700; color: var(--ink);
-}
-.car .state {
-  margin-left: auto; font-size: 13px; font-weight: 500; color: var(--muted);
-}
-.car.work { border-color: var(--brand); }
-.car.work .state { color: var(--brand); }
+/* Машина — карточка; по ней попадают пальцем и открывают наряд */
+.car { background: var(--card); border: 1.5px solid var(--line); border-radius: 16px;
+  padding: 14px; margin-bottom: 10px; }
+.car.mine { border: 2px solid var(--brand); }
+.car .head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px;
+  width: 100%; padding: 0; background: none; color: var(--ink); text-align: left;
+  border-radius: 0; font-weight: 700; }
+.car .plate { font-size: 20px; font-family: var(--plate-font); letter-spacing: .02em; }
+.tag { font-size: 12px; font-weight: 700; border-radius: 6px; padding: 3px 8px; white-space: nowrap; }
+.tag.work { color: var(--accent); background: var(--accent-bg); }
+.tag.waiting { color: var(--warn); background: var(--warn-bg); }
+.tag.done { color: var(--ok); background: var(--ok-bg); }
+.car .what { font-size: 14px; color: var(--ink-soft); margin-top: 4px; }
+.car .acts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
+.car .acts button { padding: 13px 4px; font-size: 15px; }
+.car .sent { font-size: 13px; color: var(--ok); margin-top: 8px; }
+.others .row { display: flex; justify-content: space-between; gap: 10px; width: 100%;
+  padding: 13px 14px; background: none; color: var(--ink); border-radius: 0;
+  border-bottom: 1px solid var(--line); font-weight: 600; text-align: left; }
+.others .row:last-child { border-bottom: 0; }
+.others .row span { color: var(--ink-soft); font-weight: 400; font-size: 15px; }
+.others { padding: 0; overflow: hidden; }
 
-/*
-  Выбор файла прячем за своей кнопкой: родная выглядит мелкой серой
-  надписью, а в неё надо попасть пальцем в перчатке. Сам input
-  остаётся на месте и работает — меняется только то, что видно
-*/
-.pick input { position: absolute; width: 1px; height: 1px; opacity: 0; }
-.pick span {
-  display: block; width: 100%; padding: 16px; text-align: center;
-  font-size: 17px; font-weight: 600; border-radius: 14px;
-  background: var(--card); color: var(--ink);
-  border: 2px dashed var(--line);
-}
+/* Кто вы */
+.people { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px; }
+.people button { background: var(--card); color: var(--ink); border: 1.5px solid var(--line);
+  padding: 16px 8px; font-weight: 500; }
+.people button[aria-pressed="true"] { border: 2px solid var(--brand); color: var(--accent);
+  background: var(--accent-bg); font-weight: 700; }
+.people button.nopin { opacity: .5; }
+input.pin { font-size: 28px; letter-spacing: 12px; text-align: center; }
 
-.shots { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
-.shots img { width: 92px; height: 92px; object-fit: cover; border-radius: 12px; }
+/* Наряд */
+.big { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 4px 0 14px; }
+.big label, .big button { display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 6px; height: 96px; margin: 0; border-radius: 16px; font-size: 16px; font-weight: 600;
+  position: relative; cursor: pointer; }
+.big label { background: var(--brand); color: #fff; }
+.big button { background: var(--dark); color: #fff; padding: 0; }
+.big svg { width: 28px; height: 28px; stroke: currentColor; fill: none; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round; }
+.big input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.chips button { width: auto; padding: 9px 13px; font-size: 15px; font-weight: 500; border-radius: 20px;
+  background: var(--card); color: var(--ink); border: 1.5px solid var(--line); }
+.chips button[aria-pressed="true"] { border: 2px solid var(--brand); color: var(--accent); background: var(--accent-bg); }
+.list { padding: 0; overflow: hidden; }
+.list .item { display: flex; gap: 12px; align-items: center; padding: 11px 14px;
+  border-bottom: 1px solid var(--line); font-size: 15px; }
+.list .item:last-child { border-bottom: 0; }
+.list .kind { flex: 0 0 auto; width: 54px; height: 40px; border-radius: 8px; background: var(--line);
+  display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700;
+  color: var(--ink-soft); }
+.list .kind.video { background: var(--dark); color: #fff; }
+.list .body { flex: 1; min-width: 0; }
+.list .body b { display: block; font-weight: 600; overflow-wrap: anywhere; }
+.list .body span { font-size: 13px; color: var(--ink-soft); }
+.list .body span.ok { color: var(--ok); }
+.list .body span.bad { color: var(--bad); }
+.progress { height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; margin: 10px 0 4px; }
+.progress div { height: 100%; width: 0; background: var(--brand); transition: width .2s; }
 
-.note { font-size: 14px; color: var(--ink-soft); margin: 10px 0 0; }
-.bad { color: var(--bad); }
-.ok { color: var(--ok); }
-.empty { text-align: center; color: var(--muted); padding: 40px 0; }
+/* Предложение */
+.svc { display: flex; justify-content: space-between; align-items: center; gap: 10px;
+  padding: 13px 14px; border-bottom: 1px solid var(--line); font-size: 16px; margin: 0; color: var(--ink); }
+.svc:last-child { border-bottom: 0; }
+.svc input { width: 24px; height: 24px; flex: 0 0 auto; }
+.svc span { flex: 1; }
 
-/* --- Новая машина (docs/order_photo.md) ---
-   Кнопка во всю ширину над списком: снимают на ходу, у машины,
-   одной рукой. Нажатие сразу открывает камеру */
+/* Видео */
+.rec { position: fixed; inset: 0; z-index: 30; background: #000; color: #fff;
+  display: flex; flex-direction: column; }
+.rec video { flex: 1; width: 100%; min-height: 0; object-fit: cover; background: #000; }
+.rec .bar { padding: 16px 16px calc(env(safe-area-inset-bottom) + 16px); display: flex;
+  gap: 10px; align-items: center; background: rgba(0,0,0,.85); }
+.rec .time { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; min-width: 92px; }
+.rec .shoot { width: 76px; height: 76px; flex: 0 0 auto; border-radius: 50%; padding: 0;
+  background: #fff; border: 5px solid #dc2626; margin: 0 auto; }
+.rec .shoot.on { background: #dc2626; border-color: #fff; }
+.rec .side { width: auto; background: rgba(255,255,255,.15); padding: 12px 14px; font-size: 15px; }
+
+/* Заработок */
+.tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
+.tiles .card { margin: 0; }
+.tiles b { display: block; font-size: 24px; }
+.tiles span { font-size: 13px; color: var(--ink-soft); }
+.bars { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; align-items: end;
+  height: 110px; }
+.bars div { background: var(--accent-bg); border-radius: 4px; min-height: 3px; }
+.bars div.today { background: var(--brand); }
+.days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; font-size: 12px;
+  color: var(--ink-soft); text-align: center; margin-top: 4px; }
+.money-row { display: flex; justify-content: space-between; gap: 10px; padding: 11px 0;
+  border-bottom: 1px solid var(--line); font-size: 15px; }
+.money-row:last-child { border-bottom: 0; }
+
+nav.tabs { position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr)); background: var(--card);
+  border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom); }
+nav.tabs button { background: none; color: var(--ink-soft); border-radius: 0; padding: 18px 8px;
+  font-size: 15px; font-weight: 600; }
+nav.tabs button[aria-current="page"] { color: var(--brand); }
+
+/* Подключение и «Новая машина» (docs/order_photo.md) */
 .new-car { display: flex; align-items: center; justify-content: center; gap: 10px;
-  width: 100%; padding: 18px; margin-bottom: 14px; border-radius: 14px;
-  background: var(--brand); color: #fff; font-size: 18px; font-weight: 700;
+  width: 100%; padding: 16px; margin-bottom: 14px; border-radius: 14px;
+  background: var(--brand); color: #fff; font-size: 17px; font-weight: 700;
   position: relative; cursor: pointer; }
 .new-car svg { width: 24px; height: 24px; stroke: currentColor; fill: none;
   stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: 0 0 auto; }
@@ -130,10 +206,8 @@ button.ghost { background: var(--card); color: var(--ink); border: 1.5px solid v
 .retake { display: block; width: 100%; padding: 16px; text-align: center; font-size: 17px;
   font-weight: 600; border-radius: 14px; background: var(--card); color: var(--ink);
   border: 1.5px solid var(--line); position: relative; cursor: pointer; margin-top: 8px; }
-
 .car-photo { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover;
   border-radius: 14px; background: var(--line); margin-bottom: 12px; }
-
 .recog { display: flex; align-items: center; gap: 10px; border-radius: 12px;
   padding: 10px 12px; background: var(--ok-bg); color: var(--ok); font-weight: 600;
   font-size: 15px; }
@@ -142,24 +216,29 @@ button.ghost { background: var(--card); color: var(--ink); border: 1.5px solid v
 .recog input[type="text"] { flex: 1; min-width: 0; padding: 10px 12px;
   font-family: var(--plate-font); font-size: 22px; font-weight: 600;
   letter-spacing: .04em; text-transform: uppercase; }
-
 .hint-line { font-size: 15px; color: var(--ink-soft); margin: 10px 0 0; }
 .hint-line b { color: var(--ink); font-weight: 600; }
 .badge { display: inline-block; margin-top: 8px; padding: 5px 10px; border-radius: 8px;
   background: var(--accent-bg); color: var(--accent); font-size: 15px; font-weight: 600; }
-
 .seg { display: flex; gap: 6px; margin-top: 14px; }
 .seg button { flex: 1 1 0; min-width: 0; width: auto; padding: 12px 6px; font-size: 15px;
   font-weight: 600; background: var(--card); color: var(--ink);
   border: 1.5px solid var(--line); border-radius: 12px; }
 .seg button[aria-pressed="true"] { border: 2px solid var(--brand); color: var(--brand); }
-
 .done-mark { width: 64px; height: 64px; border-radius: 50%; background: var(--ok-bg);
   color: var(--ok); display: flex; align-items: center; justify-content: center;
   margin: 8px auto 12px; }
 .done-mark svg { width: 34px; height: 34px; stroke: currentColor; fill: none;
   stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
-.link-btn { background: none; color: var(--brand); font-weight: 600; padding: 14px; }
+
+.note { font-size: 14px; color: var(--ink-soft); margin: 10px 0 0; }
+.bad { color: var(--bad); }
+.ok { color: var(--ok); }
+.empty { text-align: center; color: var(--muted); padding: 40px 0; }
+.back { width: 44px; height: 44px; flex: 0 0 auto; padding: 0; border-radius: 12px;
+  background: var(--card); color: var(--ink); border: 1.5px solid var(--line);
+  display: flex; align-items: center; justify-content: center; }
+.back svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 2.2; }
 
 [hidden] { display: none !important; }
 </style>
@@ -167,49 +246,62 @@ button.ghost { background: var(--card); color: var(--ink); border: 1.5px solid v
 <body>
 
 <header>
-  <h1 id="title">Фото в наряд</h1>
-  <div class="sub" id="who"></div>
+  <button type="button" class="back" id="backBtn" aria-label="Назад" hidden>
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+  </button>
+  <div class="who">
+    <h1 id="title">Кабинет мастера</h1>
+    <div class="sub" id="who"></div>
+  </div>
+  <button type="button" class="ghost small" id="logoutBtn" hidden>Выйти</button>
 </header>
 
 <!-- Первый заход: телефон ещё не знаком -->
 <section id="screenConnect" hidden>
   <div class="card">
-    <label for="name">Как вас зовут</label>
-    <input id="name" type="text" placeholder="Иван" autocomplete="name">
-    <p class="note">Имя увидит приёмщик рядом с вашим фото. Больше оно
-      нигде не нужно — ни пароля, ни входа.</p>
+    <h2 style="margin:0 0 6px;font-size:19px">Подключить телефон к цеху</h2>
+    <p class="note" style="margin-top:0">Один раз. Дальше телефон помнит себя сам.</p>
   </div>
   <button type="button" id="doConnect">Подключить телефон</button>
   <p class="note bad" id="connectError" hidden></p>
 </section>
 
-<!-- Сразу после подключения: как попадать сюда дальше. Без этого
-     мастер закроет браузер и в следующий раз не найдёт страницу —
-     а QR второй раз ему никто не покажет -->
+<!-- Сразу после подключения: как попадать сюда дальше -->
 <section id="screenHome" hidden>
   <div class="card">
     <h2 style="margin:0 0 6px;font-size:19px">Телефон подключён</h2>
     <p class="note" style="margin-top:0">Чтобы в следующий раз попадать
       сюда одним касанием, положите страницу на экран телефона:</p>
-
     <p style="margin:14px 0 4px"><b>Android (Chrome):</b></p>
     <p class="note" style="margin:0">меню <b>⋮</b> справа вверху →
       «Добавить на главный экран»</p>
-
     <p style="margin:14px 0 4px"><b>iPhone (Safari):</b></p>
     <p class="note" style="margin:0">кнопка «Поделиться» <b>⬆</b> внизу →
       «На экран „Домой“»</p>
-
-    <p class="note" style="margin-top:16px">Появится значок «Фото в наряд».
-      Открывайте его — QR больше не понадобится.</p>
+    <p class="note" style="margin-top:16px">QR больше не понадобится.</p>
   </div>
   <button type="button" id="homeDone">Понятно</button>
 </section>
 
-<!-- Список машин -->
+<!-- Кто вы: выбрать себя и ввести ПИН -->
+<section id="screenWho" hidden>
+  <p class="note" style="margin-top:0">Выберите себя один раз. Дальше телефон помнит —
+    и показывает ваши машины<span id="whoSalary"> и ваш заработок</span>.</p>
+  <div class="people" id="people"></div>
+  <div class="card" id="pinCard" hidden>
+    <label for="pin" id="pinLabel">ПИН</label>
+    <input id="pin" class="pin" type="password" inputmode="numeric" maxlength="4"
+           autocomplete="off" pattern="[0-9]*">
+    <button type="button" id="doLogin" style="margin-top:12px">Войти</button>
+    <p class="note bad" id="loginError" hidden></p>
+  </div>
+  <p class="note">ПИН мастеру ставит приёмщик в программе: «Сотрудники» → мастер →
+    «ПИН для телефона». Забыли — там же новый.</p>
+  <button type="button" class="link-btn" id="skipLogin">Пока без входа — только фото</button>
+</section>
+
+<!-- Мои машины -->
 <section id="screenCars" hidden>
-  <!-- Новая машина: снимок сразу с камеры. Наряд по ней откроет
-       приёмщик на компьютере (docs/order_photo.md) -->
   <label class="new-car" id="newCar" hidden>
     <input type="file" accept="image/*" capture="environment" data-arrival>
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/>
@@ -220,31 +312,88 @@ button.ghost { background: var(--card); color: var(--ink); border: 1.5px solid v
   <button type="button" class="ghost" id="reload">Обновить список</button>
 </section>
 
-<!-- Снимок по выбранной машине -->
-<section id="screenShot" hidden>
-  <div class="card">
-    <div style="font-size:22px;font-weight:700" id="shotPlate"></div>
-    <div class="shots" id="shots"></div>
-
-    <label class="pick" style="margin-top:4px">
-      <input id="pick" type="file" accept="image/*" capture="environment" multiple>
-      <span id="pickLabel">Снять или выбрать фото</span>
-    </label>
-
-    <label for="comment" style="margin-top:14px">Что показываем</label>
-    <textarea id="comment" placeholder="Грыжа на боковине, заднее левое"></textarea>
-    <p class="note">Клиент получит фото сразу — в Телеграм или в кабинет.</p>
+<!-- Наряд: фото и видео клиенту -->
+<section id="screenOrder" hidden>
+  <div class="card" style="padding:12px 14px">
+    <div class="sub" id="oClient"></div>
+    <div class="sub" id="oWhat"></div>
   </div>
 
-  <button type="button" id="doSend" disabled>Отправить клиенту</button>
-  <button type="button" class="ghost" id="back" style="margin-top:8px">Назад</button>
-  <p class="note" id="sendState" hidden></p>
+  <div class="big">
+    <label>
+      <input id="oPhoto" type="file" accept="image/*" capture="environment" multiple>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h3l2-3h6l2 3h3v12H4z"/><circle cx="12" cy="13" r="4"/></svg>
+      Фото
+    </label>
+    <button type="button" id="oVideo">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="13" height="12" rx="2"/><path d="M16 10l5-3v10l-5-3"/></svg>
+      Видео · до 60 с
+    </button>
+  </div>
+  <input id="oVideoFile" type="file" accept="video/*" capture="environment" hidden>
+
+  <label>Подпись — одним касанием</label>
+  <div class="chips" id="oChips"></div>
+  <label for="oWheel">Колесо</label>
+  <select id="oWheel">
+    <option value="">— не важно —</option>
+    <option>переднее левое</option>
+    <option>переднее правое</option>
+    <option>заднее левое</option>
+    <option>заднее правое</option>
+    <option>все четыре</option>
+  </select>
+  <label for="oText" style="margin-top:12px">Своими словами — необязательно</label>
+  <input id="oText" type="text" placeholder="Ездить опасно — может лопнуть">
+
+  <div id="oSending" hidden>
+    <div class="progress"><div id="oBar"></div></div>
+    <p class="note" id="oState" style="margin-top:0"></p>
+  </div>
+  <p class="note" id="oResult" hidden></p>
+
+  <h2 class="section">Отправлено клиенту</h2>
+  <div class="card list" id="oSent"></div>
+
+  <button type="button" class="ghost" id="oOffer" style="margin-top:4px">Предложить работу клиенту →</button>
+  <div class="card list" id="oOffers" style="margin-top:12px" hidden></div>
+  <button type="button" id="oPress" style="margin-top:4px" hidden></button>
+  <p class="note" id="oPressState" hidden></p>
+</section>
+
+<!-- Предложить работу -->
+<section id="screenOffer" hidden>
+  <label>1. Что нашли — снимок или видео</label>
+  <select id="fMedia"></select>
+  <label style="margin-top:14px" for="fSearch">2. Что сделать — из прайса точки</label>
+  <input id="fSearch" type="search" placeholder="Поиск: вентиль, правка…">
+  <div class="card list" id="fServices" style="margin-top:8px"></div>
+  <label for="fComment">3. Пару слов клиенту — необязательно</label>
+  <input id="fComment" type="text" placeholder="Ездить на такой шине опасно">
+  <button type="button" id="fSend" style="margin-top:14px" disabled>Отправить на согласование</button>
+  <p class="note" id="fState" hidden></p>
+  <p class="note">Клиент жмёт «Согласен» — услуга сама встаёт в наряд, приёмщик это
+    видит. «Позвоните мне» или молчание 10 минут — приёмщику напоминание позвонить.</p>
+</section>
+
+<!-- Мой заработок -->
+<section id="screenEarn" hidden>
+  <div class="tiles">
+    <div class="card"><span>Сегодня</span><b id="eToday"></b><span id="eTodayN"></span></div>
+    <div class="card"><span>К выплате</span><b id="eBalance" class="ok"></b><span>всего</span></div>
+  </div>
+  <h2 class="section">Сегодня по нарядам</h2>
+  <div class="card" id="eOrders"></div>
+  <h2 class="section">Неделя</h2>
+  <div class="card"><div class="bars" id="eBars"></div><div class="days" id="eDays"></div></div>
+  <h2 class="section">Выплаты</h2>
+  <div class="card" id="ePayouts"></div>
+  <p class="note">Начисление появляется, когда наряд оплачен и цех обменялся с сервером.</p>
 </section>
 
 <!-- Новая машина: снимок → номер → «Создать наряд» -->
 <section id="screenArrival" hidden>
   <img class="car-photo" id="arrPhoto" alt="Снимок машины">
-
   <div class="recog wait" id="arrBox">
     <span>Номер:</span>
     <input id="arrPlate" type="text" autocomplete="off" autocapitalize="characters"
@@ -253,13 +402,11 @@ button.ghost { background: var(--card); color: var(--ink); border: 1.5px solid v
   <p class="hint-line" id="arrState">Читаем номер…</p>
   <p class="hint-line" id="arrKnown" hidden></p>
   <span class="badge" id="arrBooked" hidden></span>
-
   <div class="seg" id="arrDirs" hidden role="group" aria-label="Что делаем">
     <button type="button" data-dirs="tire" aria-pressed="true">Шиномонтаж</button>
     <button type="button" data-dirs="wash" aria-pressed="false">Мойка</button>
     <button type="button" data-dirs="tire,wash" aria-pressed="false">Оба</button>
   </div>
-
   <button type="button" id="arrCreate" style="margin-top:16px" disabled>Создать наряд</button>
   <label class="retake">
     <input type="file" accept="image/*" capture="environment" data-arrival>
@@ -269,7 +416,6 @@ button.ghost { background: var(--card); color: var(--ink); border: 1.5px solid v
   <p class="note bad" id="arrError" hidden></p>
 </section>
 
-<!-- Машина ушла в цех -->
 <section id="screenArrivalDone" hidden>
   <div class="card" style="text-align:center">
     <div class="done-mark"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div>
@@ -286,39 +432,79 @@ button.ghost { background: var(--card); color: var(--ink); border: 1.5px solid v
   <button type="button" class="ghost" id="doneBack">К списку машин</button>
 </section>
 
+<!-- Запись видео -->
+<div class="rec" id="rec" hidden>
+  <video id="recView" playsinline muted autoplay></video>
+  <div class="bar">
+    <button type="button" class="side" id="recCancel">Отмена</button>
+    <span class="time" id="recTime">0:00 / 1:00</span>
+    <button type="button" class="shoot" id="recShoot" aria-label="Начать запись"></button>
+    <button type="button" class="side" id="recSend" hidden>Отправить</button>
+  </div>
+</div>
+
+<nav class="tabs" id="tabs" hidden>
+  <button type="button" data-tab="cars" aria-current="page">Машины</button>
+  <button type="button" data-tab="earn">Заработок</button>
+</nav>
+
 <script>
 'use strict';
 
 var KEY = 'tire-master-key';
-var state = { key: null, car: null, files: [] };
+var SKIP = 'tire-master-skip';
+var VIDEO_SECONDS = 60;
+var CHIPS = ['Грыжа на боковине', 'Износ ниже нормы', 'Порез', 'Диск погнут',
+             'Балансировка на стенде', 'Готово'];
+var state = { key: null, me: null, picked: null, order: null, chip: '', offerPicked: {} };
 
 function $(id) { return document.getElementById(id); }
 
-function show(name) {
-  ['screenConnect', 'screenHome', 'screenCars',
-   'screenShot', 'screenArrival', 'screenArrivalDone'].forEach(function (id) {
-    $(id).hidden = (id !== name);
+var SCREENS = ['screenConnect', 'screenHome', 'screenWho', 'screenCars', 'screenOrder',
+               'screenOffer', 'screenEarn', 'screenArrival', 'screenArrivalDone'];
+
+function show(name, back) {
+  SCREENS.forEach(function (id) { $(id).hidden = (id !== name); });
+  $('backBtn').hidden = !back;
+  state.back = back || null;
+  var inside = state.me && state.me.employee;
+  $('logoutBtn').hidden = !(inside && (name === 'screenCars' || name === 'screenEarn'));
+  $('tabs').hidden = !(inside && state.me.salary_visible
+                       && (name === 'screenCars' || name === 'screenEarn'));
+  [].slice.call($('tabs').querySelectorAll('button')).forEach(function (button) {
+    var on = (button.getAttribute('data-tab') === 'earn') === (name === 'screenEarn');
+    if (on) button.setAttribute('aria-current', 'page'); else button.removeAttribute('aria-current');
   });
+  window.scrollTo(0, 0);
 }
+
+$('backBtn').addEventListener('click', function () { if (state.back) state.back(); });
 
 function escape(text) {
   return String(text == null ? '' : text).replace(/[&<>"']/g, function (ch) {
-    return { '&': '&amp;', '<': '&lt;', '>': '&gt;',
-             '"': '&quot;', "'": '&#39;' }[ch];
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch];
   });
 }
+
+function money(value) {
+  return String(Math.round(value || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + ' ₽';
+}
+
+function timeText(iso) { return iso ? String(iso).slice(11, 16) : ''; }
 
 function api(path, options) {
   options = options || {};
   options.headers = options.headers || {};
   if (state.key) options.headers['X-Master-Key'] = state.key;
+  if (options.json !== undefined) {
+    options.headers['Content-Type'] = 'application/json';
+    options.body = JSON.stringify(options.json);
+    delete options.json;
+  }
 
   return fetch(path, options).then(function (answer) {
     return answer.json().catch(function () { return {}; }).then(function (data) {
       if (answer.ok) return data;
-
-      // Пропуск отозвали или сервер подняли заново — честно просим
-      // отсканировать QR ещё раз, а не показываем пустой список
       if (answer.status === 401) {
         try { localStorage.removeItem(KEY); } catch (e) {}
         state.key = null;
@@ -330,23 +516,19 @@ function api(path, options) {
   });
 }
 
-// --- Первый заход -----------------------------------------------------
+// --- Подключение по QR --------------------------------------------------
 
 function linkFromAddress() {
   var parts = location.pathname.split('/').filter(Boolean);
-  // /m/k/<ключ> — пришли по QR; просто /m — телефон уже знаком
   return (parts.length > 2 && parts[1] === 'k') ? parts[2] : '';
 }
 
 $('doConnect').addEventListener('click', function () {
-  var link = linkFromAddress();
   $('doConnect').disabled = true;
   $('connectError').hidden = true;
-
   fetch('/m/connect', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ link: link, name: $('name').value })
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ link: linkFromAddress() })
   }).then(function (answer) {
     return answer.json().then(function (data) {
       if (!answer.ok) throw new Error(data.detail || 'Код не принят');
@@ -354,14 +536,9 @@ $('doConnect').addEventListener('click', function () {
     });
   }).then(function (data) {
     state.key = data.key;
-    try { localStorage.setItem(KEY, data.key); } catch (e) {}
-
-    // Убираем ключ из адреса: иначе он останется в истории браузера
-    // и в закладке, а он одноразовый
+    try { localStorage.setItem(KEY, data.key); localStorage.removeItem(SKIP); } catch (e) {}
+    // Ключ одноразовый — из адреса и истории его убираем
     history.replaceState(null, '', '/m');
-
-    // Сначала — как сюда вернуться. Список машин подождёт полминуты,
-    // а мастер, не узнавший про ярлык, завтра страницу не найдёт
     show('screenHome');
   }).catch(function (e) {
     $('connectError').textContent = e.message;
@@ -370,38 +547,141 @@ $('doConnect').addEventListener('click', function () {
   });
 });
 
-// --- Машины -----------------------------------------------------------
+$('homeDone').addEventListener('click', function () { start(); });
+
+// --- Кто вы ----------------------------------------------------------------
+
+function start() {
+  api('/m/me').then(function (me) {
+    state.me = me;
+    $('title').textContent = me.shop || 'Кабинет мастера';
+    var skipped = false;
+    try { skipped = localStorage.getItem(SKIP) === '1'; } catch (e) {}
+    // Входить есть кем — когда приёмщик поставил ПИН хоть одному мастеру.
+    // Старая программа цеха ПИН не шлёт: тогда всё как раньше, без входа
+    var canLogin = me.employees.some(function (person) { return person.has_pin; });
+    if (!me.employee && canLogin && !skipped) return drawWho();
+    loadCars();
+  }).catch(function (e) {
+    if (e.status === 401) return showStranger();
+    loadCars();
+  });
+}
+
+function drawWho() {
+  state.picked = null;
+  $('who').textContent = 'Кто вы?';
+  $('whoSalary').hidden = !state.me.salary_visible;
+  $('pinCard').hidden = true;
+  $('people').innerHTML = state.me.employees.map(function (person) {
+    return '<button type="button" data-id="' + person.local_id + '" aria-pressed="false"'
+      + (person.has_pin ? '' : ' class="nopin"') + '>' + escape(person.name) + '</button>';
+  }).join('');
+  [].slice.call($('people').querySelectorAll('button')).forEach(function (button) {
+    button.addEventListener('click', function () {
+      [].slice.call($('people').querySelectorAll('button')).forEach(function (other) {
+        other.setAttribute('aria-pressed', String(other === button));
+      });
+      state.picked = Number(button.getAttribute('data-id'));
+      $('pinLabel').textContent = 'ПИН — ' + button.textContent;
+      $('pin').value = '';
+      $('loginError').hidden = true;
+      $('pinCard').hidden = false;
+      $('pin').focus();
+    });
+  });
+  show('screenWho');
+}
+
+function doLogin() {
+  var pin = $('pin').value.replace(/\D/g, '');
+  if (!state.picked || pin.length !== 4) return;
+  $('doLogin').disabled = true;
+  api('/m/login', { method: 'POST', json: { employee_local_id: state.picked, pin: pin } })
+    .then(function (me) {
+      state.me = me;
+      try { localStorage.removeItem(SKIP); } catch (e) {}
+      $('doLogin').disabled = false;
+      loadCars();
+    }).catch(function (e) {
+      $('doLogin').disabled = false;
+      $('loginError').textContent = e.message;
+      $('loginError').hidden = false;
+      $('pin').value = '';
+    });
+}
+
+$('doLogin').addEventListener('click', doLogin);
+$('pin').addEventListener('input', function () { if ($('pin').value.length === 4) doLogin(); });
+$('skipLogin').addEventListener('click', function () {
+  try { localStorage.setItem(SKIP, '1'); } catch (e) {}
+  loadCars();
+});
+$('logoutBtn').addEventListener('click', function () {
+  if (!confirm('Выйти? Телефон останется подключённым к цеху.')) return;
+  api('/m/logout', { method: 'POST' }).then(start).catch(start);
+});
+
+// --- Машины ----------------------------------------------------------------
+
+var STATE_WORDS = { work: 'В работе', waiting: 'Ждёт', done: 'Готово' };
+
+function carCard(car) {
+  var head = '<button type="button" class="head" data-open="' + car.order_local_id + '">'
+    + '<span class="plate">' + escape(car.license_plate) + '</span>'
+    + '<span class="tag ' + car.state + '">' + (car.post && car.state === 'work' ? 'Пост ' + car.post + ' · ' : '')
+    + STATE_WORDS[car.state] + '</span></button>';
+  var what = [car.car, car.wheel_diameter, car.client_name].filter(Boolean).join(' · ');
+  var services = (car.services || []).slice(0, 3).join(' · ');
+  var press = '';
+  if (state.me && state.me.employee) {
+    if (car.state === 'waiting') press = '<button type="button" data-press="start" data-id="' + car.order_local_id + '">Начал</button>';
+    else if (car.state === 'work') press = '<button type="button" class="okb" data-press="done" data-id="' + car.order_local_id + '">Готово</button>';
+  }
+  var sent = car.sent || {};
+  var sentText = [];
+  if (sent.photo) sentText.push(sent.photo + ' фото');
+  if (sent.video) sentText.push(sent.video + ' видео');
+  return '<div class="car' + (car.mine ? ' mine' : '') + '">' + head
+    + (what ? '<div class="what">' + escape(what) + '</div>' : '')
+    + (services ? '<div class="what">' + escape(services) + '</div>' : '')
+    + '<div class="acts" style="grid-template-columns:repeat(' + (press ? 3 : 2) + ',minmax(0,1fr))">'
+    + '<button type="button" class="ghost" data-open="' + car.order_local_id + '">Фото</button>'
+    + '<button type="button" class="ghost" data-video="' + car.order_local_id + '">Видео</button>'
+    + press + '</div>'
+    + (sentText.length ? '<div class="sent">Клиенту: ' + sentText.join(', ')
+       + (sent.viewed ? ' · посмотрел' : '') + '</div>' : '')
+    + '</div>';
+}
 
 function loadCars() {
   $('reload').hidden = false;
   api('/m/cars').then(function (data) {
-    $('title').textContent = data.shop || 'Фото в наряд';
-    // «Новая машина» — когда наряд по фото включён хоть для одного
-    // направления (docs/order_photo.md)
+    state.cars = data.cars;
+    $('title').textContent = data.shop || 'Кабинет мастера';
     $('newCar').hidden = !(data.arrival_directions || []).length;
-    $('who').textContent = data.name ? data.name : '';
+    var canLogin = state.me && state.me.employees.some(function (person) { return person.has_pin; });
+    $('who').textContent = data.name ? data.name : (canLogin ? 'Без входа — только фото' : '');
 
+    var mine = data.cars.filter(function (car) { return car.mine; });
+    var others = data.cars.filter(function (car) { return !car.mine; });
+    var html = '';
     if (!data.cars.length) {
-      $('cars').innerHTML = '<div class="empty">Сейчас в цеху пусто.<br>'
+      html = '<div class="empty">Сейчас в цеху пусто.<br>'
         + 'Машина появится здесь, когда приёмщик заведёт наряд.</div>';
+    } else if (state.me && state.me.employee) {
+      if (mine.length) {
+        html += '<h2 class="section">Мои сейчас · ' + mine.length + '</h2>' + mine.map(carCard).join('');
+      }
+      if (others.length) {
+        html += '<h2 class="section">Остальные в цеху · ' + others.length + '</h2>'
+          + others.map(carCard).join('');
+      }
     } else {
-      $('cars').innerHTML = data.cars.map(function (car) {
-        return '<button type="button" class="car ' + (car.state === 'work' ? 'work' : 'waiting') + '" '
-          + 'data-id="' + car.order_local_id + '" '
-          + 'data-plate="' + escape(car.license_plate) + '">'
-          + escape(car.license_plate)
-          + '<span class="state">' + (car.state === 'work' ? 'на посту' : 'ждёт')
-          + '</span></button>';
-      }).join('');
-
-      [].slice.call($('cars').querySelectorAll('.car')).forEach(function (button) {
-        button.addEventListener('click', function () {
-          openShot(button.getAttribute('data-id'),
-                   button.getAttribute('data-plate'));
-        });
-      });
+      html = data.cars.map(carCard).join('');
     }
-
+    $('cars').innerHTML = html;
+    bindCars();
     show('screenCars');
   }).catch(function (e) {
     if (e.status === 401) return showStranger();
@@ -410,137 +690,451 @@ function loadCars() {
   });
 }
 
-$('reload').addEventListener('click', loadCars);
-$('homeDone').addEventListener('click', loadCars);
-
-// --- Снимок -----------------------------------------------------------
-
-function openShot(id, plate) {
-  state.car = { id: id, plate: plate };
-  state.files = [];
-  $('shotPlate').textContent = plate;
-  $('shots').innerHTML = '';
-  $('comment').value = '';
-  $('pick').value = '';
-  $('pickLabel').textContent = 'Снять или выбрать фото';
-  $('doSend').disabled = true;
-  $('sendState').hidden = true;
-  show('screenShot');
+function bindCars() {
+  [].slice.call($('cars').querySelectorAll('[data-open]')).forEach(function (button) {
+    button.addEventListener('click', function () { openOrder(Number(button.getAttribute('data-open'))); });
+  });
+  [].slice.call($('cars').querySelectorAll('[data-video]')).forEach(function (button) {
+    button.addEventListener('click', function () {
+      openOrder(Number(button.getAttribute('data-video')), true);
+    });
+  });
+  [].slice.call($('cars').querySelectorAll('[data-press]')).forEach(function (button) {
+    button.addEventListener('click', function () {
+      press(Number(button.getAttribute('data-id')), button.getAttribute('data-press'), button);
+    });
+  });
 }
 
-$('back').addEventListener('click', loadCars);
-
-$('pick').addEventListener('change', function (event) {
-  var chosen = [].slice.call(event.target.files || []);
-  if (!chosen.length) return;
-
-  $('shots').innerHTML = '';
-  state.files = [];
-
-  // Жмём прямо в телефоне: в боксе связь плохая, и разница между
-  // четырьмя мегабайтами и тремястами килобайтами — это разница
-  // между «секунда» и «полминуты»
-  Promise.all(chosen.map(shrink)).then(function (ready) {
-    state.files = ready.filter(Boolean);
-    $('pickLabel').textContent = state.files.length === 1
-      ? 'Снимок выбран — можно добавить ещё'
-      : 'Снимков: ' + state.files.length + ' — можно добавить ещё';
-
-    state.files.forEach(function (blob) {
-      var img = document.createElement('img');
-      img.src = URL.createObjectURL(blob);
-      $('shots').appendChild(img);
-    });
-    $('doSend').disabled = state.files.length === 0;
+function press(id, kind, button) {
+  if (kind === 'done' && !confirm('Работа готова? Клиенту сразу уйдёт «Машина готова».')) return;
+  if (button) button.disabled = true;
+  api('/m/order/' + id + '/' + kind, { method: 'POST' }).then(function (answer) {
+    if (kind === 'done') {
+      alert(answer.told ? 'Клиенту сказали: машина готова.'
+        : 'Отмечено. ' + (answer.reason || 'Клиенту сказать нечем') + '.');
+    }
+    if (state.order && state.order.order_local_id === id && !$('screenOrder').hidden) openOrder(id);
+    else loadCars();
+  }).catch(function (e) {
+    if (button) button.disabled = false;
+    alert(e.message);
   });
+}
+
+$('reload').addEventListener('click', loadCars);
+
+// --- Наряд -----------------------------------------------------------------
+
+function drawChips() {
+  $('oChips').innerHTML = CHIPS.map(function (text) {
+    return '<button type="button" aria-pressed="' + (state.chip === text) + '">' + escape(text) + '</button>';
+  }).join('');
+  [].slice.call($('oChips').querySelectorAll('button')).forEach(function (button) {
+    button.addEventListener('click', function () {
+      state.chip = state.chip === button.textContent ? '' : button.textContent;
+      drawChips();
+    });
+  });
+}
+
+function caption() {
+  return [state.chip, $('oWheel').value, $('oText').value.trim()].filter(Boolean).join(' · ');
+}
+
+var CHANNEL_WORDS = { telegram: 'получит в Telegram', push: 'получит уведомлением в кабинет' };
+
+function openOrder(id, video) {
+  api('/m/order/' + id).then(function (order) {
+    state.order = order;
+    $('title').textContent = order.license_plate;
+    $('who').textContent = [order.car, order.wheel_diameter].filter(Boolean).join(' · ');
+    var client = order.client || {};
+    $('oClient').innerHTML = '<b>' + escape(client.name || 'Клиент') + '</b> · '
+      + (client.channel ? escape(CHANNEL_WORDS[client.channel] || client.channel)
+         : '<span class="bad">не подключил ни Telegram, ни кабинет — фото останется в наряде</span>');
+    $('oWhat').textContent = (order.services || []).join(' · ');
+    $('oResult').hidden = true;
+    $('oSending').hidden = true;
+    drawChips();
+    drawSent(order);
+
+    var inside = state.me && state.me.employee;
+    $('oOffer').hidden = !inside || !(order.services_offer || []).length;
+    $('oPress').hidden = !inside || order.state === 'done';
+    $('oPress').className = order.state === 'work' ? 'okb' : '';
+    $('oPress').textContent = order.state === 'work' ? 'Готово — сказать клиенту' : 'Начал работу';
+    $('oPressState').hidden = true;
+
+    show('screenOrder', loadCars);
+    if (video) startVideo();
+  }).catch(function (e) {
+    if (e.status === 401) return showStranger();
+    alert(e.message);
+    loadCars();
+  });
+}
+
+function sentLine(item) {
+  var how = item.error ? '<span class="bad">' + escape(item.error) + '</span>'
+    : (item.sent ? '<span class="ok">' + timeText(item.created_at) + ' · доставлено'
+       + (item.viewed ? ' · посмотрел' : '') + '</span>'
+       : '<span>' + timeText(item.created_at) + ' · не отправлено</span>');
+  return '<div class="item"><div class="kind' + (item.media === 'video' ? ' video' : '') + '">'
+    + (item.media === 'video' ? 'Видео' : 'Фото') + '</div><div class="body"><b>'
+    + escape(item.comment || 'Без подписи') + '</b>' + how + '</div></div>';
+}
+
+var OFFER_WORDS = { pending: 'ждём ответа', yes: 'согласен', call: 'просит позвонить', no: 'отказался' };
+
+function drawSent(order) {
+  $('oSent').innerHTML = (order.media || []).length ? order.media.map(sentLine).join('')
+    : '<div class="item"><div class="body"><span>Пока ничего</span></div></div>';
+  var offers = order.offers || [];
+  $('oOffers').hidden = !offers.length;
+  $('oOffers').innerHTML = offers.map(function (offer) {
+    var what = offer.items.map(function (item) { return item.name; }).join(', ');
+    var cls = offer.state === 'yes' ? 'ok' : (offer.state === 'pending' ? '' : 'bad');
+    return '<div class="item"><div class="body"><b>' + escape(what) + ' — ' + money(offer.total) + '</b>'
+      + '<span class="' + cls + '">' + (offer.error ? escape(offer.error) : OFFER_WORDS[offer.state] || offer.state)
+      + '</span></div></div>';
+  }).join('');
+}
+
+$('oPress').addEventListener('click', function () {
+  var order = state.order;
+  press(order.order_local_id, order.state === 'work' ? 'done' : 'start', $('oPress'));
 });
+
+function result(text, good) {
+  $('oResult').className = 'note ' + (good ? 'ok' : 'bad');
+  $('oResult').textContent = text;
+  $('oResult').hidden = false;
+}
+
+function sending(text, part) {
+  $('oSending').hidden = false;
+  $('oState').textContent = text;
+  $('oBar').style.width = Math.round((part || 0) * 100) + '%';
+}
+
+$('oPhoto').addEventListener('change', function (event) {
+  var chosen = [].slice.call(event.target.files || []);
+  event.target.value = '';
+  if (!chosen.length || !state.order) return;
+  var order = state.order, text = caption(), sent = 0, failed = [];
+  $('oResult').hidden = true;
+  sending('Отправляем…', 0);
+
+  // Жмём в телефоне: в боксе связь плохая, и 4 МБ против 300 КБ —
+  // это «полминуты» против «секунды»
+  chosen.reduce(function (chain, file, index) {
+    return chain.then(function () { return shrink(file); }).then(function (blob) {
+      var form = new FormData();
+      form.append('file', blob, 'photo.jpg');
+      form.append('order_local_id', order.order_local_id);
+      form.append('license_plate', order.license_plate);
+      // Подпись — к первому снимку: иначе клиент получит её трижды
+      form.append('comment', index === 0 ? text : '');
+      sending('Отправляем ' + (index + 1) + ' из ' + chosen.length + '…', index / chosen.length);
+      return api('/m/photo', { method: 'POST', body: form }).then(function (answer) {
+        if (answer.sent) sent += 1; else failed.push(answer.reason || 'не доставлено');
+      });
+    });
+  }, Promise.resolve()).then(function () {
+    $('oSending').hidden = true;
+    if (sent && !failed.length) result('Клиент получил. Можно работать.', true);
+    else result((failed[0] || 'Не дошло') + '. Фото сохранилось в наряде — скажите приёмщику.', false);
+    refreshOrder();
+  }).catch(function (e) { $('oSending').hidden = true; result(e.message, false); });
+});
+
+function refreshOrder() {
+  if (!state.order) return;
+  api('/m/order/' + state.order.order_local_id).then(function (order) {
+    state.order = order;
+    drawSent(order);
+  }).catch(function () {});
+}
 
 function shrink(file) {
   return new Promise(function (resolve) {
     var image = new Image();
     var url = URL.createObjectURL(file);
-
     image.onload = function () {
       URL.revokeObjectURL(url);
-
       var side = 1600;
       var scale = Math.min(1, side / Math.max(image.width, image.height));
       var canvas = document.createElement('canvas');
       canvas.width = Math.round(image.width * scale);
       canvas.height = Math.round(image.height * scale);
       canvas.getContext('2d').drawImage(image, 0, 0, canvas.width, canvas.height);
-
-      canvas.toBlob(function (blob) {
-        resolve(blob || file);
-      }, 'image/jpeg', 0.72);
+      canvas.toBlob(function (blob) { resolve(blob || file); }, 'image/jpeg', 0.72);
     };
-
-    // Телефон отдал что-то, что браузер не считает картинкой —
-    // отправим как есть, пусть решает сервер
     image.onerror = function () { URL.revokeObjectURL(url); resolve(file); };
     image.src = url;
   });
 }
 
-$('doSend').addEventListener('click', function () {
-  if (!state.files.length) return;
+// --- Видео -----------------------------------------------------------------
+//
+// Пишем сами, через камеру в странице: так и длину (60 с), и размер
+// (720p, ~2,5 Мбит/с — около 20 МБ за минуту) держим мы, а не настройки
+// камеры, где минута 4K весит под полгигабайта. Не умеет браузер —
+// обычная съёмка через выбор файла
 
-  $('doSend').disabled = true;
-  $('sendState').hidden = false;
-  $('sendState').className = 'note';
-  $('sendState').textContent = 'Отправляем…';
+var rec = { stream: null, recorder: null, chunks: [], timer: null, started: 0, blob: null };
 
-  var sent = 0, failed = [];
+function videoType() {
+  var kinds = ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4',
+               'video/webm;codecs=vp8,opus', 'video/webm'];
+  if (!window.MediaRecorder || !MediaRecorder.isTypeSupported) return '';
+  for (var i = 0; i < kinds.length; i += 1) {
+    if (MediaRecorder.isTypeSupported(kinds[i])) return kinds[i];
+  }
+  return '';
+}
 
-  var chain = state.files.reduce(function (previous, blob, index) {
-    return previous.then(function () {
-      var form = new FormData();
-      form.append('file', blob, 'photo.jpg');
-      form.append('order_local_id', state.car.id);
-      form.append('license_plate', state.car.plate);
-      // Подпись — к первому снимку: иначе клиент получит её трижды
-      form.append('comment', index === 0 ? $('comment').value : '');
-
-      return api('/m/photo', { method: 'POST', body: form })
-        .then(function (answer) {
-          if (answer.sent) sent += 1;
-          else failed.push(answer.reason || 'не доставлено');
-        });
+function startVideo() {
+  if (!state.order) return;
+  if (!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia) || !videoType()) {
+    $('oVideoFile').click();
+    return;
+  }
+  var wanted = { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } };
+  navigator.mediaDevices.getUserMedia({ video: wanted, audio: true })
+    .catch(function () { return navigator.mediaDevices.getUserMedia({ video: wanted }); })
+    .then(function (stream) {
+      rec.stream = stream;
+      rec.blob = null;
+      $('recView').srcObject = stream;
+      $('recView').muted = true;
+      $('recView').controls = false;
+      $('recSend').hidden = true;
+      $('recShoot').hidden = false;
+      $('recShoot').className = 'shoot';
+      $('recTime').textContent = '0:00 / 1:00';
+      $('rec').hidden = false;
+    }).catch(function () {
+      // Камеру не дали — снимем обычной камерой телефона
+      $('oVideoFile').click();
     });
-  }, Promise.resolve());
+}
 
-  chain.then(function () {
-    if (sent && !failed.length) {
-      $('sendState').className = 'note ok';
-      $('sendState').textContent = 'Клиент получил. Можно работать.';
-    } else if (sent) {
-      $('sendState').className = 'note bad';
-      $('sendState').textContent = 'Отправлено не всё: ' + failed[0]
-        + '. Скажите приёмщику.';
-    } else {
-      $('sendState').className = 'note bad';
-      $('sendState').textContent = (failed[0] || 'Не дошло')
-        + '. Фото сохранилось в наряде — скажите приёмщику, он позвонит.';
+function stopStream() {
+  if (rec.stream) rec.stream.getTracks().forEach(function (track) { track.stop(); });
+  rec.stream = null;
+  clearInterval(rec.timer);
+}
+
+function closeRec() {
+  stopStream();
+  if (rec.recorder && rec.recorder.state !== 'inactive') {
+    rec.recorder.onstop = null;
+    rec.recorder.stop();
+  }
+  $('recView').srcObject = null;
+  $('recView').removeAttribute('src');
+  $('rec').hidden = true;
+}
+
+$('oVideo').addEventListener('click', startVideo);
+$('recCancel').addEventListener('click', closeRec);
+
+$('recShoot').addEventListener('click', function () {
+  if (rec.recorder && rec.recorder.state === 'recording') { rec.recorder.stop(); return; }
+  if (!rec.stream) return;
+  var type = videoType();
+  rec.chunks = [];
+  rec.recorder = new MediaRecorder(rec.stream, { mimeType: type, videoBitsPerSecond: 2500000 });
+  rec.recorder.ondataavailable = function (event) { if (event.data && event.data.size) rec.chunks.push(event.data); };
+  rec.recorder.onstop = function () {
+    clearInterval(rec.timer);
+    rec.blob = new Blob(rec.chunks, { type: type.split(';')[0] });
+    stopStream();
+    $('recView').srcObject = null;
+    $('recView').src = URL.createObjectURL(rec.blob);
+    $('recView').muted = false;
+    $('recView').controls = true;
+    $('recShoot').hidden = true;
+    $('recSend').hidden = false;
+  };
+  rec.recorder.start(1000);
+  rec.started = Date.now();
+  $('recShoot').className = 'shoot on';
+  $('recShoot').setAttribute('aria-label', 'Остановить запись');
+  rec.timer = setInterval(function () {
+    var seconds = Math.floor((Date.now() - rec.started) / 1000);
+    $('recTime').textContent = '0:' + String(Math.min(seconds, VIDEO_SECONDS)).padStart(2, '0') + ' / 1:00';
+    if (seconds >= VIDEO_SECONDS && rec.recorder.state === 'recording') rec.recorder.stop();
+  }, 250);
+});
+
+$('recSend').addEventListener('click', function () {
+  var blob = rec.blob;
+  closeRec();
+  if (blob) uploadVideo(blob);
+});
+
+$('oVideoFile').addEventListener('change', function (event) {
+  var file = (event.target.files || [])[0];
+  event.target.value = '';
+  if (file) uploadVideo(file);
+});
+
+function uploadVideo(blob) {
+  var order = state.order;
+  if (!order) return;
+  var kind = (blob.type || 'video/mp4').split(';')[0];
+  $('oResult').hidden = true;
+  sending('Отправляем видео…', 0);
+
+  api('/m/video/start', { method: 'POST', json: {
+    order_local_id: order.order_local_id, license_plate: order.license_plate,
+    comment: caption(), content_type: kind, size: blob.size
+  } }).then(function (start) {
+    // Кусками по 4 МБ: столько сервер принимает за раз
+    function next(offset) {
+      if (offset >= blob.size) {
+        sending('Видео дошло, отправляем клиенту…', 1);
+        return api('/m/video/finish?upload=' + start.upload, { method: 'POST' });
+      }
+      sending('Отправляем видео… ' + Math.floor(offset * 100 / blob.size) + '%', offset / blob.size);
+      return api('/m/video/part?upload=' + start.upload + '&offset=' + offset, {
+        method: 'POST', body: blob.slice(offset, offset + start.part_bytes),
+        headers: { 'Content-Type': 'application/octet-stream' }
+      }).then(function (answer) { return next(answer.size); });
     }
-    $('doSend').disabled = false;
+    return next(0);
+  }).then(function (answer) {
+    $('oSending').hidden = true;
+    if (answer.sent) result('Клиент получил видео.', true);
+    else result((answer.reason || 'Не дошло') + '. Видео сохранилось в наряде — скажите приёмщику.', false);
+    refreshOrder();
   }).catch(function (e) {
-    $('sendState').className = 'note bad';
-    $('sendState').textContent = e.message;
-    $('doSend').disabled = false;
+    $('oSending').hidden = true;
+    result('Видео не отправилось: ' + e.message, false);
+  });
+}
+
+// --- Предложить работу -------------------------------------------------------
+
+$('oOffer').addEventListener('click', function () {
+  var order = state.order;
+  state.offerPicked = {};
+  $('fSearch').value = '';
+  $('fComment').value = $('oText').value;
+  $('fState').hidden = true;
+  var media = order.media || [];
+  $('fMedia').innerHTML = media.map(function (item, index) {
+    return '<option value="' + item.id + '"' + (index === 0 ? ' selected' : '') + '>'
+      + (item.media === 'video' ? 'Видео' : 'Фото') + ' ' + timeText(item.created_at)
+      + (item.comment ? ' · ' + escape(item.comment) : '') + '</option>';
+  }).join('') + '<option value="">Без снимка</option>';
+  drawServices();
+  $('title').textContent = 'Предложить работу';
+  show('screenOffer', function () { openOrder(order.order_local_id); });
+});
+
+function drawServices() {
+  var query = $('fSearch').value.trim().toLowerCase();
+  var list = (state.order.services_offer || []).filter(function (item) {
+    return !query || item.name.toLowerCase().indexOf(query) >= 0 || state.offerPicked[item.local_id];
+  });
+  $('fServices').innerHTML = list.length ? list.map(function (item) {
+    return '<label class="svc"><input type="checkbox" data-id="' + item.local_id + '"'
+      + (state.offerPicked[item.local_id] ? ' checked' : '') + '><span>' + escape(item.name)
+      + '</span><b>' + money(item.price) + '</b></label>';
+  }).join('') : '<div class="item"><div class="body"><span>Ничего не нашлось</span></div></div>';
+  [].slice.call($('fServices').querySelectorAll('input')).forEach(function (box) {
+    box.addEventListener('change', function () {
+      var id = Number(box.getAttribute('data-id'));
+      if (box.checked) state.offerPicked[id] = true; else delete state.offerPicked[id];
+      offerTotal();
+    });
+  });
+  offerTotal();
+}
+
+function offerTotal() {
+  var total = 0, count = 0;
+  (state.order.services_offer || []).forEach(function (item) {
+    if (state.offerPicked[item.local_id]) { total += item.price; count += 1; }
+  });
+  $('fSend').disabled = !count;
+  $('fSend').textContent = count ? 'Отправить на согласование · ' + money(total) : 'Отметьте, что сделать';
+}
+
+$('fSearch').addEventListener('input', drawServices);
+
+$('fSend').addEventListener('click', function () {
+  var order = state.order;
+  var ids = Object.keys(state.offerPicked).map(Number);
+  $('fSend').disabled = true;
+  api('/m/offer', { method: 'POST', json: {
+    order_local_id: order.order_local_id, services: ids,
+    comment: $('fComment').value.trim(), photo_id: Number($('fMedia').value) || null
+  } }).then(function (offer) {
+    $('fState').className = 'note ' + (offer.sent ? 'ok' : 'bad');
+    $('fState').textContent = offer.sent ? 'Отправлено. Ответ увидите в наряде.'
+      : (offer.error || 'Не дошло') + '. Скажите приёмщику.';
+    $('fState').hidden = false;
+    setTimeout(function () { openOrder(order.order_local_id); }, offer.sent ? 900 : 2500);
+  }).catch(function (e) {
+    $('fSend').disabled = false;
+    $('fState').className = 'note bad';
+    $('fState').textContent = e.message;
+    $('fState').hidden = false;
   });
 });
 
-// --- Новая машина (docs/order_photo.md) -------------------------------
-//
-// Сняли машину — сервер читает номер — телефон показывает его (можно
-// поправить), «есть в базе» и «записан на …» — «Создать наряд». Наряд
-// создаёт приёмщик: у него на компьютере откроется окно создания.
+// --- Заработок ---------------------------------------------------------------
+
+var WEEK = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
+
+function loadEarn() {
+  api('/m/earnings').then(function (data) {
+    $('title').textContent = 'Мой заработок';
+    $('who').textContent = data.name;
+    $('eToday').textContent = money(data.today);
+    $('eTodayN').textContent = data.today_orders + ' нарядов';
+    $('eBalance').textContent = money(data.balance);
+    $('eOrders').innerHTML = data.orders.length ? data.orders.map(function (item) {
+      return '<div class="money-row"><span>' + escape([item.license_plate, (item.services || [])[0]]
+        .filter(Boolean).join(' · ')) + '</span><b>' + money(item.amount) + '</b></div>';
+    }).join('') : '<div class="note" style="margin:0">Сегодня оплаченных нарядов пока нет</div>';
+    var top = Math.max.apply(null, data.week.map(function (day) { return day.amount; }).concat([1]));
+    $('eBars').innerHTML = data.week.map(function (day, index) {
+      return '<div' + (index === data.week.length - 1 ? ' class="today"' : '') + ' style="height:'
+        + Math.round(day.amount * 100 / top) + '%" title="' + money(day.amount) + '"></div>';
+    }).join('');
+    $('eDays').innerHTML = data.week.map(function (day) {
+      return '<span>' + WEEK[new Date(day.day + 'T12:00:00').getDay()] + '</span>';
+    }).join('');
+    $('ePayouts').innerHTML = data.payouts.length ? data.payouts.map(function (row) {
+      var when = row.paid_at ? row.paid_at.slice(8, 10) + '.' + row.paid_at.slice(5, 7) : '';
+      return '<div class="money-row"><span>' + when + ' · ' + (row.method === 'card' ? 'на карту' : 'наличными')
+        + '</span><b>' + money(row.amount) + '</b></div>';
+    }).join('') : '<div class="note" style="margin:0">Выплат пока не было</div>';
+    show('screenEarn');
+  }).catch(function (e) {
+    if (e.status === 401) return showStranger();
+    alert(e.message);
+    loadCars();
+  });
+}
+
+[].slice.call($('tabs').querySelectorAll('button')).forEach(function (button) {
+  button.addEventListener('click', function () {
+    if (button.getAttribute('data-tab') === 'earn') loadEarn(); else loadCars();
+  });
+});
+
+// --- Новая машина (docs/order_photo.md) -------------------------------------
 
 var arrival = { photoId: null, dirs: 'tire', allowed: ['tire'], url: null,
                 hintsTimer: null, busy: false };
 
-// Латиница, похожая на кириллицу, — в кириллицу: на номере других
-// букв не бывает, а клавиатура телефона часто стоит на английской
 var LOOKALIKE = { A: 'А', B: 'В', E: 'Е', K: 'К', M: 'М', H: 'Н', O: 'О', P: 'Р',
                   C: 'С', T: 'Т', Y: 'У', X: 'Х' };
 
@@ -574,13 +1168,11 @@ function drawHints(found) {
   } else {
     $('arrKnown').hidden = true;
   }
-
   var booked = found.appointment;
   if (booked) {
     $('arrBooked').textContent = 'Записан на ' + booked.time + ' · '
       + (DIR_WORDS[booked.direction] || 'шиномонтаж');
     $('arrBooked').hidden = false;
-    // Записан на мойку — сразу предлагаем мойку
     if (arrival.allowed.length > 1 && booked.direction === 'wash') setDirs('wash');
   } else {
     $('arrBooked').hidden = true;
@@ -598,9 +1190,7 @@ function setDirs(value) {
   button.addEventListener('click', function () { setDirs(button.getAttribute('data-dirs')); });
 });
 
-function plateBox(state) {
-  $('arrBox').className = 'recog' + (state ? ' ' + state : '');
-}
+function plateBox(kind) { $('arrBox').className = 'recog' + (kind ? ' ' + kind : ''); }
 
 function refreshCreate() {
   $('arrCreate').disabled = arrival.busy || plateText($('arrPlate').value).length < 4;
@@ -608,7 +1198,6 @@ function refreshCreate() {
 
 function startArrival(file) {
   if (!file) return;
-
   arrival.photoId = null;
   arrival.busy = true;
   setDirs('tire');
@@ -619,17 +1208,13 @@ function startArrival(file) {
   $('arrPlate').value = '';
   plateBox('wait');
   $('arrState').textContent = 'Отправляем снимок и читаем номер…';
-  $('arrState').hidden = false;
   refreshCreate();
-
   if (arrival.url) URL.revokeObjectURL(arrival.url);
   arrival.url = URL.createObjectURL(file);
   $('arrPhoto').src = arrival.url;
-  show('screenArrival');
-  window.scrollTo(0, 0);
+  $('title').textContent = 'Новая машина';
+  show('screenArrival', loadCars);
 
-  // Жмём в телефоне, как и фото мастера: в боксе связь плохая, а
-  // номер с уменьшенного снимка читается так же
   shrink(file).then(function (blob) {
     var form = new FormData();
     form.append('photo', blob, 'car.jpg');
@@ -637,13 +1222,10 @@ function startArrival(file) {
   }).then(function (data) {
     arrival.busy = false;
     arrival.photoId = data.photo_id;
-    // Выбор — только из включённых направлений; одно — выбора нет,
-    // уходит оно само
     arrival.allowed = (data.directions_allowed && data.directions_allowed.length)
       ? data.directions_allowed : ['tire'];
     setDirs(arrival.allowed[0]);
     $('arrDirs').hidden = arrival.allowed.length < 2;
-
     if (data.plate) {
       $('arrPlate').value = data.plate;
       if (data.plate_complete) {
@@ -673,7 +1255,6 @@ function startArrival(file) {
 [].slice.call(document.querySelectorAll('input[data-arrival]')).forEach(function (input) {
   input.addEventListener('change', function (event) {
     var file = (event.target.files || [])[0];
-    // Сбрасываем, чтобы тот же снимок можно было выбрать снова
     event.target.value = '';
     startArrival(file);
   });
@@ -684,18 +1265,12 @@ $('arrPlate').addEventListener('input', function () {
   var fixed = plateText(input.value);
   if (fixed !== input.value) input.value = fixed;
   refreshCreate();
-
-  // Поправили номер — подсказки под ним тоже должны быть про него
   clearTimeout(arrival.hintsTimer);
   if (!plateLooksFull(fixed)) { drawHints(null); return; }
   plateBox('');
   $('arrState').textContent = 'Номер похож на настоящий — можно создавать наряд.';
   arrival.hintsTimer = setTimeout(function () {
-    api('/m/arrival/hints', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ plate: fixed })
-    }).then(function (found) {
+    api('/m/arrival/hints', { method: 'POST', json: { plate: fixed } }).then(function (found) {
       if (plateText($('arrPlate').value) === fixed) drawHints(found);
     }).catch(function () {});
   }, 500);
@@ -704,37 +1279,32 @@ $('arrPlate').addEventListener('input', function () {
 $('arrCreate').addEventListener('click', function () {
   var plate = plateText($('arrPlate').value);
   if (plate.length < 4) return;
-
   $('arrCreate').disabled = true;
   $('arrError').hidden = true;
-
-  api('/m/arrival', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ photo_id: arrival.photoId, plate: plate,
-                           directions: arrival.dirs.split(',') })
-  }).then(function () {
-    $('doneplate').textContent = plate;
-    show('screenArrivalDone');
-  }).catch(function (e) {
-    if (e.status === 401) return showStranger();
-    $('arrError').textContent = e.message;
-    $('arrError').hidden = false;
-    refreshCreate();
-  });
+  api('/m/arrival', { method: 'POST', json: { photo_id: arrival.photoId, plate: plate,
+                                              directions: arrival.dirs.split(',') } })
+    .then(function () {
+      $('doneplate').textContent = plate;
+      show('screenArrivalDone');
+    }).catch(function (e) {
+      if (e.status === 401) return showStranger();
+      $('arrError').textContent = e.message;
+      $('arrError').hidden = false;
+      refreshCreate();
+    });
 });
 
 $('arrBack').addEventListener('click', loadCars);
 $('doneBack').addEventListener('click', loadCars);
 
-// --- Запуск -----------------------------------------------------------
+// --- Запуск ----------------------------------------------------------------
 
 try { state.key = localStorage.getItem(KEY); } catch (e) {}
 
 function showStranger() {
-  // Сюда попадают и те, кто уже подключался, но открыл страницу в
-  // другом браузере или почистил его. Объясняем, иначе мастер решит,
-  // что всё сломалось
+  // Сюда попадают и те, кто подключался, но открыл страницу в другом
+  // браузере или почистил его. Объясняем, иначе мастер решит, что сломалось
+  state.me = null;
   $('cars').innerHTML = '<div class="empty">Этот телефон ещё не подключён.<br>'
     + 'Попросите приёмщика показать QR-код и наведите камеру.'
     + '<p class="note" style="margin-top:18px">Уже подключались? Откройте '
@@ -750,24 +1320,9 @@ if (linkFromAddress()) {
   // приёмщик решил подключить его заново
   show('screenConnect');
 } else {
-  // Спрашиваем сервер всегда, а не решаем сами по данным страницы.
-  // Пропуск живёт в куке: Safari мог стереть данные страницы, а кука
-  // осталась — и мастер должен попасть к машинам, а не к QR
-  fetch('/m/cars', {
-    headers: state.key ? {'X-Master-Key': state.key} : {}
-  }).then(function (answer) {
-    if (answer.status === 401) {
-      try { localStorage.removeItem(KEY); } catch (e) {}
-      state.key = null;
-      showStranger();
-      return;
-    }
-    loadCars();
-  }).catch(function () {
-    // Нет сети — не повод объявлять телефон чужим. Покажем то, что
-    // получится, и кнопку «Обновить»
-    loadCars();
-  });
+  // Спрашиваем сервер всегда: пропуск живёт в куке, и Safari мог стереть
+  // данные страницы, а кука осталась
+  start();
 }
 </script>
 </body>

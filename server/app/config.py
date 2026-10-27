@@ -162,6 +162,13 @@ class Settings:
     # о прошлогодней грыже не спорит никто, а место оно занимает
     PHOTO_KEEP_MONTHS = int(os.environ.get('SERVER_PHOTO_KEEP_MONTHS', '12'))
 
+    # Видео из кабинета мастера: до 60 секунд, телефон пишет его сам в
+    # 720p — выходит 10–25 МБ. Храним две недели (решение владельца
+    # 27.10.2026): о видео спорят, пока машина в цеху
+    VIDEO_MAX_BYTES = int(os.environ.get('SERVER_VIDEO_MAX_BYTES',
+                                         str(100 * 1024 * 1024)))
+    VIDEO_KEEP_DAYS = int(os.environ.get('SERVER_VIDEO_KEEP_DAYS', '14'))
+
     # --- Номер машины с фото ----------------------------------------
     # Наряд по фото с телефона (docs/order_photo.md): номер распознаётся
     # здесь же, на сервере. Выключить — SERVER_PLATES=0: тогда номер

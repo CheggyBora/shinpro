@@ -85,6 +85,17 @@ body {
 
 /* --- История визитов --- */
 .visit { padding: 11px 0; border-bottom: 1px solid var(--line); }
+/* Фото и видео от мастера (кабинет мастера, 27.10.2026) */
+.shots { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 8px; margin-top: 8px; }
+.shots a, .shots video { display: block; width: 100%; aspect-ratio: 1; border-radius: 12px;
+  overflow: hidden; background: #000; }
+.shots img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.shots video { object-fit: cover; }
+.offer-line { display: flex; gap: 10px; align-items: center; justify-content: space-between;
+  padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 15px; }
+.offer-line a { flex: 0 0 auto; padding: 10px 14px; border-radius: 10px; background: var(--brand);
+  color: #fff; font-weight: 600; text-decoration: none; }
 .visit:last-child { border-bottom: 0; }
 .visit .top { display: flex; justify-content: space-between; gap: 10px;
   align-items: baseline; }
@@ -732,6 +743,13 @@ input.code {
 
   <!-- ================================================ готово -->
   <!-- прошлые визиты и советы мастера -->
+  <div class="card" id="mediaCard" hidden>
+    <h2>Из цеха</h2>
+    <div id="offerList"></div>
+    <p class="hint" id="mediaHint">Фото и видео, которые прислал мастер.</p>
+    <div class="shots" id="mediaList"></div>
+  </div>
+
   <div class="card" id="historyCard" hidden>
     <h2>Вы у нас были</h2>
     <p class="hint">Что делали и что советовал мастер.</p>
@@ -792,6 +810,7 @@ var $ = function (id) { return document.getElementById(id); };
 function show(name) {
   if (name !== 'screenBook') {
     $('historyCard').hidden = true;
+    $('mediaCard').hidden = true;
     $('queueCard').hidden = true;
     $('tgCard').hidden = true;
   }
@@ -1157,6 +1176,7 @@ function afterLogin() {
 
 // ============================================================ ИСТОРИЯ
 function loadHistory() {
+  loadShopMedia();
   api('/history?limit=20').then(function (answer) {
     if (!answer.ok) { $('historyCard').hidden = true; return; }
     drawHistory(answer.data || []);
@@ -1194,6 +1214,38 @@ function drawHistory(rows) {
   }).join('');
 
   $('historyCard').hidden = false;
+}
+
+// ============================================ ФОТО, ВИДЕО, ПРЕДЛОЖЕНИЯ
+// Что прислал мастер: снимки и видео по машине и «грыжа — замена шины
+// 650 ₽» на согласование. Ответ — на отдельной странице /o/…, той же,
+// что открывается из телеграма
+function loadShopMedia() {
+  Promise.all([api('/history/offers'), api('/history/photos?limit=12')]).then(function (both) {
+    var offers = both[0].ok ? (both[0].data || []) : [];
+    var media = both[1].ok ? (both[1].data || []) : [];
+    if (!offers.length && !media.length) { $('mediaCard').hidden = true; return; }
+
+    $('offerList').innerHTML = offers.map(function (offer) {
+      var what = (offer.items || []).map(function (item) { return item.name; }).join(', ');
+      return '<div class="offer-line"><span>' + (offer.author
+          ? 'Мастер ' + escapeHtml(offer.author) + ' предлагает: ' : 'Мастер предлагает: ')
+        + escapeHtml(what) + ' — <b>' + money(offer.total) + '</b></span>'
+        + '<a href="/o/' + encodeURIComponent(offer.token) + '">Ответить</a></div>';
+    }).join('');
+
+    $('mediaHint').hidden = !media.length;
+    $('mediaList').innerHTML = media.map(function (item) {
+      var title = escapeHtml([item.license_plate, item.comment].filter(Boolean).join(' · '));
+      if (item.media === 'video') {
+        return '<video src="' + escapeHtml(item.url) + '" controls playsinline preload="metadata" title="'
+          + title + '"></video>';
+      }
+      return '<a href="' + escapeHtml(item.url) + '" target="_blank" rel="noopener" title="' + title
+        + '"><img src="' + escapeHtml(item.url) + '" alt="' + (title || 'Фото из цеха') + '" loading="lazy"></a>';
+    }).join('');
+    $('mediaCard').hidden = false;
+  });
 }
 
 // ======================================================= НАПОМИНАНИЯ
@@ -1631,6 +1683,7 @@ $('logout').addEventListener('click', function () {
   state.storage = [];
   state.picked = [];
   $('historyCard').hidden = true;
+  $('mediaCard').hidden = true;
   $('queueCard').hidden = true;
   $('tgCard').hidden = true;
   show('screenPick');
@@ -1728,6 +1781,7 @@ function prepareBooking() {
   } else {
     $('mineCard').hidden = true;
     $('historyCard').hidden = true;
+    $('mediaCard').hidden = true;
     $('tgCard').hidden = true;
     $('carList').hidden = true;
     $('plateField').hidden = false;

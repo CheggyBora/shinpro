@@ -370,6 +370,11 @@ class ShopEmployee(Base):
     salary_percent = Column(Float, default=40.0, nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
 
+    # ПИН для телефона мастера — отпечатком, как его прислал цех. Ставит
+    # приёмщик в программе: «Сотрудники» → «ПИН для телефона». Пусто —
+    # войти в кабинет мастера этим сотрудником нельзя
+    pin_hash = Column(String(64), nullable=True)
+
     @property
     def title(self):
         if not self.name:

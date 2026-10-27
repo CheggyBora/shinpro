@@ -184,12 +184,15 @@ class PhotoDialog:
             else:
                 where = item.get('error') or 'не отправлено'
 
+            # Видео из кабинета мастера: помечаем, оно живёт две недели
+            comment = item.get('comment') or ''
+            if item.get('media') == 'video':
+                comment = 'Видео' + (f' · {comment}' if comment else '')
             self.tree.insert('', 'end', values=(
-                when, item.get('author') or '—',
-                item.get('comment') or '', where))
+                when, item.get('author') or '—', comment, where))
 
         self.state.config(
-            text=(f"Снимков: {len(rows)}" if rows
+            text=(f"Снимков и видео: {len(rows)}" if rows
                   else "По этому наряду фотографий пока нет"))
 
 
