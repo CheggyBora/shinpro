@@ -13,6 +13,31 @@ from services.backup_service import create_backup
 import os
 from logger import log, cleanup_old_logs
 
+
+def set_app_icon(root):
+    """
+    Логотип в заголовке окна, на панели задач и у всех диалогов, а не
+    перо Tk. Нет файла или не Windows — остаётся как было.
+    """
+    import sys
+
+    base = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
+    path = os.path.join(base, 'assets', 'app.ico')
+    if not os.path.exists(path):
+        return
+    try:
+        # Без своего AppUserModelID Windows при запуске из Python
+        # показывает на панели задач значок интерпретатора
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('rif.tireshop')
+    except Exception:
+        pass
+    try:
+        root.iconbitmap(default=path)
+    except Exception as e:
+        log.warning(f"Значок окна не поставился: {e}")
+
+
 if __name__ == "__main__":
     # Первая строка в журнале — метка запуска: по ней видно границу
     # между сеансами работы, когда разбираем вчерашнюю проблему
@@ -54,6 +79,7 @@ if __name__ == "__main__":
         log.error(f"Ошибка инициализации БД: {e}")
 
     root = tk.Tk()
+    set_app_icon(root)
     app = MainWindow(root)
     try:
         root.mainloop()

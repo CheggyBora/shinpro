@@ -76,5 +76,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=None,  # You can add an .ico file here later
+    # Логотип на файле программы и ярлыке (assets/app.ico, из logo.jpg;
+    # в 16 и 24 точках — только шина: буквы там не читаются)
+    icon='assets/app.ico',
 )
