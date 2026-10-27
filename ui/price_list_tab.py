@@ -130,227 +130,137 @@ class PriceListTab:
             self.pin_entry.delete(0, tk.END)
             self.pin_entry.focus_set()
     
-    def show_consumables_and_duration(self):
+    def show_consumables_and_duration(self, focus_name=None):
         """
-        Окно «Свойства позиций»: всё, что не зависит от диаметра.
+        Окно «Свойства позиций»: всё, что не зависит от диаметра, — одной
+        строкой на позицию сразу для всех типов машин (ui/price_dialogs.py).
+        """
+        from ui.price_dialogs import PropertiesDialog
+        try:
+            PropertiesDialog(self.frame, self.db, focus_name=focus_name)
+        except Exception as e:
+            self.db.rollback()
+            messagebox.showerror("Ошибка", f"Не удалось открыть свойства: {e}")
 
-        Отдельно от таблицы цен: себестоимость, время, вид, товар или
-        работа — по одному полю на позицию, а не по двенадцать.
-        """
-        from models import Service
+    # ------------------------------------------------------------------
+    # Добавить, переименовать, скрыть (решение владельца 28.10.2026)
+    # ------------------------------------------------------------------
+
+    def _has_unsaved(self):
+        """Правленые, но не сохранённые цены пропали бы при перезагрузке таблицы."""
+        if any('modified' in self.tree.item(item)['tags'] for item in self.tree.get_children()):
+            messagebox.showinfo("Прайс-лист", "Сначала сохраните изменённые цены — "
+                                "кнопка «Сохранить изменения».")
+            return True
+        return False
+
+    def _after_change(self, name=None):
+        self.load_services()
+        self._update_hidden_button()
+        if name:
+            for item in self.tree.get_children():
+                if self.tree.item(item)['values'][0] == name:
+                    self.tree.selection_set(item)
+                    self.tree.see(item)
+                    break
+
+    def _update_hidden_button(self):
+        from services.price_list_service import PriceListService
+        if getattr(self, 'hidden_button', None) is None:
+            return
+        try:
+            count = len(PriceListService(self.db).hidden())
+        except Exception:
+            self.db.rollback()
+            count = 0
+        self.hidden_button.config(text=f"Скрытые ({count})" if count else "Скрытые")
+
+    def add_service(self):
+        if self._has_unsaved():
+            return
+        from ui.price_dialogs import new_service
+        new_service(self.frame, self.db, on_done=self._after_change)
+
+    def add_goods(self):
+        if self._has_unsaved():
+            return
+        from ui.price_dialogs import new_goods
+        new_goods(self.frame, self.db, on_done=self._after_change)
+
+    def show_hidden(self):
+        if self._has_unsaved():
+            return
+        from ui.price_dialogs import hidden_list
+        hidden_list(self.frame, self.db, on_done=self._after_change)
+
+    def _selected_name(self, event=None):
+        item = self.tree.identify_row(event.y) if event is not None else None
+        if not item:
+            selection = self.tree.selection()
+            item = selection[0] if selection else None
+        if not item:
+            return None
+        self.tree.selection_set(item)
+        return str(self.tree.item(item)['values'][0])
+
+    def show_row_menu(self, event):
+        name = self._selected_name(event)
+        if not name:
+            return
+        menu = tk.Menu(self.frame, tearoff=0, font=(styles.DEFAULT_FONT, 10))
+        menu.add_command(label="Переименовать…", command=lambda: self.rename_service(name))
+        menu.add_command(label="Свойства…",
+                         command=lambda: self.show_consumables_and_duration(focus_name=name))
+        menu.add_separator()
+        menu.add_command(label="Скрыть из прайса и кнопок", command=lambda: self.hide_service(name))
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
+
+    def rename_service(self, name):
+        if self._has_unsaved():
+            return
+        from services.price_list_service import PriceListService, PriceError
         from services import AuditService
+        new_name = simpledialog.askstring(
+            "Переименовать", f"Новое название для «{name}».\n"
+            "Поменяется везде: у всех типов машин, на кнопке наряда и в старых нарядах.",
+            initialvalue=name, parent=self.frame.winfo_toplevel())
+        if new_name is None or new_name.strip() == name:
+            return
+        try:
+            PriceListService(self.db).rename(name, new_name)
+        except PriceError as e:
+            messagebox.showerror("Переименовать", str(e))
+            return
+        except Exception as e:
+            self.db.rollback()
+            messagebox.showerror("Переименовать", f"Не удалось: {e}")
+            return
+        AuditService(self.db).log(AuditService.PRICE_CHANGE,
+                                  f"«{name}» переименована в «{new_name.strip()}»",
+                                  entity_type='service')
+        self._after_change(new_name.strip())
 
-        dialog = tk.Toplevel(self.frame)
-        dialog.title("Свойства позиций")
-        dialog.geometry("1000x620")
-        dialog.configure(bg=styles.COLORS['bg'])
-        dialog.transient(self.frame.winfo_toplevel())
-        styles.center_window(dialog, self.frame.winfo_toplevel())
-
-        content = ttk.Frame(dialog, style='White.TFrame')
-        content.pack(fill='both', expand=True, padx=20, pady=20)
-
-        styles.create_label(content, "Свойства позиций",
-                            'CardHeading.TLabel').pack(anchor='w', pady=(0, 5))
-        ttk.Label(content,
-                  text="Всё, что не зависит от диаметра колеса — одно поле на позицию, "
-                       "а не двенадцать.\n"
-                       "Товар — вентиль, грузик, грибок: продаётся позицией в наряде, но "
-                       "процент мастеру с него не идёт, он его не делал.\n"
-                       "Цена — единая, когда позиция стоит одинаково при любом диаметре. "
-                       "Пусто — цена берётся из таблицы по диаметрам.\n"
-                       "Себестоимость — закупка товара или материалы внутри работы. "
-                       "Вычитается до расчёта зарплаты.\n"
-                       "Вид — основная услуга или допродажа: по доле допов в дашборде видно, "
-                       "предлагают мастера что-то сверх или просто крутят колёса.\n"
-                       "Двойной клик по ячейке — изменить, по виду и товару — переключить.",
-                  font=(styles.DEFAULT_FONT, 9), foreground='#64748b',
-                  wraplength=940, justify='left').pack(anchor='w', pady=(0, 12))
-
-        tree_frame = ttk.Frame(content, style='White.TFrame')
-        tree_frame.pack(fill='both', expand=True)
-
-        tree = ttk.Treeview(tree_frame,
-                            columns=('Услуга', 'Тип', 'Вид', 'Товар', 'Цена',
-                                     'Себестоимость', 'Время', 'Скидка'),
-                            show='headings')
-        tree.heading('Услуга', text='Позиция')
-        tree.heading('Тип', text='Транспорт')
-        tree.heading('Вид', text='Вид')
-        tree.heading('Товар', text='Товар')
-        tree.heading('Цена', text='Цена, руб.')
-        tree.heading('Себестоимость', text='Себестоимость, руб.')
-        tree.heading('Время', text='Время, мин')
-        tree.heading('Скидка', text='Макс. скидка, %')
-        tree.column('Услуга', width=240, anchor='w')
-        tree.column('Тип', width=90, anchor='center')
-        tree.column('Вид', width=100, anchor='center')
-        tree.column('Товар', width=80, anchor='center')
-        tree.column('Цена', width=110, anchor='center')
-        tree.column('Себестоимость', width=130, anchor='center')
-        tree.column('Время', width=90, anchor='center')
-        tree.column('Скидка', width=110, anchor='center')
-        tree.pack(side='left', fill='both', expand=True)
-
-        scroll = ttk.Scrollbar(tree_frame, orient='vertical', command=tree.yview)
-        scroll.pack(side='right', fill='y')
-        tree.config(yscrollcommand=scroll.set)
-
-        type_names = {'car': 'Легковой', 'suv': 'Джип', 'truck': 'Категория С', 'all': 'Любой'}
-
-        def load():
-            for row in tree.get_children():
-                tree.delete(row)
-            services = self.db.query(Service).filter(
-                Service.is_active == True
-            ).order_by(Service.name, Service.vehicle_type).all()
-            for service in services:
-                limit = service.max_discount_percent
-                cost = ((service.purchase_price or 0) if service.is_goods
-                        else (service.consumable_cost or 0))
-                tree.insert('', 'end', values=(
-                    service.name,
-                    type_names.get(service.vehicle_type, service.vehicle_type),
-                    "допродажа" if service.is_extra else "основная",
-                    "товар" if service.is_goods else "работа",
-                    (f"{service.flat_price:.0f}"
-                     if service.flat_price is not None else "по диаметру"),
-                    f"{cost:.0f}",
-                    f"{service.duration_minutes or 0}",
-                    "без ограничений" if limit is None or limit >= 100 else f"{limit}"
-                ), tags=(str(service.id),))
-            return len(services)
-
-        count = load()
-
-        def edit_cell(event):
-            if tree.identify_region(event.x, event.y) != 'cell':
-                return
-            column = tree.identify_column(event.x)
-            selection = tree.selection()
-            if not selection or column not in ('#3', '#4', '#5', '#6',
-                                               '#7', '#8'):
-                return
-
-            service_id = int(tree.item(selection[0])['tags'][0])
-            service = self.db.query(Service).filter(Service.id == service_id).first()
-            if not service:
-                return
-
-            # Вид переключается щелчком, без окна: значений всего два,
-            # и спрашивать «введите основная или допродажа» — издевательство
-            if column == '#3':
-                service.is_extra = not service.is_extra
-                self.db.commit()
-                AuditService(self.db).log(
-                    AuditService.PRICE_CHANGE,
-                    f"«{service.name}» — вид: "
-                    f"{'допродажа' if service.is_extra else 'основная'}",
-                    entity_type='service', entity_id=service.id
-                )
-                load()
-                return
-
-            # Товар или работа — тоже переключателем: значений два
-            if column == '#4':
-                service.is_goods = not service.is_goods
-
-                # Переделали услугу в товар, а единой цены нет — берём
-                # наибольшую из цен по диаметрам. Обычно они одинаковые
-                # или нулевые, а молча выставить ноль значит однажды
-                # продать вентиль бесплатно
-                if service.is_goods and service.flat_price is None:
-                    prices = [getattr(service, f'price_r{n}', 0) or 0
-                              for n in range(13, 25)]
-                    service.flat_price = max(prices) if prices else 0.0
-
-                self.db.commit()
-                AuditService(self.db).log(
-                    AuditService.PRICE_CHANGE,
-                    f"«{service.name}» — "
-                    f"{'товар' if service.is_goods else 'работа'}",
-                    entity_type='service', entity_id=service.id
-                )
-                load()
-                return
-
-            if column == '#5':
-                title = "Единая цена"
-                prompt = ("Цена при любом диаметре, руб.\n"
-                          "(0 — цена берётся из таблицы по диаметрам):")
-                current, maximum = service.flat_price or 0, None
-            elif column == '#6':
-                title = "Себестоимость"
-                prompt = ("Закупка товара или материалы внутри работы, руб.:"
-                          if not service.is_goods
-                          else "Закупочная цена товара, руб.:")
-                current, maximum = ((service.purchase_price or 0)
-                                    if service.is_goods
-                                    else (service.consumable_cost or 0)), None
-            elif column == '#7':
-                title, prompt = "Время выполнения", "Сколько минут занимает услуга:"
-                current, maximum = service.duration_minutes or 0, None
-            else:
-                title = "Максимальная скидка"
-                prompt = ("Наибольшая скидка на эту услугу, %\n"
-                          "(100 — без ограничений):")
-                current, maximum = (service.max_discount_percent
-                                    if service.max_discount_percent is not None else 100), 100
-
-            value = simpledialog.askfloat(
-                title, f"«{service.name}»\n\n{prompt}",
-                initialvalue=current, minvalue=0, maxvalue=maximum, parent=dialog
-            )
-            if value is None:
-                return
-
-            try:
-                if column == '#5':
-                    old = service.flat_price or 0
-                    # Ноль — это «цены нет», а не «бесплатно»: вернуться
-                    # к ценам по диаметрам иначе было бы нечем
-                    new = round(float(value), 2)
-                    service.flat_price = new if new > 0 else None
-                    what = 'единая цена'
-                elif column == '#6':
-                    new = round(float(value), 2)
-                    if service.is_goods:
-                        old = service.purchase_price or 0
-                        service.purchase_price = new
-                        what = 'закупка'
-                    else:
-                        old = service.consumable_cost or 0
-                        service.consumable_cost = new
-                        what = 'расходник'
-                elif column == '#7':
-                    old, new = service.duration_minutes or 0, int(value)
-                    service.duration_minutes = new
-                    what = 'время'
-                else:
-                    old = service.max_discount_percent if service.max_discount_percent is not None else 100
-                    new = int(value)
-                    service.max_discount_percent = new
-                    what = 'макс. скидка'
-
-                if old != new:
-                    self.db.commit()
-                    AuditService(self.db).log(
-                        AuditService.PRICE_CHANGE,
-                        f"«{service.name}» — {what}: {old:.0f} -> {new:.0f}",
-                        entity_type='service', entity_id=service.id
-                    )
-                load()
-            except Exception as e:
-                self.db.rollback()
-                messagebox.showerror("Ошибка", f"Не удалось сохранить: {e}", parent=dialog)
-
-        tree.bind('<Double-1>', edit_cell)
-
-        ttk.Label(content, text=f"Услуг: {count}", font=(styles.DEFAULT_FONT, 9),
-                  foreground='#64748b').pack(anchor='w', pady=(10, 0))
-
-        styles.create_button(content, "Закрыть", dialog.destroy, 'Secondary.TButton').pack(
-            fill='x', pady=(10, 0))
+    def hide_service(self, name):
+        if self._has_unsaved():
+            return
+        from services.price_list_service import PriceListService
+        from services import AuditService
+        if not messagebox.askyesno(
+                "Скрыть", f"Скрыть «{name}» из прайса и кнопок наряда?\n\n"
+                "В старых нарядах позиция останется. Вернуть — кнопкой «Скрытые»."):
+            return
+        try:
+            PriceListService(self.db).hide(name)
+        except Exception as e:
+            self.db.rollback()
+            messagebox.showerror("Скрыть", f"Не удалось: {e}")
+            return
+        AuditService(self.db).log(AuditService.PRICE_CHANGE, f"«{name}» скрыта из прайса",
+                                  entity_type='service')
+        self._after_change()
 
     def show_settings(self):
         """
@@ -523,6 +433,14 @@ class PriceListTab:
                                  'Service.TButton').pack(side='left', padx=(15, 5))
 
         styles.create_button(btn_frame, "Сохранить изменения", self.save_changes, 'Success.TButton').pack(side='right')
+        self.hidden_button = styles.create_button(btn_frame, "Скрытые", self.show_hidden,
+                                                  'Secondary.TButton')
+        self.hidden_button.pack(side='right', padx=(0, 8))
+        styles.create_button(btn_frame, "+ Товар", self.add_goods, 'Primary.TButton').pack(
+            side='right', padx=(0, 8))
+        styles.create_button(btn_frame, "+ Услуга", self.add_service, 'Primary.TButton').pack(
+            side='right', padx=(0, 8))
+        self._update_hidden_button()
         
         # Карточка с ценами на хранение
         storage_card = styles.create_card_frame(self.content_frame)
@@ -633,8 +551,9 @@ class PriceListTab:
         
         self.tree.pack(fill='both', expand=True)
         
-        # Двойной клик для редактирования
+        # Двойной клик для редактирования, правый — меню позиции
         self.tree.bind('<Double-1>', self.on_double_click)
+        self.tree.bind('<Button-3>', self.show_row_menu)
         
         # Загружаем данные
         self.load_services()
@@ -684,83 +603,86 @@ class PriceListTab:
         
         self.tree.pack(fill='both', expand=True)
         
-        # Двойной клик для редактирования
+        # Двойной клик для редактирования, правый — меню позиции
         self.tree.bind('<Double-1>', self.on_double_click)
+        self.tree.bind('<Button-3>', self.show_row_menu)
         
         # Сохраняем текущие колонки
         self.current_columns = columns
     
     def load_services(self):
-        """Загрузить услуги из БД"""
-        # Очищаем таблицу
+        """
+        Загрузить услуги из БД.
+
+        Порядок — как кнопки в наряде (services/service_layout.py), по
+        колонкам слева направо. Раньше список был вписан сюда в код, и
+        добавленная в базу услуга в прайс не попадала вовсе.
+        """
+        from services.service_layout import build_columns
+
         for item in self.tree.get_children():
             self.tree.delete(item)
-        
-        # Загружаем все услуги: конкретного типа + универсальные ('all')
+
+        # Шиномонтаж: этого типа машин + общие для всех. Мойка — в своём окне
         all_services = self.db.query(Service).filter(
-            (Service.vehicle_type == self.current_vehicle_type) | (Service.vehicle_type == 'all')
-        ).all()
-        
+            (Service.vehicle_type == self.current_vehicle_type) | (Service.vehicle_type == 'all'),
+            Service.is_active.isnot(False),
+            Service.direction != 'wash'
+        ).order_by(Service.id).all()
+
         if not all_services:
             messagebox.showwarning("Предупреждение", f"Нет услуг для типа транспорта: {self.current_vehicle_type}")
             return
-        
-        # Создаем словарь для быстрого поиска услуг по имени
-        services_dict = {s.name: s for s in all_services}
-        
-        # Порядок услуг как в панели наряда (по столбцам слева направо)
-        service_order = [
-            # Столбец 1
-            'Съем+Установка', 'Мойка', 'Шиномонтаж', 'Балансировка', 'Герметик обода',
-            'Обработка смазкой', 'Правка литого диска', 'Ремонт грибком', 'Ремонт жгутом',
-            'Ремонт кордовой заплаткой',
-            # Столбец 2
-            'Runflat', 'Оптимизация балансировки', 'Замена вентиля', 'Установка датчика давления',
-            'Шлифовка бортов диска', 'Шлифовка ступицы', 'Косметический ремонт шины',
-            'Дошиповка (за 1 шип)', 'Грязевая покрышка АТ/МТ',
-            # Столбец 3
-            'Зачистка диска от скотча', 'Слесарные работы', 'Открутка секретного болта',
-            'Срыв болта/гайки', 'Прочие услуги', 'Ремонт бокового пореза',
-            'Подкачка/проверка давления', 'Съем+Установка внутреннего колеса',
-            # Столбец 4
-            'Вентиль под датчик', 'Вентиль черный', 'Пакет', 'Золотник', 'Колпочки',
-            'Проверка на герметичность', 'Проверка на балансировку', 'Проверка затяжки болтов'
-        ]
-        
-        # Добавляем услуги в таблицу в нужном порядке
-        for service_name in service_order:
-            if service_name in services_dict:
-                service = services_dict[service_name]
-                
-                if self.current_vehicle_type == 'truck':
-                    # Для грузовых только R15-R19
-                    values = [
-                        service.name,
-                        service.price_r15 or 0,
-                        service.price_r16 or 0,
-                        service.price_r17 or 0,
-                        service.price_r18 or 0,
-                        service.price_r19 or 0
-                    ]
-                else:
-                    # Для легковых и джипов все радиусы
-                    values = [
-                        service.name,
-                        service.price_r13 or 0,
-                        service.price_r14 or 0,
-                        service.price_r15 or 0,
-                        service.price_r16 or 0,
-                        service.price_r17 or 0,
-                        service.price_r18 or 0,
-                        service.price_r19 or 0,
-                        service.price_r20 or 0,
-                        service.price_r21 or 0,
-                        service.price_r22 or 0,
-                        service.price_r23 or 0,
-                        service.price_r24 or 0
-                    ]
-                self.tree.insert('', 'end', values=values, tags=(str(service.id),))
-    
+
+        # Своя строка для типа машин важнее общей
+        services_dict = {}
+        for service in all_services:
+            current = services_dict.get(service.name)
+            if current is None or (current.vehicle_type == 'all' and service.vehicle_type != 'all'):
+                services_dict[service.name] = service
+
+        names = sorted(services_dict)
+        order = [name for column in build_columns(self.db, names) for name in column]
+
+        radii = [int(column[1:]) for column in self.current_columns[1:]]
+        for service_name in order:
+            service = services_dict[service_name]
+            if service.flat_price is not None:
+                # Одна цена на любой размер — товар, вентиль, пакет
+                values = [service.name] + [f"{service.flat_price:g}"] * len(radii)
+                tags = (str(service.id), 'flat')
+            else:
+                values = [service.name] + [getattr(service, f'price_r{radius}') or 0
+                                           for radius in radii]
+                tags = (str(service.id),)
+            self.tree.insert('', 'end', values=values, tags=tags)
+
+    def edit_flat_price(self, item):
+        """У позиции с одной ценой правим её сразу — без «Сохранить изменения»."""
+        from services import AuditService
+        service_id = int(self.tree.item(item)['tags'][0])
+        service = self.db.query(Service).filter(Service.id == service_id).first()
+        if service is None:
+            return
+        value = simpledialog.askfloat(
+            "Изменить цену", f"«{service.name}» — одна цена на любой размер, руб.:",
+            initialvalue=service.flat_price or 0, minvalue=0,
+            parent=self.frame.winfo_toplevel())
+        if value is None or round(value, 2) == service.flat_price:
+            return
+        old = service.flat_price or 0
+        service.flat_price = round(value, 2) if value > 0 else None
+        try:
+            self.db.commit()
+        except Exception as e:
+            self.db.rollback()
+            messagebox.showerror("Ошибка", f"Не удалось сохранить: {e}")
+            return
+        AuditService(self.db).log(AuditService.PRICE_CHANGE,
+                                  f"«{service.name}» — цена: {old:.0f} -> {value:.0f}",
+                                  entity_type='service', entity_id=service.id)
+        self.load_services()
+
     def on_double_click(self, event):
         """Обработка двойного клика для редактирования"""
         log.debug(f"DOUBLE CLICK DETECTED at x={event.x}, y={event.y}")
@@ -782,6 +704,10 @@ class PriceListTab:
         
         if column_index < 1:  # Не редактируем название
             log.debug(f"SKIP: Column index < 1")
+            return
+
+        if 'flat' in self.tree.item(item)['tags']:
+            self.edit_flat_price(item)
             return
         
         # Получаем текущее значение

@@ -26,14 +26,18 @@ class OrderItemsMixin:
         def find_service():
             # Сначала ищем услугу для этого типа транспорта,
             # затем общую для всех типов
+            # Скрытые из прайса строки не берём: иначе вместо основной
+            # цены мог попасться скрытый дубль
             found = self.db.query(Service).filter(
                 Service.name == service_name,
-                Service.vehicle_type == vehicle_type
+                Service.vehicle_type == vehicle_type,
+                Service.is_active.isnot(False)
             ).first()
             if not found:
                 found = self.db.query(Service).filter(
                     Service.name == service_name,
-                    Service.vehicle_type == 'all'
+                    Service.vehicle_type == 'all',
+                    Service.is_active.isnot(False)
                 ).first()
             return found
 

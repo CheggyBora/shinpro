@@ -284,6 +284,15 @@ class SettingsService:
             self.db.add(Settings(key='shift_autoclose_905', value='1'))
             created += 1
 
+        # Вторые строки одной позиции на один тип машины (второй
+        # «Шиномонтаж» у легкового) — скрываем один раз, решение 28.10.2026
+        merged = self.db.query(Settings).filter(Settings.key == 'price_duplicates_merged').first()
+        if merged is None:
+            from services.price_list_service import merge_duplicates
+            merge_duplicates(self.db)
+            self.db.add(Settings(key='price_duplicates_merged', value='1'))
+            created += 1
+
         if created:
             self.db.commit()
         return created
