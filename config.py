@@ -65,9 +65,12 @@ if IS_SQLITE:
         cursor = dbapi_connection.cursor()
         try:
             cursor.execute("PRAGMA journal_mode=WAL")
-            # NORMAL в связке с WAL — обычный компромисс между скоростью
-            # и надёжностью, данные при падении программы не теряются
-            cursor.execute("PRAGMA synchronous=NORMAL")
+            # FULL: каждая запись доходит до диска до того, как программа
+            # считает её сделанной. С NORMAL при отключении электричества
+            # пропадали последние наряды — они ещё лежали в памяти Windows
+            # (жалоба владельца 27.10.2026). Записей в цеху мало, и лишние
+            # миллисекунды на каждую не заметны
+            cursor.execute("PRAGMA synchronous=FULL")
             # Ждём освобождения базы, а не падаем сразу с "database is locked"
             cursor.execute("PRAGMA busy_timeout=5000")
             cursor.execute("PRAGMA foreign_keys=ON")

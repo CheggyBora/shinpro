@@ -57,6 +57,12 @@ class OrderBlocksMixin:
             menu.add_command(label="Выдать с хранения" + (
                 f"  №{', №'.join(str(s.id) for s in stored)}" if stored else ""),
                 command=self.storage_release)
+            # Комплект на складе — заказать его к дате прямо из наряда:
+            # задача в календарь и сообщение тому, кто возит
+            if stored:
+                menu.add_command(label="Заказать со склада" + (
+                    f"  №{stored[0].id}" if len(stored) == 1 else "…"),
+                    command=self.storage_order)
         if self.order.status == 'draft':
             menu.add_separator()
             menu.add_command(label="Удалить наряд", command=self.delete_order)

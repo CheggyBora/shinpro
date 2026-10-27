@@ -309,6 +309,24 @@ class OrderWidget(OrderItemsMixin, OrderPaymentMixin, OrderTimingMixin, OrderBlo
         if app is not None:
             app.storage_from_order(self.order, release=True)
 
+    def storage_order(self):
+        """Заказать комплект машины со склада к дате (docs/calendar.md)."""
+        from ui.tire_storage_tab import WarehouseOrderDialog
+        from services.calendar_service import storage_title
+        stored = self._stored_sets()
+        if not stored:
+            messagebox.showinfo("Хранение", "У этой машины нет комплектов на хранении")
+            return
+        chosen = stored[0]
+        if len(stored) > 1:
+            from ui.order_screen.directions import ask_choice
+            set_id = ask_choice(self.frame, "Заказать со склада", "Какой комплект:",
+                                [(s.id, f"№{s.id} · {storage_title(s)}") for s in stored])
+            if not set_id:
+                return
+            chosen = next(s for s in stored if s.id == set_id)
+        WarehouseOrderDialog(self.frame, self.db, chosen)
+
     def open_car(self):
         from ui.car_info import open_car_info
         open_car_info(self.frame, self.db, self.order.car.license_plate)
