@@ -13,17 +13,13 @@ a = Analysis(
     ['main.py'],
     pathex=[],
     binaries=[],
+    # Только файлы-ресурсы. Код программы PyInstaller сам кладёт внутрь
+    # скомпилированным, а исходники рядом (.py) не кладём: программу
+    # получают другие организации, и читать её код им незачем
     datas=[
-        ('models', 'models'),
-        ('services', 'services'),
-        ('ui', 'ui'),
         ('fonts', 'fonts'),
         # Логотип для чеков: без него PDF собирается без картинки
         ('assets', 'assets'),
-        ('config.py', '.'),
-        ('styles.py', '.'),
-        ('init_data.py', '.'),
-        ('utils.py', '.'),
         ('README_USER.txt', '.'),
     ] + ttkthemes_datas,
     hiddenimports=[
