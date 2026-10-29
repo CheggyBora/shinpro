@@ -71,7 +71,7 @@ def open_settings(parent, db):
 
 
 class SettingsDialog:
-    def __init__(self, parent, db, host=None):
+    def __init__(self, parent, db, host=None, on_lock=None):
         """
         Настройки программы.
 
@@ -110,31 +110,44 @@ class SettingsDialog:
             outer.pack(fill='both', expand=True)
 
         heading = ttk.Frame(outer, style='White.TFrame')
-        heading.pack(fill='x', padx=22, pady=(20, 6))
-        styles.create_label(heading, "Настройки", 'CardHeading.TLabel').pack(anchor='w')
+        heading.pack(fill='x', padx=22, pady=(14, 4))
+        styles.create_label(heading, "Настройки", 'CardHeading.TLabel').pack(side='left')
+        if on_lock is not None:
+            styles.create_button(heading, "Закрыть доступ", on_lock,
+                                 'Secondary.TButton').pack(side='right')
 
-        # Разделов девять, и одним полотном их читать невозможно: нужное
-        # ищется прокруткой наугад. Слева список, справа один раздел —
-        # видно, что вообще есть, и видно, где сейчас находишься
+        # Две группы: как работает эта точка — и программа со связью
+        # (решение владельца 29.10.2026). Восемнадцать кнопок в столбик не
+        # влезали в экран 1366×768: нижние — «SMS и звонки», «Telegram»,
+        # «Связь» — уходили за край, и прокрутить их было нельзя
         self._build_sections(outer, [
-            ('Направления', self._build_directions),
-            ('Запись', self._build_booking),
-            ('Наряды и очередь', self._build_orders),
-            ('Группы клиентов', self._build_client_groups),
-            ('Категории мастеров', self._build_employee_roles),
-            ('Выбор колеса', self._build_wheel_services),
-            ('Живая очередь', self._build_live_queue),
-            ('Контрагенты', self._build_counterparties),
-            ('Смена', self._build_shift),
-            ('Касса', self._build_cash),
-            ('Хранение и сезон', self._build_storage),
-            ('Печать', self._build_printing),
-            ('Кнопки услуг', self._build_service_buttons),
-            ('Реквизиты', self._build_company),
-            ('Отчёты', self._build_export_folder),
-            ('SMS и звонки', self._build_verify),
-            ('Telegram', self._build_telegram),
-            ('Связь с приложением', self._build_sync),
+            ('Эта точка', [
+                ('Что работает', 'Шиномонтаж и мойка, склад, наряд по фото',
+                 [self._build_what_works]),
+                ('Приём машин', 'Посты и очередь, запись через интернет, мойка',
+                 [self._build_live_queue, self._build_booking, self._build_wash]),
+                ('Наряды', 'Как ведётся наряд, кнопки услуг, выбор колеса',
+                 [self._build_orders, self._build_service_buttons,
+                  self._build_wheel_services]),
+                ('Мастера и зарплата', 'Кто делит наряд, от чего считается, категории',
+                 [self._build_masters, self._build_employee_roles]),
+                ('Смена и касса', 'Закрытие смены, посты, статьи ордеров',
+                 [self._build_shift, self._build_cash]),
+                ('Клиенты и хранение', 'Группы клиентов, хранение шин и сезон',
+                 [self._build_client_groups, self._build_storage]),
+                ('Контрагенты', 'Поставщики и с кем работаете по задачам',
+                 [self._build_counterparties]),
+                ('Реквизиты и печать', 'Реквизиты, печать, папка для отчётов',
+                 [self._build_company, self._build_printing, self._build_export_folder]),
+            ]),
+            ('Программа и связь', [
+                ('Связь с сервером', 'Подключение по коду, дашборд и сайт записи',
+                 [self._build_sync]),
+                ('Telegram', 'Бот, кому какие сообщения',
+                 [self._build_telegram]),
+                ('Вход по звонку', 'Подтверждение номера в дашборде и на сайте записи',
+                 [self._build_verify]),
+            ]),
         ])
 
         # --- Кнопки: закреплены снизу, не уезжают вместе с содержимым ---
@@ -155,20 +168,35 @@ class SettingsDialog:
     # Каркас
     # ------------------------------------------------------------------
 
-    def _build_sections(self, parent, sections):
+    def _build_sections(self, parent, groups):
         """
-        Список разделов слева, выбранный раздел справа.
+        Слева — список разделов по группам, справа — выбранный раздел.
 
-        Все разделы строятся сразу, а не по нажатию: в них лежат поля,
-        которые читает сохранение, и строить их лениво значило бы
+        Список сам прокручивается: на маленьком экране он не должен уходить
+        за край. Все разделы строятся сразу, а не по нажатию: в них лежат
+        поля, которые читает сохранение, и строить их лениво значило бы
         сохранять только то, куда человек успел заглянуть.
         """
         body = ttk.Frame(parent, style='White.TFrame')
         body.pack(fill='both', expand=True, padx=22, pady=(4, 0))
 
-        side = tk.Frame(body, bg=styles.COLORS['bg'], width=210)
-        side.pack(side='left', fill='y')
-        side.pack_propagate(False)
+        side_holder = tk.Frame(body, bg=styles.COLORS['bg'], width=230)
+        side_holder.pack(side='left', fill='y')
+        side_holder.pack_propagate(False)
+        side_canvas = tk.Canvas(side_holder, bg=styles.COLORS['bg'], highlightthickness=0, bd=0)
+        side_canvas.pack(fill='both', expand=True)
+        side = tk.Frame(side_canvas, bg=styles.COLORS['bg'])
+        side_window = side_canvas.create_window((0, 0), window=side, anchor='nw')
+        side.bind('<Configure>', lambda e: side_canvas.configure(
+            scrollregion=side_canvas.bbox('all')))
+        side_canvas.bind('<Configure>', lambda e: side_canvas.itemconfigure(
+            side_window, width=e.width))
+
+        def side_wheel(event):
+            if side.winfo_height() > side_canvas.winfo_height():
+                side_canvas.yview_scroll(-1 if event.delta > 0 else 1, 'units')
+        side_holder.bind('<Enter>', lambda e: self.dialog.bind_all('<MouseWheel>', side_wheel))
+        side_holder.bind('<Leave>', lambda e: self.dialog.unbind_all('<MouseWheel>'))
 
         holder = ttk.Frame(body, style='White.TFrame')
         holder.pack(side='left', fill='both', expand=True, padx=(16, 0))
@@ -176,26 +204,56 @@ class SettingsDialog:
         self._pages = {}
         self._buttons = {}
 
+        def paint(title, chosen):
+            item, mark, label = self._buttons[title]
+            bg = styles.COLORS['bg_card'] if chosen else styles.COLORS['bg']
+            for widget in (item, label):
+                widget.configure(bg=bg)
+            mark.configure(bg=styles.COLORS['primary'] if chosen else bg)
+            label.configure(fg=styles.COLORS['primary'] if chosen else styles.COLORS['text'],
+                            font=(styles.DEFAULT_FONT, 10, 'bold' if chosen else 'normal'))
+
         def open_section(title):
             for name, page in self._pages.items():
                 page.pack_forget()
-                self._buttons[name].configure(
-                    style='Secondary.TButton' if name != title
-                    else 'Primary.TButton')
+                paint(name, name == title)
             self._pages[title].pack(fill='both', expand=True)
 
-        for title, build in sections:
-            page = self._scrollable_body(holder)
-            self._pages[title] = page.master.master
-            build(page)
+        self.open_section = open_section
+        first = None
+        for group, sections in groups:
+            tk.Label(side, text=group.upper(), bg=styles.COLORS['bg'], anchor='w',
+                     fg=styles.COLORS['text_secondary'],
+                     font=(styles.DEFAULT_FONT, 8, 'bold')).pack(
+                fill='x', padx=(10, 0), pady=(10 if first else 2, 4))
+            for title, about, builders in sections:
+                page = self._scrollable_body(holder)
+                self._pages[title] = page.master.master
+                # Заголовок раздела и одна строка — что здесь лежит
+                tk.Label(page, text=title, bg=styles.COLORS['bg_card'], fg=styles.COLORS['text'],
+                         font=(styles.DEFAULT_FONT, 15, 'bold')).pack(anchor='w', pady=(4, 0))
+                ttk.Label(page, text=about, font=(styles.DEFAULT_FONT, 9),
+                          background=styles.COLORS['bg_card'],
+                          foreground=styles.COLORS['text_secondary']).pack(anchor='w', pady=(0, 2))
+                for build in builders:
+                    build(page)
 
-            button = styles.create_button(
-                side, title, lambda t=title: open_section(t),
-                'Secondary.TButton')
-            button.pack(fill='x', pady=(0, 4))
-            self._buttons[title] = button
+                item = tk.Frame(side, bg=styles.COLORS['bg'], cursor='hand2')
+                item.pack(fill='x', pady=1)
+                mark = tk.Frame(item, width=4, bg=styles.COLORS['bg'])
+                mark.pack(side='left', fill='y')
+                # Пояснение — в заголовке раздела, а в списке только имя:
+                # с подписями список снова не влезал в экран
+                label = tk.Label(item, text=title, anchor='w', bg=styles.COLORS['bg'],
+                                 fg=styles.COLORS['text'], font=(styles.DEFAULT_FONT, 10),
+                                 padx=10, pady=6)
+                label.pack(fill='x')
+                for widget in (item, label):
+                    widget.bind('<Button-1>', lambda e, t=title: open_section(t))
+                self._buttons[title] = (item, mark, label)
+                first = first or title
 
-        open_section(sections[0][0])
+        open_section(first)
 
     def _scrollable_body(self, parent):
         """Прокручиваемая область: разделов больше, чем влезает в окно."""
@@ -719,7 +777,8 @@ class SettingsDialog:
              'Автосохранение наряда через, мин (0 — выкл.)'),
         ])
 
-    def _build_directions(self, content):
+    def _build_what_works(self, content):
+        """Что работает на точке: направления, склад, наряд по фото."""
         from services import directions
         self._section(content, "Что работает на этом объекте")
         self._hint(content,
@@ -732,6 +791,12 @@ class SettingsDialog:
             ttk.Checkbutton(content, text=text, variable=var,
                             command=self.save_directions).pack(anchor='w', pady=2)
 
+        self._build_stock_switch(content)
+        self._build_photo_switch(content)
+
+    def _build_masters(self, content):
+        """Кто делит шиномонтаж и от чего считается зарплата."""
+        from services import directions
         self._section(content, "Мастера шиномонтажа")
         self.tire_assign_var = tk.BooleanVar(value=directions.tire_assign(self.db))
         ttk.Checkbutton(content, text="Выбирать мастеров на каждый наряд",
@@ -745,6 +810,10 @@ class SettingsDialog:
                    "работает: делят только они. Мойка всегда назначается на "
                    "сотрудника в строке.")
 
+        self._build_salary_base(content)
+
+    def _build_photo_switch(self, content):
+        from services import directions
         self._section(content, "Наряд по фото машины")
         self.photo_vars = {}
         for direction, title in (('tire', 'Шиномонтаж'), ('wash', 'Мойка')):
@@ -759,6 +828,8 @@ class SettingsDialog:
                    "машину, номер читается сам, наряд получает обложку. Выключено — "
                    "кнопки нет, телефон это направление не предлагает, обложка не видна.")
 
+    def _build_salary_base(self, content):
+        from services import directions
         self._section(content, "От чего считается зарплата")
         self.salary_base_vars = {}
         for direction, title in (('tire', 'Шиномонтаж'), ('wash', 'Мойка')):
@@ -777,6 +848,7 @@ class SettingsDialog:
                    "то же, но без стоимости материалов услуги. С товаров зарплата "
                    "не начисляется ни в одном варианте.")
 
+    def _build_stock_switch(self, content):
         self._section(content, "Склад")
         self.stock_var = tk.BooleanVar(value=self.settings.get('stock_enabled') == '1')
         ttk.Checkbutton(content, text="Вести склад: остатки товаров и материалов",
@@ -788,6 +860,9 @@ class SettingsDialog:
                    "полном возврате — возвращаются. Остаток может уйти в минус: "
                    "главному придёт сообщение в Telegram.")
 
+    def _build_wash(self, content):
+        """Посты мойки и запись на мойку."""
+        from services import directions
         self._section(content, "Мойка")
         row = ttk.Frame(content, style='White.TFrame')
         row.pack(fill='x', pady=(0, 6))

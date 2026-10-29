@@ -103,14 +103,12 @@ class SettingsTab:
         self.body = ttk.Frame(self.frame, style='BG.TFrame')
         self.body.pack(fill='both', expand=True)
 
-        top = ttk.Frame(self.body, style='BG.TFrame')
-        top.pack(fill='x', padx=15, pady=(15, 0))
-        styles.create_button(top, "Закрыть доступ", self.show_lock,
-                             'Secondary.TButton').pack(side='right')
-
         holder = ttk.Frame(self.body, style='BG.TFrame')
-        holder.pack(fill='both', expand=True, padx=15, pady=(10, 15))
+        holder.pack(fill='both', expand=True, padx=15, pady=(12, 12))
 
         from ui.settings_dialog import SettingsDialog
 
-        SettingsDialog(self.frame, self.db, host=holder)
+        # «Закрыть доступ» — в строке заголовка: отдельная полоса над
+        # настройками съедала место у списка разделов
+        self.view = SettingsDialog(self.frame, self.db, host=holder,
+                                   on_lock=self.show_lock)
