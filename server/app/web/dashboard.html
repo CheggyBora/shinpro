@@ -725,6 +725,8 @@ function loginError(text) {
 $('lNext').addEventListener('click', function () {
   api('/staff/start', { method: 'POST', body: { phone: phoneDigits } })
     .then(function (answer) {
+      // Подключён ли звонок — нужно и для «Забыли ПИН?»
+      loginCallAvailable = !!answer.call_available;
       if (answer.step === 'pin') {
         loginStep('stepPin');
         $('lPin').focus();
@@ -740,6 +742,7 @@ $('lNext').addEventListener('click', function () {
 });
 
 var call = { ticket: null, until: 0 };
+var loginCallAvailable = false;
 
 function startCall() {
   loginStep('stepCall');
@@ -863,7 +866,10 @@ $('lNewPinGo').addEventListener('click', function () {
     .catch(function (e) { $('lNewPin').value = ''; loginError(e.message); });
 });
 
+// Забыли ПИН — номер подтверждаем тем же, чем при первом входе:
+// звонком, если он подключён, иначе кодом
 $('lForgot').addEventListener('click', function () {
+  if (loginCallAvailable) { startCall(); return; }
   loginStep('stepCode');
   sendCode();
 });
