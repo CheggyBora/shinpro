@@ -15,7 +15,8 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import Shop, StaffUser
 from app.security import current_staff, require_sync_key
-from app.services import shop_settings, tasks as task_service, tenancy
+from app.models.task import KIND_NOTE
+from app.services import notify, shop_settings, tasks as task_service, tenancy
 from app.utils import now as shop_now
 
 # Фильтр по направлению в адресе: tire, wash или all. Календарь у
@@ -149,7 +150,24 @@ def list_tasks(day_from: Optional[date] = Query(None, alias='from'),
                             for shop_id in ids),
         'overdue': [_view(row, names) for row in overdue],
         'tasks': [_view(row, names) for row in rows],
+        # Часы на сетке «Неделя» и «День» — часы работы точки
+        'hours': _hours(db, ids),
     }
+
+
+def _hours(db, shop_ids):
+    """С какого по какой час рисовать сетку: самые ранние и поздние часы точек."""
+    def hour(text, fallback):
+        try:
+            return int(str(text).split(':')[0])
+        except (TypeError, ValueError):
+            return fallback
+    opens = [hour(shop_settings.get(db, 'booking_opens_at', shop=i), 9) for i in shop_ids]
+    closes = [hour(shop_settings.get(db, 'booking_closes_at', shop=i), 21) for i in shop_ids]
+    start, end = (min(opens) if opens else 9), (max(closes) if closes else 21)
+    if end <= start:
+        start, end = 9, 21
+    return {'from': start, 'to': end}
 
 
 @router.post('/tasks', summary='Поставить задачу')
@@ -163,7 +181,22 @@ def create_task(payload: dict,
         row = task_service.create(db, chosen, payload, author=staff.title)
     except task_service.TaskError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(e))
-    return _view(row, _names(db, [chosen.id]))
+    names = _names(db, [chosen.id])
+    _announce(row, names)
+    return _view(row, names)
+
+
+def _announce(row, names):
+    """Новая задача — в Telegram, не задерживая ответ. Комментарий — никуда."""
+    if row.kind == KIND_NOTE:
+        return
+    text = task_service.telegram_text(row, names.get((row.shop_id, row.counterparty_uid)))
+    notify.send_in_background(text, shop=row.shop_id, kind=notify.KIND_TASK)
+    # Контрагент с ником — ему лично (решение владельца 29.10.2026)
+    party = task_service.counterparty_of(row)
+    if party is not None and party.telegram and not party.deleted:
+        notify.send_personal_in_background(text, row.shop_id, party.telegram,
+                                           kind=notify.KIND_TASK)
 
 
 @router.patch('/tasks/{uid}', summary='Поправить, перенести, отметить')
@@ -181,12 +214,17 @@ def patch_task(uid: str, payload: dict,
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND,
                             detail='Задача не найдена')
+    was_note = row.kind == KIND_NOTE
     try:
         row = task_service.patch(db, row, payload, author=staff.title)
     except task_service.TaskError as e:
         db.rollback()
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(e))
-    return _view(row, _names(db, [row.shop_id]))
+    names = _names(db, [row.shop_id])
+    # Комментарий сделали задачей — теперь это дело, о нём надо сказать
+    if was_note and row.kind != KIND_NOTE and not row.deleted:
+        _announce(row, names)
+    return _view(row, names)
 
 
 @router.get('/counterparties', summary='Контрагенты — для выбора в задаче')

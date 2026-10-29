@@ -264,6 +264,81 @@ input.code { letter-spacing: 8px; text-align: center; font-size: 22px; font-weig
 .chip.f-paint[aria-pressed="true"] { background: var(--paint); border-color: var(--paint); }
 .chip.f-supply[aria-pressed="true"] { background: var(--supply); border-color: var(--supply); }
 .day-title { font-size: 14px; font-weight: 700; margin: 4px 0 2px; }
+/* Месяц / Неделя / День (решение владельца 29.10.2026) */
+.views { display: inline-flex; border: 1.5px solid var(--line); border-radius: 999px;
+  overflow: hidden; margin-right: 6px; }
+.views button { border: 0; background: var(--card); padding: 7px 13px; font-size: 13.5px;
+  color: var(--ink-soft); font-family: inherit; }
+.views button[aria-pressed="true"] { background: var(--brand); color: #fff; font-weight: 600; }
+.cal-add.ghost { background: var(--card); color: var(--ink); border: 1.5px solid var(--line); }
+.cal-nav { display: inline-flex; gap: 6px; }
+/* На телефоне заголовок — своей строкой, кнопки — под ним */
+@media (max-width: 700px) { .cal-head h2 { flex-basis: 100%; } }
+.cal-split { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 12px;
+  align-items: start; }
+.cal-split > .card { margin: 0; }
+@media (max-width: 900px) { .cal-split { grid-template-columns: minmax(0, 1fr); } }
+.month { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; }
+.month .wd { font-size: 11.5px; color: var(--ink-soft); padding: 0 4px 2px; }
+.month .cell { border: 1.5px solid var(--line); background: var(--card); border-radius: 10px;
+  min-height: 96px; padding: 4px; display: flex; flex-direction: column; gap: 2px;
+  text-align: left; min-width: 0; font-family: inherit; cursor: pointer; }
+.month .cell b { font-size: 12.5px; font-weight: 600; color: var(--ink-soft); padding-left: 2px; }
+.month .cell.today b { color: var(--brand); }
+.month .cell.other b { color: var(--muted); font-weight: 400; }
+.month .cell[aria-pressed="true"] { border-color: var(--brand); background: #eff6ff; }
+.month .more { font-size: 11px; color: var(--ink-soft); padding-left: 2px; }
+.month .dots { display: none; gap: 2px; height: 6px; padding-left: 2px; }
+.month .dots i { width: 6px; height: 6px; border-radius: 50%; display: block; }
+.it { display: block; font-size: 11.5px; padding: 1px 4px; border-radius: 4px; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; text-align: left; border: 0; font-family: inherit;
+  max-width: 100%; }
+.it.c-work, .blk.c-work { background: var(--work-bg); color: var(--work); }
+.it.c-storage, .blk.c-storage { background: var(--storage-bg); color: var(--storage); }
+.it.c-tires, .blk.c-tires { background: var(--tires-bg); color: var(--tires); }
+.it.c-paint, .blk.c-paint { background: var(--paint-bg); color: var(--paint); }
+.it.c-supply, .blk.c-supply { background: var(--supply-bg); color: var(--supply); }
+.it.note, .blk.note { background: #f1f5f9; color: #475569; font-style: italic; }
+.it.done, .blk.done { background: #f8fafc; color: var(--muted); text-decoration: line-through; }
+.it.late, .blk.late { background: #fee2e2; color: var(--bad); }
+.dot-note { background: #94a3b8; } .dot-done { background: #cbd5e1; }
+.month .dots i.late { background: var(--bad); }
+@media (max-width: 700px) {
+  .month .cell { min-height: 54px; }
+  .month .cell .it, .month .more { display: none; }
+  .month .dots { display: flex; }
+}
+/* Неделя и день по часам: слева часы, сверху «без времени» */
+.thead, .tband, .tgrid { display: flex; }
+.tcol0 { width: 48px; flex: 0 0 48px; font-size: 11px; color: var(--ink-soft);
+  text-align: right; padding-right: 6px; position: relative; }
+.thead .th { flex: 1; min-width: 0; border: 0; background: none; font-family: inherit;
+  font-size: 13px; color: var(--ink-soft); padding: 2px 0 6px; cursor: pointer; }
+.thead .th.today { color: var(--brand); font-weight: 700; }
+.tband { margin-bottom: 4px; }
+.tband .tb { flex: 1; min-width: 0; border: 1px solid var(--line); min-height: 24px;
+  padding: 2px; display: flex; flex-direction: column; gap: 2px; }
+.tband .it { cursor: pointer; }
+.tgrid .tcol0 span { position: absolute; right: 6px; transform: translateY(-1px); }
+.tdays { flex: 1; display: flex; min-width: 0; border-top: 1px solid var(--line); }
+.tday { flex: 1; min-width: 0; position: relative; border-left: 1px solid var(--line);
+  background-image: linear-gradient(to bottom, var(--line) 1px, transparent 1px); }
+.tday:last-child { border-right: 1px solid var(--line); }
+.tday.today { background-color: #f8fbff; }
+.blk { position: absolute; border: 0; border-left: 3px solid currentColor; border-radius: 4px;
+  padding: 2px 5px; font-size: 12px; text-align: left; overflow: hidden; font-family: inherit;
+  line-height: 1.25; cursor: pointer; }
+.blk b { font-weight: 600; }
+.blk small { display: block; text-decoration: underline; }
+.nowline { position: absolute; left: 0; right: 0; height: 2px; background: var(--bad);
+  pointer-events: none; }
+.nowline::before { content: ''; position: absolute; left: -4px; top: -3px; width: 8px;
+  height: 8px; border-radius: 50%; background: var(--bad); }
+.task.note { background: #f8fafc; }
+.task.note .tt b { font-weight: 400; font-style: italic; }
+.cat.note { background: #e2e8f0; color: #475569; }
+.task .tm small { display: block; font-weight: 400; font-size: 12px; }
+.chip.f-note[aria-pressed="true"] { background: #475569; border-color: #475569; }
 .task { display: flex; align-items: flex-start; gap: 8px;
   border-bottom: 1px solid var(--line); padding: 2px 0; }
 .task:last-child { border-bottom: 0; }
@@ -2314,9 +2389,19 @@ var MONTHS = ['января', 'февраля', 'марта', 'апреля', '�
 // direction — фильтр «Направление»: all, tire или wash. Задачи сервер
 // отдаёт обоих направлений сразу, фильтруем здесь: переключение фильтра
 // не ждёт сети. people — контрагенты по направлениям, для формы задачи
+// view — месяц, неделя или день; открывается всегда на месяце
 var cal = { start: null, day: null, today: null, filter: [], data: null,
-            people: {}, direction: 'all', wash: false,
+            people: {}, direction: 'all', wash: false, view: 'month',
+            hours: { from: 9, to: 21 },
             filters: { all: [], tire: [], wash: [] } };
+var VIEWS = [{ key: 'month', title: 'Месяц' }, { key: 'week', title: 'Неделя' },
+             { key: 'day', title: 'День' }];
+var MONTHS_NOM = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август',
+                  'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
+// Высота часа на сетке недели и дня, пикселей
+var HOUR_PX = 44;
+// Задача без «до» на сетке — полчаса
+var DEFAULT_MINUTES = 30;
 
 // Направление, по которому показываем. Мойка выключена — календарь как
 // раньше, только шиномонтаж: фильтра «Направление» тогда не видно
@@ -2336,7 +2421,8 @@ Object.keys(FILTER_KEYS).forEach(function (dir) {
   try {
     var saved = JSON.parse(localStorage.getItem(FILTER_KEYS[dir]) || '[]');
     if (Array.isArray(saved)) {
-      var keys = calCats(dir).map(function (item) { return item.key; });
+      // «note» — фильтр «Комментарии», он есть у любого направления
+      var keys = calCats(dir).map(function (item) { return item.key; }).concat(['note']);
       cal.filters[dir] = saved.filter(function (key) { return keys.indexOf(key) >= 0; });
     }
   } catch (e) {}
@@ -2416,7 +2502,14 @@ function calShown(task) {
   var dir = calDir();
   if (dir !== 'all' && (task.direction || 'tire') !== dir) return false;
   var filter = calFilter();
-  return !filter.length || filter.indexOf(task.category) >= 0;
+  return !filter.length || filter.indexOf(isNote(task) ? 'note' : task.category) >= 0;
+}
+
+// Комментарий — просто запись на день: без галочки, не просрочивается
+function isNote(task) { return task.kind === 'note'; }
+
+function timeText(task) {
+  return task.due_time ? task.due_time + (task.end_time ? '–' + task.end_time : '') : '';
 }
 
 function calShopName(id) {
@@ -2424,15 +2517,31 @@ function calShopName(id) {
   return shop ? shop.name : '';
 }
 
+// Какие дни показывать: месяц — целыми неделями с понедельника
+function calRange() {
+  if (cal.view === 'day') return { from: cal.day, to: cal.day };
+  if (cal.view === 'week') {
+    var monday = mondayOf(cal.day);
+    return { from: monday, to: addDays(monday, 6) };
+  }
+  var first = cal.day.slice(0, 8) + '01';
+  var date = parseDay(first);
+  var next = isoDay(new Date(date.getFullYear(), date.getMonth() + 1, 1));
+  var from = mondayOf(first);
+  var days = Math.round((parseDay(next) - parseDay(from)) / 86400000);
+  var weeks = Math.ceil(days / 7);
+  return { from: from, to: addDays(from, weeks * 7 - 1), weeks: weeks, first: first };
+}
+
 function loadCalendar() {
   var local = isoDay(new Date());
   cal.today = cal.today || local;
   cal.day = cal.day || cal.today;
-  cal.start = mondayOf(cal.day);
+  var range = calRange();
+  cal.start = range.from;
 
   // Обоих направлений сразу: фильтр «Направление» — здесь, в браузере
-  var path = '/dashboard/tasks?from=' + cal.start + '&to=' + addDays(cal.start, 6)
-    + '&direction=all';
+  var path = '/dashboard/tasks?from=' + range.from + '&to=' + range.to + '&direction=all';
   cal.people = {};
   api(withShop(path))
     .then(function (answer) {
@@ -2442,6 +2551,7 @@ function loadCalendar() {
       // (calDir), а запомненный выбор ждёт, когда мойка вернётся
       cal.wash = !!answer.wash_enabled;
       cal.data = answer;
+      if (answer.hours) cal.hours = answer.hours;
       // «Сегодня» — по часам сервера: он считает по Москве, а телефон
       // владельца может быть где угодно
       if (cal.data.today) cal.today = cal.data.today;
@@ -2459,44 +2569,225 @@ function calFind(uid) {
   return calAll().filter(function (task) { return task.uid === uid; })[0];
 }
 
-function drawCalendar() {
-  var data = cal.data;
-  var end = addDays(cal.start, 6);
-  var startDate = parseDay(cal.start), endDate = parseDay(end);
-  var range = startDate.getDate()
+function calOfDay(day) {
+  return (cal.data ? cal.data.tasks : []).filter(function (task) {
+    return task.due_date === day && calShown(task);
+  });
+}
+
+function isLate(task) { return !isNote(task) && !task.done_at && task.due_date < cal.today; }
+
+function itemClass(task) {
+  if (isNote(task)) return 'note';
+  if (task.done_at) return 'done';
+  if (isLate(task)) return 'late';
+  return 'c-' + task.category;
+}
+
+function dotClass(task) {
+  if (isNote(task)) return 'dot-note';
+  if (task.done_at) return 'dot-done';
+  return isLate(task) ? 'late' : 'dot-' + task.category;
+}
+
+function shortText(task) {
+  if (isNote(task)) return '✎ ' + task.title;
+  return (task.due_time ? task.due_time + ' ' : '') + task.title;
+}
+
+function calTitle(range) {
+  if (cal.view === 'day') return longDay(cal.day);
+  if (cal.view === 'month') {
+    var first = parseDay(range.first);
+    return MONTHS_NOM[first.getMonth()] + ' ' + first.getFullYear();
+  }
+  var startDate = parseDay(range.from), endDate = parseDay(range.to);
+  return startDate.getDate()
     + (startDate.getMonth() !== endDate.getMonth() ? ' ' + MONTHS[startDate.getMonth()] : '')
     + ' – ' + endDate.getDate() + ' ' + MONTHS[endDate.getMonth()];
+}
 
+// Список дня: сегодня сверху ещё и неотмеченные прошлых дней
+function dayRows(day) {
+  var rows = '';
+  if (day === cal.today) {
+    rows += cal.data.overdue.filter(calShown).map(function (task) {
+      return taskRow(task, true, day);
+    }).join('');
+  }
+  rows += calOfDay(day).map(function (task) {
+    return taskRow(task, isLate(task), day);
+  }).join('');
+  return rows || '<div class="empty">Записей нет</div>';
+}
+
+function monthHtml(range) {
+  var month = range.first.slice(0, 7);
+  var html = '<div class="cal-split"><div class="card"><div class="month" id="calMonth">'
+    + WEEKDAYS.map(function (name) { return '<div class="wd">' + name + '</div>'; }).join('');
+  for (var i = 0; i < range.weeks * 7; i++) {
+    var day = addDays(range.from, i);
+    var items = calOfDay(day);
+    var classes = ['cell'];
+    if (day.slice(0, 7) !== month) classes.push('other');
+    if (day === cal.today) classes.push('today');
+    html += '<button type="button" class="' + classes.join(' ') + '" data-day="' + day
+      + '" aria-pressed="' + (day === cal.day) + '"><b>' + parseDay(day).getDate() + '</b>'
+      + items.slice(0, 3).map(function (task) {
+        return '<span class="it ' + itemClass(task) + '">' + escape(shortText(task)) + '</span>';
+      }).join('')
+      + (items.length > 3 ? '<span class="more">ещё ' + (items.length - 3) + '</span>' : '')
+      + '<span class="dots">' + items.slice(0, 4).map(function (task) {
+        return '<i class="' + dotClass(task) + '"></i>';
+      }).join('') + '</span></button>';
+  }
+  html += '</div><p class="note">Двойной щелчок по дню — день по часам</p></div>'
+    + '<div class="card"><div class="day-title">' + longDay(cal.day) + '</div>'
+    + dayRows(cal.day) + '</div></div>';
+  return html;
+}
+
+function minutesOf(text) {
+  var parts = text.split(':');
+  return (+parts[0]) * 60 + (+parts[1]);
+}
+
+function endOf(task) {
+  return task.end_time ? minutesOf(task.end_time) : minutesOf(task.due_time) + DEFAULT_MINUTES;
+}
+
+// Записи в одно время — рядом, а не друг на друге
+function lanes(tasks) {
+  var items = tasks.slice().sort(function (a, b) {
+    return minutesOf(a.due_time) - minutesOf(b.due_time);
+  });
+  var result = [], group = [], ends = [], groupEnd = -1;
+  function flush() {
+    var count = 0;
+    group.forEach(function (item) { count = Math.max(count, item.lane + 1); });
+    group.forEach(function (item) { item.lanes = count; result.push(item); });
+  }
+  items.forEach(function (task) {
+    var start = minutesOf(task.due_time), end = endOf(task);
+    if (group.length && start >= groupEnd) { flush(); group = []; ends = []; }
+    var lane = 0;
+    while (lane < ends.length && ends[lane] > start) lane++;
+    ends[lane] = end;
+    group.push({ task: task, lane: lane });
+    groupEnd = group.length === 1 ? end : Math.max(groupEnd, end);
+  });
+  if (group.length) flush();
+  return result;
+}
+
+// Часы сетки: часы работы точки, но так, чтобы влезли все записи
+function hoursFor(tasks) {
+  var from = cal.hours.from, to = cal.hours.to;
+  tasks.forEach(function (task) {
+    from = Math.min(from, Math.floor(minutesOf(task.due_time) / 60));
+    to = Math.max(to, Math.ceil(endOf(task) / 60));
+  });
+  return { from: from, to: Math.min(to, 24) };
+}
+
+function hoursHtml(days) {
+  // На телефоне неделя по часам нечитаема — тогда списком по дням
+  if (days.length > 1 && window.innerWidth < 700) {
+    return '<div class="card">' + days.map(function (day) {
+      return '<div class="day-title">' + longDay(day) + '</div>' + dayRows(day);
+    }).join('') + '</div>';
+  }
+  var loose = {}, timed = {}, all = [];
+  days.forEach(function (day) {
+    var items = calOfDay(day);
+    if (days.length === 1 && day === cal.today) {
+      items = cal.data.overdue.filter(calShown).concat(items);
+    }
+    loose[day] = items.filter(function (task) { return !task.due_time || task.due_date !== day; });
+    timed[day] = items.filter(function (task) { return task.due_time && task.due_date === day; });
+    all = all.concat(timed[day]);
+  });
+  var hours = hoursFor(all);
+  var height = (hours.to - hours.from) * HOUR_PX;
+
+  var html = '<div class="card">';
+  if (days.length > 1) {
+    html += '<div class="thead"><div class="tcol0"></div>' + days.map(function (day) {
+      return '<button type="button" class="th' + (day === cal.today ? ' today' : '')
+        + '" data-open-day="' + day + '">' + WEEKDAYS[weekdayIndex(day)] + ' '
+        + parseDay(day).getDate() + '</button>';
+    }).join('') + '</div>';
+  }
+  html += '<div class="tband"><div class="tcol0">без<br>времени</div>' + days.map(function (day) {
+    return '<div class="tb">' + loose[day].map(function (task) {
+      var text = (task.due_date !== day ? shortDay(task.due_date) + ' ' : '') + shortText(task);
+      return '<button type="button" class="it ' + itemClass(task) + '" data-open="'
+        + attr(task.uid) + '">' + escape(text) + '</button>';
+    }).join('') + '</div>';
+  }).join('') + '</div>';
+
+  html += '<div class="tgrid" style="height:' + height + 'px"><div class="tcol0">';
+  for (var h = hours.from; h < hours.to; h++) {
+    html += '<span style="top:' + ((h - hours.from) * HOUR_PX) + 'px">' + h + ':00</span>';
+  }
+  html += '</div><div class="tdays">';
+  var now = new Date();
+  var nowMinutes = now.getHours() * 60 + now.getMinutes();
+  days.forEach(function (day) {
+    html += '<div class="tday' + (day === cal.today ? ' today' : '') + '" data-col="' + day
+      + '" data-from="' + hours.from + '" style="background-size:100% ' + HOUR_PX + 'px">';
+    lanes(timed[day]).forEach(function (item) {
+      var task = item.task;
+      var top = (minutesOf(task.due_time) - hours.from * 60) / 60 * HOUR_PX;
+      var tall = Math.max((endOf(task) - minutesOf(task.due_time)) / 60 * HOUR_PX, 20);
+      var width = 100 / item.lanes;
+      // Не <button>: у кнопки текст встаёт посередине высоты, а в блоке
+      // на полтора часа время должно быть сверху, как в цеху
+      html += '<div role="button" tabindex="0" class="blk ' + itemClass(task) + '" data-open="'
+        + attr(task.uid) + '" style="top:' + top + 'px;height:' + (tall - 2) + 'px;left:'
+        + (item.lane * width) + '%;width:calc(' + width + '% - 3px)"><b>'
+        + escape(timeText(task)) + '</b> ' + escape((isNote(task) ? '✎ ' : '') + task.title)
+        + (task.license_plate && tall > 40 ? '<small>' + escape(task.license_plate) + '</small>' : '')
+        + '</div>';
+    });
+    if (day === cal.today && nowMinutes >= hours.from * 60 && nowMinutes <= hours.to * 60) {
+      html += '<div class="nowline" style="top:'
+        + ((nowMinutes - hours.from * 60) / 60 * HOUR_PX) + 'px"></div>';
+    }
+    html += '</div>';
+  });
+  html += '</div></div><p class="note">Щелчок по свободному времени — задача или комментарий на это время</p></div>';
+  return html;
+}
+
+function shiftCalendar(step) {
+  if (cal.view === 'month') {
+    var date = parseDay(cal.day.slice(0, 8) + '01');
+    var target = isoDay(new Date(date.getFullYear(), date.getMonth() + step, 1));
+    // В месяце, где сегодня, выбран сегодняшний день
+    cal.day = target.slice(0, 7) === cal.today.slice(0, 7) ? cal.today : target;
+  } else {
+    cal.day = addDays(cal.day, cal.view === 'week' ? 7 * step : step);
+  }
+  loadCalendar();
+}
+
+function drawCalendar() {
+  var data = cal.data;
+  var range = calRange();
   var filter = calFilter();
   var html = '<div class="card">';
-  html += '<div class="cal-head"><h2>' + range + '</h2>'
-    + '<button class="chip" type="button" id="calPrev" aria-label="Прошлая неделя">‹</button>'
+  html += '<div class="cal-head"><h2>' + escape(calTitle(range)) + '</h2>'
+    + '<div class="views" id="calViews">' + VIEWS.map(function (view) {
+      return '<button type="button" data-view="' + view.key + '" aria-pressed="'
+        + (view.key === cal.view) + '">' + view.title + '</button>';
+    }).join('') + '</div>'
+    + '<span class="cal-nav">'
+    + '<button class="chip" type="button" id="calPrev" aria-label="Назад">‹</button>'
     + '<button class="chip" type="button" id="calToday">Сегодня</button>'
-    + '<button class="chip" type="button" id="calNext" aria-label="Следующая неделя">›</button>'
+    + '<button class="chip" type="button" id="calNext" aria-label="Вперёд">›</button></span>'
+    + '<button class="cal-add ghost" type="button" id="calNote">+ Комментарий</button>'
     + '<button class="cal-add" type="button" id="calAdd">+ Задача</button></div>';
-
-  html += '<div class="week" id="calWeek">';
-  for (var i = 0; i < 7; i++) {
-    var day = addDays(cal.start, i);
-    var ofDay = data.tasks.filter(function (task) {
-      return task.due_date === day && calShown(task);
-    });
-    var dots = ofDay.slice(0, 4).map(function (task) {
-      var late = !task.done_at && day < cal.today;
-      return '<i class="' + (late ? 'late' : 'dot-' + task.category) + '"></i>';
-    }).join('');
-    // Точка в неделе мала для метки — направление и разделы дня
-    // подсказкой: на компьютере видно, наведя мышь
-    var hint = ofDay.map(function (task) {
-      return (cal.wash ? DIR_TITLES[task.direction === 'wash' ? 'wash' : 'tire'] + ' · ' : '')
-        + (CAT_TITLES[task.category] || task.category) + ': ' + task.title;
-    }).join('\n');
-    html += '<button type="button" data-day="' + day + '" aria-pressed="' + (day === cal.day)
-      + '" class="' + (day === cal.today ? 'today' : '') + '"'
-      + (hint ? ' title="' + attr(hint) + '"' : '') + '>' + WEEKDAYS[i]
-      + '<b>' + parseDay(day).getDate() + '</b><span class="dots">' + dots + '</span></button>';
-  }
-  html += '</div>';
 
   // Две строки фильтров: направление (только если есть мойка) и разделы
   // выбранного направления. Без мойки — одна строка, как раньше
@@ -2511,38 +2802,33 @@ function drawCalendar() {
     + (cal.wash ? '<span class="lab">Разделы:</span>' : '')
     + '<button class="chip" type="button" data-cat="" aria-pressed="' + !filter.length
     + '">Все</button>'
-    + calCats().map(function (item) {
+    + calCats().concat([{ key: 'note', title: '✎ Комментарии' }]).map(function (item) {
       return '<button class="chip f-' + item.key + '" type="button" data-cat="' + item.key
         + '" aria-pressed="' + (filter.indexOf(item.key) >= 0) + '">' + item.title + '</button>';
     }).join('') + '</div></div>';
 
-  var rows = '';
-  if (cal.day === cal.today) {
-    rows += data.overdue.filter(calShown).map(function (task) {
-      return taskRow(task, true);
-    }).join('');
-  }
-  rows += data.tasks.filter(function (task) {
-    return task.due_date === cal.day && calShown(task);
-  }).map(function (task) {
-    return taskRow(task, !task.done_at && cal.day < cal.today);
-  }).join('');
-
-  html += '<div class="card"><div class="day-title">' + longDay(cal.day) + '</div>'
-    + (rows || '<div class="empty">Задач нет</div>') + '</div>';
+  if (cal.view === 'month') html += monthHtml(range);
+  else if (cal.view === 'week') {
+    var days = [];
+    for (var i = 0; i < 7; i++) days.push(addDays(range.from, i));
+    html += hoursHtml(days);
+  } else html += hoursHtml([cal.day]);
 
   show(html);
 
-  $('calPrev').addEventListener('click', function () {
-    cal.day = addDays(cal.day, -7); loadCalendar();
+  [].slice.call($('calViews').querySelectorAll('[data-view]')).forEach(function (button) {
+    button.addEventListener('click', function () {
+      cal.view = button.getAttribute('data-view');
+      loadCalendar();
+    });
   });
-  $('calNext').addEventListener('click', function () {
-    cal.day = addDays(cal.day, 7); loadCalendar();
-  });
+  $('calPrev').addEventListener('click', function () { shiftCalendar(-1); });
+  $('calNext').addEventListener('click', function () { shiftCalendar(1); });
   $('calToday').addEventListener('click', function () {
     cal.day = cal.today; loadCalendar();
   });
-  $('calAdd').addEventListener('click', function () { openTask(null); });
+  $('calAdd').addEventListener('click', function () { openTask(null, 'task'); });
+  $('calNote').addEventListener('click', function () { openTask(null, 'note'); });
 
   if (cal.wash) {
     [].slice.call($('calDirs').querySelectorAll('[data-dir]')).forEach(function (button) {
@@ -2555,10 +2841,57 @@ function drawCalendar() {
     });
   }
 
-  [].slice.call($('calWeek').querySelectorAll('[data-day]')).forEach(function (button) {
+  if ($('calMonth')) {
+    [].slice.call($('calMonth').querySelectorAll('[data-day]')).forEach(function (button) {
+      button.addEventListener('click', function () {
+        cal.day = button.getAttribute('data-day');
+        // Соседний месяц — догружаем, свой — перерисовываем без сети
+        if (cal.day.slice(0, 7) !== range.first.slice(0, 7)) loadCalendar();
+        else drawCalendar();
+      });
+      button.addEventListener('dblclick', function () {
+        cal.day = button.getAttribute('data-day');
+        cal.view = 'day';
+        loadCalendar();
+      });
+    });
+  }
+
+  [].slice.call($('view').querySelectorAll('[data-open-day]')).forEach(function (button) {
     button.addEventListener('click', function () {
-      cal.day = button.getAttribute('data-day');
-      drawCalendar();
+      cal.day = button.getAttribute('data-open-day');
+      cal.view = 'day';
+      loadCalendar();
+    });
+  });
+
+  // Щелчок по свободному времени — окошко: задача (уйдёт в Telegram) или
+  // комментарий на это время, на час (решение владельца 29.10.2026)
+  [].slice.call($('view').querySelectorAll('[data-col]')).forEach(function (column) {
+    column.addEventListener('click', function (event) {
+      if (event.target !== column) return;
+      var from = +column.getAttribute('data-from');
+      var minutes = Math.floor((from + event.offsetY / HOUR_PX) * 60);
+      minutes = Math.max(0, Math.min(minutes - minutes % 30, 23 * 60 + 30));
+      var end = minutes + 60;
+      var day = column.getAttribute('data-col');
+      var at = pad(Math.floor(minutes / 60)) + ':' + pad(minutes % 60);
+      var when = {
+        due_date: day,
+        due_time: at,
+        end_time: end < 24 * 60 ? pad(Math.floor(end / 60)) + ':' + pad(end % 60) : null
+      };
+      sheet('<h2>' + escape(longDay(day)) + ' · ' + at + '</h2>'
+        + '<button class="go" type="button" id="pickTask" style="margin-top:14px">Задача</button>'
+        + '<p class="note">Уйдёт в Telegram, будет напоминать, пока не отметят</p>'
+        + '<button class="danger" type="button" id="pickNote" style="color:var(--ink)">'
+        + 'Комментарий</button><p class="note">Просто запись на это время</p>');
+      $('pickTask').addEventListener('click', function () {
+        closeSheet(); openTask(null, 'task', when);
+      });
+      $('pickNote').addEventListener('click', function () {
+        closeSheet(); openTask(null, 'note', when);
+      });
     });
   });
 
@@ -2571,8 +2904,8 @@ function drawCalendar() {
       else if (chosen.indexOf(key) >= 0) {
         chosen = chosen.filter(function (item) { return item !== key; });
       } else chosen.push(key);
-      // Выбраны все разделы направления — это и есть «Все»
-      if (chosen.length === calCats().length) chosen = [];
+      // Выбраны все разделы и комментарии — это и есть «Все»
+      if (chosen.length === calCats().length + 1) chosen = [];
       cal.filters[dir] = chosen;
       try {
         localStorage.setItem(FILTER_KEYS[dir], JSON.stringify(chosen));
@@ -2597,20 +2930,32 @@ function drawCalendar() {
   });
 }
 
-function taskRow(task, late) {
+function taskRow(task, late, day) {
+  var shopName = shops.length > 1 && !currentShop ? escape(calShopName(task.shop_id)) : '';
+  var tm = task.due_time ? escape(task.due_time)
+    + (task.end_time ? '<small>–' + escape(task.end_time) + '</small>' : '') : '';
+
+  // Комментарий — без галочки и без «просрочено»
+  if (isNote(task)) {
+    return '<div class="task note"><button class="open" type="button" data-open="'
+      + attr(task.uid) + '"><span class="tm">' + tm + '</span><span class="tt">'
+      + dirTag(task.direction) + '<span class="cat note">комментарий</span>'
+      + '<b>' + escape(task.note || task.title) + '</b>'
+      + (shopName ? '<span>' + shopName + '</span>' : '') + '</span></button></div>';
+  }
+
   var details = [];
   if (task.license_plate) details.push(escape(task.license_plate));
   if (task.counterparty_name) details.push(escape(task.counterparty_name));
   if (task.client_name) details.push(escape(task.client_name));
   if (task.amount) details.push(money(task.amount));
-  if (shops.length > 1 && !currentShop) details.push(escape(calShopName(task.shop_id)));
+  if (shopName) details.push(shopName);
 
-  var when = task.due_time || '—';
-  if (late && task.due_date !== cal.day) when = shortDay(task.due_date);
+  if (late && task.due_date !== (day || cal.day)) tm = escape(shortDay(task.due_date));
 
   return '<div class="task' + (late ? ' late' : '') + (task.done_at ? ' done' : '') + '">'
     + '<button class="open" type="button" data-open="' + attr(task.uid) + '">'
-    + '<span class="tm">' + escape(when) + '</span><span class="tt">'
+    + '<span class="tm">' + (tm || '—') + '</span><span class="tt">'
     + dirTag(task.direction)
     + '<span class="cat ' + attr(task.category) + '">' + escape(CAT_TITLES[task.category] || task.category)
     + '</span><b>' + escape(task.title) + '</b>'
@@ -2646,8 +2991,11 @@ function plusHour(task) {
   return { due_date: day, due_time: pad(Math.floor(minutes / 60)) + ':' + pad(minutes % 60) };
 }
 
-function openTask(task) {
+function openTask(task, kind, preset) {
   var adding = !task;
+  // Задача или комментарий — переключатель сверху окна
+  kind = (task ? task.kind : kind) === 'note' ? 'note' : 'task';
+  preset = preset || {};
   // Где задача — шиномонтаж или мойка. Без мойки — всегда шиномонтаж.
   // С мойкой новую задачу без выбора не поставить, и заранее ничего не
   // выбрано: промахнуться легко, а задача уехала бы не тем людям. Только
@@ -2663,7 +3011,8 @@ function openTask(task) {
   var filter = calFilter();
   task = task || { direction: direction,
                    category: (filter.length === 1 ? filter[0] : 'work'),
-                   due_date: cal.day, due_time: null, title: '', note: '',
+                   due_date: preset.due_date || cal.day, due_time: preset.due_time || null,
+                   end_time: preset.end_time || null, kind: kind, title: '', note: '',
                    license_plate: '', counterparty_uid: null, amount: null };
   var category = task.category;
   function fitCategory() {
@@ -2677,7 +3026,11 @@ function openTask(task) {
   var needShop = adding && shops.length > 1 && !currentShop;
   var shopId = adding ? (currentShop || (shops[0] && shops[0].id)) : task.shop_id;
 
-  var html = '<h2>' + (adding ? 'Новая задача' : 'Задача') + '</h2>';
+  var html = '<div class="segs" id="tKind" style="margin-bottom:10px">'
+    + [['task', 'Задача'], ['note', 'Комментарий']].map(function (pair) {
+      return '<button class="chip" type="button" data-kind="' + pair[0] + '" aria-pressed="'
+        + (pair[0] === kind) + '">' + pair[1] + '</button>';
+    }).join('') + '</div>';
   if (!adding) {
     html += '<div class="when">создал: ' + escape(task.created_by || '—')
       + (SOURCE_TITLES[task.source] ? ' · ' + SOURCE_TITLES[task.source] : '')
@@ -2706,18 +3059,25 @@ function openTask(task) {
     html += '<label>Где</label><div>' + dirTag(direction) + '</div>';
   }
 
-  html += '<label>Раздел</label><div class="segs" id="tCats"></div>';
-
   html += '<div class="two"><div><label for="tDate">Дата</label>'
     + '<input id="tDate" type="date" value="' + attr(task.due_date) + '"></div>'
-    + '<div><label for="tTime">Время</label>'
-    + '<input id="tTime" type="time" value="' + attr(task.due_time || '') + '"></div></div>'
-    + '<p class="note">Время можно не ставить</p>';
+    + '<div><label for="tTime">С</label>'
+    + '<input id="tTime" type="time" value="' + attr(task.due_time || '') + '"></div>'
+    + '<div><label for="tEnd">До</label>'
+    + '<input id="tEnd" type="time" value="' + attr(task.end_time || '') + '"></div></div>'
+    + '<p class="note">Время можно не ставить — будет «без времени»</p>';
 
-  html += '<label for="tTitle">Что за задача</label>'
+  // Комментарий — одно поле текста; длинный целиком лежит в note
+  html += '<div id="tNoteOnly"><label for="tComment">Комментарий</label>'
+    + '<textarea id="tComment" maxlength="4000">'
+    + escape(isNote(task) ? (task.note || task.title || '') : '') + '</textarea></div>';
+
+  html += '<div id="tTaskOnly"><label>Раздел</label><div class="segs" id="tCats"></div>';
+
+  html += '<label for="tTitle">Что сделать</label>'
     + '<input id="tTitle" type="text" maxlength="200" value="' + attr(task.title) + '"'
     + ' placeholder="Привезти комплект со склада">'
-    + '<label for="tNote">Что сделать</label>'
+    + '<label for="tNote">Подробно</label>'
     + '<textarea id="tNote" maxlength="4000">' + escape(task.note || '') + '</textarea>'
     + '<div class="two"><div><label for="tPlate">Машина</label>'
     + '<input id="tPlate" type="text" maxlength="20" value="' + attr(task.license_plate || '')
@@ -2725,7 +3085,8 @@ function openTask(task) {
     + '<div id="tCpBox"><label for="tCp">Контрагент</label><select id="tCp"></select></div></div>'
     + '<div id="tAmountBox"><label for="tAmount">Сумма</label>'
     + '<input id="tAmount" type="number" inputmode="decimal" value="'
-    + (task.amount != null ? attr(task.amount) : '') + '"></div>';
+    + (task.amount != null ? attr(task.amount) : '') + '"></div></div>';
+  html += '<p class="note" id="tKindNote"></p>';
 
   if (task.client_name || task.client_phone || task.storage_ref) {
     html += '<p class="note">'
@@ -2829,6 +3190,43 @@ function openTask(task) {
   refreshPeople();
   showAmount();
 
+  // Переключили вид — текст переносим, чтобы не набирать заново
+  function showKind() {
+    var note = kind === 'note';
+    $('tNoteOnly').hidden = !note;
+    $('tTaskOnly').hidden = note;
+    if ($('tDone')) $('tDone').hidden = note;
+    $('tKindNote').textContent = note
+      ? 'Комментарий — просто запись на день: без галочки, не напоминает, не краснеет '
+        + 'и никуда не переходит. Видят все — в цеху и в дашборде.'
+      : 'Задача — с галочкой «сделано». Сразу уходит в Telegram, висит в ленте над нарядами, краснеет, если '
+        + 'просрочена, и переходит на завтра, пока её не отметят.';
+    $('tSave').textContent = adding ? (note ? 'Сохранить комментарий' : 'Поставить задачу')
+      : 'Сохранить';
+  }
+  [].slice.call($('tKind').querySelectorAll('[data-kind]')).forEach(function (button) {
+    button.addEventListener('click', function () {
+      var chosen = button.getAttribute('data-kind');
+      if (chosen === kind) return;
+      [].slice.call($('tKind').querySelectorAll('[data-kind]')).forEach(function (other) {
+        other.setAttribute('aria-pressed', String(other === button));
+      });
+      if (chosen === 'note') {
+        $('tComment').value = [$('tTitle').value.trim(), $('tNote').value.trim()]
+          .filter(Boolean).join('\n');
+      } else {
+        var text = $('tComment').value.trim();
+        var cut = text.indexOf('\n');
+        $('tTitle').value = (cut < 0 ? text : text.slice(0, cut)).slice(0, 200);
+        $('tNote').value = cut < 0 ? '' : text.slice(cut + 1).trim();
+      }
+      kind = chosen;
+      $('formError').hidden = true;
+      showKind();
+    });
+  });
+  showKind();
+
   if (askWhere) {
     [].slice.call($('tWhere').querySelectorAll('[data-where]')).forEach(function (button) {
       button.addEventListener('click', function () {
@@ -2863,21 +3261,41 @@ function openTask(task) {
 
   $('tSave').addEventListener('click', function () {
     if (!direction) { formError('Выберите, шиномонтаж это или мойка'); return; }
-    var title = $('tTitle').value.trim();
-    if (!title) { formError('Напишите, что за задача'); return; }
     if (!$('tDate').value) { formError('Укажите дату'); return; }
+    var start = $('tTime').value, end = $('tEnd').value;
+    if (start && end && end <= start) { formError('«До» должно быть позже «с»'); return; }
 
-    var amount = $('tAmount').value.trim();
-    var body = {
-      category: category,
-      due_date: $('tDate').value,
-      due_time: $('tTime').value || null,
-      title: title,
-      note: $('tNote').value,
-      license_plate: $('tPlate').value,
-      counterparty_uid: $('tCp').value || null,
-      amount: amount ? amount : null
-    };
+    var body;
+    if (kind === 'note') {
+      var text = $('tComment').value.trim();
+      if (!text) { formError('Напишите комментарий'); return; }
+      var first = text.split('\n')[0].slice(0, 200);
+      body = {
+        kind: 'note',
+        category: category,
+        due_date: $('tDate').value,
+        due_time: start || null,
+        end_time: start ? (end || null) : null,
+        title: first,
+        note: text !== first ? text : null
+      };
+    } else {
+      var title = $('tTitle').value.trim();
+      if (!title) { formError('Напишите, что за задача'); return; }
+      var amount = $('tAmount').value.trim();
+      body = {
+        kind: 'task',
+        category: category,
+        due_date: $('tDate').value,
+        due_time: start || null,
+        end_time: start ? (end || null) : null,
+        title: title,
+        note: $('tNote').value,
+        license_plate: $('tPlate').value,
+        counterparty_uid: $('tCp').value || null,
+        amount: amount ? amount : null
+      };
+    }
 
     $('tSave').disabled = true;
     var request;

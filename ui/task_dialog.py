@@ -1,5 +1,9 @@
 """
-Окно задачи календаря: завести, поправить, перенести, отметить.
+Окно записи календаря: задача или комментарий.
+
+Задача — с галочкой «сделано»: висит в ленте над нарядами, краснеет,
+если просрочена, и переходит на завтра. Комментарий — просто запись на
+день: без галочки, не напоминает (решение владельца 29.10.2026).
 
 Открывается из ленты над нарядами, из календаря, из наряда машины и
 из карточки контрагента. Менять можно всё — задачу ставили второпях, а
@@ -9,7 +13,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 
 import styles
-from models.calendar import CATEGORIES, CATEGORY_TITLES, WORK, categories_of
+from models.calendar import CATEGORIES, CATEGORY_TITLES, WORK, categories_of, KIND_TASK, KIND_NOTE
 from services.calendar_service import CalendarService, TaskError
 from ui.plate_picker import PlatePicker, owner_of, owner_text
 from utils import get_moscow_time, as_naive
@@ -25,12 +29,22 @@ CATEGORY_COLORS = {
     'paint': ('#6d28d9', '#ede9fe'),
     'supply': ('#b45309', '#fef3c7'),
 }
+# Комментарий — серым: это не дело, а запись на день
+NOTE_COLORS = ('#475569', '#f1f5f9')
 
 WHO = 'Цех'
+KIND_TITLES = {KIND_TASK: 'Задача', KIND_NOTE: 'Комментарий'}
 
 
 def open_task(parent, db, task=None, on_saved=None, **defaults):
     return TaskDialog(parent, db, task, on_saved, defaults)
+
+
+def time_text(task):
+    """«11:00–12:30», «14:00» или пусто."""
+    if not task.due_time:
+        return ''
+    return task.due_time + (f'–{task.end_time}' if task.end_time else '')
 
 
 class TaskDialog:
@@ -40,20 +54,42 @@ class TaskDialog:
         self.task = task
         self.on_saved = on_saved
         defaults = defaults or {}
+        self.kind = (task.kind if task is not None else defaults.pop('kind', None)) or KIND_TASK
 
         self.dialog = tk.Toplevel(parent)
-        self.dialog.title('Задача' if task else 'Новая задача')
         self.dialog.configure(bg=styles.COLORS['bg_card'])
         self.dialog.transient(parent.winfo_toplevel())
         body = ttk.Frame(self.dialog, style='White.TFrame')
         body.pack(fill='both', expand=True, padx=18, pady=16)
+        self.body = body
+
+        # Задача или комментарий — переключатель сверху, как в макете
+        self.kind_row = tk.Frame(body, bg=styles.COLORS['border'], padx=1, pady=1)
+        self.kind_row.pack(anchor='w', pady=(0, 12))
+        self.kind_buttons = {}
+        for key in (KIND_TASK, KIND_NOTE):
+            button = tk.Label(self.kind_row, text=KIND_TITLES[key], padx=20, pady=5, cursor='hand2',
+                              font=(styles.DEFAULT_FONT, 11))
+            button.pack(side='left', padx=(0 if key == KIND_TASK else 1, 0))
+            button.bind('<Button-1>', lambda e, k=key: self.set_kind(k))
+            self.kind_buttons[key] = button
+
         form = ttk.Frame(body, style='White.TFrame')
         form.pack(fill='x')
         form.columnconfigure(1, weight=1)
+        self.form = form
+        self.rows = {}
 
         def label(row, text):
-            styles.create_label(form, text, 'Card.TLabel').grid(
-                row=row, column=0, sticky='nw', pady=4, padx=(0, 12))
+            widget = styles.create_label(form, text, 'Card.TLabel')
+            widget.grid(row=row, column=0, sticky='nw', pady=4, padx=(0, 12))
+            self.rows[row] = [widget]
+            return widget
+
+        def place(row, widget, **grid):
+            widget.grid(row=row, column=1, pady=4, **grid)
+            self.rows[row].append(widget)
+            return widget
 
         today = as_naive(get_moscow_time()).date()
 
@@ -83,29 +119,32 @@ class TaskDialog:
                                     variable=self.direction_var,
                                     command=self._direction_chosen).pack(side='left', padx=(0, 14))
 
-        label(0, 'Раздел')
-        self.category = tk.StringVar(value=task.category if task else defaults.get('category', WORK))
-        self.cats = ttk.Frame(form, style='White.TFrame')
-        self.cats.grid(row=0, column=1, sticky='w', pady=4)
-        self._draw_categories()
-
-        label(1, 'Дата и время')
-        when = ttk.Frame(form, style='White.TFrame')
-        when.grid(row=1, column=1, sticky='w', pady=4)
-        self.day = styles.create_entry(when, width=12)
-        self.day.pack(side='left')
+        label(0, 'Дата')
+        self.day = place(0, styles.create_entry(form, width=12), sticky='w')
         day = task.due_date if task else defaults.get('due_date', today)
         self.day.insert(0, day.strftime('%d.%m.%Y'))
-        self.time = styles.create_entry(when, width=7)
-        self.time.pack(side='left', padx=(8, 8))
-        self.time.insert(0, (task.due_time if task else defaults.get('due_time')) or '')
-        ttk.Label(when, text='время можно не ставить', font=styles.FONTS['small'],
-                  foreground=styles.COLORS['text_secondary'],
-                  background=styles.COLORS['bg_card']).pack(side='left')
 
-        label(2, 'Машина')
-        car_row = ttk.Frame(form, style='White.TFrame')
-        car_row.grid(row=2, column=1, sticky='w', pady=4)
+        label(1, 'Время')
+        when = place(1, ttk.Frame(form, style='White.TFrame'), sticky='w')
+        styles.create_label(when, 'с', 'Card.TLabel').pack(side='left', padx=(0, 6))
+        self.time = styles.create_entry(when, width=7)
+        self.time.pack(side='left')
+        self.time.insert(0, (task.due_time if task else defaults.get('due_time')) or '')
+        styles.create_label(when, 'до', 'Card.TLabel').pack(side='left', padx=(10, 6))
+        self.end_time = styles.create_entry(when, width=7)
+        self.end_time.pack(side='left')
+        self.end_time.insert(0, (task.end_time if task else defaults.get('end_time')) or '')
+        ttk.Label(when, text='можно не ставить — будет «без времени»', font=styles.FONTS['small'],
+                  foreground=styles.COLORS['text_secondary'],
+                  background=styles.COLORS['bg_card']).pack(side='left', padx=(10, 0))
+
+        label(2, 'Раздел')
+        self.category = tk.StringVar(value=task.category if task else defaults.get('category', WORK))
+        self.cats = place(2, ttk.Frame(form, style='White.TFrame'), sticky='w')
+        self._draw_categories()
+
+        label(3, 'Машина')
+        car_row = place(3, ttk.Frame(form, style='White.TFrame'), sticky='w')
         self.plate = PlatePicker(car_row, db, on_pick=self._show_owner)
         self.plate.frame.pack(side='left', anchor='n')
         self.owner_label = ttk.Label(car_row, text='', font=styles.FONTS['small'],
@@ -121,7 +160,7 @@ class TaskDialog:
         self.client_name = task.client_name if task else defaults.get('client_name')
         self.client_phone = task.client_phone if task else defaults.get('client_phone')
 
-        label(3, 'Контрагент')
+        label(4, 'Контрагент')
         self.parties = self.service.counterparties(self.direction) if self.direction else []
         names = ['—'] + [c.name for c in self.parties]
         self.party = tk.StringVar(value='—')
@@ -129,27 +168,39 @@ class TaskDialog:
         chosen = next((c for c in self.parties if c.uid == uid), None)
         if chosen is not None:
             self.party.set(chosen.name)
-        self.party_box = ttk.Combobox(form, textvariable=self.party, values=names, state='readonly',
-                                      width=30, font=styles.FONTS['normal'])
-        self.party_box.grid(row=3, column=1, sticky='w', pady=4)
-
-        label(4, 'Что за задача')
-        self.title = styles.create_entry(form, width=48)
-        self.title.grid(row=4, column=1, sticky='we', pady=4)
-        self.title.insert(0, (task.title if task else defaults.get('title')) or '')
+        self.party_box = place(4, ttk.Combobox(form, textvariable=self.party, values=names,
+                                               state='readonly', width=30,
+                                               font=styles.FONTS['normal']), sticky='w')
 
         label(5, 'Что сделать')
-        self.note = tk.Text(form, height=4, width=48, wrap='word', font=styles.FONTS['normal'],
-                            relief='solid', borderwidth=1)
-        self.note.grid(row=5, column=1, sticky='we', pady=4)
+        self.title = place(5, styles.create_entry(form, width=48), sticky='we')
+        self.title.insert(0, (task.title if task else defaults.get('title')) or '')
+
+        label(6, 'Подробно')
+        self.note = place(6, tk.Text(form, height=4, width=48, wrap='word',
+                                     font=styles.FONTS['normal'], relief='solid', borderwidth=1),
+                          sticky='we')
         self.note.insert('1.0', (task.note if task else defaults.get('note')) or '')
 
-        label(6, 'Сумма, ₽')
-        self.amount = styles.create_entry(form, width=12)
-        self.amount.grid(row=6, column=1, sticky='w', pady=4)
+        label(7, 'Сумма, ₽')
+        self.amount = place(7, styles.create_entry(form, width=12), sticky='w')
         amount = task.amount if task else defaults.get('amount')
         if amount:
             self.amount.insert(0, f'{amount:g}')
+
+        # Комментарий — одно поле текста. Длинный целиком лежит в «note»,
+        # в заголовке — его начало: его и видно в календаре
+        label(8, 'Комментарий')
+        self.comment = place(8, tk.Text(form, height=5, width=48, wrap='word',
+                                        font=styles.FONTS['normal'], relief='solid', borderwidth=1),
+                             sticky='we')
+        if task is not None and task.kind == KIND_NOTE:
+            self.comment.insert('1.0', task.note or task.title or '')
+
+        self.hint = ttk.Label(body, font=styles.FONTS['small'], wraplength=560, justify='left',
+                              foreground=styles.COLORS['text_secondary'],
+                              background=styles.COLORS['bg_card'])
+        self.hint.pack(anchor='w', pady=(10, 0))
 
         if task is not None:
             styles.create_label(body, 'Перенести', 'Card.TLabel').pack(anchor='w', pady=(10, 4))
@@ -165,11 +216,15 @@ class TaskDialog:
 
         buttons = ttk.Frame(body, style='White.TFrame')
         buttons.pack(fill='x', pady=(14, 0))
+        self.done_button = None
         if task is not None:
-            styles.create_button(buttons, 'Вернуть в работу' if task.done_at else '✓ Сделано',
-                                 self.toggle_done, 'Success.TButton').pack(side='left')
-            styles.create_button(buttons, 'Удалить', self.delete,
-                                 'Secondary.TButton').pack(side='left', padx=(6, 0))
+            self.done_button = styles.create_button(
+                buttons, 'Вернуть в работу' if task.done_at else '✓ Сделано',
+                self.toggle_done, 'Success.TButton')
+            self.done_button.pack(side='left')
+            self.delete_button = styles.create_button(buttons, 'Удалить', self.delete,
+                                                      'Secondary.TButton')
+            self.delete_button.pack(side='left', padx=(6, 0))
             who = SOURCE_TITLES.get(task.source, task.source or '')
             info = f'создал: {task.created_by or who}' + (f' · {who}' if task.created_by and who else '')
             if task.done_at:
@@ -182,11 +237,57 @@ class TaskDialog:
         styles.create_button(buttons, 'Отмена', self.dialog.destroy,
                              'Secondary.TButton').pack(side='right', padx=(0, 6))
 
+        self.set_kind(self.kind)
         styles.center_window(self.dialog, parent.winfo_toplevel())
         self.dialog.grab_set()
-        self.title.focus_set()
 
     # ------------------------------------------------------------------
+
+    def set_kind(self, kind):
+        """Переключить вид: у комментария — только дата, время и текст."""
+        # Текст переносим из одного вида в другой: передумали — не набирать заново
+        if kind != self.kind:
+            if kind == KIND_NOTE:
+                text = self.title.get().strip()
+                more = self.note.get('1.0', 'end').strip()
+                self.comment.delete('1.0', 'end')
+                self.comment.insert('1.0', '\n'.join(t for t in (text, more) if t))
+            else:
+                text = self.comment.get('1.0', 'end').strip()
+                first, _, rest = text.partition('\n')
+                self.title.delete(0, 'end')
+                self.title.insert(0, first[:200])
+                self.note.delete('1.0', 'end')
+                self.note.insert('1.0', rest.strip())
+        self.kind = kind
+        note = kind == KIND_NOTE
+        for key, button in self.kind_buttons.items():
+            on = key == kind
+            button.config(bg=styles.COLORS['primary'] if on else styles.COLORS['bg_card'],
+                          fg='white' if on else styles.COLORS['text_secondary'],
+                          font=(styles.DEFAULT_FONT, 11, 'bold' if on else 'normal'))
+        for row, widgets in self.rows.items():
+            shown = row in (0, 1, 8) if note else row != 8
+            for widget in widgets:
+                if shown:
+                    widget.grid()
+                else:
+                    widget.grid_remove()
+        if self.done_button is not None:
+            if note:
+                self.done_button.pack_forget()
+            elif not self.done_button.winfo_manager():
+                self.done_button.pack(side='left', before=self.delete_button)
+        self.hint.config(text=(
+            'Комментарий — просто запись на день: без галочки, не напоминает, не краснеет '
+            'и никуда не переходит. Видят все — в цеху и в дашборде.' if note else
+            'Задача — с галочкой «сделано». Сразу уходит в Telegram, висит в ленте над '
+            'нарядами, краснеет, если просрочена, и переходит на завтра, пока её не отметят.'))
+        if self.task is None:
+            self.dialog.title('Новый комментарий' if note else 'Новая задача')
+        else:
+            self.dialog.title('Комментарий' if note else 'Задача')
+        (self.comment if note else self.title).focus_set()
 
     def _show_owner(self, plate):
         car, owner = owner_of(self.db, plate)
@@ -224,6 +325,14 @@ class TaskDialog:
         self.party_box.config(values=['—'] + [c.name for c in self.parties])
 
     def fields(self):
+        times = dict(due_date=self.day.get(), due_time=self.time.get(),
+                     end_time=self.end_time.get(), kind=self.kind)
+        if self.kind == KIND_NOTE:
+            text = self.comment.get('1.0', 'end').strip()
+            first = text.split('\n', 1)[0][:200]
+            # Короткий однострочный — только заголовок; длинный — целиком в note
+            return dict(times, title=first, note=text if text != first else None,
+                        category=self.category.get() if self.direction else WORK)
         amount = self.amount.get().strip().replace(' ', '').replace(',', '.')
         try:
             amount = float(amount) if amount else None
@@ -231,8 +340,7 @@ class TaskDialog:
             raise TaskError('Сумма — числом, например 18700')
         party = next((c for c in self.parties if c.name == self.party.get()), None)
         return dict(
-            category=self.category.get(), due_date=self.day.get(),
-            due_time=self.time.get(), title=self.title.get(),
+            times, category=self.category.get(), title=self.title.get(),
             note=self.note.get('1.0', 'end').strip() or None,
             license_plate=self.plate.get() or None,
             client_name=self.client_name if self.plate.get() else None,
@@ -244,22 +352,36 @@ class TaskDialog:
             self.on_saved()
         self.dialog.destroy()
 
+    def _title(self):
+        return KIND_TITLES[self.kind]
+
     def save(self):
         if not self.direction:
-            messagebox.showerror('Задача', 'Выберите, шиномонтаж это или мойка', parent=self.dialog)
+            messagebox.showerror(self._title(), 'Выберите, шиномонтаж это или мойка',
+                                 parent=self.dialog)
             return
         try:
             fields = self.fields()
+            # Новая задача (или комментарий, который сделали задачей) —
+            # сразу в Telegram; комментарий просто записывается
+            announce = self.kind == KIND_TASK and (self.task is None or self.task.kind == KIND_NOTE)
             if self.task is None:
                 self.task = self.service.create(created_by=WHO, direction=self.direction, **fields)
             else:
                 self.service.update(self.task, **fields)
+            if announce:
+                try:
+                    self.service.announce(self.task)
+                except Exception as e:
+                    self.db.rollback()
+                    from logger import log
+                    log.error(f'Задача не встала в очередь Telegram: {e}')
         except TaskError as e:
-            messagebox.showerror('Задача', str(e), parent=self.dialog)
+            messagebox.showerror(self._title(), str(e), parent=self.dialog)
             return
         except Exception as e:
             self.db.rollback()
-            messagebox.showerror('Задача', f'Не удалось сохранить: {e}', parent=self.dialog)
+            messagebox.showerror(self._title(), f'Не удалось сохранить: {e}', parent=self.dialog)
             return
         self._done()
 
@@ -268,7 +390,7 @@ class TaskDialog:
             self.service.move(self.task, **kwargs)
         except Exception as e:
             self.db.rollback()
-            messagebox.showerror('Задача', f'Не удалось перенести: {e}', parent=self.dialog)
+            messagebox.showerror(self._title(), f'Не удалось перенести: {e}', parent=self.dialog)
             return
         self._done()
 
@@ -277,7 +399,8 @@ class TaskDialog:
         self._done()
 
     def delete(self):
-        if not messagebox.askyesno('Удалить задачу', f'Удалить «{self.task.title}»?',
+        what = 'комментарий' if self.kind == KIND_NOTE else 'задачу'
+        if not messagebox.askyesno(f'Удалить {what}', f'Удалить «{self.task.title}»?',
                                    parent=self.dialog):
             return
         self.service.delete(self.task)

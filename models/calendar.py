@@ -28,6 +28,11 @@ def categories_of(direction):
 
 SOURCE_SHOP, SOURCE_DASHBOARD, SOURCE_AUTO, SOURCE_CABINET = 'shop', 'dashboard', 'auto', 'cabinet'
 
+# Вид записи: задача — с галочкой, напоминает и переходит на завтра;
+# комментарий — просто запись на день (решение владельца 29.10.2026)
+KIND_TASK, KIND_NOTE = 'task', 'note'
+KINDS = (KIND_TASK, KIND_NOTE)
+
 
 def new_uid():
     return str(uuid.uuid4())
@@ -44,6 +49,8 @@ class CalendarTask(Base):
     direction = Column(String(10), nullable=False, default='tire', server_default='tire')
     due_date = Column(Date, nullable=False, index=True)
     due_time = Column(String(5), nullable=True)          # «10:00» или пусто
+    end_time = Column(String(5), nullable=True)          # до скольки, без «с» не бывает
+    kind = Column(String(10), nullable=False, default='task', server_default='task')
 
     title = Column(String(200), nullable=False, default='')
     note = Column(Text, nullable=True)
@@ -89,6 +96,9 @@ class Counterparty(Base):
     address = Column(String(300), nullable=True)
     inn = Column(String(20), nullable=True)
     note = Column(Text, nullable=True)
+    # Ник в Telegram без «@»: задачу с этим контрагентом шлём и ему,
+    # если он писал боту (решение владельца 29.10.2026)
+    telegram = Column(String(64), nullable=True)
     deleted = Column(Boolean, nullable=False, default=False)
     updated_at = Column(DateTime(timezone=True), default=get_moscow_time)
     synced_at = Column(DateTime(timezone=True), nullable=True)
@@ -111,3 +121,5 @@ class TelegramOutbox(Base):
     sent_at = Column(DateTime(timezone=True), nullable=True)
     attempts = Column(Integer, nullable=False, default=0)
     last_error = Column(String(300), nullable=True)
+    # Кому лично: ник контрагента. Пусто — получателям вида
+    target = Column(String(64), nullable=True)

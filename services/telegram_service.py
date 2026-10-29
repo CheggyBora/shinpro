@@ -52,17 +52,20 @@ class Recipient:
     цифрой, после чего сводка молча уходила в никуда.
     """
 
-    def __init__(self, chat_id, name='', enabled=True):
+    def __init__(self, chat_id, name='', enabled=True, username=''):
         self.chat_id = str(chat_id or '').strip()
         self.name = (name or '').strip()
         self.enabled = bool(enabled)
+        # Ник без «@», маленькими: по нему находим чат контрагента
+        self.username = (username or '').strip().lstrip('@').lower()
 
     @property
     def title(self):
         return self.name or self.chat_id
 
     def to_dict(self):
-        return {'chat_id': self.chat_id, 'name': self.name, 'enabled': self.enabled}
+        return {'chat_id': self.chat_id, 'name': self.name, 'enabled': self.enabled,
+                'username': self.username}
 
 
 class DeliveryResult:
@@ -135,7 +138,7 @@ class TelegramService:
             try:
                 for row in json.loads(raw):
                     recipient = Recipient(row.get('chat_id'), row.get('name'),
-                                          row.get('enabled', True))
+                                          row.get('enabled', True), row.get('username'))
                     if recipient.chat_id:
                         recipients.append(recipient)
             except (ValueError, TypeError, AttributeError):
@@ -148,6 +151,20 @@ class TelegramService:
 
         legacy = (self._settings().get(CHAT_KEY, '') or '').strip()
         return [Recipient(legacy)] if legacy else []
+
+    def chat_of(self, username):
+        """Чат того, кто писал боту под этим ником. Не писал — None."""
+        username = (username or '').strip().lstrip('@').lower()
+        if not username:
+            return None
+        for recipient in self.get_recipients():
+            if recipient.username == username:
+                return recipient.chat_id
+        return None
+
+    def usernames(self):
+        """{ник: чат} всех, кто писал боту, — серверу для задач из дашборда."""
+        return {r.username: r.chat_id for r in self.get_recipients() if r.username}
 
     def get_active_recipients(self):
         return [r for r in self.get_recipients() if r.enabled and r.chat_id]
@@ -205,15 +222,18 @@ class TelegramService:
 
             seen += 1
             name = _name_of(chat)
+            username = chat.get('username') or ''
 
             if chat_id in known:
                 # Имя могло появиться или смениться — подтянем, но
                 # галочку «отправлять» не трогаем: её ставил человек
                 if name and not known[chat_id].name:
                     known[chat_id].name = name
+                if username:
+                    known[chat_id].username = username.lower()
                 continue
 
-            fresh = Recipient(chat_id, name, enabled=False)
+            fresh = Recipient(chat_id, name, enabled=False, username=username)
             order.append(fresh)
             known[chat_id] = fresh
             added += 1

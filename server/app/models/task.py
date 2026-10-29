@@ -51,6 +51,12 @@ SOURCE_AUTO = 'auto'
 SOURCE_CABINET = 'cabinet'
 SOURCES = (SOURCE_SHOP, SOURCE_DASHBOARD, SOURCE_AUTO, SOURCE_CABINET)
 
+# Вид записи: задача — с галочкой, напоминает и переходит на завтра;
+# комментарий — просто запись на день (решение владельца 29.10.2026)
+KIND_TASK = 'task'
+KIND_NOTE = 'note'
+KINDS = (KIND_TASK, KIND_NOTE)
+
 
 class Task(Base):
     __tablename__ = 'tasks'
@@ -70,6 +76,10 @@ class Task(Base):
     due_date = Column(Date, nullable=False)
     # «HH:MM» или пусто: у «заказать грузики» времени нет
     due_time = Column(String(5), nullable=True)
+    # До скольки — «HH:MM» или пусто. Без начала конца не бывает
+    end_time = Column(String(5), nullable=True)
+    kind = Column(String(10), default=KIND_TASK, nullable=False,
+                  server_default=KIND_TASK)
 
     title = Column(String(200), nullable=False)
     note = Column(Text, nullable=True)
@@ -118,6 +128,8 @@ class Counterparty(Base):
     address = Column(String(300), nullable=True)
     inn = Column(String(20), nullable=True)
     note = Column(Text, nullable=True)
+    # Ник в Telegram без «@»: задачу с контрагентом шлём и ему лично
+    telegram = Column(String(64), nullable=True)
     deleted = Column(Boolean, default=False, nullable=False,
                      server_default='0')
 

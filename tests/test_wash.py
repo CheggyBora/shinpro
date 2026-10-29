@@ -248,8 +248,9 @@ check('календарь общий — переключатель сверху
 check('есть строка «Направление»', len(cal.direction_row.winfo_children()) == 4)
 cal.set_direction_filter('wash')
 filters = [w.cget('text') for w in cal.filter_row.winfo_children()]
-check('фильтр «Мойка»: Рабочая, Поставки, Все',
-      [f.replace('● ', '') for f in filters] == ['Разделы:', 'Рабочая', 'Поставки', 'Все'], str(filters))
+check('фильтр «Мойка»: Рабочая, Поставки, Комментарии, Все',
+      [f.replace('● ', '') for f in filters] == ['Разделы:', 'Рабочая', 'Поставки',
+                                                 '✎ Комментарии', 'Все'], str(filters))
 titles = [t.title for t in cal.service.day(today, None, cal.query_direction())]
 check('видны только задачи мойки', titles == ['Химия: шампунь 2 канистры'], str(titles))
 cal.set_direction_filter('all')

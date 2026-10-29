@@ -39,7 +39,10 @@ TIMEOUT_SECONDS = 15
 KIND_STORAGE = 'storage'
 KIND_PAINT = 'paint'
 KIND_DIGEST = 'digest'
-KINDS = (KIND_STORAGE, KIND_PAINT, KIND_DIGEST)
+# Задача, поставленная в календаре дашборда, — сразу в Telegram
+# (решение владельца 29.10.2026). Комментарий не уходит никуда
+KIND_TASK = 'task'
+KINDS = (KIND_STORAGE, KIND_PAINT, KIND_DIGEST, KIND_TASK)
 
 
 def _split(value):
@@ -116,6 +119,46 @@ def send(db, text, shop=None, kind=None):
             log.warning('Не удалось отправить в Telegram для %s: %s', chat, e)
 
     return delivered
+
+
+def personal_chat(db, shop, username):
+    """
+    Чат контрагента по нику. Ник → чат присылает цех: это те, кто писал
+    боту. Сервер сам у бота не спрашивает — иначе он забирал бы
+    сообщения, которые ждёт цех.
+    """
+    username = (username or '').strip().lstrip('@').lower()
+    if not username:
+        return None
+    try:
+        known = json.loads(shop_settings.get(db, 'telegram_usernames', shop=shop) or '{}')
+    except (TypeError, ValueError):
+        return None
+    chat = known.get(username) if isinstance(known, dict) else None
+    return str(chat) if chat else None
+
+
+def send_personal_in_background(text, shop, username, kind=None):
+    """Лично контрагенту, если он не среди получателей вида (те уже получили)."""
+    shop_id = getattr(shop, 'id', shop)
+
+    def worker():
+        from app.database import SessionLocal
+
+        db = SessionLocal()
+        try:
+            chat = personal_chat(db, shop_id, username)
+            token = token_of(db, shop_id)
+            if not chat or not token or chat in chats_for(db, shop_id, kind):
+                return
+            try:
+                _post(token, chat, text)
+            except Exception as e:
+                log.warning('Не удалось отправить контрагенту @%s: %s', username, e)
+        finally:
+            db.close()
+
+    threading.Thread(target=worker, daemon=True).start()
 
 
 def send_in_background(text, shop=None, kind=None):

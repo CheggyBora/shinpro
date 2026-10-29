@@ -13,7 +13,7 @@ from services.calendar_service import CalendarService, TaskError
 
 FIELDS = [('name', 'Название'), ('kind', 'Чем занимается'), ('contact', 'Контакт'),
           ('phone', 'Телефон'), ('email', 'Почта'), ('address', 'Адрес'),
-          ('inn', 'ИНН'), ('note', 'Заметка')]
+          ('inn', 'ИНН'), ('telegram', 'Telegram'), ('note', 'Заметка')]
 
 
 class CounterpartiesEditor:
@@ -57,6 +57,11 @@ class CounterpartiesEditor:
             entry = styles.create_entry(form, width=40)
             entry.grid(row=row, column=1, sticky='we', padx=(10, 0), pady=3)
             self.entries[key] = entry
+        # Пишет ли контрагент боту — без этого личное сообщение не дойдёт
+        self.telegram_hint = ttk.Label(form, text='', font=styles.FONTS['small'], wraplength=420,
+                                       justify='left', background=styles.COLORS['bg_card'],
+                                       foreground=styles.COLORS['text_secondary'])
+        self.telegram_hint.grid(row=len(FIELDS), column=1, sticky='w', padx=(10, 0))
         buttons = ttk.Frame(right, style='White.TFrame')
         buttons.pack(fill='x', pady=(10, 0))
         styles.create_button(buttons, 'Сохранить', self.save, 'Primary.TButton').pack(side='left')
@@ -97,12 +102,27 @@ class CounterpartiesEditor:
         for key, entry in self.entries.items():
             entry.delete(0, tk.END)
             if row is not None and getattr(row, key):
-                entry.insert(0, getattr(row, key))
+                value = getattr(row, key)
+                entry.insert(0, '@' + value if key == 'telegram' else value)
+        self._telegram_hint(row)
         self.tasks.delete(0, tk.END)
         if row is not None:
             for task in self.service.tasks_of_counterparty(row.uid):
                 mark = '✓ ' if task.done_at else ''
                 self.tasks.insert(tk.END, f'{mark}{task.due_date:%d.%m.%y} · {task.title}')
+
+    def _telegram_hint(self, row):
+        from services.telegram_service import TelegramService
+        nick = row.telegram if row is not None else None
+        if not nick:
+            text = ('Ник в Telegram, например @ivan_shiny. Задача с этим контрагентом '
+                    'придёт ему лично — если он нажал «Старт» у бота.')
+        elif TelegramService(self.db).chat_of(nick):
+            text = f'✓ @{nick} пишет боту — задачи с ним уходят ему в Telegram.'
+        else:
+            text = (f'@{nick} ещё не писал боту. Попросите открыть бота и нажать «Старт» — '
+                    'задачи начнут приходить ему сами.')
+        self.telegram_hint.config(text=text)
 
     def new(self):
         self.listbox.selection_clear(0, tk.END)

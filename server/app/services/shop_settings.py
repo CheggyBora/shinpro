@@ -59,6 +59,7 @@ DEFAULTS = {
     'telegram_chats_storage': '',
     'telegram_chats_paint': '',
     'telegram_chats_digest': '',
+    'telegram_chats_task': '',
 
     # Сводка задач владельцу: утром — что на сегодня, вечером — что
     # осталось не отмечено. Присылает цех

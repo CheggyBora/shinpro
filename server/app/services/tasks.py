@@ -19,7 +19,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from app.models import Task, Counterparty, CATEGORY_TITLES, SOURCES
 from app.models.task import (SOURCE_CABINET, SOURCE_DASHBOARD, SOURCE_SHOP,
                              STORAGE, TIRE, WASH, DIRECTIONS,
-                             DIRECTION_CATEGORIES)
+                             DIRECTION_CATEGORIES, KIND_TASK, KIND_NOTE, KINDS)
 from app.utils import (normalize_plate, normalize_phone, now as shop_now,
                        MOSCOW_OFFSET_HOURS)
 
@@ -44,7 +44,7 @@ LIMITS = {
 }
 COUNTERPARTY_LIMITS = {
     'uid': 40, 'name': 200, 'kind': 200, 'contact': 200, 'phone': 40,
-    'email': 200, 'address': 300, 'inn': 20, 'note': 4000,
+    'email': 200, 'address': 300, 'inn': 20, 'note': 4000, 'telegram': 64,
 }
 
 
@@ -222,6 +222,20 @@ def clean_fields(data, partial=False, direction=None):
     if given('due_time'):
         fields['due_time'] = parse_clock(data.get('due_time'))
 
+    # Время «до». Без «с» его не бывает, и раньше «с» — тоже
+    if given('end_time'):
+        fields['end_time'] = parse_clock(data.get('end_time'))
+        if 'due_time' in fields:
+            if fields['due_time'] is None:
+                fields['end_time'] = None
+            elif fields['end_time'] and fields['end_time'] <= fields['due_time']:
+                raise TaskError('«До» должно быть позже «с»')
+
+    # Задача или комментарий. Незнакомое — задача: её хотя бы не потеряют
+    if given('kind'):
+        kind = str(data.get('kind') or KIND_TASK).strip().lower()
+        fields['kind'] = kind if kind in KINDS else KIND_TASK
+
     if given('title'):
         title = _text(data.get('title'), LIMITS['title'])
         if not title:
@@ -263,6 +277,8 @@ def to_dict(task):
         'category': task.category,
         'due_date': task.due_date.isoformat() if task.due_date else None,
         'due_time': task.due_time,
+        'end_time': task.end_time,
+        'kind': task.kind or KIND_TASK,
         'title': task.title,
         'note': task.note,
         'license_plate': task.license_plate,
@@ -293,6 +309,7 @@ def counterparty_dict(row):
         'address': row.address,
         'inn': row.inn,
         'note': row.note,
+        'telegram': row.telegram,
         'deleted': bool(row.deleted),
         'updated_at': _iso(row.updated_at),
     }
@@ -354,6 +371,13 @@ def merge_tasks(db, shop, items, now=None):
         if row is not None and not _newer(theirs, row.updated_at):
             continue
 
+        # Старый цех вида и времени «до» не знает: не присылал — не
+        # трогаем, иначе его отметка превращала бы комментарий в задачу
+        if row is not None:
+            for key in ('kind', 'end_time'):
+                if key not in item:
+                    fields.pop(key, None)
+
         if row is None:
             row = Task(shop_id=shop.id, uid=uid,
                        created_at=parse_moment(item.get('created_at')) or now)
@@ -409,6 +433,10 @@ def merge_counterparties(db, shop, items, now=None):
         for key in ('kind', 'contact', 'phone', 'email', 'address', 'inn',
                     'note'):
             setattr(row, key, _text(item.get(key), COUNTERPARTY_LIMITS[key]))
+        # Старый цех ника не знает: не прислал — не трогаем
+        if 'telegram' in item:
+            nick = (_text(item.get('telegram'), 64) or '').lstrip('@').lower()
+            row.telegram = nick or None
         row.deleted = bool(item.get('deleted'))
         row.updated_at = theirs
         db.flush()
@@ -493,9 +521,11 @@ def for_range(db, shop_ids, day_from, day_to, today=None, direction=None):
     rows = base.filter(Task.due_date >= day_from,
                        Task.due_date <= day_to).all()
 
+    # Комментарий не просрочивается: это запись на день, а не дело
     overdue = []
     if day_from <= today <= day_to:
         overdue = base.filter(Task.due_date < today,
+                              Task.kind != KIND_NOTE,
                               Task.done_at.is_(None)).all()
 
     def order(row):
@@ -548,6 +578,10 @@ def patch(db, row, data, author=None, now=None):
 
     if 'deleted' in data:
         row.deleted = bool(data.get('deleted'))
+
+    # Сдвинули «с» на позже «до» или убрали время — «до» больше не к месту
+    if row.end_time and (not row.due_time or row.end_time <= row.due_time):
+        row.end_time = None
 
     _stamp(row, now)
     db.commit()
@@ -759,6 +793,7 @@ def _minutes(value, fallback):
 def _undone(db, shop_id, today):
     base = db.query(Task).filter(Task.shop_id == shop_id,
                                  Task.deleted.is_(False),
+                                 Task.kind != KIND_NOTE,
                                  Task.done_at.is_(None))
     order = (Task.due_date, Task.due_time, Task.id)
     for_today = base.filter(Task.due_date == today).order_by(*order).all()
@@ -770,11 +805,49 @@ def _undone(db, shop_id, today):
     return sorted(for_today, key=key), sorted(overdue, key=key)
 
 
+def counterparty_of(task):
+    """Контрагент задачи — из той же сессии, что и задача."""
+    if not task.counterparty_uid:
+        return None
+    from sqlalchemy.orm import object_session
+    db = object_session(task)
+    if db is None:
+        return None
+    return db.query(Counterparty).filter(Counterparty.shop_id == task.shop_id,
+                                         Counterparty.uid == task.counterparty_uid).first()
+
+
+def telegram_text(task, counterparty_name=None):
+    """
+    Сообщение о новой задаче — то же, что шлёт цех. Комментарий сюда не
+    попадает: это запись на день, а не дело.
+    """
+    when = f'{task.due_date:%d.%m}'
+    if task.due_time:
+        when += f' {task.due_time}' + (f'–{task.end_time}' if task.end_time else '')
+    head = f'📅 <b>Новая задача</b> · {CATEGORY_TITLES.get(task.category, task.category)}'
+    if task.direction == WASH:
+        head = 'Мойка: ' + head
+    lines = [head, f'{when} — {html.escape(task.title)}']
+    if task.license_plate:
+        lines.append(f'Машина: {html.escape(task.license_plate)}')
+    if counterparty_name:
+        lines.append(f'Контрагент: {html.escape(counterparty_name)}')
+    if task.note:
+        lines.append(html.escape(task.note[:500]))
+    if task.amount:
+        lines.append(f'Сумма: {task.amount:,.0f} ₽'.replace(',', ' '))
+    if task.created_by:
+        lines.append(f'Поставил: {html.escape(task.created_by)} (дашборд)')
+    return '\n'.join(lines)
+
+
 def _line(task, with_date=False):
     parts = []
     if with_date:
         parts.append(f'{task.due_date:%d.%m}')
-    parts.append(task.due_time or '—')
+    parts.append((task.due_time + (f'–{task.end_time}' if task.end_time else ''))
+                 if task.due_time else '—')
     parts.append(CATEGORY_TITLES.get(task.category, task.category))
     parts.append(task.title)
     if task.license_plate:

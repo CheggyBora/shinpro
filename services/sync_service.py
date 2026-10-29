@@ -881,6 +881,11 @@ class SyncService:
             'telegram_chats_storage': telegram_outbox.chats_for_server(self.db, 'storage'),
             'telegram_chats_paint': telegram_outbox.chats_for_server(self.db, 'paint'),
             'telegram_chats_digest': telegram_outbox.chats_for_server(self.db, 'digest'),
+            'telegram_chats_task': telegram_outbox.chats_for_server(self.db, 'task'),
+            # Ник → чат тех, кто писал боту: задачу из дашборда с
+            # контрагентом сервер шлёт и ему лично
+            'telegram_usernames': json.dumps(telegram.usernames(), ensure_ascii=False,
+                                             sort_keys=True),
             'task_digest_enabled': settings.get('task_digest_enabled'),
             'task_digest_morning': settings.get('task_digest_morning'),
             'task_digest_evening': settings.get('task_digest_evening'),

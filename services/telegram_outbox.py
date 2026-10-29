@@ -18,10 +18,16 @@ from utils import get_moscow_time
 KINDS = {
     'storage': 'Склад: отвезти и привезти комплекты',
     'paint': 'Покраска дисков',
+    # Задача, поставленная в календаре, — сразу в Telegram; комментарий
+    # не уходит никуда (решение владельца 29.10.2026)
+    'task': 'Задачи из календаря',
     'digest': 'Сводка задач утром и вечером (с сервера)',
 }
 ROUTE_KEY = 'telegram_route_{kind}'
 MAX_ATTEMPTS = 20
+# Сколько ждать, пока контрагент нажмёт «Старт» у бота
+PERSONAL_WAIT_DAYS = 3
+_asked_at = None
 
 # Главное окно ставит сюда «дослать поскорее»
 ON_QUEUED = None
@@ -66,9 +72,13 @@ def chats_for_server(db, kind):
     return ','.join(c for c in route(db, kind) if c in active)
 
 
-def queue(db, kind, text):
-    """Положить сообщение в очередь. Отправит досылка."""
-    row = TelegramOutbox(kind=kind, text=text, created_at=get_moscow_time())
+def queue(db, kind, text, target=None):
+    """
+    Положить сообщение в очередь. Отправит досылка. target — ник
+    контрагента: тогда только ему лично.
+    """
+    row = TelegramOutbox(kind=kind, text=text, created_at=get_moscow_time(),
+                         target=target or None)
     db.add(row)
     db.commit()
     if ON_QUEUED is not None:
@@ -85,6 +95,41 @@ def pending(db):
         TelegramOutbox.attempts < MAX_ATTEMPTS).order_by(TelegramOutbox.id).all()
 
 
+def _personal(db, telegram, row):
+    """
+    Чат контрагента по нику. Не знаем — спросим бота, кто ему писал.
+    None — человек боту ещё не писал. [] — он и так среди получателей
+    вида: второй раз то же сообщение ему не шлём.
+    """
+    global _asked_at
+    from datetime import timedelta
+    from services.telegram_service import Recipient
+    from utils import as_naive
+    chat = telegram.chat_of(row.target)
+    now = as_naive(get_moscow_time())
+    # Бота спрашиваем не чаще раза в две минуты: досылка ходит каждые 20 секунд
+    if chat is None and (_asked_at is None or now - _asked_at > timedelta(minutes=2)):
+        _asked_at = now
+        try:
+            telegram.fetch_people()
+            db.commit()
+        except Exception as e:
+            log.warning(f"Не удалось спросить бота, кто ему писал: {e}")
+        chat = telegram.chat_of(row.target)
+    if chat is None:
+        row.last_error = f'@{row.target} ещё не писал боту'
+        # Ждём три дня: за это время человек нажмёт «Старт» — или уже не нажмёт
+        if row.created_at and now - as_naive(row.created_at) > timedelta(days=PERSONAL_WAIT_DAYS):
+            row.attempts = MAX_ATTEMPTS
+        db.commit()
+        return None
+    if chat in {person.chat_id for person in recipients(db, row.kind)}:
+        row.sent_at = get_moscow_time()
+        db.commit()
+        return []
+    return [Recipient(chat, '@' + row.target)]
+
+
 def flush(db):
     """
     Дослать всё, что ждёт. Возвращает, сколько ушло. Бот не настроен —
@@ -97,7 +142,13 @@ def flush(db):
         return 0
     sent = 0
     for row in pending(db):
-        people = recipients(db, row.kind)
+        if row.target:
+            people = _personal(db, telegram, row)
+            if people is None:
+                # Ещё не писал боту — подождём: напишет, и сообщение уйдёт
+                continue
+        else:
+            people = recipients(db, row.kind)
         if not people:
             return sent
         delivered = 0
