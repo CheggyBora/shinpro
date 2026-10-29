@@ -105,6 +105,54 @@ lanes = {id(t): (lane, count) for t, lane, count in CalendarTab._lanes([a, b, c,
 check('11:00–12:30 и 11:30 — две дорожки', lanes[id(a)] == (0, 2) and lanes[id(b)] == (1, 2))
 check('12:30 после конца — снова одна', lanes[id(d)] == (0, 1) and lanes[id(c)] == (0, 1))
 
+print('\n=== Щелчки в календаре (вариант В) ===')
+import tkinter as tk
+import styles
+import ui.calendar_tab as calendar_tab
+
+root = tk.Tk()
+# Окно за краем экрана: у спрятанного ширина сетки — 1 пиксель
+root.geometry('1200x800+-3000+0')
+styles.apply_modern_styles(root)
+tab = CalendarTab(root, db)
+tab.frame.pack(fill='both', expand=True)
+root.update()
+opened = []
+calendar_tab.open_task = lambda *args, **kwargs: opened.append((args, kwargs))
+
+other = today.replace(day=1) if today.day != 1 else today + timedelta(days=1)
+box_before = tab._cells[other][0]
+tab.select_day(other)
+check('щелчок по пустому месту дня — выделен, сетка не перестроена (двойной щелчок дойдёт)',
+      tab.selected == other and tab._cells[other][0] is box_before
+      and int(str(box_before.cget('highlightthickness'))) == 2)
+tab.new_note()
+check('«+ Комментарий» — на выделенный день', opened[-1][1].get('due_date') == other
+      and opened[-1][1].get('kind') == KIND_NOTE)
+
+tab.set_view('week')
+root.update()
+canvas = [w for w in tab.body.winfo_children() if isinstance(w, tk.Canvas)][0]
+root.update()
+
+
+class Click:
+    pass
+
+
+event = Click()
+event.x, event.y = canvas.winfo_width() - 20, canvas.winfo_height() // 2
+monday = tab.selected - timedelta(days=tab.selected.weekday())
+week_days = [monday + timedelta(days=i) for i in range(7)]
+hours = tab._hours([])
+tab._pick_slot(canvas, event, week_days, hours)
+check('щелчок по свободному времени — выделено', tab.slot is not None and tab.slot[0] == week_days[-1]
+      and bool(canvas.find_withtag('slot')), str(tab.slot))
+tab.new_task()
+check('«+ Задача» — на выделенное время', opened[-1][1].get('due_time') == tab.slot[1]
+      and opened[-1][1].get('end_time') == tab.slot[2])
+root.destroy()
+
 print('\n=== Telegram: задача уходит, комментарий — нет ===')
 from models.calendar import TelegramOutbox
 from services import telegram_outbox

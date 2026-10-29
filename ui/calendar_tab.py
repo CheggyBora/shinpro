@@ -82,6 +82,11 @@ class CalendarTab:
         # Главное окно ставит сюда «что-то поменялось» — обновить ленту
         self.on_changed = None
         self._grid_items = {}
+        # Выделенное время на сетке недели и дня: (день, «с», «до»).
+        # «+ Задача» и «+ Комментарий» ставят запись туда
+        self.slot = None
+        self._cells = {}
+        self._tip = None
         self._build()
         self.load()
 
@@ -226,6 +231,7 @@ class CalendarTab:
     # ------------------------------------------------------------------
 
     def load(self):
+        self._hide_tip()
         try:
             self._draw_views()
             self._draw_filters()
@@ -324,6 +330,8 @@ class CalendarTab:
         side = tk.Frame(self.body, bg=styles.COLORS['bg_card'], width=SIDE_WIDTH)
         side.pack(side='right', fill='y', padx=(14, 0))
         side.pack_propagate(False)
+        self._side = side
+        self._cells = {}
         self._draw_day_list(side, self.selected)
 
         grid = tk.Frame(self.body, bg=styles.COLORS['bg_card'])
@@ -352,23 +360,28 @@ class CalendarTab:
                         fg=(styles.COLORS['primary'] if day == today
                             else '#cbd5e1' if other else styles.COLORS['text_secondary']))
         head.pack(fill='x', padx=4, pady=(2, 1))
-        widgets = [box, head]
+        empty = [box, head]
         for task in tasks[:MONTH_CELL_ITEMS]:
             fg, bg = self._colors(task)
             style = 'italic' if is_note(task) else ('overstrike' if task.done_at else 'normal')
             label = tk.Label(box, text=self._short(task), anchor='w', bg=bg, fg=fg,
                              font=(styles.DEFAULT_FONT, 8, style))
             label.pack(fill='x', padx=3, pady=1)
-            widgets.append(label)
+            # Щелчок по записи — сразу её окно, наведение — полный текст
+            label.bind('<Button-1>', lambda e, t=task: self.edit(t))
+            self._hover(label, task)
+        more = None
         if len(tasks) > MONTH_CELL_ITEMS:
             more = tk.Label(box, text=f'ещё {len(tasks) - MONTH_CELL_ITEMS}', anchor='w',
                             bg=box['bg'], fg=styles.COLORS['text_secondary'],
                             font=(styles.DEFAULT_FONT, 8))
             more.pack(fill='x', padx=4)
-            widgets.append(more)
-        for widget in widgets:
+            empty.append(more)
+        # Пустое место: щелчок — выделить день, двойной — что поставить
+        for widget in empty:
             widget.bind('<Button-1>', lambda e, d=day: self.select_day(d))
-            widget.bind('<Double-1>', lambda e, d=day: self.open_day(d))
+            widget.bind('<Double-1>', lambda e, d=day: self._choose(e, due_date=d))
+        self._cells[day] = (box, [w for w in (head, more) if w is not None])
 
     def _draw_day_list(self, parent, day):
         styles.create_label(parent, day_title(day), 'CardHeading.TLabel').pack(anchor='w', pady=(0, 6))
@@ -385,7 +398,8 @@ class CalendarTab:
                       background=styles.COLORS['bg_card'], justify='left').pack(anchor='w', pady=8)
         for task, overdue in rows:
             self._task_row(holder, task, overdue)
-        ttk.Label(parent, text='Двойной щелчок по дню — день по часам.', font=styles.FONTS['small'],
+        ttk.Label(parent, text='Щелчок по записи — открыть. Двойной щелчок по пустому месту '
+                               'дня — задача или комментарий.', font=styles.FONTS['small'], wraplength=380,
                   foreground=styles.COLORS['text_secondary'],
                   background=styles.COLORS['bg_card']).pack(anchor='w', pady=(6, 0))
 
@@ -548,6 +562,7 @@ class CalendarTab:
                                        else 'overstrike' if task.done_at else 'normal'))
                 label.pack(fill='x', padx=2, pady=1)
                 label.bind('<Button-1>', lambda e, t=task: self.edit(t))
+                self._hover(label, task)
             if not loose:
                 tk.Label(cell, text=' ', bg=styles.COLORS['bg_card'],
                          font=(styles.DEFAULT_FONT, 8)).pack()
@@ -557,10 +572,16 @@ class CalendarTab:
         hours = self._hours([t for rows in timed.values() for t in rows])
         canvas = tk.Canvas(self.body, bg=styles.COLORS['bg_card'], highlightthickness=0)
         canvas.pack(fill='both', expand=True)
-        canvas.bind('<Configure>', lambda e: self._paint_hours(canvas, days, timed, hours))
-        canvas.bind('<Button-1>', lambda e: self._new_at(canvas, e, days, hours))
-        ttk.Label(self.body, text='Щелчок по свободному времени — задача или комментарий на это '
-                                  'время. Щелчок по записи — открыть.',
+        if self.slot is not None and self.slot[0] not in days:
+            self.slot = None
+        self._repaint = lambda: self._paint_hours(canvas, days, timed, hours)
+        canvas.bind('<Configure>', lambda e: self._repaint())
+        canvas.bind('<Button-1>', lambda e: self._pick_slot(canvas, e, days, hours))
+        canvas.bind('<Double-1>', lambda e: self._new_at(canvas, e, days, hours))
+        canvas.bind('<Leave>', lambda e: self._hide_tip())
+        ttk.Label(self.body, text='Щелчок по свободному времени — выделить его, двойной — задача '
+                                  'или комментарий. Щелчок по записи — открыть, наведение — '
+                                  'полный текст.',
                   font=styles.FONTS['small'], foreground=styles.COLORS['text_secondary'],
                   background=styles.COLORS['bg_card']).pack(anchor='w', pady=(4, 0))
 
@@ -620,9 +641,25 @@ class CalendarTab:
                                        fill=styles.COLORS['primary'],
                                        font=(styles.DEFAULT_FONT, 9, 'underline'), tags=tag)
                 canvas.tag_bind(tag, '<Button-1>', lambda e, t=task: self.edit(t))
-                canvas.tag_bind(tag, '<Enter>', lambda e: canvas.config(cursor='hand2'))
-                canvas.tag_bind(tag, '<Leave>', lambda e: canvas.config(cursor=''))
+                canvas.tag_bind(tag, '<Enter>', lambda e, t=task: (
+                    canvas.config(cursor='hand2'), self._show_tip(e, t)))
+                canvas.tag_bind(tag, '<Leave>', lambda e: (canvas.config(cursor=''),
+                                                           self._hide_tip()))
                 self._grid_items[tag] = task
+
+        # Выделенное время — рамкой, под записями
+        if self.slot is not None and self.slot[0] in days:
+            i = days.index(self.slot[0])
+            start = _minutes(self.slot[1])
+            end = _minutes(self.slot[2]) if self.slot[2] else 24 * 60
+            canvas.create_rectangle(TIME_COLUMN + i * column + 2, y_of(start) + 1,
+                                    TIME_COLUMN + (i + 1) * column - 2, y_of(end) - 1,
+                                    fill=styles.COLORS['primary_soft'],
+                                    outline=styles.COLORS['primary'], width=2, tags='slot')
+            canvas.tag_lower('slot')
+            canvas.tag_raise('slot', 'all')
+            for tag in self._grid_items:
+                canvas.tag_raise(tag)
 
         # Красная линия — сейчас
         if today in days:
@@ -665,26 +702,51 @@ class CalendarTab:
             flush()
         return result
 
-    def _new_at(self, canvas, event, days, hours):
-        """
-        Щелчок по свободному времени — окошко: задача или комментарий на
-        это время (решение владельца 29.10.2026). Задача уйдёт в Telegram.
-        """
+    def _slot_at(self, canvas, event, days, hours):
+        """Какое время под мышью: (день, «с», «до») по получасам, на час. Запись — None."""
         if canvas.find_withtag('current') and any(
                 tag.startswith('task') for tag in canvas.gettags('current')):
-            return
+            return None
         width, height, step, column = self._geometry(canvas, days, hours)
         if event.x < TIME_COLUMN:
-            return
+            return None
         index = min(int((event.x - TIME_COLUMN) // column), len(days) - 1)
         minutes = int(((event.y - 2) / step + hours[0]) * 60)
         minutes = max(0, min(minutes - minutes % 30, 23 * 60 + 30))
         start = f'{minutes // 60:02d}:{minutes % 60:02d}'
         end_minutes = minutes + 60
         end = f'{end_minutes // 60:02d}:{end_minutes % 60:02d}' if end_minutes < 24 * 60 else None
-        when = dict(due_date=days[index], due_time=start, end_time=end)
+        return days[index], start, end
+
+    def _pick_slot(self, canvas, event, days, hours):
+        """
+        Щелчок по свободному времени — выделить его. «+ Задача» и
+        «+ Комментарий» поставят запись на это время (решение владельца
+        29.10.2026). Сетку не перестраиваем — только рамку, иначе двойной
+        щелчок не дошёл бы до своего окна.
+        """
+        slot = self._slot_at(canvas, event, days, hours)
+        if slot is None:
+            return
+        self.slot = slot
+        self.selected = slot[0]
+        self._repaint()
+
+    def _new_at(self, canvas, event, days, hours):
+        """Двойной щелчок по свободному времени — окошко: задача или комментарий."""
+        slot = self._slot_at(canvas, event, days, hours)
+        if slot is None:
+            return
+        self._choose(event, due_date=slot[0], due_time=slot[1], end_time=slot[2])
+
+    def _choose(self, event, **when):
+        """
+        Окошко «что поставить»: задача (уйдёт в Telegram) или комментарий
+        (просто запись). Открывается двойным щелчком по пустому месту.
+        """
+        title = day_title(when['due_date']) + (f' · {when["due_time"]}' if when.get('due_time') else '')
         menu = tk.Menu(self.frame, tearoff=0, font=(styles.DEFAULT_FONT, 11))
-        menu.add_command(label=f'{day_title(days[index])} · {start}', state='disabled')
+        menu.add_command(label=title, state='disabled')
         menu.add_separator()
         menu.add_command(label='Задача — уйдёт в Telegram',
                          command=lambda: self._open_new(KIND_TASK, **when))
@@ -704,8 +766,25 @@ class CalendarTab:
         self.load()
 
     def select_day(self, day):
-        self.selected = day
-        self.load()
+        """
+        Выделить день. В месяце сетку не перестраиваем — только рамку и
+        список справа: иначе двойной щелчок по дню не дошёл бы до окошка
+        выбора (вторым щелчком жали бы уже по новой клетке).
+        """
+        previous, self.selected = self.selected, day
+        if self.view != 'month' or day not in self._cells or previous not in self._cells:
+            self.load()
+            return
+        for one, chosen in ((previous, False), (day, True)):
+            box, labels = self._cells[one]
+            bg = styles.COLORS['primary_soft'] if chosen else styles.COLORS['bg_card']
+            box.config(bg=bg, highlightthickness=2 if chosen else 1,
+                       highlightbackground=styles.COLORS['primary'] if chosen else styles.COLORS['border'])
+            for label in labels:
+                label.config(bg=bg)
+        for child in self._side.winfo_children():
+            child.destroy()
+        self._draw_day_list(self._side, day)
 
     def open_day(self, day):
         self.selected = day
@@ -736,6 +815,9 @@ class CalendarTab:
             self.on_changed()
 
     def _open_new(self, kind, **defaults):
+        # В неделе и дне выделили время — запись туда
+        if not defaults and self.view != 'month' and self.slot is not None:
+            defaults = dict(due_date=self.slot[0], due_time=self.slot[1], end_time=self.slot[2])
         sections = [c for c in self.filters if c != NOTE]
         open_task(self.frame, self.db, on_saved=self._changed, kind=kind,
                   category=sections[0] if len(sections) == 1 else 'work',
@@ -749,6 +831,7 @@ class CalendarTab:
         self._open_new(KIND_NOTE)
 
     def edit(self, task):
+        self._hide_tip()
         open_task(self.frame, self.db, task, on_saved=self._changed)
 
     def toggle_done(self, task):
@@ -759,6 +842,64 @@ class CalendarTab:
             messagebox.showerror('Задача', f'Не удалось отметить: {e}')
             return
         self._changed()
+
+    # ------------------------------------------------------------------
+    # Подсказка при наведении: полный текст записи без открытия окна
+    # ------------------------------------------------------------------
+
+    def _hover(self, widget, task):
+        widget.bind('<Enter>', lambda e, t=task: self._show_tip(e, t), add='+')
+        widget.bind('<Leave>', lambda e: self._hide_tip(), add='+')
+        widget.config(cursor='hand2')
+
+    def _tip_text(self, task):
+        lines = [task.note or task.title if is_note(task) else task.title]
+        lines.append(time_text(task) or 'без времени')
+        lines.append('комментарий' if is_note(task)
+                     else CATEGORY_TITLES.get(task.category, task.category))
+        if not is_note(task):
+            if task.license_plate:
+                lines.append(task.license_plate + (f' · {task.client_name}' if task.client_name else ''))
+            party = self.service.counterparty(task.counterparty_uid)
+            if party is not None:
+                lines.append(party.name)
+            if task.note:
+                lines.append(task.note[:300])
+            if task.amount:
+                lines.append(f'{task.amount:,.0f} ₽'.replace(',', ' '))
+            if task.done_at:
+                lines.append(f'сделано · {task.done_by or ""}')
+        return lines
+
+    def _show_tip(self, event, task):
+        self._hide_tip()
+        try:
+            lines = self._tip_text(task)
+        except Exception:
+            self.db.rollback()
+            return
+        tip = tk.Toplevel(self.frame)
+        tip.overrideredirect(True)
+        tip.attributes('-topmost', True)
+        body = tk.Frame(tip, bg=styles.COLORS['text'], padx=10, pady=7)
+        body.pack()
+        tk.Label(body, text=lines[0], bg=styles.COLORS['text'], fg='white', justify='left',
+                 wraplength=300, font=(styles.DEFAULT_FONT, 10, 'bold')).pack(anchor='w')
+        tk.Label(body, text='\n'.join(lines[1:]), bg=styles.COLORS['text'], fg='#cbd5e1',
+                 justify='left', wraplength=300, font=(styles.DEFAULT_FONT, 9)).pack(anchor='w')
+        tip.update_idletasks()
+        x = min(event.x_root + 14, tip.winfo_screenwidth() - tip.winfo_reqwidth() - 8)
+        y = min(event.y_root + 16, tip.winfo_screenheight() - tip.winfo_reqheight() - 8)
+        tip.geometry(f'+{max(x, 0)}+{max(y, 0)}')
+        self._tip = tip
+
+    def _hide_tip(self):
+        if self._tip is not None:
+            try:
+                self._tip.destroy()
+            except tk.TclError:
+                pass
+            self._tip = None
 
     def open_car(self, plate):
         from ui.car_info import open_car_info

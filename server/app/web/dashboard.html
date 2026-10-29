@@ -339,6 +339,14 @@ input.code { letter-spacing: 8px; text-align: center; font-size: 22px; font-weig
 .cat.note { background: #e2e8f0; color: #475569; }
 .task .tm small { display: block; font-weight: 400; font-size: 12px; }
 .chip.f-note[aria-pressed="true"] { background: #475569; border-color: #475569; }
+.month .it { cursor: pointer; }
+.slot { position: absolute; left: 1px; right: 1px; background: #eff6ff; border: 2px solid var(--brand);
+  border-radius: 4px; pointer-events: none; }
+.cal-tip { position: fixed; z-index: 60; max-width: 300px; background: var(--ink); color: #f8fafc;
+  padding: 8px 10px; border-radius: 8px; font-size: 12.5px; line-height: 1.45; pointer-events: none;
+  box-shadow: 0 6px 18px rgba(15,23,42,.25); }
+.cal-tip b { display: block; font-size: 13px; }
+.cal-tip span { display: block; color: #cbd5e1; }
 .task { display: flex; align-items: flex-start; gap: 8px;
   border-bottom: 1px solid var(--line); padding: 2px 0; }
 .task:last-child { border-bottom: 0; }
@@ -2392,7 +2400,7 @@ var MONTHS = ['января', 'февраля', 'марта', 'апреля', '�
 // view — месяц, неделя или день; открывается всегда на месяце
 var cal = { start: null, day: null, today: null, filter: [], data: null,
             people: {}, direction: 'all', wash: false, view: 'month',
-            hours: { from: 9, to: 21 },
+            hours: { from: 9, to: 21 }, slot: null,
             filters: { all: [], tire: [], wash: [] } };
 var VIEWS = [{ key: 'month', title: 'Месяц' }, { key: 'week', title: 'Неделя' },
              { key: 'day', title: 'День' }];
@@ -2621,6 +2629,10 @@ function dayRows(day) {
   return rows || '<div class="empty">Записей нет</div>';
 }
 
+function dayCard(day) {
+  return '<div class="day-title">' + longDay(day) + '</div>' + dayRows(day);
+}
+
 function monthHtml(range) {
   var month = range.first.slice(0, 7);
   var html = '<div class="cal-split"><div class="card"><div class="month" id="calMonth">'
@@ -2634,16 +2646,17 @@ function monthHtml(range) {
     html += '<button type="button" class="' + classes.join(' ') + '" data-day="' + day
       + '" aria-pressed="' + (day === cal.day) + '"><b>' + parseDay(day).getDate() + '</b>'
       + items.slice(0, 3).map(function (task) {
-        return '<span class="it ' + itemClass(task) + '">' + escape(shortText(task)) + '</span>';
+        return '<span class="it ' + itemClass(task) + '" data-item="' + attr(task.uid) + '">'
+          + escape(shortText(task)) + '</span>';
       }).join('')
       + (items.length > 3 ? '<span class="more">ещё ' + (items.length - 3) + '</span>' : '')
       + '<span class="dots">' + items.slice(0, 4).map(function (task) {
         return '<i class="' + dotClass(task) + '"></i>';
       }).join('') + '</span></button>';
   }
-  html += '</div><p class="note">Двойной щелчок по дню — день по часам</p></div>'
-    + '<div class="card"><div class="day-title">' + longDay(cal.day) + '</div>'
-    + dayRows(cal.day) + '</div></div>';
+  html += '</div><p class="note">Щелчок по записи — открыть, наведение — полный текст. '
+    + 'Двойной щелчок по пустому месту дня — задача или комментарий</p></div>'
+    + '<div class="card" id="calDay">' + dayCard(cal.day) + '</div></div>';
   return html;
 }
 
@@ -2756,7 +2769,7 @@ function hoursHtml(days) {
     }
     html += '</div>';
   });
-  html += '</div></div><p class="note">Щелчок по свободному времени — задача или комментарий на это время</p></div>';
+  html += '</div></div><p class="note">Щелчок по свободному времени — выделить, двойной — задача или комментарий. Наведение на запись — полный текст</p></div>';
   return html;
 }
 
@@ -2773,6 +2786,7 @@ function shiftCalendar(step) {
 }
 
 function drawCalendar() {
+  hideTip();
   var data = cal.data;
   var range = calRange();
   var filter = calFilter();
@@ -2827,8 +2841,11 @@ function drawCalendar() {
   $('calToday').addEventListener('click', function () {
     cal.day = cal.today; loadCalendar();
   });
-  $('calAdd').addEventListener('click', function () { openTask(null, 'task'); });
-  $('calNote').addEventListener('click', function () { openTask(null, 'note'); });
+  function chosenTime() {
+    return cal.view !== 'month' && cal.slot ? cal.slot : null;
+  }
+  $('calAdd').addEventListener('click', function () { openTask(null, 'task', chosenTime()); });
+  $('calNote').addEventListener('click', function () { openTask(null, 'note', chosenTime()); });
 
   if (cal.wash) {
     [].slice.call($('calDirs').querySelectorAll('[data-dir]')).forEach(function (button) {
@@ -2843,16 +2860,22 @@ function drawCalendar() {
 
   if ($('calMonth')) {
     [].slice.call($('calMonth').querySelectorAll('[data-day]')).forEach(function (button) {
-      button.addEventListener('click', function () {
+      button.addEventListener('click', function (event) {
+        var item = event.target.closest('[data-item]');
+        if (item) { hideTip(); openTask(calFind(item.getAttribute('data-item'))); return; }
         cal.day = button.getAttribute('data-day');
-        // Соседний месяц — догружаем, свой — перерисовываем без сети
-        if (cal.day.slice(0, 7) !== range.first.slice(0, 7)) loadCalendar();
-        else drawCalendar();
+        // Соседний месяц — догружаем. Свой — только рамка и список дня:
+        // перерисуй мы всю сетку, двойной щелчок не дошёл бы до своей клетки
+        if (cal.day.slice(0, 7) !== range.first.slice(0, 7)) { loadCalendar(); return; }
+        [].slice.call($('calMonth').querySelectorAll('[data-day]')).forEach(function (other) {
+          other.setAttribute('aria-pressed', String(other === button));
+        });
+        $('calDay').innerHTML = dayCard(cal.day);
+        bindRows($('calDay'));
       });
-      button.addEventListener('dblclick', function () {
-        cal.day = button.getAttribute('data-day');
-        cal.view = 'day';
-        loadCalendar();
+      button.addEventListener('dblclick', function (event) {
+        if (event.target.closest('[data-item]')) return;
+        chooseNew({ due_date: button.getAttribute('data-day') });
       });
     });
   }
@@ -2865,35 +2888,63 @@ function drawCalendar() {
     });
   });
 
-  // Щелчок по свободному времени — окошко: задача (уйдёт в Telegram) или
-  // комментарий на это время, на час (решение владельца 29.10.2026)
+  // Щелчок по свободному времени — выделить его: «+ Задача» и
+  // «+ Комментарий» поставят запись туда. Двойной — окошко выбора
+  // (решение владельца 29.10.2026)
   [].slice.call($('view').querySelectorAll('[data-col]')).forEach(function (column) {
-    column.addEventListener('click', function (event) {
-      if (event.target !== column) return;
+    function slotAt(event) {
       var from = +column.getAttribute('data-from');
       var minutes = Math.floor((from + event.offsetY / HOUR_PX) * 60);
       minutes = Math.max(0, Math.min(minutes - minutes % 30, 23 * 60 + 30));
       var end = minutes + 60;
-      var day = column.getAttribute('data-col');
-      var at = pad(Math.floor(minutes / 60)) + ':' + pad(minutes % 60);
-      var when = {
-        due_date: day,
-        due_time: at,
-        end_time: end < 24 * 60 ? pad(Math.floor(end / 60)) + ':' + pad(end % 60) : null
+      return {
+        due_date: column.getAttribute('data-col'),
+        due_time: pad(Math.floor(minutes / 60)) + ':' + pad(minutes % 60),
+        end_time: end < 24 * 60 ? pad(Math.floor(end / 60)) + ':' + pad(end % 60) : null,
+        top: (minutes - from * 60) / 60 * HOUR_PX
       };
-      sheet('<h2>' + escape(longDay(day)) + ' · ' + at + '</h2>'
-        + '<button class="go" type="button" id="pickTask" style="margin-top:14px">Задача</button>'
-        + '<p class="note">Уйдёт в Telegram, будет напоминать, пока не отметят</p>'
-        + '<button class="danger" type="button" id="pickNote" style="color:var(--ink)">'
-        + 'Комментарий</button><p class="note">Просто запись на это время</p>');
-      $('pickTask').addEventListener('click', function () {
-        closeSheet(); openTask(null, 'task', when);
-      });
-      $('pickNote').addEventListener('click', function () {
-        closeSheet(); openTask(null, 'note', when);
-      });
+    }
+    column.addEventListener('click', function (event) {
+      if (event.target !== column) return;
+      var slot = slotAt(event);
+      cal.slot = slot;
+      cal.day = slot.due_date;
+      [].slice.call($('view').querySelectorAll('.slot')).forEach(function (old) { old.remove(); });
+      var mark = document.createElement('div');
+      mark.className = 'slot';
+      mark.style.top = slot.top + 'px';
+      mark.style.height = (HOUR_PX - 2) + 'px';
+      column.insertBefore(mark, column.firstChild);
+    });
+    column.addEventListener('dblclick', function (event) {
+      if (event.target !== column) return;
+      chooseNew(slotAt(event));
     });
   });
+  // Выделенное время рисуем и после перерисовки — его не теряем
+  if (cal.slot && cal.view !== 'month') {
+    var slotColumn = $('view').querySelector('[data-col="' + cal.slot.due_date + '"]');
+    if (slotColumn) {
+      var mark = document.createElement('div');
+      mark.className = 'slot';
+      mark.style.top = cal.slot.top + 'px';
+      mark.style.height = (HOUR_PX - 2) + 'px';
+      slotColumn.insertBefore(mark, slotColumn.firstChild);
+    }
+  }
+
+  // Наведение мышью на запись — полный текст, без открытия окна. Вешаем
+  // один раз: #view общий у всех разделов и не пересоздаётся
+  if (!cal.tipBound) {
+    cal.tipBound = true;
+    $('view').addEventListener('mousemove', function (event) {
+      var item = section === 'calendar'
+        && event.target.closest('.it[data-item], .blk[data-open], .tband [data-open]');
+      if (!item) { hideTip(); return; }
+      showTip(calFind(item.getAttribute('data-item') || item.getAttribute('data-open')), event);
+    });
+    $('view').addEventListener('mouseleave', hideTip);
+  }
 
   [].slice.call($('calFilters').querySelectorAll('[data-cat]')).forEach(function (button) {
     button.addEventListener('click', function () {
@@ -2914,13 +2965,18 @@ function drawCalendar() {
     });
   });
 
-  [].slice.call($('view').querySelectorAll('[data-open]')).forEach(function (button) {
+  bindRows($('view'));
+}
+
+function bindRows(root) {
+  [].slice.call(root.querySelectorAll('[data-open]')).forEach(function (button) {
     button.addEventListener('click', function () {
+      hideTip();
       openTask(calFind(button.getAttribute('data-open')));
     });
   });
 
-  [].slice.call($('view').querySelectorAll('[data-done]')).forEach(function (box) {
+  [].slice.call(root.querySelectorAll('[data-done]')).forEach(function (box) {
     box.addEventListener('change', function () {
       var uid = box.getAttribute('data-done');
       box.disabled = true;
@@ -2929,6 +2985,46 @@ function drawCalendar() {
     });
   });
 }
+
+// Окошко «что поставить» — двойным щелчком по пустому месту
+function chooseNew(when) {
+  hideTip();
+  sheet('<h2>' + escape(longDay(when.due_date)) + (when.due_time ? ' · ' + when.due_time : '')
+    + '</h2>'
+    + '<button class="go" type="button" id="pickTask" style="margin-top:14px">Задача</button>'
+    + '<p class="note">Уйдёт в Telegram, будет напоминать, пока не отметят</p>'
+    + '<button class="danger" type="button" id="pickNote" style="color:var(--ink)">'
+    + 'Комментарий</button><p class="note">Просто запись</p>');
+  $('pickTask').addEventListener('click', function () { closeSheet(); openTask(null, 'task', when); });
+  $('pickNote').addEventListener('click', function () { closeSheet(); openTask(null, 'note', when); });
+}
+
+var calTip = null;
+function showTip(task, event) {
+  if (!task) { hideTip(); return; }
+  if (!calTip) {
+    calTip = document.createElement('div');
+    calTip.className = 'cal-tip';
+    document.body.appendChild(calTip);
+  }
+  var lines = [timeText(task) || 'без времени',
+               isNote(task) ? 'комментарий' : (CAT_TITLES[task.category] || task.category)];
+  if (!isNote(task)) {
+    if (task.license_plate) lines.push(task.license_plate);
+    if (task.counterparty_name) lines.push(task.counterparty_name);
+    if (task.note) lines.push(task.note.slice(0, 300));
+    if (task.amount) lines.push(money(task.amount));
+    if (task.done_at) lines.push('сделано · ' + (task.done_by || ''));
+  }
+  calTip.innerHTML = '<b>' + escape(isNote(task) ? (task.note || task.title) : task.title) + '</b>'
+    + lines.map(function (line) { return '<span>' + escape(line) + '</span>'; }).join('');
+  calTip.hidden = false;
+  var x = Math.min(event.clientX + 14, window.innerWidth - calTip.offsetWidth - 8);
+  var y = Math.min(event.clientY + 16, window.innerHeight - calTip.offsetHeight - 8);
+  calTip.style.left = Math.max(8, x) + 'px';
+  calTip.style.top = Math.max(8, y) + 'px';
+}
+function hideTip() { if (calTip) calTip.hidden = true; }
 
 function taskRow(task, late, day) {
   var shopName = shops.length > 1 && !currentShop ? escape(calShopName(task.shop_id)) : '';
