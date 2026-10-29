@@ -2527,7 +2527,8 @@ function calShopName(id) {
 
 // Какие дни показывать: месяц — целыми неделями с понедельника
 function calRange() {
-  if (cal.view === 'day') return { from: cal.day, to: cal.day };
+  // День — тремя колонками: вчера, выбранный, завтра
+  if (cal.view === 'day') return { from: addDays(cal.day, -1), to: addDays(cal.day, 1) };
   if (cal.view === 'week') {
     var monday = mondayOf(cal.day);
     return { from: monday, to: addDays(monday, 6) };
@@ -2705,7 +2706,7 @@ function hoursFor(tasks) {
 
 function hoursHtml(days) {
   // На телефоне неделя по часам нечитаема — тогда списком по дням
-  if (days.length > 1 && window.innerWidth < 700) {
+  if (cal.view === 'week' && window.innerWidth < 700) {
     return '<div class="card">' + days.map(function (day) {
       return '<div class="day-title">' + longDay(day) + '</div>' + dayRows(day);
     }).join('') + '</div>';
@@ -2713,7 +2714,7 @@ function hoursHtml(days) {
   var loose = {}, timed = {}, all = [];
   days.forEach(function (day) {
     var items = calOfDay(day);
-    if (days.length === 1 && day === cal.today) {
+    if (cal.view === 'day' && day === cal.day && day === cal.today) {
       items = cal.data.overdue.filter(calShown).concat(items);
     }
     loose[day] = items.filter(function (task) { return !task.due_time || task.due_date !== day; });
@@ -2722,17 +2723,23 @@ function hoursHtml(days) {
   });
   var hours = hoursFor(all);
   var height = (hours.to - hours.from) * HOUR_PX;
+  // В «Дне» выбранный день вдвое шире соседних
+  function grow(day) {
+    return cal.view === 'day' && days.length > 1 && day === cal.day ? ' style="flex:2"' : '';
+  }
 
   var html = '<div class="card">';
   if (days.length > 1) {
     html += '<div class="thead"><div class="tcol0"></div>' + days.map(function (day) {
-      return '<button type="button" class="th' + (day === cal.today ? ' today' : '')
-        + '" data-open-day="' + day + '">' + WEEKDAYS[weekdayIndex(day)] + ' '
-        + parseDay(day).getDate() + '</button>';
+      var main = cal.view === 'day' && day === cal.day;
+      var text = main ? longDay(day) : WEEKDAYS[weekdayIndex(day)] + ' ' + parseDay(day).getDate();
+      if (cal.view === 'day' && !main) text = day < cal.day ? '‹ ' + text : text + ' ›';
+      return '<button type="button" class="th' + (day === cal.today || main ? ' today' : '')
+        + '" data-open-day="' + day + '"' + grow(day) + '>' + escape(text) + '</button>';
     }).join('') + '</div>';
   }
   html += '<div class="tband"><div class="tcol0">без<br>времени</div>' + days.map(function (day) {
-    return '<div class="tb">' + loose[day].map(function (task) {
+    return '<div class="tb"' + grow(day) + '>' + loose[day].map(function (task) {
       var text = (task.due_date !== day ? shortDay(task.due_date) + ' ' : '') + shortText(task);
       return '<button type="button" class="it ' + itemClass(task) + '" data-open="'
         + attr(task.uid) + '">' + escape(text) + '</button>';
@@ -2748,7 +2755,8 @@ function hoursHtml(days) {
   var nowMinutes = now.getHours() * 60 + now.getMinutes();
   days.forEach(function (day) {
     html += '<div class="tday' + (day === cal.today ? ' today' : '') + '" data-col="' + day
-      + '" data-from="' + hours.from + '" style="background-size:100% ' + HOUR_PX + 'px">';
+      + '" data-from="' + hours.from + '" style="background-size:100% ' + HOUR_PX + 'px'
+      + (grow(day) ? ';flex:2' : '') + '">';
     lanes(timed[day]).forEach(function (item) {
       var task = item.task;
       var top = (minutesOf(task.due_time) - hours.from * 60) / 60 * HOUR_PX;
@@ -2826,7 +2834,11 @@ function drawCalendar() {
     var days = [];
     for (var i = 0; i < 7; i++) days.push(addDays(range.from, i));
     html += hoursHtml(days);
-  } else html += hoursHtml([cal.day]);
+  } else {
+    // Соседние дни видно всегда; на телефоне три колонки не влезут — один день
+    html += hoursHtml(window.innerWidth < 700 ? [cal.day]
+      : [addDays(cal.day, -1), cal.day, addDays(cal.day, 1)]);
+  }
 
   show(html);
 

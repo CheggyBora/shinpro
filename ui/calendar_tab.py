@@ -507,17 +507,28 @@ class CalendarTab:
         self._draw_hours(list(found), found)
 
     def _draw_day(self):
+        """
+        День по часам — тремя колонками: вчера, выбранный день (шире) и
+        завтра. Соседние дни видно всегда (решение владельца 29.10.2026).
+        """
         self.range_label.config(text=day_title(self.selected))
-        tasks = self.service.day(self.selected, self.categories(), self.query_direction())
-        found = {self.selected: tasks}
+        start = self.selected - timedelta(days=1)
+        found = self.service.days(start, 3, self.categories(), self.query_direction())
         if self.selected == self._today():
             # Просроченные прошлых дней — в полосу «без времени»: их нельзя потерять
             found[self.selected] = self.service.overdue(
-                self.selected, self.categories(), self.query_direction()) + tasks
-        self._draw_hours([self.selected], found)
+                self.selected, self.categories(), self.query_direction()) + found[self.selected]
+        self._draw_hours(list(found), found)
+
+    def _weights(self, days):
+        """Ширина колонок: в «Дне» выбранный день вдвое шире соседних."""
+        if self.view == 'day':
+            return [2 if day == self.selected else 1 for day in days]
+        return [1] * len(days)
 
     def _draw_hours(self, days, found):
         today = self._today()
+        weights = self._weights(days)
         if len(days) > 1:
             heads = tk.Frame(self.body, bg=styles.COLORS['bg_card'])
             heads.pack(fill='x')
@@ -525,14 +536,20 @@ class CalendarTab:
             columns = tk.Frame(heads, bg=styles.COLORS['bg_card'])
             columns.pack(side='left', fill='x', expand=True)
             for i, day in enumerate(days):
-                columns.columnconfigure(i, weight=1, uniform='day')
+                columns.columnconfigure(i, weight=weights[i], uniform='day')
                 on = day == today
-                head = tk.Label(columns, text=f'{WEEKDAYS[i]} {day.day}', cursor='hand2',
+                main = self.view == 'day' and day == self.selected
+                text = (day_title(day) if main
+                        else f'{WEEKDAYS[day.weekday()]} {day.day}')
+                head = tk.Label(columns, text=text, cursor='hand2',
                                 bg=styles.COLORS['bg_card'],
-                                fg=styles.COLORS['primary'] if on else styles.COLORS['text_secondary'],
-                                font=(styles.DEFAULT_FONT, 10, 'bold' if on else 'normal'))
+                                fg=styles.COLORS['primary'] if on or main else styles.COLORS['text_secondary'],
+                                font=(styles.DEFAULT_FONT, 10, 'bold' if on or main else 'normal'))
                 head.grid(row=0, column=i, pady=(0, 4))
                 head.bind('<Button-1>', lambda e, d=day: self.open_day(d))
+                if self.view == 'day' and day != self.selected:
+                    head.config(text=f'‹ {head.cget("text")}' if day < self.selected
+                                else f'{head.cget("text")} ›')
 
         # Без времени — полосой сверху
         band = tk.Frame(self.body, bg=styles.COLORS['bg_card'])
@@ -546,7 +563,7 @@ class CalendarTab:
         cells = tk.Frame(band, bg=styles.COLORS['bg_card'])
         cells.pack(side='left', fill='x', expand=True)
         for i, day in enumerate(days):
-            cells.columnconfigure(i, weight=1, uniform='day')
+            cells.columnconfigure(i, weight=weights[i], uniform='day')
             cell = tk.Frame(cells, bg=styles.COLORS['bg_card'], highlightthickness=1,
                             highlightbackground=styles.COLORS['border'])
             cell.grid(row=0, column=i, sticky='nsew')
@@ -586,20 +603,24 @@ class CalendarTab:
                   background=styles.COLORS['bg_card']).pack(anchor='w', pady=(4, 0))
 
     def _geometry(self, canvas, days, hours):
+        """Ширина, высота, высота часа и края колонок дней (их на одну больше, чем дней)."""
         width, height = canvas.winfo_width(), canvas.winfo_height()
         step = (height - 4) / max(hours[1] - hours[0], 1)
-        column = (width - TIME_COLUMN) / len(days)
-        return width, height, step, column
+        weights = self._weights(days)
+        unit = (width - TIME_COLUMN) / sum(weights)
+        edges = [TIME_COLUMN]
+        for weight in weights:
+            edges.append(edges[-1] + weight * unit)
+        return width, height, step, edges
 
     def _paint_hours(self, canvas, days, timed, hours):
         canvas.delete('all')
-        width, height, step, column = self._geometry(canvas, days, hours)
+        width, height, step, edges = self._geometry(canvas, days, hours)
         first = hours[0]
         today = self._today()
         if today in days:
             i = days.index(today)
-            canvas.create_rectangle(TIME_COLUMN + i * column + 1, 0,
-                                    TIME_COLUMN + (i + 1) * column - 1, height,
+            canvas.create_rectangle(edges[i] + 1, 0, edges[i + 1] - 1, height,
                                     fill='#f8fbff', outline='')
         for n in range(hours[1] - first + 1):
             y = 2 + n * step
@@ -607,8 +628,7 @@ class CalendarTab:
             if n < hours[1] - first:
                 canvas.create_text(TIME_COLUMN - 8, y + 2, text=f'{first + n}:00', anchor='ne',
                                    fill=styles.COLORS['text_secondary'], font=(styles.DEFAULT_FONT, 9))
-        for i in range(len(days) + 1):
-            x = TIME_COLUMN + i * column
+        for x in edges:
             canvas.create_line(x, 0, x, height, fill=styles.COLORS['border'])
 
         def y_of(minutes):
@@ -620,8 +640,8 @@ class CalendarTab:
                 start = _minutes(task.due_time)
                 end = _minutes(task.end_time) if task.end_time else start + DEFAULT_MINUTES
                 top, bottom = y_of(start), max(y_of(end), y_of(start) + 18)
-                lane_width = (column - 6) / lanes
-                x0 = TIME_COLUMN + i * column + 3 + lane * lane_width
+                lane_width = (edges[i + 1] - edges[i] - 6) / lanes
+                x0 = edges[i] + 3 + lane * lane_width
                 x1 = x0 + lane_width - 2
                 fg, bg = self._colors(task)
                 tag = f'task{task.id}'
@@ -632,7 +652,7 @@ class CalendarTab:
                     font = (styles.DEFAULT_FONT, 9, 'italic')
                 else:
                     text = f'{time_text(task)}  {task.title}'
-                    font = (styles.DEFAULT_FONT, 9 if len(days) > 1 else 10,
+                    font = (styles.DEFAULT_FONT, 10 if self._weights(days)[i] > 1 else 9,
                             'overstrike' if task.done_at else 'normal')
                 canvas.create_text(x0 + 8, top + 3, text=text, anchor='nw', fill=fg, font=font,
                                    width=max(x1 - x0 - 12, 20), tags=tag)
@@ -652,8 +672,8 @@ class CalendarTab:
             i = days.index(self.slot[0])
             start = _minutes(self.slot[1])
             end = _minutes(self.slot[2]) if self.slot[2] else 24 * 60
-            canvas.create_rectangle(TIME_COLUMN + i * column + 2, y_of(start) + 1,
-                                    TIME_COLUMN + (i + 1) * column - 2, y_of(end) - 1,
+            canvas.create_rectangle(edges[i] + 2, y_of(start) + 1,
+                                    edges[i + 1] - 2, y_of(end) - 1,
                                     fill=styles.COLORS['primary_soft'],
                                     outline=styles.COLORS['primary'], width=2, tags='slot')
             canvas.tag_lower('slot')
@@ -668,7 +688,7 @@ class CalendarTab:
             if first * 60 <= minutes <= hours[1] * 60:
                 i = days.index(today)
                 y = y_of(minutes)
-                x0, x1 = TIME_COLUMN + i * column, TIME_COLUMN + (i + 1) * column
+                x0, x1 = edges[i], edges[i + 1]
                 canvas.create_line(x0, y, x1, y, fill='#dc2626', width=2)
                 canvas.create_oval(x0 - 4, y - 4, x0 + 4, y + 4, fill='#dc2626', outline='')
 
@@ -707,10 +727,10 @@ class CalendarTab:
         if canvas.find_withtag('current') and any(
                 tag.startswith('task') for tag in canvas.gettags('current')):
             return None
-        width, height, step, column = self._geometry(canvas, days, hours)
+        width, height, step, edges = self._geometry(canvas, days, hours)
         if event.x < TIME_COLUMN:
             return None
-        index = min(int((event.x - TIME_COLUMN) // column), len(days) - 1)
+        index = next((i for i in range(len(days)) if event.x < edges[i + 1]), len(days) - 1)
         minutes = int(((event.y - 2) / step + hours[0]) * 60)
         minutes = max(0, min(minutes - minutes % 30, 23 * 60 + 30))
         start = f'{minutes // 60:02d}:{minutes % 60:02d}'
