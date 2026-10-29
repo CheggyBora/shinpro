@@ -118,6 +118,19 @@ class AuthService:
     # Шаг второй: код подтверждения
     # ------------------------------------------------------------------
 
+    def code_available(self):
+        """
+        Можно ли подтвердить номер кодом.
+
+        Звонок подключён, а SMS нет — только звонок (решение владельца
+        29.10.2026: SMS пока не используем). Письмом — если так настроено.
+        Не подключено ни то ни другое — как раньше: код уходит в журнал,
+        иначе на новом сервере не войти вовсе.
+        """
+        if self.channel() == CHANNEL_EMAIL:
+            return True
+        return sms.available(self.db, self._shop()) or not self.call_available()
+
     def request_code(self, phone, email=None, purpose=PURPOSE_SIGNUP):
         """
         Выслать код. Возвращает (сколько секунд живёт, каким каналом).
@@ -128,6 +141,9 @@ class AuthService:
         phone = normalize_phone(phone)
         if not is_valid_phone(phone):
             raise AuthError('Номер телефона выглядит неправильно')
+
+        if not self.code_available():
+            raise AuthError('Вход по SMS выключен — подтвердите номер звонком')
 
         channel = self.channel()
         target = phone

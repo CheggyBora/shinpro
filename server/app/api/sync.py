@@ -311,6 +311,10 @@ class PushOut(BaseModel):
     # первого обмена и молча исчезала
     from_server: List[SettingOut] = []
 
+    # Люди из «Доступа», которым отмечены отчёты: {отчёт: [ники]}. Цех
+    # шлёт им сводку по смене, склад и покраску вдобавок к своим чатам
+    staff_reports: dict = {}
+
 
 # ----------------------------------------------------------------------
 # Что цех забирает вниз
@@ -755,6 +759,8 @@ def push(payload: PushIn, db: Session = Depends(get_db),
 
     db.commit()
     _drop_old_snapshots(db, shop.id)
+    from app.services.staff_service import report_usernames
+    result.staff_reports = report_usernames(db, shop.account_id)
     return result
 
 

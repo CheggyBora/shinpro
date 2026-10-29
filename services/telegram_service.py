@@ -35,6 +35,8 @@ RECIPIENTS_KEY = 'telegram_recipients'
 # отдаёт по одному разу: не запомнив, где остановились, мы бы либо
 # разбирали одно и то же, либо теряли тех, кто написал между заходами
 OFFSET_KEY = 'telegram_updates_offset'
+# Кому из «Доступа» дашборда какие отчёты: {отчёт: [ники]}. Присылает сервер
+STAFF_REPORTS_KEY = 'telegram_staff_reports'
 
 
 class TelegramError(Exception):
@@ -169,8 +171,39 @@ class TelegramService:
     def get_active_recipients(self):
         return [r for r in self.get_recipients() if r.enabled and r.chat_id]
 
-    def is_configured(self):
-        return bool(self.get_token() and self.get_active_recipients())
+    def is_configured(self, kind=None):
+        return bool(self.get_token() and (self.get_active_recipients()
+                                          or self.staff_recipients(kind)))
+
+    def staff_recipients(self, kind):
+        """
+        Люди из «Доступа» дашборда, которым владелец отметил этот отчёт
+        (решение 29.10.2026). Сервер присылает их ники в ответе на обмен;
+        чат знаем, если человек писал боту. Не писал — пропускаем: отчёт
+        не потеряется для остальных, а ему начнёт приходить после «Старт».
+        """
+        if not kind:
+            return []
+        try:
+            plan = json.loads(self._settings().get(STAFF_REPORTS_KEY, '') or '{}')
+        except (TypeError, ValueError):
+            return []
+        nicks = plan.get(kind) if isinstance(plan, dict) else None
+        found = []
+        for nick in nicks or []:
+            chat = self.chat_of(nick)
+            if chat:
+                found.append(Recipient(chat, '@' + str(nick).lstrip('@')))
+        return found
+
+    def unknown_staff_nicks(self):
+        """Ники из «Доступа», чьих чатов мы ещё не знаем: стоит спросить бота."""
+        try:
+            plan = json.loads(self._settings().get(STAFF_REPORTS_KEY, '') or '{}')
+        except (TypeError, ValueError):
+            return []
+        nicks = {str(n).lstrip('@').lower() for rows in (plan or {}).values() for n in rows or []}
+        return sorted(n for n in nicks if not self.chat_of(n))
 
     def save_recipients(self, recipients):
         """
@@ -322,7 +355,7 @@ class TelegramService:
 
         return payload.get('result')
 
-    def _send_to_all(self, build_call):
+    def _send_to_all(self, build_call, kind=None):
         """
         Разослать всем включённым получателям.
 
@@ -332,6 +365,10 @@ class TelegramService:
         частная проблема получателя, а неверный токен или обрыв связи.
         """
         recipients = self.get_active_recipients()
+        # Плюс люди, которым этот отчёт отмечен в дашборде; одному чату —
+        # одно сообщение, даже если он и там, и там
+        known = {r.chat_id for r in recipients}
+        recipients += [r for r in self.staff_recipients(kind) if r.chat_id not in known]
         if not recipients:
             raise TelegramError("Telegram не настроен: укажите токен бота и получателя")
 
@@ -350,8 +387,11 @@ class TelegramService:
             raise TelegramError(result.summary())
         return result
 
-    def send_message(self, text):
-        """Отправить текстовое сообщение всем включённым получателям."""
+    def send_message(self, text, kind=None):
+        """
+        Отправить текстовое сообщение всем включённым получателям. kind —
+        какой это отчёт: тогда и людям, которым он отмечен в дашборде.
+        """
         if not self.get_token():
             raise TelegramError("Не задан токен бота")
 
@@ -363,7 +403,7 @@ class TelegramService:
                 'disable_web_page_preview': 'true',
             })
 
-        return self._send_to_all(send)
+        return self._send_to_all(send, kind)
 
     def send_document(self, path, caption=None):
         """Отправить файл — например, выгруженный отчёт."""

@@ -158,12 +158,12 @@ class ShiftReportService:
             return False
 
         telegram = TelegramService(self.db)
-        if not telegram.is_configured():
+        if not telegram.is_configured('shift'):
             log.info("Сводка по смене не отправлена: Telegram не настроен")
             return False
 
         text = self.format_summary(self.build_summary(shift))
-        telegram.send_async(lambda: telegram.send_message(text), on_done=on_done)
+        telegram.send_async(lambda: telegram.send_message(text, kind='shift'), on_done=on_done)
         return True
 
     # ------------------------------------------------------------------

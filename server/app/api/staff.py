@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.services import tenancy
-from app.models import (StaffUser, ALL_PERMISSIONS, PERMISSION_TITLES,
+from app.models import (StaffUser, ALL_PERMISSIONS, PERMISSION_TITLES, REPORTS,
                         ROLE_TITLES, ROLE_PERMISSIONS, PERM_STAFF)
 from app.security import (create_staff_token, current_staff, require,
                           check_paid)
@@ -84,6 +84,8 @@ class StartOut(BaseModel):
 
     # Можно ли подтвердить номер звонком вместо кода
     call_available: bool = False
+    # Можно ли кодом. Нет — только звонок: SMS не подключены
+    code_available: bool = True
 
 
 class StaffOut(BaseModel):
@@ -95,6 +97,10 @@ class StaffOut(BaseModel):
     permissions: List[str] = []
     is_active: bool = True
     pin_is_set: bool = False
+    # Telegram и отмеченные отчёты; telegram_ok — писал ли он боту
+    telegram: Optional[str] = None
+    reports: List[str] = []
+    telegram_ok: Optional[bool] = None
 
 
 class TokenOut(BaseModel):
@@ -115,6 +121,11 @@ class StaffPatchIn(BaseModel):
     role: Optional[str] = None
     permissions: Optional[List[str]] = None
     is_active: Optional[bool] = None
+    # Новый номер: старый сразу перестаёт пускать
+    phone: Optional[str] = None
+    # Ник в Telegram (пустая строка — убрать) и какие отчёты слать
+    telegram: Optional[str] = None
+    reports: Optional[List[str]] = None
 
 
 def _out(staff):
@@ -126,7 +137,9 @@ def _out(staff):
         role_title=staff.role_title,
         permissions=staff.allowed(),
         is_active=staff.is_active,
-        pin_is_set=bool(staff.pin_hash))
+        pin_is_set=bool(staff.pin_hash),
+        telegram=staff.telegram,
+        reports=staff.report_kinds())
 
 
 # ----------------------------------------------------------------------
@@ -151,7 +164,8 @@ def start(payload: PhoneIn, db: Session = Depends(get_db),
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(e))
 
     return StartOut(step=step, channel=service.channel(),
-                    call_available=service.call_available())
+                    call_available=service.call_available(),
+                    code_available=service.code_available())
 
 
 class StaffCallIn(BaseModel):
@@ -254,13 +268,25 @@ def roles(staff: StaffUser = Depends(require(PERM_STAFF))):
                   for key, title in ROLE_TITLES.items()],
         'permissions': [{'key': key, 'title': PERMISSION_TITLES[key]}
                         for key in ALL_PERMISSIONS],
+        # Отчёты в Telegram и право, без которого отчёт не уйдёт
+        'reports': [{'key': key, 'title': title, 'permission': perm}
+                    for key, title, perm in REPORTS],
     }
 
 
 @router.get('/people', response_model=List[StaffOut], summary='Кто имеет доступ')
 def people(staff: StaffUser = Depends(require(PERM_STAFF)),
            db: Session = Depends(get_db)):
-    return [_out(row) for row in StaffService(db, staff.account_id).people()]
+    from app.services import tenancy
+    from app.services.notify import personal_chat
+    shops = tenancy.shops_of(db, staff.account_id)
+    rows = []
+    for row in StaffService(db, staff.account_id).people():
+        item = _out(row)
+        if row.telegram:
+            item.telegram_ok = any(personal_chat(db, shop, row.telegram) for shop in shops)
+        rows.append(item)
+    return rows
 
 
 @router.post('/people', response_model=StaffOut, summary='Завести сотрудника')
@@ -286,7 +312,8 @@ def update_person(staff_id: int, payload: StaffPatchIn,
         row = StaffService(db, staff.account_id).update(
             staff, staff_id, name=payload.name, role=payload.role,
             permissions=payload.permissions,
-            is_active=payload.is_active)
+            is_active=payload.is_active, phone=payload.phone,
+            telegram=payload.telegram, reports=payload.reports)
     except StaffError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(e))
 

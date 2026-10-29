@@ -30,6 +30,8 @@ class StartOut(BaseModel):
     # Можно ли вместо кода подтвердить номер звонком. Решает не
     # страница, а сервер: подключён ли сервис звонков, знает он
     call_available: bool = False
+    # Можно ли кодом. Нет — только звонок: SMS не подключены
+    code_available: bool = True
 
 
 class CodeRequestIn(BaseModel):

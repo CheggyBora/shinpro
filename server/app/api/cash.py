@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.api.dashboard import _period
 from app.database import get_db
-from app.models import StaffUser, PERM_REVENUE
+from app.models import StaffUser, PERM_CASH
 from app.security import require
 from app.services import cash as cash_service, shop_settings, tenancy
 from app.services.dashboard_service import day_bounds
@@ -41,7 +41,7 @@ def cash(day_from: Optional[date] = Query(None, alias='from'),
          day_to: Optional[date] = Query(None, alias='to'),
          shop: Optional[str] = Query(
              None, description='Точка. Пусто — все точки сети'),
-         staff: StaffUser = Depends(require(PERM_REVENUE)),
+         staff: StaffUser = Depends(require(PERM_CASH)),
          db: Session = Depends(get_db)):
     """
     now — остаток каждой точки: у открытой смены «должно быть», у

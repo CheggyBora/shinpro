@@ -917,6 +917,28 @@ class SyncService:
                 stamps[key] = when.isoformat()
         return stamps
 
+    def _adopt_staff_reports(self, plan):
+        """
+        Кому из «Доступа» дашборда какие отчёты слать. Если среди них есть
+        ник, чьего чата мы ещё не знаем, — спрашиваем бота, кто ему писал:
+        человек мог нажать «Старт» уже после прошлого обмена.
+        """
+        if plan is None:
+            return
+        from services.telegram_service import TelegramService, STAFF_REPORTS_KEY
+        value = json.dumps(plan if isinstance(plan, dict) else {}, ensure_ascii=False,
+                           sort_keys=True)
+        settings = self._settings()
+        if (settings.get(STAFF_REPORTS_KEY, '') or '') != value:
+            settings.set(STAFF_REPORTS_KEY, value)
+        telegram = TelegramService(self.db)
+        if telegram.get_token() and telegram.unknown_staff_nicks():
+            try:
+                telegram.fetch_people()
+                self.db.commit()
+            except Exception as e:
+                log.warning(f"Не удалось спросить бота, кто ему писал: {e}")
+
     def _adopt_settings(self, rows):
         """
         Принять настройки, которые владелец поставил позже нас.
@@ -1095,6 +1117,7 @@ class SyncService:
         # до остальной выкачки: по этим настройкам цех считает посты и
         # часы записи
         adopted = self._adopt_settings(pushed.get('from_server'))
+        self._adopt_staff_reports(pushed.get('staff_reports'))
 
         requests = self._call('GET', '/sync/storage-requests')
         acks = self.apply_pull(requests)

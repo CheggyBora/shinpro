@@ -28,7 +28,8 @@ from app.models.staff import (StaffUser, StaffAction, ROLE_OWNER, ROLE_ADMIN,
                               PERMISSION_TITLES, PERM_REVENUE, PERM_ORDERS,
                               PERM_SALARY_ALL, PERM_SALARY_PAY,
                               PERM_BOOKING, PERM_STORAGE, PERM_CLIENTS,
-                              PERM_STAFF)
+                              PERM_STAFF, PERM_CALENDAR, PERM_STOCK, PERM_CASH,
+                              REPORTS, REPORT_KINDS)
 
 __all__ = [
     'Account', 'AccountPayment', 'Shop', 'AccountDomain', 'ConnectCode', 'ConnectAttempt',
@@ -49,4 +50,5 @@ __all__ = [
     'ROLE_PERMISSIONS', 'ALL_PERMISSIONS', 'PERMISSION_TITLES',
     'PERM_REVENUE', 'PERM_ORDERS', 'PERM_SALARY_ALL', 'PERM_SALARY_PAY',
     'PERM_BOOKING', 'PERM_STORAGE', 'PERM_CLIENTS', 'PERM_STAFF',
+    'PERM_CALENDAR', 'PERM_STOCK', 'PERM_CASH', 'REPORTS', 'REPORT_KINDS',
 ]

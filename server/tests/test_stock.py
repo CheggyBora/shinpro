@@ -121,10 +121,11 @@ def by_uid(items, uid):
 with TestClient(app) as http:
     # Входим, пока заказчик один: со вторым вход спрашивает, к кому
     owner = enter(http, OWNER_PHONE, '4832')
-    # Админ без права на выручку: склад видит, закупку — нет
+    # Админ без права на выручку: склад видит (своя галочка «Склад»),
+    # закупку — нет
     added = http.post('/staff/people', headers=owner, json={
         'phone': ADMIN_PHONE, 'name': 'Ольга', 'role': 'admin',
-        'permissions': ['orders']})
+        'permissions': ['orders', 'stock']})
     admin = enter(http, ADMIN_PHONE, '5821')
 
     db = SessionLocal()

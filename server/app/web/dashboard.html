@@ -549,6 +549,7 @@ input.code { letter-spacing: 8px; text-align: center; font-size: 22px; font-weig
       <a class="go" id="lDial" href="tel:" style="display:block;text-align:center;
          text-decoration:none">Позвонить</a>
       <p class="note" id="callState">Ждём звонка…</p>
+      <button class="go" id="lCallAgain" type="button" hidden>Позвонить ещё раз</button>
       <button class="link" id="lCallCode" type="button">Лучше кодом из SMS</button>
     </div>
 
@@ -727,9 +728,12 @@ $('lNext').addEventListener('click', function () {
     .then(function (answer) {
       // Подключён ли звонок — нужно и для «Забыли ПИН?»
       loginCallAvailable = !!answer.call_available;
+      loginCodeAvailable = answer.code_available !== false;
       if (answer.step === 'pin') {
         loginStep('stepPin');
         $('lPin').focus();
+      } else if (!answer.call_available && !loginCodeAvailable) {
+        loginError('Вход не настроен: впишите ключ flashcall.ru в программе цеха');
       } else if (answer.call_available) {
         // Звонок быстрее кода и дешевле: нечего ждать и перепутать
         startCall();
@@ -743,11 +747,22 @@ $('lNext').addEventListener('click', function () {
 
 var call = { ticket: null, until: 0 };
 var loginCallAvailable = false;
+// Можно ли войти кодом. Нет — только звонок: SMS не подключены
+var loginCodeAvailable = true;
+
+// Не дозвонились или время вышло: без SMS — «Позвонить ещё раз»
+function callFailed(text) {
+  $('callState').textContent = text;
+  call.ticket = null;
+  $('lCallAgain').hidden = false;
+}
 
 function startCall() {
   loginStep('stepCall');
   $('callState').textContent = 'Берём номер…';
   $('lDial').removeAttribute('href');
+  $('lCallAgain').hidden = true;
+  $('lCallCode').hidden = !loginCodeAvailable;
 
   api('/staff/call', { method: 'POST', body: { phone: phoneDigits } })
     .then(function (answer) {
@@ -760,7 +775,9 @@ function startCall() {
       pollCall();
     })
     .catch(function (e) {
-      // Сервис звонков не ответил — не тупик: показываем код
+      // Сервис звонков не ответил — не тупик: показываем код, а если
+      // кода нет — даём позвонить ещё раз
+      if (!loginCodeAvailable) { callFailed(e.message); return; }
       loginStep('stepCode');
       sendCode();
       loginError(e.message);
@@ -771,8 +788,7 @@ function pollCall() {
   if (!call.ticket) return;
 
   if (Date.now() > call.until) {
-    $('callState').textContent = 'Время вышло. Начните вход заново.';
-    call.ticket = null;
+    callFailed('Звонка не было. Нажмите «Позвонить ещё раз» и позвоните с этого номера.');
     return;
   }
 
@@ -788,8 +804,7 @@ function pollCall() {
 
     return answer.json().catch(function () { return {}; }).then(function (data) {
       if (!answer.ok) {
-        $('callState').textContent = data.detail || 'Не получилось';
-        call.ticket = null;
+        callFailed(data.detail || 'Не получилось');
         return;
       }
 
@@ -809,6 +824,8 @@ function pollCall() {
     setTimeout(pollCall, 3000);
   });
 }
+
+$('lCallAgain').addEventListener('click', startCall);
 
 $('lCallCode').addEventListener('click', function () {
   call.ticket = null;
@@ -937,18 +954,16 @@ function sections() {
   var can = function (name) { return me.permissions.indexOf(name) >= 0; };
 
   if (can('revenue')) list.push({ key: 'summary', title: 'Сводка' });
-  // Задачи нужны всем, кто заходит в дашборд: владелец ставит их из
-  // дома, админ отмечает. Отдельного права под них нет
-  list.push({ key: 'calendar', title: 'Календарь' });
-  // Остатки, как и задачи, нужны всем, кто заходит в дашборд
-  if (stockOn()) list.push({ key: 'stock', title: 'Склад' });
+  // Календарь и склад — свои галочки в «Доступе» (решение 29.10.2026)
+  if (can('calendar')) list.push({ key: 'calendar', title: 'Календарь' });
+  if (can('stock') && stockOn()) list.push({ key: 'stock', title: 'Склад' });
   if (can('revenue')) list.push({ key: 'services', title: 'Услуги' });
   if (can('salary_all')) list.push({ key: 'masters', title: 'Мастера' });
   if (can('orders')) list.push({ key: 'orders', title: 'Наряды' });
   if (can('salary_all')) list.push({ key: 'shifts', title: 'Смены' });
   if (can('salary_all')) list.push({ key: 'salary', title: 'Зарплата' });
-  // Касса — те же деньги, что выручка: видит тот, кому она открыта
-  if (can('revenue')) list.push({ key: 'cash', title: 'Касса' });
+  // Касса — своя галочка: выручку можно смотреть, не видя наличных
+  if (can('cash')) list.push({ key: 'cash', title: 'Касса' });
   if (can('booking')) list.push({ key: 'booking', title: 'Запись' });
   if (can('staff')) list.push({ key: 'staff', title: 'Доступ' });
   // Как организацию видят клиенты и по каким адресам она открывается
@@ -2082,6 +2097,9 @@ function loadStaff() {
         return '<button class="row" type="button" data-person="' + person.id + '">'
           + '<div class="main"><b>' + escape(person.name || person.phone) + tags + '</b>'
           + '<span>' + escape(person.role_title) + ' · ' + escape(person.phone)
+          + (person.telegram ? ' · @' + escape(person.telegram) : '')
+          + (person.reports && person.reports.length
+             ? ' · отчётов: ' + person.reports.length : '')
           + '</span></div>'
           + '<div class="money" style="font-weight:400;color:var(--muted)">›</div>'
           + '</button>';
@@ -2125,14 +2143,19 @@ function openPerson(person) {
   var html = '<h2>' + (adding ? 'Новый сотрудник'
                               : escape(person.name || person.phone)) + '</h2>';
   html += '<div class="when">' + (adding
-    ? 'Человек войдёт сам: телефон, код, свой ПИН'
+    ? 'Человек войдёт сам: телефон, звонок для подтверждения, свой ПИН'
     : escape(person.phone) + ' · ' + escape(person.role_title)) + '</div>';
 
   html += '<div class="form">';
 
-  if (adding) {
-    html += '<label for="fPhone">Телефон</label>'
-      + '<input id="fPhone" type="tel" inputmode="tel" placeholder="+7 ___ ___-__-__">';
+  // Телефон — и у нового, и у заведённого: номер можно сменить. Старый
+  // номер перестаёт пускать сразу, новый подтверждается звонком
+  html += '<label for="fPhone">Телефон</label>'
+    + '<input id="fPhone" type="tel" inputmode="tel" placeholder="+7 ___ ___-__-__"'
+    + (person ? ' value="' + attr(fixPhone(person.phone)) + '"' : '') + '>';
+  if (!adding) {
+    html += '<p class="note">Сменили номер — человек входит заново: звонок с нового '
+      + 'номера и новый ПИН. Старый номер больше не пускает.</p>';
   }
 
   html += '<label for="fName">Имя</label>'
@@ -2150,6 +2173,31 @@ function openPerson(person) {
       }).join('') + '</div>'
     + '<p class="note">Галочки подставляются по роли. Снимите или добавьте '
     + 'любую — у этого человека будет по-своему.</p>';
+
+  // Telegram и отчёты (решение владельца 29.10.2026)
+  var telegram = person && person.telegram ? '@' + person.telegram : '';
+  var reports = person ? (person.reports || []) : [];
+  html += '<label for="fTelegram">Telegram</label>'
+    + '<input id="fTelegram" type="text" autocapitalize="off" spellcheck="false"'
+    + ' placeholder="@ivan_shiny" value="' + attr(telegram) + '">';
+  if (person && person.telegram) {
+    html += '<p class="note">' + (person.telegram_ok
+      ? '✓ Пишет боту — отчёты приходят.'
+      : 'Ещё не писал боту: пусть откроет бота точки и нажмёт «Старт» — отчёты начнут приходить сами.')
+      + '</p>';
+  } else {
+    html += '<p class="note">Ник в Telegram. Человек один раз нажимает «Старт» у бота '
+      + 'точки — и получает отмеченные ниже отчёты.</p>';
+  }
+  html += '<label>Какие отчёты присылать</label><div id="fReports">'
+    + (roles.reports || []).map(function (item) {
+        return '<label class="perm"><input type="checkbox" value="' + item.key + '"'
+          + ' data-needs="' + item.permission + '"'
+          + (reports.indexOf(item.key) >= 0 ? ' checked' : '') + '>'
+          + escape(item.title) + '<small class="needs"></small></label>';
+      }).join('') + '</div>'
+    + '<p class="note">Отчёт не уйдёт, если у человека нет права на то, что в нём: '
+    + 'сводка по смене — это выручка.</p>';
 
   html += '</div>';
 
@@ -2172,13 +2220,33 @@ function openPerson(person) {
     [].slice.call($('fPerms').querySelectorAll('input')).forEach(function (box) {
       box.checked = allowed.indexOf(box.value) >= 0;
     });
+    markReports();
   });
 
-  if (adding) {
-    $('fPhone').addEventListener('input', function (event) {
-      event.target.value = fixPhone(event.target.value);
+  // Отчёт без права на его содержимое — серым и с пояснением: отмечать
+  // можно, но уйдёт он, только когда право появится
+  function markReports() {
+    var chosen = [].slice.call($('fPerms').querySelectorAll('input'))
+      .filter(function (box) { return box.checked; })
+      .map(function (box) { return box.value; });
+    var titles = {};
+    roles.permissions.forEach(function (item) { titles[item.key] = item.title; });
+    [].slice.call($('fReports').querySelectorAll('input')).forEach(function (box) {
+      var needs = box.getAttribute('data-needs');
+      var ok = chosen.indexOf(needs) >= 0;
+      box.parentNode.style.opacity = ok ? '' : '.55';
+      box.parentNode.querySelector('.needs').textContent =
+        ok ? '' : ' — нужно право «' + (titles[needs] || needs) + '»';
     });
   }
+  [].slice.call($('fPerms').querySelectorAll('input')).forEach(function (box) {
+    box.addEventListener('change', markReports);
+  });
+  markReports();
+
+  $('fPhone').addEventListener('input', function (event) {
+    event.target.value = fixPhone(event.target.value);
+  });
 
   $('savePerson').addEventListener('click', function () {
     var chosen = [].slice.call($('fPerms').querySelectorAll('input'))
@@ -2190,19 +2258,36 @@ function openPerson(person) {
       role: $('fRole').value,
       permissions: chosen
     };
+    var phone = $('fPhone').value.replace(/\D/g, '');
+    var extra = {
+      telegram: $('fTelegram').value.trim(),
+      reports: [].slice.call($('fReports').querySelectorAll('input'))
+        .filter(function (box) { return box.checked; })
+        .map(function (box) { return box.value; })
+    };
+    var newPhone = !adding && phone !== person.phone.replace(/\D/g, '');
+    if (!adding) {
+      Object.assign(body, extra);
+      if (newPhone) body.phone = phone;
+    }
 
+    // Новому: сначала завести, потом — Telegram и отчёты той же правкой
     var request = adding
-      ? api('/staff/people', { method: 'POST',
-            body: Object.assign({ phone: $('fPhone').value.replace(/\D/g, '') }, body) })
+      ? api('/staff/people', { method: 'POST', body: Object.assign({ phone: phone }, body) })
+          .then(function (row) {
+            if (!extra.telegram && !extra.reports.length) return row;
+            return api('/staff/people/' + row.id, { method: 'PATCH', body: extra });
+          })
       : api('/staff/people/' + person.id, { method: 'PATCH', body: body });
 
     request.then(function () {
-      // Себе же меняли права — прежний вход больше не годится,
+      // Себе же меняли права или номер — прежний вход больше не годится,
       // и сервер это подтвердит отказом на первом же запросе
       if (person && me && person.id === me.id) {
         closeSheet();
         forget();
-        loginError('Права изменились, войдите заново');
+        loginError(newPhone ? 'Номер сменён — войдите с нового номера'
+                            : 'Права изменились, войдите заново');
         return;
       }
       closeSheet();
@@ -2237,7 +2322,8 @@ function openLog() {
 
     var WHAT = {
       login: 'вход по ПИНу', verify: 'вход по коду', set_pin: 'задан ПИН',
-      staff_add: 'заведён сотрудник', staff_update: 'изменён доступ'
+      staff_add: 'заведён сотрудник', staff_update: 'изменён доступ',
+      call: 'вход по звонку'
     };
 
     html += rows.map(function (row) {

@@ -13,8 +13,8 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Shop, StaffUser
-from app.security import current_staff, require_sync_key
+from app.models import Shop, StaffUser, PERM_CALENDAR
+from app.security import current_staff, require, require_sync_key
 from app.models.task import KIND_NOTE
 from app.services import notify, shop_settings, tasks as task_service, tenancy
 from app.utils import now as shop_now
@@ -117,7 +117,7 @@ def list_tasks(day_from: Optional[date] = Query(None, alias='from'),
                    None, description='Точка. Пусто — все точки сети'),
                direction: Optional[str] = Query(None,
                                                 description=DIRECTION_HELP),
-               staff: StaffUser = Depends(current_staff),
+               staff: StaffUser = Depends(require(PERM_CALENDAR)),
                db: Session = Depends(get_db)):
     """
     Задачи с from по to — обоих направлений или одного (direction).
@@ -173,7 +173,7 @@ def _hours(db, shop_ids):
 @router.post('/tasks', summary='Поставить задачу')
 def create_task(payload: dict,
                 shop: Optional[str] = Query(None),
-                staff: StaffUser = Depends(current_staff),
+                staff: StaffUser = Depends(require(PERM_CALENDAR)),
                 db: Session = Depends(get_db)):
     # Точку можно прислать и в теле: форма знает, куда ставит
     chosen = _one_shop(db, staff, payload.get('shop') or shop)
@@ -202,7 +202,7 @@ def _announce(row, names):
 @router.patch('/tasks/{uid}', summary='Поправить, перенести, отметить')
 def patch_task(uid: str, payload: dict,
                shop: Optional[str] = Query(None),
-               staff: StaffUser = Depends(current_staff),
+               staff: StaffUser = Depends(require(PERM_CALENDAR)),
                db: Session = Depends(get_db)):
     """
     Любое поле задачи; done — отметка «сделано» (true) или снятие её
@@ -231,7 +231,7 @@ def patch_task(uid: str, payload: dict,
 def list_counterparties(shop: Optional[str] = Query(None),
                         direction: Optional[str] = Query(
                             None, description=DIRECTION_HELP),
-                        staff: StaffUser = Depends(current_staff),
+                        staff: StaffUser = Depends(require(PERM_CALENDAR)),
                         db: Session = Depends(get_db)):
     # У мойки свои поставщики: в задаче мойки выбирать склад шин незачем.
     # Форма просит список направления задачи; пусто или all — все

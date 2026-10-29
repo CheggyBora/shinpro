@@ -552,6 +552,7 @@ input.code {
         </div>
 
         <p class="hint" id="callState">Ждём звонка…</p>
+        <button class="go" id="lCallAgain" type="button" hidden>Позвонить ещё раз</button>
         <button class="ghost" id="lCallCode" type="button">Лучше кодом из SMS</button>
       </div>
 
@@ -1006,21 +1007,34 @@ $('lNext').addEventListener('click', function () {
         // перепутать. Кодом остаётся запасной путь — со скрытого
         // номера и не со своего телефона звонок не подтвердится
         state.callAvailable = result.data.call_available;
+        state.codeAvailable = result.data.code_available !== false;
         if (state.callAvailable) startCall();
-        else prepareCodeStep();
+        else if (state.codeAvailable) prepareCodeStep();
+        else loginError('Подтверждение номера пока не работает. Позвоните нам — запишем.');
       }
     });
 });
+
+// Не дозвонились или время вышло: без SMS — «Позвонить ещё раз»
+function callFailed(text) {
+  $('callState').textContent = text;
+  state.callTicket = null;
+  $('lCallAgain').hidden = false;
+}
 
 function startCall() {
   loginStep('stepCall');
   $('callState').textContent = 'Берём номер…';
   $('lDial').removeAttribute('href');
+  $('lCallAgain').hidden = true;
+  $('lCallCode').hidden = state.codeAvailable === false;
 
   api('/auth/call', {method: 'POST', body: {phone: state.loginPhone}})
     .then(function (result) {
       if (!result.ok) {
-        // Сервис звонков не ответил — не тупик: показываем код
+        // Сервис звонков не ответил — не тупик: показываем код, а если
+        // кода нет — даём позвонить ещё раз
+        if (state.codeAvailable === false) { callFailed(reason(result)); return; }
         prepareCodeStep();
         loginError(reason(result));
         return;
@@ -1042,8 +1056,7 @@ function pollCall() {
   if (!state.callTicket) return;
 
   if (Date.now() > state.callUntil) {
-    $('callState').textContent = 'Время вышло. Начните вход заново.';
-    state.callTicket = null;
+    callFailed('Звонка не было. Нажмите «Позвонить ещё раз» и позвоните с этого номера.');
     return;
   }
 
@@ -1058,8 +1071,7 @@ function pollCall() {
     }
 
     if (!result.ok) {
-      $('callState').textContent = reason(result);
-      state.callTicket = null;
+      callFailed(reason(result));
       return;
     }
 
@@ -1077,6 +1089,8 @@ function pollCall() {
 
 // Запасной путь. Со скрытого номера и не со своего телефона звонок
 // не подтвердится — тогда остаётся код
+$('lCallAgain').addEventListener('click', startCall);
+
 $('lCallCode').addEventListener('click', function () {
   stopCall();
   prepareCodeStep();
@@ -1142,8 +1156,10 @@ $('lPinGo').addEventListener('click', function () {
     });
 });
 
+// Забыли ПИН — номер подтверждаем звонком, если он подключён
 $('lForgot').addEventListener('click', function () {
   $('loginHint').textContent = 'Подтвердим номер — и зададите новый ПИН.';
+  if (state.callAvailable) { startCall(); return; }
   prepareCodeStep();
 });
 

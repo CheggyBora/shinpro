@@ -21,7 +21,7 @@ from datetime import datetime, timedelta
 import secrets
 
 from app.config import settings
-from app.models import (Client, LoginCode, StaffUser, StaffAction,
+from app.models import (Client, LoginCode, StaffUser, StaffAction, REPORT_KINDS,
                         ALL_PERMISSIONS, ROLE_OWNER, ROLE_ADMIN,
                         ROLE_TITLES)
 from app.security import (generate_code, hash_secret, secrets_match,
@@ -96,6 +96,19 @@ class StaffService:
                  or CHANNEL_SMS).lower()
         return CHANNEL_EMAIL if value == CHANNEL_EMAIL else CHANNEL_SMS
 
+    def code_available(self):
+        """
+        Можно ли подтвердить номер кодом.
+
+        Звонок подключён, а SMS нет — только звонок (решение владельца
+        29.10.2026: SMS пока не используем). Письмом — если так настроено.
+        Не подключено ни то ни другое — как раньше: код уходит в журнал,
+        иначе на новом сервере не войти вовсе.
+        """
+        if self.channel() == CHANNEL_EMAIL:
+            return True
+        return sms.available(self.db, self._shop()) or not self.call_available()
+
     def request_code(self, phone, email=None):
         """
         Выслать код сотруднику.
@@ -107,6 +120,9 @@ class StaffService:
         phone = normalize_phone(phone)
         if not is_valid_phone(phone):
             raise AuthError('Номер телефона выглядит неправильно')
+
+        if not self.code_available():
+            raise AuthError('Вход по SMS выключен — подтвердите номер звонком')
 
         staff = self._staff(phone)
 
@@ -244,6 +260,7 @@ class StaffService:
         staff.pin_failures = 0
         self.db.commit()
         self.db.refresh(staff)
+        self.log(staff, 'call', 'вход по звонку')
         return staff
 
     def _known_email(self, phone):
@@ -380,6 +397,8 @@ class StaffService:
         role = role or ROLE_ADMIN
         if role not in ROLE_TITLES:
             raise StaffError(f'Неизвестная роль: {role}')
+        if role == ROLE_OWNER and (author is None or author.role != ROLE_OWNER):
+            raise StaffError('Назначить владельца может только владелец')
 
         existing = self._staff(phone)
         if existing is not None:
@@ -402,7 +421,7 @@ class StaffService:
         return staff
 
     def update(self, author, staff_id, name=None, role=None, permissions=None,
-               is_active=None):
+               is_active=None, phone=None, telegram=None, reports=None):
         staff = self.db.query(StaffUser).filter(
             StaffUser.id == staff_id,
             StaffUser.account_id == self.account_id).first()
@@ -411,6 +430,19 @@ class StaffService:
 
         changes = []
 
+        if phone is not None:
+            changes.append(self._change_phone(author, staff, phone))
+
+        if telegram is not None:
+            staff.telegram = clean_telegram(telegram)
+            changes.append(f'Telegram: @{staff.telegram}' if staff.telegram
+                           else 'Telegram убран')
+
+        if reports is not None:
+            chosen = [kind for kind in reports if kind in REPORT_KINDS]
+            staff.reports = ','.join(dict.fromkeys(chosen)) or None
+            changes.append('отчёты')
+
         if name is not None:
             staff.name = (name or '').strip() or None
             changes.append('имя')
@@ -418,6 +450,10 @@ class StaffService:
         if role is not None:
             if role not in ROLE_TITLES:
                 raise StaffError(f'Неизвестная роль: {role}')
+            # Владельца назначает и снимает только владелец: иначе админ с
+            # правом «Сотрудники» сделал бы себя владельцем
+            if (role == ROLE_OWNER or staff.role == ROLE_OWNER) and role != staff.role                     and (author is None or author.role != ROLE_OWNER):
+                raise StaffError('Назначить или снять владельца может только владелец')
             if staff.role == ROLE_OWNER and role != ROLE_OWNER:
                 self._check_last_owner(staff)
             staff.role = role
@@ -444,6 +480,32 @@ class StaffService:
         self.log(author, 'staff_update',
                  f'{staff.title}: ' + ', '.join(changes))
         return staff
+
+    def _change_phone(self, author, staff, phone):
+        """
+        Сменить номер. Старый номер перестаёт пускать сразу: ПИН и
+        подтверждение сброшены, человек входит заново звонком с нового
+        номера. Номер владельца меняет только владелец — иначе админ с
+        правом «Сотрудники» мог бы забрать себе дашборд.
+        """
+        phone = normalize_phone(phone)
+        if not is_valid_phone(phone):
+            raise StaffError('Номер телефона выглядит неправильно')
+        if phone == staff.phone:
+            return 'номер тот же'
+        if staff.role == ROLE_OWNER and (author is None or author.role != ROLE_OWNER):
+            raise StaffError('Номер владельца может сменить только владелец')
+        taken = self._staff(phone)
+        if taken is not None and taken.id != staff.id:
+            raise StaffError(f'{phone} уже заведён: {taken.title}')
+        old = staff.phone
+        staff.phone = phone
+        staff.pin_hash = None
+        staff.pin_updated_at = None
+        staff.pin_failures = 0
+        staff.pin_blocked_at = None
+        staff.phone_verified_at = None
+        return f'номер {old} → {phone}'
 
     def _check_last_owner(self, staff):
         """
@@ -477,6 +539,15 @@ class StaffService:
         if staff is not None:
             return staff
 
+        # Владелец уже есть — значит, номер из настроек сервера устарел:
+        # владелец сменил его в дашборде. Второго владельца со старым
+        # номером не заводим, иначе старый номер снова пускал бы в дашборд
+        existing = self.db.query(StaffUser).filter(
+            StaffUser.account_id == self.account_id,
+            StaffUser.role == ROLE_OWNER).first()
+        if existing is not None:
+            return existing
+
         staff = StaffUser(phone=phone, name=(name or '').strip() or None,
                           role=ROLE_OWNER, account_id=self.account_id)
         self.db.add(staff)
@@ -501,6 +572,62 @@ class StaffService:
         return self.db.query(StaffAction).filter(
             StaffAction.account_id == self.account_id).order_by(
             StaffAction.happened_at.desc()).limit(limit).all()
+
+
+def clean_telegram(value):
+    """«@Ivan_Shiny», «t.me/ivan_shiny» → «ivan_shiny». Пусто — убрать ник."""
+    text = str(value or '').strip()
+    for prefix in ('https://', 'http://', 't.me/', 'telegram.me/', '@'):
+        if text.lower().startswith(prefix):
+            text = text[len(prefix):]
+    text = text.strip().strip('/').lower()
+    if not text:
+        return None
+    if not text.isascii() or not all(ch.isalnum() or ch == '_' for ch in text) \
+            or not 5 <= len(text) <= 32:
+        raise StaffError('Ник в Telegram — латиницей, цифрами и «_», от 5 символов, '
+                         'например @ivan_shiny')
+    return text
+
+
+def report_chats(db, account_id, kind):
+    """
+    Чаты людей из «Доступа», которым отмечен этот отчёт. Ник → чат знает
+    цех (кто писал боту): он присылает это в настройке telegram_usernames.
+    """
+    from app.services import tenancy
+    from app.services.notify import personal_chat
+    if account_id is None:
+        return []
+    people = db.query(StaffUser).filter(StaffUser.account_id == account_id,
+                                        StaffUser.is_active.is_(True),
+                                        StaffUser.telegram.isnot(None)).all()
+    chats = []
+    shops = tenancy.shops_of(db, account_id)
+    for person in people:
+        if not person.gets_report(kind):
+            continue
+        for shop in shops:
+            chat = personal_chat(db, shop, person.telegram)
+            if chat:
+                chats.append(chat)
+                break
+    return list(dict.fromkeys(chats))
+
+
+def report_usernames(db, account_id):
+    """{отчёт: [ники]} — цеху: кому ещё слать сводку по смене, склад, покраску."""
+    if account_id is None:
+        return {}
+    people = db.query(StaffUser).filter(StaffUser.account_id == account_id,
+                                        StaffUser.is_active.is_(True),
+                                        StaffUser.telegram.isnot(None)).all()
+    result = {}
+    for kind in REPORT_KINDS:
+        nicks = sorted({p.telegram for p in people if p.gets_report(kind)})
+        if nicks:
+            result[kind] = nicks
+    return result
 
 
 def _pack(permissions):

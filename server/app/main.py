@@ -74,6 +74,8 @@ async def lifespan(app: FastAPI):
                     settings.OWNER_PHONE, settings.OWNER_NAME)
                 if owner is None:
                     log.warning('SERVER_OWNER_PHONE не похож на номер телефона')
+                else:
+                    _mark_platform_owner(session, account_id)
         except Exception as e:
             log.error('Не удалось завести владельца дашборда: %s', e)
         finally:
@@ -374,6 +376,24 @@ def booking_page():
     path = os.path.join(WEB_DIR, 'booking.html')
     with open(path, encoding='utf-8') as page:
         return HTMLResponse(page.read())
+
+
+def _mark_platform_owner(session, account_id):
+    """
+    Отметить владельца сервера флагом — один раз, по номеру из настроек.
+    Дальше его узнают по флагу, и номер можно сменить в дашборде.
+    """
+    from app.models import StaffUser
+    from app.utils import normalize_phone
+    if session.query(StaffUser).filter(StaffUser.account_id == account_id,
+                                       StaffUser.is_platform_owner.is_(True)).count():
+        return
+    phone = normalize_phone(settings.OWNER_PHONE or '')
+    row = session.query(StaffUser).filter(StaffUser.account_id == account_id,
+                                          StaffUser.phone == phone).first()
+    if row is not None:
+        row.is_platform_owner = True
+        session.commit()
 
 
 @app.get('/health', tags=['Служебное'], summary='Жив ли сервер')

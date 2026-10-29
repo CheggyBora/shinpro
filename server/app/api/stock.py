@@ -12,8 +12,8 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Shop, StaffUser, PERM_REVENUE
-from app.security import current_staff, require_sync_key
+from app.models import Shop, StaffUser, PERM_REVENUE, PERM_STOCK
+from app.security import current_staff, require, require_sync_key
 from app.services import shop_settings, stock as stock_service, tenancy
 
 sync_router = APIRouter(prefix='/sync', tags=['Обмен с цехом'])
@@ -70,7 +70,7 @@ def list_stock(shop: Optional[str] = Query(
                direction: Optional[str] = Query(
                    None, description='Направление: all (по умолчанию), '
                                      'tire или wash'),
-               staff: StaffUser = Depends(current_staff),
+               staff: StaffUser = Depends(require(PERM_STOCK)),
                db: Session = Depends(get_db)):
     """
     Позиции склада: сначала минус, потом мало, потом по названию.

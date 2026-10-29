@@ -56,13 +56,17 @@ def set_route(db, kind, chat_ids):
 def recipients(db, kind):
     """Кому отправить: выбранные для вида (только включённые), иначе все включённые."""
     from services.telegram_service import TelegramService
-    active = TelegramService(db).get_active_recipients()
+    telegram = TelegramService(db)
+    active = telegram.get_active_recipients()
     chosen = set(route(db, kind))
+    result = active
     if chosen:
         picked = [r for r in active if r.chat_id in chosen]
         if picked:
-            return picked
-    return active
+            result = picked
+    # Плюс люди, которым этот отчёт отмечен в «Доступе» дашборда
+    known = {r.chat_id for r in result}
+    return result + [r for r in telegram.staff_recipients(kind) if r.chat_id not in known]
 
 
 def chats_for_server(db, kind):

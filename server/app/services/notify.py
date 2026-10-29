@@ -61,12 +61,23 @@ def chats_for(db, shop, kind=None):
     Своя строка для вида пустая — значит, тем же, кому сводка по смене:
     пустая настройка означает «как у всех», а не «никому».
     """
+    chats = None
     if kind in KINDS:
         own = _split(shop_settings.get(db, f'telegram_chats_{kind}',
                                        shop=shop))
         if own:
-            return own
-    return _split(shop_settings.get(db, 'telegram_chats', shop=shop))
+            chats = own
+    if chats is None:
+        chats = _split(shop_settings.get(db, 'telegram_chats', shop=shop))
+    # Плюс люди из «Доступа», которым этот отчёт отмечен в дашборде
+    if kind in KINDS:
+        from app.models import Shop
+        from app.services.staff_service import report_chats
+        row = shop if hasattr(shop, 'account_id') else db.query(Shop).filter(
+            Shop.id == shop).first() if shop is not None else None
+        if row is not None:
+            chats = list(dict.fromkeys(chats + report_chats(db, row.account_id, kind)))
+    return chats
 
 
 def is_configured(db, shop, kind=None):

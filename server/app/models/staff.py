@@ -43,10 +43,29 @@ PERM_BOOKING = 'booking'            # записи на обслуживание
 PERM_STORAGE = 'storage'            # хранение шин и заявки клиентов
 PERM_CLIENTS = 'clients'            # клиенты и их история
 PERM_STAFF = 'staff'                # заводить людей и раздавать права
+# Раньше календарь и склад видел всякий, кто вошёл, а касса шла вместе
+# с выручкой. Теперь у каждого своя галочка (решение владельца 29.10.2026)
+PERM_CALENDAR = 'calendar'          # календарь: задачи и комментарии
+PERM_STOCK = 'stock'                # склад: остатки
+PERM_CASH = 'cash'                  # касса: ордера и остаток наличных
 
-ALL_PERMISSIONS = (PERM_REVENUE, PERM_ORDERS, PERM_SALARY_ALL,
-                   PERM_SALARY_PAY, PERM_BOOKING, PERM_STORAGE, PERM_CLIENTS,
-                   PERM_STAFF)
+ALL_PERMISSIONS = (PERM_REVENUE, PERM_CASH, PERM_ORDERS, PERM_SALARY_ALL,
+                   PERM_SALARY_PAY, PERM_BOOKING, PERM_CALENDAR, PERM_STOCK,
+                   PERM_STORAGE, PERM_CLIENTS, PERM_STAFF)
+
+# Отчёты в Telegram, которые можно отметить человеку в «Доступе», и
+# право, без которого отчёт ему не уйдёт: сводка по смене — это деньги
+REPORT_SHIFT, REPORT_TASK, REPORT_DIGEST = 'shift', 'task', 'digest'
+REPORT_STORAGE, REPORT_PAINT = 'storage', 'paint'
+REPORTS = (
+    (REPORT_SHIFT, 'Сводка по смене', PERM_REVENUE),
+    (REPORT_TASK, 'Новые задачи из календаря', PERM_CALENDAR),
+    (REPORT_DIGEST, 'Задачи утром и вечером', PERM_CALENDAR),
+    (REPORT_STORAGE, 'Склад: отвезти и привезти комплекты', PERM_STORAGE),
+    (REPORT_PAINT, 'Покраска дисков', PERM_CALENDAR),
+)
+REPORT_KINDS = tuple(key for key, _title, _perm in REPORTS)
+REPORT_PERMISSION = {key: perm for key, _title, perm in REPORTS}
 
 PERMISSION_TITLES = {
     PERM_REVENUE: 'Выручка и отчёты',
@@ -57,6 +76,9 @@ PERMISSION_TITLES = {
     PERM_STORAGE: 'Хранение шин',
     PERM_CLIENTS: 'Клиенты и история',
     PERM_STAFF: 'Сотрудники и права',
+    PERM_CALENDAR: 'Календарь и задачи',
+    PERM_STOCK: 'Склад',
+    PERM_CASH: 'Касса',
 }
 
 ROLE_PERMISSIONS = {
@@ -64,8 +86,9 @@ ROLE_PERMISSIONS = {
     # Админу открыто всё, кроме раздачи доступа и выдачи денег: заводить
     # людей и платить зарплату — дело владельца. Любую галочку владелец
     # может добавить или снять отдельно
-    ROLE_ADMIN: [PERM_REVENUE, PERM_ORDERS, PERM_SALARY_ALL, PERM_BOOKING,
-                 PERM_STORAGE, PERM_CLIENTS],
+    ROLE_ADMIN: [PERM_REVENUE, PERM_CASH, PERM_ORDERS, PERM_SALARY_ALL,
+                 PERM_BOOKING, PERM_CALENDAR, PERM_STOCK, PERM_STORAGE,
+                 PERM_CLIENTS],
 }
 
 
@@ -101,6 +124,16 @@ class StaffUser(Base):
 
     is_active = Column(Boolean, default=True, nullable=False)
 
+    # Владелец сервера — тот, кто видит «Заказчиков». Раньше его узнавали
+    # по номеру из настроек сервера, и сменить номер было нельзя
+    is_platform_owner = Column(Boolean, default=False, nullable=False,
+                               server_default='0')
+
+    # Telegram человека (ник без «@») и какие отчёты ему слать:
+    # «shift,task» — через запятую (решение владельца 29.10.2026)
+    telegram = Column(String(64), nullable=True)
+    reports = Column(Text, nullable=True)
+
     # Кто завёл и когда: без этого в журнале не разобрать, откуда
     # у человека взялся доступ
     created_by_id = Column(Integer, ForeignKey('staff_users.id'), nullable=True)
@@ -133,6 +166,16 @@ class StaffUser(Base):
         if not self.is_active:
             return False
         return permission in self.allowed()
+
+    def report_kinds(self):
+        """Отмеченные отчёты — все, даже те, на которые сейчас нет права."""
+        return [item.strip() for item in (self.reports or '').split(',')
+                if item.strip() in REPORT_KINDS]
+
+    def gets_report(self, kind):
+        """Уйдёт ли ему отчёт: отмечен, есть ник и есть право на то, что в отчёте."""
+        return (self.is_active and bool(self.telegram) and kind in self.report_kinds()
+                and self.can(REPORT_PERMISSION.get(kind, PERM_STAFF)))
 
 
 UniqueConstraint(StaffUser.account_id, StaffUser.phone,

@@ -25,7 +25,7 @@ import secrets
 from datetime import timedelta
 
 from app.config import settings
-from app.models import Account, Shop, AccountDomain, ConnectCode, ConnectAttempt
+from app.models import Account, Shop, AccountDomain, ConnectCode, ConnectAttempt, StaffUser
 from app.models.account import ROLE_LK, ROLE_ADMIN, DOMAIN_ACTIVE, KIND_OWN
 from app.models.staff import ROLE_OWNER
 from app.services import billing, tenancy
@@ -297,6 +297,13 @@ def is_platform_owner(db, staff):
         return False
     home = tenancy.home_account(db)
     if home is None or staff.account_id != home.id:
+        return False
+    # Отмечен флагом — он и владелец сервера, с каким бы номером ни был
+    if staff.is_platform_owner:
+        return True
+    flagged = db.query(StaffUser).filter(StaffUser.account_id == home.id,
+                                         StaffUser.is_platform_owner.is_(True)).count()
+    if flagged:
         return False
     owner = normalize_phone(settings.OWNER_PHONE) if settings.OWNER_PHONE else ''
     return not owner or staff.phone == owner

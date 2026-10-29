@@ -83,8 +83,12 @@ with TestClient(app) as client:
     db.commit()
     me = StaffService(db, rif.id).ensure_owner(OWNER, 'Владелец')
     StaffService(db, rif.id).set_pin(me, '2580')
-    helper = StaffService(db, rif.id).ensure_owner('+7 900 111-22-33')
-    helper.role = 'admin'
+    # Второй человек — админ. Не через ensure_owner: тот не заводит
+    # второго владельца, когда первый уже есть
+    from app.models import StaffUser
+    from app.utils import normalize_phone
+    helper = StaffUser(phone=normalize_phone('+7 900 111-22-33'), account_id=rif.id, role='admin')
+    db.add(helper)
     db.commit()
     StaffService(db, rif.id).set_pin(helper, '3691')
 
