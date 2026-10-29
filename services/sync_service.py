@@ -636,6 +636,8 @@ class SyncService:
                 'client_local_id': order.client_id,
                 'license_plate': order.car.license_plate if order.car else None,
                 'visited_at': as_naive(order.paid_at),
+                # Когда наряд создан — для дашборда: «10:12 → 11:05»
+                'opened_at': as_naive(order.created_at),
                 'total_amount': order.total_amount or 0.0,
                 'services': services or None,
                 'recommendations': order.recommendations,

@@ -168,6 +168,38 @@ def money_round(value):
     return float(Decimal(str(value)).quantize(Decimal('1'), rounding=ROUND_HALF_UP))
 
 
+def short_stamp(value, today=None):
+    """
+    Время наряда коротко: сегодняшнее — «10:12», другого дня —
+    «28.10 18:40», другого года — «28.10.2025 18:40». Пусто — «—».
+    """
+    if not value:
+        return '—'
+    value = as_naive(value)
+    today = today or as_naive(get_moscow_time()).date()
+    if value.date() == today:
+        return value.strftime('%H:%M')
+    if value.year == today.year:
+        return value.strftime('%d.%m %H:%M')
+    return value.strftime('%d.%m.%Y %H:%M')
+
+
+def span_text(start, end):
+    """Сколько прошло от создания наряда до оплаты: «53 мин», «2 ч 05 мин», «1 дн 3 ч»."""
+    if not start or not end:
+        return ''
+    minutes = int((as_naive(end) - as_naive(start)).total_seconds() // 60)
+    if minutes < 0:
+        return ''
+    if minutes < 60:
+        return f'{minutes} мин'
+    hours, minutes = divmod(minutes, 60)
+    if hours < 24:
+        return f'{hours} ч {minutes:02d} мин'
+    days, hours = divmod(hours, 24)
+    return f'{days} дн {hours} ч'
+
+
 def format_phone(phone):
     """
     Отформатировать номер для показа человеку: "79099018931" -> "+7 (909) 901-89-31".

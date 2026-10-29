@@ -58,16 +58,18 @@ class HistoryTab:
         tree_frame = ttk.Frame(history_inner, style='White.TFrame')
         tree_frame.pack(fill='both', expand=True)
         
-        self.history_tree = ttk.Treeview(tree_frame, columns=('Статус', 'Дата', 'Наряд №', 'Автомобиль', 'Услуг', 'Сумма', 'Оплата'), show='headings')
+        self.history_tree = ttk.Treeview(tree_frame, columns=('Статус', 'Создан', 'Дата', 'Наряд №', 'Автомобиль', 'Услуг', 'Сумма', 'Оплата'), show='headings')
         self.history_tree.heading('Статус', text='')
-        self.history_tree.heading('Дата', text='Дата')
+        self.history_tree.heading('Создан', text='Создан')
+        self.history_tree.heading('Дата', text='Пробит')
         self.history_tree.heading('Наряд №', text='Наряд №')
         self.history_tree.heading('Автомобиль', text='Автомобиль')
         self.history_tree.heading('Услуг', text='Кол-во услуг')
         self.history_tree.heading('Сумма', text='Сумма')
         self.history_tree.heading('Оплата', text='Способ оплаты')
         self.history_tree.column('Статус', width=40, anchor='center')
-        self.history_tree.column('Дата', width=130)
+        self.history_tree.column('Создан', width=120)
+        self.history_tree.column('Дата', width=120)
         self.history_tree.column('Наряд №', width=80)
         self.history_tree.column('Автомобиль', width=120)
         self.history_tree.column('Услуг', width=120)
@@ -259,6 +261,7 @@ class HistoryTab:
 
                 self.history_tree.insert('', 'end', values=(
                     status_icon,
+                    order.created_at.strftime('%d.%m.%Y %H:%M') if order.created_at else '—',
                     order.paid_at.strftime('%d.%m.%Y %H:%M'),
                     order.id,
                     order.car.license_plate,
@@ -329,7 +332,13 @@ class HistoryTab:
         info_frame = ttk.Frame(content, style='White.TFrame')
         info_frame.pack(fill='x', pady=(0, 15))
         
-        styles.create_label(info_frame, f"Дата: {order.paid_at.strftime('%d.%m.%Y %H:%M')}", 'Card.TLabel').pack(anchor='w', pady=2)
+        from utils import span_text
+        created = order.created_at.strftime('%d.%m.%Y %H:%M') if order.created_at else '—'
+        spent = span_text(order.created_at, order.paid_at)
+        styles.create_label(info_frame, f"Создан: {created}", 'Card.TLabel').pack(anchor='w', pady=2)
+        styles.create_label(info_frame, f"Пробит: {order.paid_at.strftime('%d.%m.%Y %H:%M')}"
+                            + (f"  ·  от создания {spent}" if spent else ''),
+                            'Card.TLabel').pack(anchor='w', pady=2)
         styles.create_label(info_frame, f"Автомобиль: {order.car.license_plate}", 'Card.TLabel').pack(anchor='w', pady=2)
         
         if order.client:

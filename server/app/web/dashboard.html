@@ -1339,6 +1339,28 @@ function loadMasters() {
   }).catch(function (e) { show(''); fail(e.message); });
 }
 
+// «10:12 → 11:05 · 53 мин»: когда создан, когда пробит и сколько между.
+// Старые наряды времени создания не знают — тогда только «пробит»
+function orderTimes(row) {
+  if (!row.opened_at) return timeText(row.visited_at);
+  var sameDay = row.opened_at.slice(0, 10) === row.visited_at.slice(0, 10);
+  var spent = spanText(row.opened_at, row.visited_at);
+  return timeText(row.opened_at)
+    + ' → ' + (sameDay ? row.visited_at.slice(11, 16) : timeText(row.visited_at))
+    + (spent ? ' · ' + spent : '');
+}
+
+function spanText(start, end) {
+  if (!start || !end) return '';
+  var minutes = Math.floor((new Date(end) - new Date(start)) / 60000);
+  if (!(minutes >= 0)) return '';
+  if (minutes < 60) return minutes + ' мин';
+  var hours = Math.floor(minutes / 60);
+  minutes = minutes % 60;
+  if (hours < 24) return hours + ' ч ' + pad(minutes) + ' мин';
+  return Math.floor(hours / 24) + ' дн ' + (hours % 24) + ' ч';
+}
+
 function loadOrders(masterId) {
   var path = '/dashboard/orders';
   if (masterId) path += '?employee_local_id=' + masterId;
@@ -1362,7 +1384,7 @@ function loadOrders(masterId) {
           + (row.cover_url ? '<img class="cover-sm" loading="lazy" alt="" src="'
              + escape(row.cover_url) + '">' : '')
           + '<div class="main"><b>' + escape(row.license_plate || '—') + tags + '</b>'
-          + '<span>№' + row.local_id + ' · ' + timeText(row.visited_at)
+          + '<span>№' + row.local_id + ' · ' + orderTimes(row)
           + (row.masters.length ? ' · ' + escape(row.masters.join(', ')) : '')
           + '</span></div>'
           + '<div class="money">' + money(part ? row.direction_amount : row.total_amount)
@@ -2242,7 +2264,7 @@ $('sheet').addEventListener('click', function (event) {
 function openOrder(id, shopId) {
   api(withShop('/dashboard/orders/' + id, shopId)).then(function (card) {
     var html = '<h2>' + escape(card.license_plate || '—') + '</h2>'
-      + '<div class="when">Наряд №' + card.local_id + ' · ' + timeText(card.visited_at)
+      + '<div class="when">Наряд №' + card.local_id + ' · ' + orderTimes(card)
       + (card.is_deleted ? ' · <span class="tag bad">удалён</span>' : '') + '</div>';
 
     // Обложка: щелчок — снимок целиком в новой вкладке
@@ -2294,6 +2316,13 @@ function openOrder(id, shopId) {
     }
 
     html += '<div class="block-title">Ещё</div>';
+    html += '<div class="line"><span>Создан</span><b>'
+      + (card.opened_at ? timeText(card.opened_at) : 'не известно') + '</b></div>'
+      + '<div class="line"><span>Пробит</span><b>' + timeText(card.visited_at) + '</b></div>';
+    if (spanText(card.opened_at, card.visited_at)) {
+      html += '<div class="line"><span>От создания до оплаты</span><b>'
+        + spanText(card.opened_at, card.visited_at) + '</b></div>';
+    }
     html += '<div class="line"><span>Оплата</span><b>'
       + (card.payment_method === 'card' ? 'Карта' : 'Наличные') + '</b></div>';
     if (card.actual_minutes != null) {
@@ -2516,7 +2545,9 @@ function calShown(task) {
 // Комментарий — просто запись на день: без галочки, не просрочивается
 function isNote(task) { return task.kind === 'note'; }
 
-function timeText(task) {
+// Время записи календаря «11:00–12:30». Не timeText: та — общая для
+// нарядов и смен, и одноимённая функция здесь перекрыла бы её везде
+function taskTime(task) {
   return task.due_time ? task.due_time + (task.end_time ? '–' + task.end_time : '') : '';
 }
 
@@ -2767,7 +2798,7 @@ function hoursHtml(days) {
       html += '<div role="button" tabindex="0" class="blk ' + itemClass(task) + '" data-open="'
         + attr(task.uid) + '" style="top:' + top + 'px;height:' + (tall - 2) + 'px;left:'
         + (item.lane * width) + '%;width:calc(' + width + '% - 3px)"><b>'
-        + escape(timeText(task)) + '</b> ' + escape((isNote(task) ? '✎ ' : '') + task.title)
+        + escape(taskTime(task)) + '</b> ' + escape((isNote(task) ? '✎ ' : '') + task.title)
         + (task.license_plate && tall > 40 ? '<small>' + escape(task.license_plate) + '</small>' : '')
         + '</div>';
     });
@@ -3019,7 +3050,7 @@ function showTip(task, event) {
     calTip.className = 'cal-tip';
     document.body.appendChild(calTip);
   }
-  var lines = [timeText(task) || 'без времени',
+  var lines = [taskTime(task) || 'без времени',
                isNote(task) ? 'комментарий' : (CAT_TITLES[task.category] || task.category)];
   if (!isNote(task)) {
     if (task.license_plate) lines.push(task.license_plate);

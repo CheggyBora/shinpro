@@ -30,7 +30,10 @@ stored = db.query(Settings).filter(Settings.key == PIN_HASH_KEY).first()
 
 check('открытый PIN удалён из базы', legacy is None)
 check('хеш сохранён', stored is not None and stored.value)
-check('в базе нет самого кода', '1234' not in (stored.value or ''), stored.value[:40])
+# Сам код в хеше искать нельзя: в случайной соли «1234» иногда встречается.
+# Проверяем, что лежит хеш, а не код
+check('в базе нет самого кода', stored.value != '1234' and stored.value.startswith('pbkdf2_'),
+      stored.value[:40])
 check('хеш выглядит как pbkdf2', stored.value.startswith('pbkdf2_sha256$'), stored.value[:30])
 
 print('\n=== Проверка PIN ===')

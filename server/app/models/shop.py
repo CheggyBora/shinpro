@@ -186,6 +186,9 @@ class Visit(Base):
     license_plate = Column(String(20), nullable=True, index=True)
 
     visited_at = Column(DateTime, nullable=False, index=True)
+    # Когда наряд создан в цеху. visited_at — когда пробит. Старые наряды,
+    # пришедшие до 29.10.2026, этого не знают — пусто
+    opened_at = Column(DateTime, nullable=True)
     total_amount = Column(Float, default=0.0, nullable=False)
     services = Column(Text, nullable=True)           # по услуге в строке
     recommendations = Column(Text, nullable=True)

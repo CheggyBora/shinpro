@@ -178,9 +178,9 @@ class StatisticsTab:
 
         self.orders_tree = self._make_tree(
             inner,
-            ('Дата', 'Наряд', 'Автомобиль', 'Клиент', 'Услуг',
+            ('Создан', 'Пробит', 'Наряд', 'Автомобиль', 'Клиент', 'Услуг',
              'Сумма', 'Скидка', 'Расходники', 'Зарплата', 'Маржа', 'Оплата'),
-            (130, 70, 120, 170, 70, 100, 90, 110, 100, 100, 90))
+            (120, 120, 70, 120, 170, 70, 100, 90, 110, 100, 100, 90))
         self.orders_tree.bind('<Double-1>', lambda e: self.show_order_details())
 
         ttk.Label(inner, text="Двойной клик по наряду — состав и разбивка зарплаты",
@@ -301,6 +301,7 @@ class StatisticsTab:
             label = f"{item['id']} ({', '.join(marks)})" if marks else str(item['id'])
 
             self.orders_tree.insert('', 'end', values=(
+                item['created_at'].strftime('%d.%m.%Y %H:%M') if item.get('created_at') else '—',
                 item['paid_at'].strftime('%d.%m.%Y %H:%M') if item['paid_at'] else '—',
                 label,
                 item['license_plate'],
@@ -383,7 +384,12 @@ class StatisticsTab:
         client = item['client_name'] or 'клиент не указан'
         if item['client_phone']:
             client += f" · {format_phone(item['client_phone'])}"
-        when = item['paid_at'].strftime('%d.%m.%Y %H:%M') if item['paid_at'] else '—'
+        from utils import span_text
+        when = ('создан ' + (item['created_at'].strftime('%d.%m.%Y %H:%M') if item.get('created_at') else '—')
+                + ' · пробит ' + (item['paid_at'].strftime('%d.%m.%Y %H:%M') if item['paid_at'] else '—'))
+        spent = span_text(item.get('created_at'), item['paid_at'])
+        if spent:
+            when += f' ({spent})'
         ttk.Label(content, text=f"{client}\n{when} · {item['payment_method']}",
                   font=(styles.DEFAULT_FONT, 9),
                   background=styles.COLORS['bg_card'],
@@ -483,10 +489,10 @@ class StatisticsTab:
             name, title = 'отчёт_по_услугам', 'Отчёт по услугам'
 
         elif section == 1:
-            headers = ['Дата', 'Наряд', 'Автомобиль', 'Клиент', 'Телефон', 'Услуг',
+            headers = ['Создан', 'Пробит', 'Наряд', 'Автомобиль', 'Клиент', 'Телефон', 'Услуг',
                        'Сумма без скидки', 'Скидка', 'К оплате', 'Расходники',
                        'Зарплата', 'Маржа', 'Оплата']
-            rows = [[o['paid_at'], o['id'], o['license_plate'], o['client_name'],
+            rows = [[o.get('created_at'), o['paid_at'], o['id'], o['license_plate'], o['client_name'],
                      format_phone(o['client_phone']) if o['client_phone'] else '',
                      o['services_count'], o['full_price'], o['discount'], o['total'],
                      o['consumables'], o['salary_total'], o['margin'],

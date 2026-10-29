@@ -92,6 +92,15 @@ class OrderWidget(OrderItemsMixin, OrderPaymentMixin, OrderTimingMixin, OrderBlo
                   background=styles.COLORS['bg_card'],
                   foreground=styles.COLORS['primary']).pack(side='left', padx=(10, 0))
 
+        # Когда создан и когда пробит — видно сразу (решение владельца 29.10.2026)
+        from utils import short_stamp
+        stamp = f"создан {short_stamp(order.created_at)}"
+        if order.paid_at:
+            stamp += f" · пробит {short_stamp(order.paid_at)}"
+        ttk.Label(header_row, text=stamp, font=(styles.DEFAULT_FONT, 9),
+                  background=styles.COLORS['bg_card'],
+                  foreground=styles.COLORS['text_secondary']).pack(side='left', padx=(10, 0))
+
         # Гарантийная переделка — видно сразу, почему услуги по 0 ₽
         if getattr(order, 'is_warranty', False):
             tk.Label(header_row, text=f"гарантия · по наряду №{order.warranty_of_id}"

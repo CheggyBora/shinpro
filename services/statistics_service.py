@@ -84,6 +84,7 @@ class StatisticsService:
                 'order': order,
                 'id': order.id,
                 'paid_at': order.paid_at,
+                'created_at': order.created_at,
                 'license_plate': order.car.license_plate if order.car else '—',
                 'client_name': order.client.name if order.client else None,
                 'client_phone': order.client.phone if order.client else None,

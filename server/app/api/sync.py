@@ -121,6 +121,7 @@ class VisitIn(BaseModel):
     client_local_id: Optional[int] = None
     license_plate: Optional[str] = None
     visited_at: datetime
+    opened_at: Optional[datetime] = None
     total_amount: float = 0.0
     services: Optional[str] = None
     recommendations: Optional[str] = None
@@ -505,6 +506,9 @@ def push(payload: PushIn, db: Session = Depends(get_db),
 
         owner = _client_by_local_id(db, item.client_local_id, cache, shop)
         row.visited_at = item.visited_at
+        # Старый цех времени создания не присылает — не стираем
+        if item.opened_at is not None:
+            row.opened_at = item.opened_at
         row.license_plate = normalize_plate(item.license_plate) or None
         row.total_amount = item.total_amount
         row.services = item.services
