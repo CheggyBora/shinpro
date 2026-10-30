@@ -63,13 +63,17 @@ dialog.recipients = [Recipient('-100500', 'Владелец'),
 dialog._refresh_recipients()
 rows = dialog.recipients_tree.get_children()
 check('в списке двое', len(rows) == 2, str(len(rows)))
-check('выключенный помечен',
-      dialog.recipients_tree.item(rows[1])['values'][2] == 'нет',
+check('выключенный — «ничего» не получает',
+      dialog.recipients_tree.item(rows[1])['values'][2] == 'ничего',
       str(dialog.recipients_tree.item(rows[1])['values']))
+check('включённому идёт отчёт за смену',
+      'Отчёт за смену' in dialog.recipients_tree.item(rows[0])['values'][2],
+      str(dialog.recipients_tree.item(rows[0])['values']))
 
-dialog.recipients_tree.selection_set(rows[1])
-dialog.toggle_recipient()
-check('переключение включает отправку', dialog.recipients[1].enabled is True)
+# Отчёт за смену — галочка в «Что кому отправлять» (раньше «Вкл/выкл»)
+dialog.route_vars[('shift', '-100600')].set(True)
+dialog.save_route('shift')
+check('галочка «Отчёт за смену» включает отправку', dialog.recipients[1].enabled is True)
 
 dialog.token_entry.delete(0, tk.END)
 dialog.token_entry.insert(0, '999:XYZ')

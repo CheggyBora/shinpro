@@ -183,7 +183,7 @@ CATEGORY_ERRORS = {
 }
 
 
-def clean_fields(data, partial=False, direction=None):
+def clean_fields(data, partial=False, direction=None, sections=None):
     """
     Поля задачи из присланного — проверенные и обрезанные.
 
@@ -193,6 +193,9 @@ def clean_fields(data, partial=False, direction=None):
     direction — слой, в котором проверяем раздел. У правки это слой самой
     задачи: правкой задачу в другой слой не переносят. У целой задачи не
     задано — берём из присланного.
+
+    sections — разделы точки (services/task_sections): со своими
+    разделами владельца. Не передали — только встроенные.
     """
     fields = {}
 
@@ -209,7 +212,14 @@ def clean_fields(data, partial=False, direction=None):
         # «Хранение» у мойки и «Поставки» у шиномонтажа — ошибка, а не
         # повод угадывать: задача попала бы в раздел, которого в этом
         # слое не показывают, и пропала бы с глаз
-        if category not in DIRECTION_CATEGORIES[direction]:
+        if sections is not None:
+            from app.services import task_sections
+            if category not in task_sections.allowed(sections, direction):
+                names = ', '.join(row['title'] for row in sections
+                                  if direction in row['directions'] and not row['hidden'])
+                layer = 'мойки' if direction == WASH else 'шиномонтажа'
+                raise TaskError(f'У {layer} разделы: {names}')
+        elif category not in DIRECTION_CATEGORIES[direction]:
             raise TaskError(CATEGORY_ERRORS[direction])
         fields['category'] = category
 
@@ -349,6 +359,8 @@ def merge_tasks(db, shop, items, now=None):
     """
     now = now or shop_now()
     rejected = []
+    from app.services import task_sections
+    sections = task_sections.load(db, shop)
 
     for item in items or []:
         if not isinstance(item, dict):
@@ -361,7 +373,8 @@ def merge_tasks(db, shop, items, now=None):
                                     Task.uid == uid).first()
 
         try:
-            fields = clean_fields(item, direction=_kept_direction(item, row))
+            fields = clean_fields(item, direction=_kept_direction(item, row),
+                                  sections=sections)
         except TaskError as e:
             log.warning('Точка №%s: задача %s не принята: %s', shop.id, uid, e)
             rejected.append(uid)
@@ -535,8 +548,9 @@ def for_range(db, shop_ids, day_from, day_to, today=None, direction=None):
 
 
 def create(db, shop, data, author=None, now=None):
+    from app.services import task_sections
     now = now or shop_now()
-    fields = clean_fields(data)
+    fields = clean_fields(data, sections=task_sections.load(db, shop))
 
     row = Task(shop_id=shop.id, uid=str(uuid.uuid4()),
                source=SOURCE_DASHBOARD, created_by=_text(author, 100),
@@ -562,8 +576,10 @@ def patch(db, row, data, author=None, now=None):
     Направление правкой не меняется: раздел проверяем в слое самой
     задачи, а присланное direction не трогаем.
     """
+    from app.services import task_sections
     now = now or shop_now()
-    fields = clean_fields(data, partial=True, direction=row.direction or TIRE)
+    fields = clean_fields(data, partial=True, direction=row.direction or TIRE,
+                          sections=task_sections.load(db, row.shop_id))
     for key, value in fields.items():
         setattr(row, key, value)
 
@@ -817,7 +833,7 @@ def counterparty_of(task):
                                          Counterparty.uid == task.counterparty_uid).first()
 
 
-def telegram_text(task, counterparty_name=None):
+def telegram_text(task, counterparty_name=None, titles=None):
     """
     Сообщение о новой задаче — то же, что шлёт цех. Комментарий сюда не
     попадает: это запись на день, а не дело.
@@ -825,7 +841,8 @@ def telegram_text(task, counterparty_name=None):
     when = f'{task.due_date:%d.%m}'
     if task.due_time:
         when += f' {task.due_time}' + (f'–{task.end_time}' if task.end_time else '')
-    head = f'📅 <b>Новая задача</b> · {CATEGORY_TITLES.get(task.category, task.category)}'
+    titles = titles or CATEGORY_TITLES
+    head = f'📅 <b>Новая задача</b> · {titles.get(task.category, task.category)}'
     if task.direction == WASH:
         head = 'Мойка: ' + head
     lines = [head, f'{when} — {html.escape(task.title)}']
@@ -842,13 +859,13 @@ def telegram_text(task, counterparty_name=None):
     return '\n'.join(lines)
 
 
-def _line(task, with_date=False):
+def _line(task, with_date=False, titles=None):
     parts = []
     if with_date:
         parts.append(f'{task.due_date:%d.%m}')
     parts.append((task.due_time + (f'–{task.end_time}' if task.end_time else ''))
                  if task.due_time else '—')
-    parts.append(CATEGORY_TITLES.get(task.category, task.category))
+    parts.append((titles or CATEGORY_TITLES).get(task.category, task.category))
     parts.append(task.title)
     if task.license_plate:
         parts.append(task.license_plate)
@@ -860,8 +877,8 @@ def _line(task, with_date=False):
     return html.escape(line, quote=False)
 
 
-def _lines(rows, with_date=False):
-    shown = [_line(row, with_date) for row in rows[:MAX_LINES]]
+def _lines(rows, with_date=False, titles=None):
+    shown = [_line(row, with_date, titles) for row in rows[:MAX_LINES]]
     if len(rows) > MAX_LINES:
         shown.append(f'и ещё {len(rows) - MAX_LINES}')
     return shown
@@ -879,22 +896,27 @@ def _plural(count, one, few, many):
     return many
 
 
-def morning_text(for_today, overdue):
+def morning_text(for_today, overdue, titles=None):
     count = len(for_today)
     text = [f'<b>На сегодня: {count} '
             f'{_plural(count, "задача", "задачи", "задач")}</b>']
-    text += _lines(for_today)
+    text += _lines(for_today, titles=titles)
     if overdue:
         text.append('')
         text.append(f'Просрочено: {len(overdue)}')
     return '\n'.join(text)
 
 
-def evening_text(for_today, overdue):
+def evening_text(for_today, overdue, titles=None):
     rows = overdue + for_today
     text = [f'<b>Не отмечено: {len(rows)}</b>']
-    text += _lines(rows, with_date=True)
+    text += _lines(rows, with_date=True, titles=titles)
     return '\n'.join(text)
+
+
+def _titles(db, shop):
+    from app.services import task_sections
+    return task_sections.titles(db, shop)
 
 
 def digest_for_shop(db, shop, now=None):
@@ -943,7 +965,7 @@ def digest_for_shop(db, shop, now=None):
         # Нечего сказать — не пишем: пустая сводка каждое утро быстро
         # приучит её не читать
         if for_today or overdue:
-            notify.send(db, morning_text(for_today, overdue), shop=shop,
+            notify.send(db, morning_text(for_today, overdue, _titles(db, shop)), shop=shop,
                         kind=notify.KIND_DIGEST)
             sent.append(MORNING)
 
@@ -951,7 +973,7 @@ def digest_for_shop(db, shop, now=None):
         for_today, overdue = _undone(db, shop.id, today)
         mark(EVENING)
         if for_today or overdue:
-            notify.send(db, evening_text(for_today, overdue), shop=shop,
+            notify.send(db, evening_text(for_today, overdue, _titles(db, shop)), shop=shop,
                         kind=notify.KIND_DIGEST)
             sent.append(EVENING)
 

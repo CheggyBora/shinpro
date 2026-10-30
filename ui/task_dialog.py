@@ -13,7 +13,8 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 
 import styles
-from models.calendar import CATEGORIES, CATEGORY_TITLES, WORK, categories_of, KIND_TASK, KIND_NOTE
+from models.calendar import (CATEGORIES, CATEGORY_TITLES, CATEGORY_COLORS, WORK, categories_of,
+                             KIND_TASK, KIND_NOTE)
 from services.calendar_service import CalendarService, TaskError
 from ui.plate_picker import PlatePicker, owner_of, owner_text
 from utils import get_moscow_time, as_naive
@@ -21,14 +22,6 @@ from utils import get_moscow_time, as_naive
 SOURCE_TITLES = {'shop': 'цех', 'dashboard': 'дашборд', 'auto': 'программа',
                  'cabinet': 'кабинет клиента'}
 
-# Цвета разделов — те же, что в дашборде
-CATEGORY_COLORS = {
-    'work': ('#1d4ed8', '#dbeafe'),
-    'storage': ('#0f766e', '#ccfbf1'),
-    'tires': ('#c2410c', '#ffedd5'),
-    'paint': ('#6d28d9', '#ede9fe'),
-    'supply': ('#b45309', '#fef3c7'),
-}
 # Комментарий — серым: это не дело, а запись на день
 NOTE_COLORS = ('#475569', '#f1f5f9')
 
@@ -171,6 +164,7 @@ class TaskDialog:
         self.party_box = place(4, ttk.Combobox(form, textvariable=self.party, values=names,
                                                state='readonly', width=30,
                                                font=styles.FONTS['normal']), sticky='w')
+        self.party_box.bind('<<ComboboxSelected>>', lambda e: self._party_chosen())
 
         label(5, 'Что сделать')
         self.title = place(5, styles.create_entry(form, width=48), sticky='we')
@@ -196,6 +190,18 @@ class TaskDialog:
                              sticky='we')
         if task is not None and task.kind == KIND_NOTE:
             self.comment.insert('1.0', task.note or task.title or '')
+
+        # Кому сообщить в Telegram — только у новой задачи: она уходит
+        # один раз, при сохранении (решение владельца 30.10.2026)
+        self.notify_vars = {}
+        self.notify_touched = False
+        self.personal_var = None
+        if task is None:
+            label(9, 'Уведомить')
+            self.notify_box = place(9, tk.Frame(form, bg='#f8fafc', highlightthickness=1,
+                                                highlightbackground=styles.COLORS['border']),
+                                    sticky='w')
+            self._draw_notify()
 
         self.hint = ttk.Label(body, font=styles.FONTS['small'], wraplength=560, justify='left',
                               foreground=styles.COLORS['text_secondary'],
@@ -315,7 +321,83 @@ class TaskDialog:
             self.category.set(WORK)
         for key in categories_of(self.direction):
             ttk.Radiobutton(self.cats, text=CATEGORY_TITLES[key], value=key,
-                            variable=self.category).pack(side='left', padx=(0, 10))
+                            variable=self.category,
+                            command=self._category_chosen).pack(side='left', padx=(0, 10))
+
+    def _category_chosen(self):
+        # Раздел поменяли, а людей руками не трогали — отмечаем по разделу
+        if getattr(self, 'notify_box', None) is not None and not self.notify_touched:
+            self._draw_notify()
+
+    def _people(self):
+        """Все, кому бот может написать: нажавшие «Старт» и люди из «Доступа»."""
+        from services.telegram_service import TelegramService
+        telegram = TelegramService(self.db)
+        people = [r for r in telegram.get_recipients() if r.chat_id]
+        known = {r.chat_id for r in people}
+        for kind in ('task',):
+            people += [r for r in telegram.staff_recipients(kind) if r.chat_id not in known]
+        return people
+
+    def _draw_notify(self):
+        """
+        Люди с галочками: отмечены те, кому идёт раздел задачи (Настройки →
+        Telegram). Можно снять и добавить — только для этой задачи.
+        """
+        box = self.notify_box
+        for child in box.winfo_children():
+            child.destroy()
+        people = self._people()
+        if not people:
+            tk.Label(box, text='Telegram не настроен — Настройки → Telegram', bg='#f8fafc',
+                     fg=styles.COLORS['text_secondary'], font=styles.FONTS['small']).pack(
+                anchor='w', padx=8, pady=4)
+            self.notify_vars = {}
+            self._draw_personal()
+            return
+        chosen = set(self.service.notify_defaults(self.category.get() or WORK))
+        if self.notify_touched:
+            # Отмечали руками — отметки не сбиваем
+            chosen = {chat for chat, var in self.notify_vars.items() if var.get()}
+        # Выбранный контрагент — строкой «лично» ниже, не дважды
+        party = next((c for c in self.parties if c.name == self.party.get()), None)
+        nick = (party.telegram or '').lower() if party is not None else ''
+        people = [p for p in people if not nick or p.username != nick]
+        self.notify_vars = {}
+        for person in people:
+            var = tk.BooleanVar(value=person.chat_id in chosen)
+            self.notify_vars[person.chat_id] = var
+            text = person.title + (f'  @{person.username}' if person.username else '')
+            tk.Checkbutton(box, text=text, variable=var, bg='#f8fafc', anchor='w',
+                           activebackground='#f8fafc', font=styles.FONTS['normal'],
+                           command=self._touched).pack(fill='x', padx=6)
+        self._draw_personal()
+
+    def _party_chosen(self):
+        if getattr(self, 'notify_box', None) is not None:
+            self._draw_notify()
+
+    def _touched(self):
+        self.notify_touched = True
+
+    def _draw_personal(self):
+        """Контрагент с ником — ему лично, отдельной строкой."""
+        box = getattr(self, 'notify_box', None)
+        if box is None:
+            return
+        for child in box.winfo_children():
+            if getattr(child, 'personal', False):
+                child.destroy()
+        party = next((c for c in self.parties if c.name == self.party.get()), None)
+        self.personal_var = None
+        if party is None or not party.telegram or party.deleted:
+            return
+        self.personal_var = tk.BooleanVar(value=True)
+        line = tk.Checkbutton(box, text=f'Контрагенту лично: {party.name}  @{party.telegram}',
+                              variable=self.personal_var, bg='#f8fafc', anchor='w',
+                              activebackground='#f8fafc', font=styles.FONTS['normal'])
+        line.personal = True
+        line.pack(fill='x', padx=6)
 
     def _direction_chosen(self):
         self.direction = self.direction_var.get() or None
@@ -323,6 +405,8 @@ class TaskDialog:
         self.parties = self.service.counterparties(self.direction) if self.direction else []
         self.party.set('—')
         self.party_box.config(values=['—'] + [c.name for c in self.parties])
+        self._category_chosen()
+        self._draw_personal()
 
     def fields(self):
         times = dict(due_date=self.day.get(), due_time=self.time.get(),
@@ -370,8 +454,13 @@ class TaskDialog:
             else:
                 self.service.update(self.task, **fields)
             if announce:
+                # Отмеченные в «Уведомить»; окна не было (задачу сделали
+                # из комментария) — по разделу, как настроено
+                chats = ([chat for chat, var in self.notify_vars.items() if var.get()]
+                         if self.notify_vars else None)
+                personal = self.personal_var.get() if self.personal_var is not None else True
                 try:
-                    self.service.announce(self.task)
+                    self.service.announce(self.task, chats=chats, personal=personal)
                 except Exception as e:
                     self.db.rollback()
                     from logger import log

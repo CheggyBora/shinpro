@@ -65,7 +65,7 @@ check('средний чек 1000', summary['average_check'] == 1000.0, str(summ
 
 print('\n=== Текст сводки ===')
 text = report_service.format_summary(summary)
-for fragment in ('Смена', 'Выручка', 'Расходники', 'Зарплата', 'мастер №1',
+for fragment in ('Смена', 'Выручка', 'Расходники', 'Зарплата', '№1:',
                  'Осталось шиномонтажу'):
     check(f'в тексте есть «{fragment}»', fragment in text, text[:120])
 

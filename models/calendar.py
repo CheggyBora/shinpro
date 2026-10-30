@@ -17,14 +17,35 @@ from utils import get_moscow_time
 # Разделы — в том порядке, в каком их показываем. У мойки свой слой
 # календаря со своими разделами (docs/calendar.md)
 WORK, STORAGE, TIRES, PAINT, SUPPLY = 'work', 'storage', 'tires', 'paint', 'supply'
+# Ниже — встроенные значения. Владелец переименовывает, скрывает и
+# добавляет свои разделы (решение 30.10.2026): services/task_sections
+# переписывает эти словари на месте, и все, кто их импортировал, видят
+# новое без перезапуска
 CATEGORIES_BY_DIRECTION = {'tire': [WORK, STORAGE, TIRES, PAINT], 'wash': [WORK, SUPPLY]}
+# Все разделы направления, со скрытыми: у старой задачи раздел могли
+# скрыть, а поправить её всё равно надо
+KNOWN_BY_DIRECTION = {'tire': [WORK, STORAGE, TIRES, PAINT], 'wash': [WORK, SUPPLY]}
 CATEGORIES = [WORK, STORAGE, TIRES, PAINT, SUPPLY]
 CATEGORY_TITLES = {WORK: 'Рабочая', STORAGE: 'Хранение', TIRES: 'Шины', PAINT: 'Покраска',
                    SUPPLY: 'Поставки'}
+# Цвета разделов (текст, фон) — те же, что в дашборде
+CATEGORY_COLORS = {
+    WORK: ('#1d4ed8', '#dbeafe'),
+    STORAGE: ('#0f766e', '#ccfbf1'),
+    TIRES: ('#c2410c', '#ffedd5'),
+    PAINT: ('#6d28d9', '#ede9fe'),
+    SUPPLY: ('#b45309', '#fef3c7'),
+}
 
 
 def categories_of(direction):
+    """Разделы, которые предлагаем в новой задаче, — без скрытых."""
     return CATEGORIES_BY_DIRECTION.get(direction or 'tire', CATEGORIES_BY_DIRECTION['tire'])
+
+
+def known_categories(direction):
+    """Все разделы направления, со скрытыми, — для проверки задачи."""
+    return KNOWN_BY_DIRECTION.get(direction or 'tire', KNOWN_BY_DIRECTION['tire'])
 
 SOURCE_SHOP, SOURCE_DASHBOARD, SOURCE_AUTO, SOURCE_CABINET = 'shop', 'dashboard', 'auto', 'cabinet'
 
@@ -123,3 +144,6 @@ class TelegramOutbox(Base):
     last_error = Column(String(300), nullable=True)
     # Кому лично: ник контрагента. Пусто — получателям вида
     target = Column(String(64), nullable=True)
+    # Кому именно — номера чатов через запятую: в задаче отметили людей
+    # сами (блок «Уведомить», 30.10.2026). Пусто — получателям вида
+    chats = Column(Text, nullable=True)

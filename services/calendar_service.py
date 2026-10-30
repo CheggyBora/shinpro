@@ -16,6 +16,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from models.calendar import (CalendarTask, Counterparty, CATEGORIES, CATEGORY_TITLES, categories_of,
+                             known_categories,
                              WORK, STORAGE, PAINT, SOURCE_SHOP, SOURCE_AUTO, new_uid,
                              KIND_TASK, KIND_NOTE, KINDS)
 from utils import get_moscow_time, as_naive, normalize_plate
@@ -145,10 +146,10 @@ class CalendarService:
             raise TaskError('Напишите комментарий' if kind == KIND_NOTE
                             else 'Напишите, что за задача')
         direction = direction if direction in ('tire', 'wash') else 'tire'
-        if kind == KIND_NOTE and category not in categories_of(direction):
+        if kind == KIND_NOTE and category not in known_categories(direction):
             # У комментария раздела нет — кладём в «Рабочую», она есть везде
             category = WORK
-        if category not in categories_of(direction):
+        if category not in known_categories(direction):
             raise TaskError('Неизвестный раздел задачи')
         due_time, end_time = clean_times(due_time, end_time)
         task = CalendarTask(
@@ -178,7 +179,7 @@ class CalendarService:
             if not fields['title']:
                 raise TaskError('Напишите комментарий' if fields.get('kind', task.kind) == KIND_NOTE
                                 else 'Напишите, что за задача')
-        if 'category' in fields and fields['category'] not in categories_of(task.direction):
+        if 'category' in fields and fields['category'] not in known_categories(task.direction):
             raise TaskError('Неизвестный раздел задачи')
         if 'license_plate' in fields:
             fields['license_plate'] = normalize_plate(fields['license_plate']) or None
@@ -234,22 +235,36 @@ class CalendarService:
     def delete(self, task):
         return self.update(task, deleted=True)
 
-    def announce(self, task):
+    def announce(self, task, chats=None, personal=True):
         """
         Новая задача — в Telegram через очередь. Комментарий — никуда.
 
-        Выбран контрагент с ником — ему лично тоже: поставщик узнаёт о
-        заказе сразу, а не когда до него дозвонятся.
+        Кому — тем, кто отмечен для её раздела (Настройки → Telegram).
+        chats — номера чатов, отмеченные в самой задаче (блок «Уведомить»,
+        решение 30.10.2026): тогда только им. Пустой список — никому.
+
+        Выбран контрагент с ником — ему лично тоже (personal): поставщик
+        узнаёт о заказе сразу, а не когда до него дозвонятся.
         """
         if task is None or task.kind == KIND_NOTE:
             return None
         from services import telegram_outbox
         party = self.counterparty(task.counterparty_uid)
         text = telegram_text(task, party)
-        row = telegram_outbox.queue(self.db, 'task', text)
-        if party is not None and party.telegram and not party.deleted:
-            telegram_outbox.queue(self.db, 'task', text, target=party.telegram)
+        kind = telegram_outbox.task_kind(task.category)
+        row = None
+        if chats is None or chats:
+            row = telegram_outbox.queue(self.db, kind, text, chats=chats)
+        if personal and party is not None and party.telegram and not party.deleted:
+            telegram_outbox.queue(self.db, kind, text, target=party.telegram,
+                                  chats=chats)
         return row
+
+    def notify_defaults(self, category):
+        """Номера чатов, которые окно задачи отмечает само для раздела."""
+        from services import telegram_outbox
+        return [r.chat_id for r in telegram_outbox.recipients(
+            self.db, telegram_outbox.task_kind(category))]
 
     def _changed(self):
         if ON_CHANGE is not None:
@@ -498,7 +513,7 @@ class CalendarService:
                 self.db.add(task)
             try:
                 task.direction = item.get('direction') if item.get('direction') in ('tire', 'wash') else 'tire'
-                task.category = item.get('category') if item.get('category') in categories_of(task.direction) else WORK
+                task.category = item.get('category') if item.get('category') in known_categories(task.direction) else WORK
                 task.due_date = parse_day(item.get('due_date'))
                 task.due_time = clean_time(item.get('due_time'))
             except TaskError:

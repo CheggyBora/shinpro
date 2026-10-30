@@ -139,6 +139,8 @@ class SettingsDialog:
                  [self._build_shift, self._build_cash]),
                 ('Клиенты и хранение', 'Группы клиентов, хранение шин и сезон',
                  [self._build_client_groups, self._build_storage]),
+                ('Календарь', 'Разделы задач: свои, переименовать, скрыть',
+                 [self._build_task_sections]),
                 ('Контрагенты', 'Поставщики и с кем работаете по задачам',
                  [self._build_counterparties]),
                 ('Реквизиты и печать', 'Реквизиты, печать, папка для отчётов',
@@ -508,90 +510,68 @@ class SettingsDialog:
         self.text_fields[key] = entry
 
     def _build_telegram(self, content):
-        self._section(content, "Отправка отчётов в Telegram")
+        """
+        Telegram по шагам (решение владельца 30.10.2026): бот → люди → что
+        кому → контрагенты. Раньше «Вкл/выкл» у получателя и отдельная
+        таблица «кому что» дублировали друг друга, отчёта за смену в
+        таблице не было, а контрагенты настраивались совсем в другом месте.
+        """
+        self._section(content, "1. Бот")
         self._hint(content,
-                   "Создайте бота через @BotFather и вставьте его токен.\n"
-                   "Дальше номера чатов вводить не надо: человек открывает "
-                   "вашего бота, нажимает «Старт» — и появляется в списке "
-                   "по кнопке «Кто написал боту». Останется поставить "
-                   "галочку тем, кому слать сводку.")
-
-        styles.create_label(content, "Токен бота:", 'Card.TLabel').pack(anchor='w', pady=(0, 4))
-        self.token_entry = styles.create_entry(content, width=60)
+                   "Создайте бота через @BotFather и вставьте его токен. «Проверить связь» "
+                   "сохранит его сразу — получатели для этого не нужны.")
+        token_row = ttk.Frame(content, style='White.TFrame')
+        token_row.pack(fill='x', pady=(0, 4))
+        self.token_entry = styles.create_entry(token_row, width=52)
         self.token_entry.insert(0, self.telegram.get_token())
-        self.token_entry.pack(fill='x', pady=(0, 10))
+        self.token_entry.pack(side='left')
+        styles.create_button(token_row, "Проверить связь", self.test_telegram,
+                             'Secondary.TButton').pack(side='left', padx=(8, 0))
+        self.telegram_status = ttk.Label(content, text="", font=(styles.DEFAULT_FONT, 9),
+                                         background=styles.COLORS['bg_card'],
+                                         foreground=styles.COLORS['text_secondary'],
+                                         wraplength=620, justify='left')
+        self.telegram_status.pack(anchor='w', pady=(0, 8))
 
-        styles.create_label(content, "Получатели:", 'Card.TLabel').pack(anchor='w', pady=(0, 4))
-
-        self.recipients_tree = ttk.Treeview(
-            content, columns=('name', 'chat', 'enabled'),
-            show='headings', height=4)
-        self.recipients_tree.heading('name', text='Имя')
-        self.recipients_tree.heading('chat', text='Номер чата')
-        self.recipients_tree.heading('enabled', text='Отправлять')
-        self.recipients_tree.column('name', width=220)
-        self.recipients_tree.column('chat', width=150)
-        self.recipients_tree.column('enabled', width=100, anchor='center')
+        self._section(content, "2. Люди — кто нажал «Старт» у бота")
+        self._hint(content,
+                   "Дайте человеку «Ссылку на бота», он нажмёт «Старт» — и появится здесь "
+                   "после «Обновить список». Номера чатов вводить не нужно.")
+        self.recipients_tree = ttk.Treeview(content, columns=('name', 'nick', 'gets'),
+                                            show='headings', height=5)
+        for column, title, width in (('name', 'Кто', 170), ('nick', 'Ник', 120),
+                                     ('gets', 'Что получает', 520)):
+            self.recipients_tree.heading(column, text=title)
+            self.recipients_tree.column(column, width=width)
         self.recipients_tree.pack(fill='x', pady=(0, 6))
-        self.recipients_tree.bind('<Double-1>', lambda e: self.toggle_recipient())
-
+        self.recipients_tree.bind('<Double-1>', lambda e: self.edit_recipient())
         self.recipients = self.telegram.get_recipients()
-        self._refresh_recipients()
 
         recipient_buttons = ttk.Frame(content, style='White.TFrame')
         recipient_buttons.pack(fill='x', pady=(0, 8))
-        for title, command in (("Кто написал боту", self.fetch_recipients),
-                               ("Вкл/выкл", self.toggle_recipient),
+        for title, command in (("Обновить список", self.fetch_recipients),
                                ("Ссылка на бота", self.show_bot_link),
                                ("Добавить вручную", self.add_recipient),
-                               ("Изменить", self.edit_recipient),
-                               ("Удалить", self.remove_recipient)):
+                               ("Переименовать", self.edit_recipient),
+                               ("Убрать", self.remove_recipient)):
             styles.create_button(recipient_buttons, title, command,
                                  'Secondary.TButton').pack(side='left', padx=(0, 6))
 
-        telegram_row = ttk.Frame(content, style='White.TFrame')
-        telegram_row.pack(fill='x', pady=(0, 6))
-        styles.create_button(telegram_row, "Проверить связь", self.test_telegram,
-                             'Secondary.TButton').pack(side='left')
-
-        self.telegram_status = ttk.Label(telegram_row, text="",
-                                         font=(styles.DEFAULT_FONT, 9),
-                                         background=styles.COLORS['bg_card'],
-                                         foreground=styles.COLORS['text_secondary'],
-                                         wraplength=420, justify='left')
-        self.telegram_status.pack(side='left', padx=(12, 0))
-
-        # Кому что: склад — водителю, покраска — маляру, сводка задач —
-        # владельцу. Никого не отметили — тем же, кому сводка по смене
-        self._section(content, "Кому что отправлять")
+        self._section(content, "3. Что кому отправлять")
         self._hint(content,
-                   "Отметьте получателей для каждого вида сообщений. Не "
-                   "отмечено никого — получат все, кому идёт сводка по смене. "
-                   "Сохраняется сразу.\n"
-                   "Людям, заведённым в дашборде («Доступ»), отчёты можно "
-                   "отметить там же — по нику в Telegram; придут вдобавок к этим.")
-        from services import telegram_outbox
-        self.route_vars = {}
-        active = [r for r in self.recipients if r.enabled and r.chat_id]
-        routes = ttk.Frame(content, style='White.TFrame')
-        routes.pack(fill='x', pady=(0, 8))
-        for row, (kind, title) in enumerate(telegram_outbox.KINDS.items()):
-            styles.create_label(routes, title, 'Card.TLabel').grid(
-                row=row, column=0, sticky='w', pady=3, padx=(0, 12))
-            chosen = set(telegram_outbox.route(self.db, kind))
-            for column, person in enumerate(active, start=1):
-                var = tk.BooleanVar(value=person.chat_id in chosen)
-                self.route_vars[(kind, person.chat_id)] = var
-                ttk.Checkbutton(routes, text=person.title, variable=var,
-                                command=lambda k=kind: self.save_route(k)).grid(
-                    row=row, column=column, sticky='w', padx=(0, 10))
-        if not active:
-            self._hint(content, "Сначала добавьте получателей выше.")
+                   "Галочка — человек получает это сообщение. Сохраняется сразу.\n"
+                   "Задачи из календаря уходят по разделу: задача «Покраска» — тем, кто "
+                   "отмечен у «Задачи: Покраска». В самой задаче людей можно поменять — "
+                   "блок «Уведомить». Разделы — в «Календаре».\n"
+                   "Людям, заведённым в дашборде («Доступ»), отчёты отмечают там же — "
+                   "по нику; придут вдобавок к этим.")
+        self.routes_frame = ttk.Frame(content, style='White.TFrame')
+        self.routes_frame.pack(fill='x', pady=(0, 6))
 
         digest = ttk.Frame(content, style='White.TFrame')
         digest.pack(fill='x', pady=(4, 6))
         self.digest_var = tk.BooleanVar(value=self.settings.is_on('task_digest_enabled'))
-        ttk.Checkbutton(digest, text="Сводка задач владельцу: утром в",
+        ttk.Checkbutton(digest, text="Сводка задач: утром в",
                         variable=self.digest_var,
                         command=lambda: self.settings.set(
                             'task_digest_enabled', '1' if self.digest_var.get() else '0')
@@ -606,11 +586,96 @@ class SettingsDialog:
             self.digest_times[key] = entry
             if after:
                 styles.create_label(digest, after, 'Card.TLabel').pack(side='left')
+        styles.create_label(digest, '— кому, отмечено строкой «Сводка задач»',
+                            'Card.TLabel').pack(side='left', padx=(4, 0))
+
+        self._section(content, "4. Контрагенты в Telegram")
+        self._hint(content,
+                   "Задача с контрагентом приходит ему лично. Ник вписывается в "
+                   "«Контрагентах»; сам контрагент один раз нажимает «Старт» у бота.")
+        self.parties_tree = ttk.Treeview(content, columns=('name', 'nick', 'state'),
+                                         show='headings', height=3)
+        for column, title, width in (('name', 'Контрагент', 220), ('nick', 'Ник', 150),
+                                     ('state', 'Связь', 320)):
+            self.parties_tree.heading(column, text=title)
+            self.parties_tree.column(column, width=width)
+        self.parties_tree.pack(fill='x', pady=(0, 6))
+        styles.create_button(content, "Открыть «Контрагенты»",
+                             lambda: self.open_section('Контрагенты') if hasattr(self, 'open_section') else None,
+                             'Secondary.TButton').pack(anchor='w', pady=(0, 8))
+        self._refresh_recipients()
+
+    # --- что кому -------------------------------------------------------
+
+    def _route_rows(self):
+        """Строки таблицы «что кому»: (вид, подпись)."""
+        from services import telegram_outbox
+        from services import task_sections
+        from services import directions as _directions
+        wash = _directions.wash_on(self.db)
+        rows = [('shift', 'Отчёт за смену — как закрыли смену')]
+        for section in task_sections.load(self.db):
+            if section['hidden'] or (not wash and section['directions'] == ['wash']):
+                continue
+            rows.append((telegram_outbox.task_kind(section['key']), f"Задачи: {section['title']}"))
+        rows += [('storage', telegram_outbox.KINDS['storage']),
+                 ('paint', 'Покраска из калькулятора'),
+                 ('digest', 'Сводка задач утром и вечером')]
+        return rows
+
+    def _people(self):
+        return [r for r in self.recipients if r.chat_id]
+
+    def _effective(self, kind):
+        """Кто сейчас получает: отчёт за смену — включённые, остальное — по маршруту."""
+        from services import telegram_outbox
+        if kind == 'shift':
+            return {r.chat_id for r in self._people() if r.enabled}
+        return {r.chat_id for r in telegram_outbox.recipients(self.db, kind)}
+
+    def _draw_routes(self):
+        frame = self.routes_frame
+        for child in frame.winfo_children():
+            child.destroy()
+        people = self._people()
+        self.route_vars = {}
+        if not people:
+            self._hint(frame, "Сначала добавьте людей выше: «Ссылка на бота» → «Старт» → "
+                              "«Обновить список».")
+            return
+        for column, person in enumerate(people, start=1):
+            tk.Label(frame, text=person.title, bg=styles.COLORS['bg_card'],
+                     fg=styles.COLORS['text_secondary'],
+                     font=(styles.DEFAULT_FONT, 9, 'bold')).grid(row=0, column=column, padx=10)
+        for row, (kind, title) in enumerate(self._route_rows(), start=1):
+            styles.create_label(frame, title, 'Card.TLabel').grid(
+                row=row, column=0, sticky='w', pady=2, padx=(0, 12))
+            chosen = self._effective(kind)
+            for column, person in enumerate(people, start=1):
+                var = tk.BooleanVar(value=person.chat_id in chosen)
+                self.route_vars[(kind, person.chat_id)] = var
+                ttk.Checkbutton(frame, variable=var,
+                                command=lambda k=kind: self.save_route(k)).grid(
+                    row=row, column=column)
 
     def save_route(self, kind):
+        """Строку сохраняем целиком — какой её видно, так и будет."""
         from services import telegram_outbox
         chosen = [chat for (k, chat), var in self.route_vars.items() if k == kind and var.get()]
-        telegram_outbox.set_route(self.db, kind, chosen)
+        if kind == 'shift':
+            # Отчёт за смену — это «включён» у получателя: от него же
+            # получают всё, чему своих людей не отметили
+            for person in self.recipients:
+                person.enabled = person.chat_id in chosen
+            self.telegram.save_recipients(self.recipients)
+        else:
+            telegram_outbox.set_route(self.db, kind, chosen)
+        self._refresh_recipients()
+        try:
+            from services import sync_nudge
+            sync_nudge.request('получатели Telegram')
+        except Exception:
+            pass
 
     def save_digest_time(self, key, entry):
         from services.calendar_service import clean_time, TaskError
@@ -986,6 +1051,21 @@ class SettingsDialog:
             return
         self.settings.set(directions.WASH_POSTS_KEY, str(value))
 
+    def _build_task_sections(self, content):
+        self._section(content, "Разделы задач")
+        self._hint(content,
+                   "Встроенные разделы можно переименовать и скрыть, свои — добавить "
+                   "(«От контрагента», «Закупка») и перекрасить. Удалить нельзя: у старых "
+                   "задач раздел остаётся, а в новых скрытый не предлагается. «Рабочую» не "
+                   "скрыть — в неё попадают задачи без раздела.\n"
+                   "Кому уходят задачи каждого раздела — в «Telegram». Правки сохраняются "
+                   "сразу и доходят до дашборда при обмене.")
+        from ui.task_sections_editor import TaskSectionsEditor
+        from services import directions as _directions
+        self.task_sections = TaskSectionsEditor(
+            content, self.db, self.dialog, wash=_directions.wash_on(self.db),
+            on_change=lambda: self._refresh_recipients() if hasattr(self, 'recipients_tree') else None)
+
     def _build_counterparties(self, content):
         self._section(content, "Контрагенты")
         self._hint(content,
@@ -1111,12 +1191,47 @@ class SettingsDialog:
     # ------------------------------------------------------------------
 
     def _refresh_recipients(self):
+        """Люди, «что получает» у каждого, таблица «что кому» и контрагенты."""
         self.recipients_tree.delete(*self.recipients_tree.get_children())
+        rows = self._route_rows()
+        gets, tasks = {}, {}
+        for kind, title in rows:
+            for chat in self._effective(kind):
+                if title.startswith('Задачи: '):
+                    tasks.setdefault(chat, []).append(title[len('Задачи: '):])
+                else:
+                    gets.setdefault(chat, []).append(title.split(' — ')[0])
+
+        def what(chat):
+            # «Отчёт за смену; задачи: Рабочая, Шины; Склад…» — коротко
+            parts = list(gets.get(chat, [])[:1])
+            if tasks.get(chat):
+                parts.append('задачи: ' + ', '.join(tasks[chat]))
+            parts += gets.get(chat, [])[1:]
+            return '; '.join(parts) or 'ничего'
+
         for index, recipient in enumerate(self.recipients):
             self.recipients_tree.insert(
                 '', 'end', iid=str(index),
-                values=(recipient.name or '—', recipient.chat_id,
-                        'да' if recipient.enabled else 'нет'))
+                values=(recipient.name or '—',
+                        ('@' + recipient.username) if recipient.username else '—',
+                        what(recipient.chat_id)))
+        self._draw_routes()
+        self._draw_parties()
+
+    def _draw_parties(self):
+        """Контрагенты с ником: подключён ли — писал ли боту."""
+        tree = getattr(self, 'parties_tree', None)
+        if tree is None:
+            return
+        tree.delete(*tree.get_children())
+        from services.calendar_service import CalendarService
+        for party in CalendarService(self.db).counterparties():
+            if not party.telegram or party.deleted:
+                continue
+            state = ('✓ подключён — задачи придут лично' if self.telegram.chat_of(party.telegram)
+                     else '✗ ещё не нажал «Старт» — отправьте ему «Ссылку на бота»')
+            tree.insert('', 'end', values=(party.name, '@' + party.telegram, state))
 
     def _selected_recipient_index(self):
         selection = self.recipients_tree.selection()
@@ -1205,8 +1320,8 @@ class SettingsDialog:
         if added:
             messagebox.showinfo(
                 "Получатели",
-                f"Добавлено: {added}.\n\nОтметьте галочкой тех, кому "
-                f"слать сводку — кнопка «Вкл/выкл».",
+                f"Добавлено: {added}.\n\nОтметьте в «Что кому отправлять», "
+                f"что им слать.",
                 parent=self.dialog)
         elif seen:
             messagebox.showinfo("Получатели",
@@ -1260,6 +1375,7 @@ class SettingsDialog:
                                 parent=self.dialog)
             return
         self.recipients.append(recipient)
+        self.telegram.save_recipients(self.recipients)
         self._refresh_recipients()
 
     def edit_recipient(self):
@@ -1269,15 +1385,8 @@ class SettingsDialog:
         recipient = self._ask_recipient(self.recipients[index])
         if recipient:
             self.recipients[index] = recipient
+            self.telegram.save_recipients(self.recipients)
             self._refresh_recipients()
-
-    def toggle_recipient(self):
-        index = self._selected_recipient_index()
-        if index is None:
-            return
-        self.recipients[index].enabled = not self.recipients[index].enabled
-        self._refresh_recipients()
-        self.recipients_tree.selection_set(str(index))
 
     def remove_recipient(self):
         index = self._selected_recipient_index()
@@ -1288,6 +1397,7 @@ class SettingsDialog:
                                f"Убрать получателя «{recipient.title}»?",
                                parent=self.dialog):
             del self.recipients[index]
+            self.telegram.save_recipients(self.recipients)
             self._refresh_recipients()
 
     # ------------------------------------------------------------------

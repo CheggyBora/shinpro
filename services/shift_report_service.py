@@ -137,8 +137,15 @@ class ShiftReportService:
         ]
 
         if summary['by_master']:
+            # По имени, а не «мастер №1»: владелец читает сводку с
+            # телефона и номеров мастеров не помнит
+            from models import Employee
+            people = {row.id: row for row in self.db.query(Employee).filter(
+                Employee.id.in_(list(summary['by_master']))).all()}
             for employee_id, amount in sorted(summary['by_master'].items()):
-                lines.append(f"  мастер №{employee_id}: {amount:.0f} ₽")
+                person = people.get(employee_id)
+                who = person.title if person is not None else f"мастер №{employee_id}"
+                lines.append(f"  {who}: {amount:.0f} ₽")
 
         lines += ["", f"Осталось шиномонтажу: <b>{summary['margin']:.0f} ₽</b>"]
         try:

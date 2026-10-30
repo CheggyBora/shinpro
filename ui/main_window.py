@@ -35,6 +35,16 @@ class MainWindow:
 
         self.db = get_db()
 
+        # Свои разделы задач и переименованные встроенные — до того, как
+        # календарь и лента их нарисуют
+        try:
+            from services import task_sections
+            task_sections.refresh(self.db)
+        except Exception as e:
+            self.db.rollback()
+            from logger import log
+            log.error(f"Разделы задач не прочитались: {e}")
+
         # Название берём из реквизитов: переименовались — переименовалось
         # и окно, без пересборки программы
         from services.company_service import get_company

@@ -24,6 +24,18 @@ KINDS = {
     'digest': 'Сводка задач утром и вечером (с сервера)',
 }
 ROUTE_KEY = 'telegram_route_{kind}'
+# Задачи — у каждого раздела свои получатели (решение 30.10.2026):
+# вид «task_paint», «task_c1». Раздел без своих — как у задач вообще
+TASK_PREFIX = 'task_'
+
+
+def task_kind(category):
+    return TASK_PREFIX + (category or 'work')
+
+
+def _base(kind):
+    """«task_paint» → «task»: для отметок из «Доступа» дашборда."""
+    return 'task' if (kind or '').startswith(TASK_PREFIX) else kind
 MAX_ATTEMPTS = 20
 # Сколько ждать, пока контрагент нажмёт «Старт» у бота
 PERSONAL_WAIT_DAYS = 3
@@ -53,36 +65,61 @@ def set_route(db, kind, chat_ids):
                       json.dumps([str(c) for c in chat_ids if str(c).strip()]))
 
 
+def chosen_route(db, kind):
+    """
+    Кто отмечен для вида. У раздела задач своих нет — берём отмеченных
+    для задач вообще. Пусто — никого не отмечали.
+    """
+    chosen = route(db, kind)
+    if not chosen and kind.startswith(TASK_PREFIX):
+        chosen = route(db, 'task')
+    return chosen
+
+
 def recipients(db, kind):
-    """Кому отправить: выбранные для вида (только включённые), иначе все включённые."""
+    """
+    Кому отправить: отмеченные для вида, иначе все, кому идёт отчёт за
+    смену. Отмеченным шлём, даже если отчёт за смену им не идёт: маляру
+    нужны задачи покраски, а выручка — нет (новый раздел Telegram).
+    """
     from services.telegram_service import TelegramService
     telegram = TelegramService(db)
-    active = telegram.get_active_recipients()
-    chosen = set(route(db, kind))
-    result = active
+    everyone = [r for r in telegram.get_recipients() if r.chat_id]
+    chosen = set(chosen_route(db, kind))
+    result = telegram.get_active_recipients()
     if chosen:
-        picked = [r for r in active if r.chat_id in chosen]
+        picked = [r for r in everyone if r.chat_id in chosen]
         if picked:
             result = picked
     # Плюс люди, которым этот отчёт отмечен в «Доступе» дашборда
     known = {r.chat_id for r in result}
-    return result + [r for r in telegram.staff_recipients(kind) if r.chat_id not in known]
+    return result + [r for r in telegram.staff_recipients(_base(kind)) if r.chat_id not in known]
 
 
 def chats_for_server(db, kind):
     """Строка для настроек сервера: пусто — сервер возьмёт общих."""
     from services.telegram_service import TelegramService
-    active = {r.chat_id for r in TelegramService(db).get_active_recipients()}
-    return ','.join(c for c in route(db, kind) if c in active)
+    known = {r.chat_id for r in TelegramService(db).get_recipients() if r.chat_id}
+    return ','.join(c for c in route(db, kind) if c in known)
 
 
-def queue(db, kind, text, target=None):
+def _explicit(row):
+    """Чаты, отмеченные в самой задаче. None — не отмечали, шлём по виду."""
+    if row.chats is None:
+        return None
+    from services.telegram_service import Recipient
+    return [Recipient(chat) for chat in row.chats.split(',') if chat.strip()]
+
+
+def queue(db, kind, text, target=None, chats=None):
     """
     Положить сообщение в очередь. Отправит досылка. target — ник
-    контрагента: тогда только ему лично.
+    контрагента: тогда только ему лично. chats — номера чатов, отмеченные
+    в задаче: тогда только им, а не получателям вида.
     """
     row = TelegramOutbox(kind=kind, text=text, created_at=get_moscow_time(),
-                         target=target or None)
+                         target=target or None,
+                         chats=None if chats is None else ','.join(str(c) for c in chats))
     db.add(row)
     db.commit()
     if ON_QUEUED is not None:
@@ -127,7 +164,10 @@ def _personal(db, telegram, row):
             row.attempts = MAX_ATTEMPTS
         db.commit()
         return None
-    if chat in {person.chat_id for person in recipients(db, row.kind)}:
+    group = _explicit(row)
+    if group is None:
+        group = recipients(db, row.kind)
+    if chat in {person.chat_id for person in group}:
         row.sent_at = get_moscow_time()
         db.commit()
         return []
@@ -152,7 +192,14 @@ def flush(db):
                 # Ещё не писал боту — подождём: напишет, и сообщение уйдёт
                 continue
         else:
-            people = recipients(db, row.kind)
+            people = _explicit(row)
+            if people is None:
+                people = recipients(db, row.kind)
+            elif not people:
+                # В задаче сняли всех — отправлять некому, и это не ошибка
+                row.sent_at = get_moscow_time()
+                db.commit()
+                continue
         if not people:
             return sent
         delivered = 0

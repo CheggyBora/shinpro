@@ -898,7 +898,21 @@ class SyncService:
             # меняется редко, а лишний путь обмена это лишнее место,
             # где цены могут разъехаться
             'paint_config': self._paint_config(),
+            **self._task_sections_settings(),
         }
+
+    def _task_sections_settings(self):
+        """
+        Разделы задач и кому уходят задачи каждого (решение 30.10.2026):
+        дашборд показывает те же разделы, а сервер шлёт задачу из дашборда
+        тем же людям, что и цех.
+        """
+        from services import task_sections, telegram_outbox
+        result = {'task_sections': task_sections.for_server(self.db)}
+        for section in task_sections.load(self.db):
+            kind = telegram_outbox.task_kind(section['key'])
+            result[f'telegram_chats_{kind}'] = telegram_outbox.chats_for_server(self.db, kind)
+        return result
 
     # Настройки, которые владелец меняет и из дашборда. Для них
     # смотрим, кто поставил позже; остальные цех задаёт один и

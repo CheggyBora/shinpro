@@ -43,6 +43,18 @@ KIND_DIGEST = 'digest'
 # (решение владельца 29.10.2026). Комментарий не уходит никуда
 KIND_TASK = 'task'
 KINDS = (KIND_STORAGE, KIND_PAINT, KIND_DIGEST, KIND_TASK)
+# У каждого раздела задач свои получатели (решение 30.10.2026): вид
+# «task_paint», своя строка telegram_chats_task_paint. Не задана — как у
+# задач вообще, потом — как сводке по смене
+TASK_PREFIX = 'task_'
+
+
+def task_kind(category):
+    return TASK_PREFIX + (category or 'work')
+
+
+def _base(kind):
+    return KIND_TASK if (kind or '').startswith(TASK_PREFIX) else kind
 
 
 def _split(value):
@@ -62,13 +74,19 @@ def chats_for(db, shop, kind=None):
     пустая настройка означает «как у всех», а не «никому».
     """
     chats = None
-    if kind in KINDS:
-        own = _split(shop_settings.get(db, f'telegram_chats_{kind}',
-                                       shop=shop))
+    candidates = []
+    if (kind or '').startswith(TASK_PREFIX):
+        candidates.append(kind)
+    if _base(kind) in KINDS:
+        candidates.append(_base(kind))
+    for name in candidates:
+        own = _split(shop_settings.get(db, f'telegram_chats_{name}', shop=shop))
         if own:
             chats = own
+            break
     if chats is None:
         chats = _split(shop_settings.get(db, 'telegram_chats', shop=shop))
+    kind = _base(kind)
     # Плюс люди из «Доступа», которым этот отчёт отмечен в дашборде
     if kind in KINDS:
         from app.models import Shop

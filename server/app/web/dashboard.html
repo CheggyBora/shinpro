@@ -2553,6 +2553,42 @@ function calDir() { return cal.wash ? cal.direction : 'tire'; }
 
 function calCats(direction) { return CATS_BY_DIR[direction || calDir()] || CATS_BY_DIR.tire; }
 
+// Разделы — как их настроили в цеху (30.10.2026): свои, переименованные,
+// скрытые. Скрытых в новых задачах и фильтре нет, но название у старых
+// задач остаётся. Цвета своих разделов — стилем страницы
+function applySections(list) {
+  if (!list || !list.length) return;
+  var byDir = { tire: [], wash: [], all: [] };
+  var seen = {};
+  list.forEach(function (row) {
+    if (!/^[a-z0-9_]{1,10}$/.test(row.key)) return;
+    CAT_TITLES[row.key] = row.title;
+    if (row.hidden) return;
+    (row.directions || []).forEach(function (dir) {
+      if (byDir[dir]) byDir[dir].push({ key: row.key, title: row.title });
+    });
+    if (!seen[row.key]) { seen[row.key] = true; byDir.all.push({ key: row.key, title: row.title }); }
+  });
+  CATS_BY_DIR = byDir;
+  var css = list.filter(function (row) {
+    return !row.builtin && /^[a-z0-9_]{1,10}$/.test(row.key)
+      && /^#[0-9a-fA-F]{6}$/.test(row.color) && /^#[0-9a-fA-F]{6}$/.test(row.background);
+  }).map(function (row) {
+    var k = row.key, c = row.color, b = row.background;
+    return '.dot-' + k + '{background:' + c + '}'
+      + '.cat.' + k + '{background:' + b + ';color:' + c + '}'
+      + '.chip.f-' + k + '[aria-pressed="true"]{background:' + c + ';border-color:' + c + '}'
+      + '.it.c-' + k + ',.blk.c-' + k + '{background:' + b + ';color:' + c + '}';
+  }).join('\n');
+  var style = document.getElementById('sectionColors');
+  if (!style) {
+    style = document.createElement('style');
+    style.id = 'sectionColors';
+    document.head.appendChild(style);
+  }
+  style.textContent = css;
+}
+
 // Под каким ключом помнить фильтр разделов. У шиномонтажа — прежний
 // ключ: фильтр, выбранный до появления мойки, не должен пропасть
 var FILTER_KEYS = { all: 'calFilterAll', tire: 'calFilter', wash: 'calFilterWash' };
@@ -2698,6 +2734,7 @@ function loadCalendar() {
       // (calDir), а запомненный выбор ждёт, когда мойка вернётся
       cal.wash = !!answer.wash_enabled;
       cal.data = answer;
+      applySections(answer.sections);
       if (answer.hours) cal.hours = answer.hours;
       // «Сегодня» — по часам сервера: он считает по Москве, а телефон
       // владельца может быть где угодно

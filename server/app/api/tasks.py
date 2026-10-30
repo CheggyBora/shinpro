@@ -152,7 +152,15 @@ def list_tasks(day_from: Optional[date] = Query(None, alias='from'),
         'tasks': [_view(row, names) for row in rows],
         # Часы на сетке «Неделя» и «День» — часы работы точки
         'hours': _hours(db, ids),
+        # Разделы — как их настроили в цеху: свои, переименованные, скрытые
+        'sections': _sections(db, ids),
     }
+
+
+def _sections(db, shop_ids):
+    """Разделы первой точки: настраиваются на всю сеть одинаково."""
+    from app.services import task_sections
+    return task_sections.load(db, shop_ids[0] if shop_ids else None)
 
 
 def _hours(db, shop_ids):
@@ -182,21 +190,28 @@ def create_task(payload: dict,
     except task_service.TaskError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(e))
     names = _names(db, [chosen.id])
-    _announce(row, names)
+    _announce(row, names, db)
     return _view(row, names)
 
 
-def _announce(row, names):
-    """Новая задача — в Telegram, не задерживая ответ. Комментарий — никуда."""
+def _announce(row, names, db=None):
+    """
+    Новая задача — в Telegram, не задерживая ответ. Комментарий — никуда.
+    Кому — тем, кто отмечен в цеху для раздела задачи (30.10.2026).
+    """
     if row.kind == KIND_NOTE:
         return
-    text = task_service.telegram_text(row, names.get((row.shop_id, row.counterparty_uid)))
-    notify.send_in_background(text, shop=row.shop_id, kind=notify.KIND_TASK)
+    from app.services import task_sections
+    titles = task_sections.titles(db, row.shop_id) if db is not None else None
+    text = task_service.telegram_text(row, names.get((row.shop_id, row.counterparty_uid)),
+                                      titles)
+    notify.send_in_background(text, shop=row.shop_id,
+                              kind=notify.task_kind(row.category))
     # Контрагент с ником — ему лично (решение владельца 29.10.2026)
     party = task_service.counterparty_of(row)
     if party is not None and party.telegram and not party.deleted:
         notify.send_personal_in_background(text, row.shop_id, party.telegram,
-                                           kind=notify.KIND_TASK)
+                                           kind=notify.task_kind(row.category))
 
 
 @router.patch('/tasks/{uid}', summary='Поправить, перенести, отметить')
@@ -223,7 +238,7 @@ def patch_task(uid: str, payload: dict,
     names = _names(db, [row.shop_id])
     # Комментарий сделали задачей — теперь это дело, о нём надо сказать
     if was_note and row.kind != KIND_NOTE and not row.deleted:
-        _announce(row, names)
+        _announce(row, names, db)
     return _view(row, names)
 
 
