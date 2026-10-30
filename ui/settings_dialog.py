@@ -742,7 +742,7 @@ class SettingsDialog:
             styles.create_label(row, title, 'Card.TLabel').pack(
                 side='left', padx=(0, 10))
             entry = styles.create_entry(row, width=8)
-            entry.insert(0, self.settings.get(key, ''))
+            entry.insert(0, self.settings.get(key) or '')
             entry.pack(side='left')
             self.time_fields[key] = entry
 
@@ -1072,7 +1072,7 @@ class SettingsDialog:
             styles.create_label(row, title, 'Card.TLabel').pack(
                 side='left', padx=(0, 10))
             entry = styles.create_entry(row, width=8)
-            entry.insert(0, self.settings.get(key, ''))
+            entry.insert(0, self.settings.get(key) or '')
             entry.pack(side='left')
             self.season_fields[key] = entry
 
