@@ -1008,6 +1008,11 @@ $('lNext').addEventListener('click', function () {
         // номера и не со своего телефона звонок не подтвердится
         state.callAvailable = result.data.call_available;
         state.codeAvailable = result.data.code_available !== false;
+        // Ни звонок, ни SMS не подключены — код не придёт, так и говорим
+        if (!state.callAvailable && result.data.code_delivery === 'log') {
+          loginError('Подтверждение номера пока не работает. Позвоните нам — запишем.');
+          return;
+        }
         if (state.callAvailable) startCall();
         else if (state.codeAvailable) prepareCodeStep();
         else loginError('Подтверждение номера пока не работает. Позвоните нам — запишем.');

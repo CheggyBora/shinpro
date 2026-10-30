@@ -536,6 +536,10 @@ input.code { letter-spacing: 8px; text-align: center; font-size: 22px; font-weig
     </div>
 
     <div id="stepCode" hidden>
+      <p class="note" id="codeNowhere" hidden style="color:var(--bad)">Вход по звонку ещё не
+        настроен, а SMS не подключены — код никуда не придёт. Впишите ключ flashcall.ru в
+        программе на точке: «Настройки» → «Вход по звонку» → «Сохранить», затем «Связь с
+        сервером» → «Обменяться сейчас». После этого здесь будет звонок.</p>
       <div class="field">
         <label for="lCode">Код из сообщения</label>
         <input id="lCode" class="code" inputmode="numeric" maxlength="4" autocomplete="one-time-code">
@@ -729,6 +733,8 @@ $('lNext').addEventListener('click', function () {
       // Подключён ли звонок — нужно и для «Забыли ПИН?»
       loginCallAvailable = !!answer.call_available;
       loginCodeAvailable = answer.code_available !== false;
+      // Код уйдёт только в журнал сервера — говорим прямо, а не ждём SMS
+      $('codeNowhere').hidden = answer.code_delivery !== 'log';
       if (answer.step === 'pin') {
         loginStep('stepPin');
         $('lPin').focus();

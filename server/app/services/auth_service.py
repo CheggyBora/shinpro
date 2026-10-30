@@ -118,6 +118,16 @@ class AuthService:
     # Шаг второй: код подтверждения
     # ------------------------------------------------------------------
 
+    def code_delivery(self):
+        """
+        Куда на самом деле уйдёт код: sms, email или log — никуда, только в
+        журнал сервера (ни звонок, ни SMS не подключены). Экран входа
+        говорит об этом прямо, а не ждёт код, который не придёт.
+        """
+        if self.channel() == CHANNEL_EMAIL:
+            return 'email'
+        return 'sms' if sms.available(self.db, self._shop()) else 'log'
+
     def code_available(self):
         """
         Можно ли подтвердить номер кодом.

@@ -85,7 +85,8 @@ def start(payload: StartIn, db: Session = Depends(get_db),
     return StartOut(step=step, is_known=known, pin_is_blocked=blocked,
                     channel=service.channel(),
                     call_available=service.call_available(),
-                    code_available=service.code_available())
+                    code_available=service.code_available(),
+                    code_delivery=service.code_delivery())
 
 
 class CallStartIn(BaseModel):

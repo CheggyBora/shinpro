@@ -86,6 +86,8 @@ class StartOut(BaseModel):
     call_available: bool = False
     # Можно ли кодом. Нет — только звонок: SMS не подключены
     code_available: bool = True
+    # Куда уйдёт код: sms, email или log — никуда (не подключено)
+    code_delivery: str = 'sms'
 
 
 class StaffOut(BaseModel):
@@ -165,7 +167,8 @@ def start(payload: PhoneIn, db: Session = Depends(get_db),
 
     return StartOut(step=step, channel=service.channel(),
                     call_available=service.call_available(),
-                    code_available=service.code_available())
+                    code_available=service.code_available(),
+                    code_delivery=service.code_delivery())
 
 
 class StaffCallIn(BaseModel):
