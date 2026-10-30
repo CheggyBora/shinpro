@@ -103,5 +103,44 @@ check('ключ записан без «Сохранить»', settings.get('cal
       and settings.get('call_provider') == 'flashcall')
 check_window.close()
 
+print('\n=== Telegram: проверка без получателей ===')
+# Получатели появляются после «Старт» по ссылке на бота — значит, токен
+# проверяется и сохраняется раньше, чем есть кому писать
+from services.telegram_service import TelegramService
+calls = []
+
+
+def fake_call(self, method, fields, files=None):
+    calls.append(method)
+    return {'username': 'rif_test_bot'}
+
+
+TelegramService._call = fake_call
+dialog.token_entry.delete(0, 'end')
+dialog.token_entry.insert(0, '123:BOT-TOKEN')
+# Без mainloop окно не примет ответ из чужого потока — проверка идёт здесь же
+import threading
+
+
+class InPlace:
+    def __init__(self, target=None, daemon=None):
+        self.target = target
+
+    def start(self):
+        self.target()
+
+
+real_thread, threading.Thread = threading.Thread, InPlace
+dialog.test_telegram()
+threading.Thread = real_thread
+for _ in range(100):
+    root.update()
+    root.after(20)
+    if 'отвечает' in dialog.telegram_status.cget('text'):
+        break
+check('бот проверен без получателей', 'rif_test_bot отвечает' in dialog.telegram_status.cget('text')
+      and calls == ['getMe'], dialog.telegram_status.cget('text'))
+check('токен сохранён сразу', TelegramService(SessionLocal()).get_token() == '123:BOT-TOKEN')
+
 root.destroy()
 finish()

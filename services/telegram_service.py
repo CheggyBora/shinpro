@@ -436,6 +436,11 @@ class TelegramService:
         нажал боту «Старт».
         """
         info = self._call('getMe', {})
+        # Получателей ещё нет — проверяем только бота: люди появляются,
+        # когда нажмут «Старт» по ссылке, а ссылку дают после проверки.
+        # Раньше без получателя проверка не шла вовсе — замкнутый круг
+        if not self.get_active_recipients() and not self.staff_recipients(None):
+            return info.get('username') or info.get('first_name') or 'бот', None
         result = self._send_to_all(lambda recipient: self._call('sendMessage', {
             'chat_id': recipient.chat_id,
             'text': "Проверка связи: программа учёта шиномонтажа подключена.",

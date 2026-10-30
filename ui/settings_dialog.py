@@ -1416,15 +1416,14 @@ class SettingsDialog:
     def test_telegram(self):
         """Проверить связь, не блокируя окно."""
         token = self.token_entry.get().strip()
-        active = [r for r in self.recipients if r.enabled and r.chat_id]
-
-        if not token or not active:
+        if not token:
             self.telegram_status.config(
-                text="Заполните токен и добавьте хотя бы одного получателя",
+                text="Вставьте токен бота от @BotFather",
                 foreground=styles.COLORS['danger'])
             return
 
-        # Сохраняем сразу: проверка идёт по сохранённым значениям
+        # Сохраняем сразу и отдельно от общего «Сохранить»: проверка идёт
+        # по сохранённым значениям, и токен не должен ждать остальных полей
         self.telegram.save_token(token)
         self.telegram.save_recipients(self.recipients)
         self.telegram_status.config(text="Проверяем связь…",
@@ -1439,7 +1438,11 @@ class SettingsDialog:
         def worker():
             try:
                 name, result = self.telegram.test_connection()
-                done(result.all_delivered, f"Бот @{name}. {result.summary()}")
+                if result is None:
+                    done(True, f"✓ Бот @{name} отвечает, токен сохранён. Получателей пока нет: "
+                               f"«Ссылка на бота» → человек жмёт «Старт» → «Кто написал боту».")
+                else:
+                    done(result.all_delivered, f"Бот @{name}. {result.summary()}")
             except TelegramError as e:
                 done(False, str(e))
             except Exception as e:
