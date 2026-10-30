@@ -56,6 +56,7 @@ TESTS = [
     ('Время наряда: создан и пробит', 'test_order_times.py'),
     ('Раздельная оплата: наличные + карта', 'test_split_payment.py'),
     ('Настройки на новой точке: сохраняются сразу', 'test_settings_fresh.py'),
+    ('Обмен не падает от длинных строк', 'test_sync_long_values.py'),
     ('Отчёты людям из «Доступа» дашборда', 'test_staff_reports.py'),
     ('Проверка ключа звонков пробным звонком', 'test_flashcall_check.py'),
     ('Срочная досылка важного', 'test_sync_nudge.py'),

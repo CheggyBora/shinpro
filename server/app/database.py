@@ -5,8 +5,10 @@
 с кодом. Разницу берёт на себя SQLAlchemy, в остальном коде она
 не всплывает.
 """
-from sqlalchemy import create_engine
-from sqlalchemy.orm import declarative_base, sessionmaker
+import logging
+
+from sqlalchemy import String, create_engine, event, inspect
+from sqlalchemy.orm import Session, declarative_base, sessionmaker
 
 from app.config import settings
 
@@ -26,6 +28,36 @@ engine = create_engine(
 
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 Base = declarative_base()
+
+
+@event.listens_for(Session, 'before_flush')
+def _fit_strings(session, flush_context, instances):
+    """
+    Строка длиннее колонки — обрезаем и пишем в журнал, а не падаем.
+
+    PostgreSQL на слишком длинную строку отвечает ошибкой, и падал весь
+    обмен точки: из-за одного номера машины в 21 знак не доезжали ни
+    наряды, ни настройки, ни ключ звонков (30.10.2026). SQLite длину не
+    проверяет, поэтому тесты этого не видели. Колонки под то, что шлёт
+    цех, держим не короче цеховых; это — страховка на то, что разойдётся
+    в будущем.
+    """
+    for obj in list(session.new) + list(session.dirty):
+        try:
+            mapper = inspect(obj).mapper
+        except Exception:
+            continue
+        for prop in mapper.column_attrs:
+            column = prop.columns[0]
+            length = getattr(column.type, 'length', None)
+            if not length or not isinstance(column.type, String):
+                continue
+            value = getattr(obj, prop.key, None)
+            if isinstance(value, str) and len(value) > length:
+                setattr(obj, prop.key, value[:length])
+                logging.getLogger('tire_server').warning(
+                    f'{column.table.name}.{column.name}: строка в {len(value)} '
+                    f'знаков обрезана до {length}')
 
 
 def get_db():

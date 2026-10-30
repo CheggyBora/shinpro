@@ -37,7 +37,7 @@ class ShopSetting(Base):
                      index=True)
 
     key = Column(String(64), nullable=False, index=True)
-    value = Column(String(255), nullable=True)
+    value = Column(Text, nullable=True)
     updated_at = Column(DateTime, default=shop_now,
                         onupdate=shop_now, nullable=False)
 
@@ -410,7 +410,7 @@ class ShopShift(Base):
     cash_counted = Column(Float, nullable=True)
     # Пересчитали минус «должно быть»: меньше нуля — недостача
     cash_diff = Column(Float, nullable=True)
-    cash_diff_reason = Column(String(255), nullable=True)
+    cash_diff_reason = Column(String(300), nullable=True)
 
 
 class QueueSnapshot(Base):
