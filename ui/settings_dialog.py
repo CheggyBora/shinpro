@@ -90,6 +90,10 @@ class SettingsDialog:
         self.numeric_fields = {}
         self.time_fields = {}
         self.text_fields = {}
+        # Ключ поля → (раздел, подпись): чтобы сказать, что именно не
+        # сохранилось и где это искать
+        self.field_info = {}
+        self._building = None
 
         if self.embedded:
             # Окно верхнего уровня всё равно нужно: к нему привязываются
@@ -235,8 +239,10 @@ class SettingsDialog:
                 ttk.Label(page, text=about, font=(styles.DEFAULT_FONT, 9),
                           background=styles.COLORS['bg_card'],
                           foreground=styles.COLORS['text_secondary']).pack(anchor='w', pady=(0, 2))
+                self._building = title
                 for build in builders:
                     build(page)
+                self._building = None
 
                 item = tk.Frame(side, bg=styles.COLORS['bg'], cursor='hand2')
                 item.pack(fill='x', pady=1)
@@ -446,8 +452,27 @@ class SettingsDialog:
         if not token:
             messagebox.showinfo("Вход по звонку", "Сначала вставьте ключ flashcall.ru",
                                 parent=self.dialog)
-            return
-        CallKeyCheck(self.dialog, token, self.settings.get('company_phone', '') or '')
+            return None
+        return CallKeyCheck(self.dialog, token, self.settings.get('company_phone', '') or '',
+                            on_confirmed=lambda: self.adopt_call_key(token))
+
+    def adopt_call_key(self, token):
+        """
+        Пробный звонок прошёл — ключ сохраняем сразу и отдельно от всего
+        окна (решение владельца 30.10.2026). Раньше он ждал общего
+        «Сохранить», а тот отказывал из-за ошибки в совсем другом
+        разделе — и вход по звонку молча не включался.
+        """
+        try:
+            self.settings.set('call_token', token, commit=False)
+            self.settings.set('call_provider', 'flashcall', commit=False)
+            self.db.commit()
+        except Exception as e:
+            self.db.rollback()
+            return str(e)
+        from services import sync_nudge
+        sync_nudge.request('ключ звонков')
+        return None
 
     def _secret_row(self, parent, key, title):
         """
@@ -606,6 +631,7 @@ class SettingsDialog:
         folder_row.pack(fill='x', pady=(0, 6))
 
         self.folder_entry = styles.create_entry(folder_row, width=48)
+        self._remember('export_folder', 'Папка для сохранения отчётов')
         self.folder_entry.insert(0, self.settings.get('export_folder', '') or '')
         self.folder_entry.pack(side='left', fill='x', expand=True, padx=(0, 8))
 
@@ -745,6 +771,7 @@ class SettingsDialog:
             entry.insert(0, self.settings.get(key) or '')
             entry.pack(side='left')
             self.time_fields[key] = entry
+            self._remember(key, title)
 
         grid = ttk.Frame(content, style='White.TFrame')
         grid.pack(fill='x', pady=(6, 10))
@@ -777,6 +804,7 @@ class SettingsDialog:
             entry.insert(0, str(self.settings.get_int(key)))
             entry.grid(row=row, column=1, sticky='w', padx=(14, 0), pady=3)
             self.numeric_fields[key] = entry
+            self._remember(key, title)
 
     def _build_orders(self, content):
         self._section(content, "Наряды и очередь")
@@ -1055,6 +1083,7 @@ class SettingsDialog:
             entry.insert(0, str(self.settings.get_int(key)))
             entry.grid(row=row, column=1, sticky='w', padx=(14, 0), pady=3)
             self.numeric_fields[key] = entry
+            self._remember(key, title)
 
         self.season_var = tk.BooleanVar(
             value=self.settings.get('season_reminders_enabled', '1') == '1')
@@ -1075,6 +1104,7 @@ class SettingsDialog:
             entry.insert(0, self.settings.get(key) or '')
             entry.pack(side='left')
             self.season_fields[key] = entry
+            self._remember(key, title)
 
     # ------------------------------------------------------------------
     # Получатели Telegram
@@ -1418,39 +1448,80 @@ class SettingsDialog:
         import threading
         threading.Thread(target=worker, daemon=True).start()
 
+    def _remember(self, key, title):
+        """Запомнить, в каком разделе поле и как подписано."""
+        self.field_info[key] = (self._building, title.rstrip(':'))
+
+    def _scroll_to(self, entry):
+        """Прокрутить раздел так, чтобы поле было видно, а не ниже края."""
+        self.dialog.update_idletasks()
+        canvas = entry.master
+        while canvas is not None and canvas.winfo_class() != 'Canvas':
+            canvas = canvas.master
+        if canvas is None:
+            return
+        inner = canvas.nametowidget(canvas.itemcget(canvas.find_all()[0], 'window'))
+        height = inner.winfo_height()
+        if height <= canvas.winfo_height():
+            return
+        top = entry.winfo_rooty() - inner.winfo_rooty() - 120
+        canvas.yview_moveto(max(0.0, top / height))
+
+    def _mark(self, entry, bad):
+        """Подсветить поле, которое не сохранилось, — или снять подсветку."""
+        if bad:
+            ttk.Style().configure('Bad.TEntry', fieldbackground='#fee2e2')
+        entry.configure(style='Bad.TEntry' if bad else 'TEntry')
+
     def save(self):
+        """
+        Сохранить всё, что заполнено правильно.
+
+        Ошибка в одном поле не останавливает остальные (решение владельца
+        30.10.2026): раньше пустое время записи не давало сохранить ключ
+        звонков из другого раздела — и вход по звонку молча не включался.
+        Неправильное поле остаётся как было в базе, подсвечивается, а
+        человеку говорим, что именно не сохранилось и где оно.
+        """
+        problems = []
+
+        def bad(key, entry, text):
+            problems.append((key, entry, text))
+            self._mark(entry, True)
+
+        for entry in (list(self.numeric_fields.values()) + list(self.time_fields.values())
+                      + list(self.season_fields.values()) + [self.folder_entry]):
+            self._mark(entry, False)
+
         folder = self.folder_entry.get().strip()
+        folder_ok = True
         if folder and not os.path.isdir(folder):
             if not messagebox.askyesno(
                     "Папка не найдена",
                     f"Папки «{folder}» нет. Создать её?", parent=self.dialog):
-                return
-            try:
-                os.makedirs(folder, exist_ok=True)
-            except OSError as e:
-                messagebox.showerror("Ошибка", f"Не удалось создать папку:\n{e}",
-                                     parent=self.dialog)
-                return
+                folder_ok = False
+                bad('export_folder', self.folder_entry, f"папки «{folder}» нет")
+            else:
+                try:
+                    os.makedirs(folder, exist_ok=True)
+                except OSError as e:
+                    folder_ok = False
+                    bad('export_folder', self.folder_entry, f"папку не создать: {e}")
 
         try:
             for key, entry in self.numeric_fields.items():
                 value = entry.get().strip()
                 if not value.isdigit():
-                    messagebox.showerror(
-                        "Ошибка", f"Значение «{value}» должно быть целым числом",
-                        parent=self.dialog)
-                    return
+                    bad(key, entry, f"«{value}» — нужно целое число")
+                    continue
                 self.settings.set(key, int(value), commit=False)
 
             hours = {}
             for key, entry in self.time_fields.items():
                 value = entry.get().strip()
                 if not _looks_like_time(value):
-                    messagebox.showerror(
-                        "Ошибка",
-                        f"Время «{value}» непонятно, нужно как 07:00",
-                        parent=self.dialog)
-                    return
+                    bad(key, entry, f"«{value}» — нужно время, как 07:00")
+                    continue
                 hours[key] = value
 
             # Закрытие раньше открытия — окон в кабинете не будет вовсе,
@@ -1460,13 +1531,12 @@ class SettingsDialog:
             opens = hours.get('booking_opens_at')
             closes = hours.get('booking_closes_at')
             if opens and closes and _minutes_of(opens) >= _minutes_of(closes):
-                messagebox.showerror(
-                    "Ошибка",
-                    f"Записывать с {opens} до {closes} нельзя: закрытие "
-                    f"раньше открытия.\nДля круглосуточной записи "
-                    f"поставьте с 00:00 до 24:00.",
-                    parent=self.dialog)
-                return
+                bad('booking_opens_at', self.time_fields['booking_opens_at'],
+                    f"с {opens} до {closes} — закрытие раньше открытия; "
+                    f"круглосуточно — с 00:00 до 24:00")
+                self._mark(self.time_fields['booking_closes_at'], True)
+                hours.pop('booking_opens_at')
+                hours.pop('booking_closes_at')
 
             for key, value in hours.items():
                 self.settings.set(key, value, commit=False)
@@ -1474,11 +1544,8 @@ class SettingsDialog:
             for key, entry in self.season_fields.items():
                 value = entry.get().strip()
                 if not _looks_like_day_month(value):
-                    messagebox.showerror(
-                        "Ошибка",
-                        f"Дату «{value}» не разобрать, нужно как 01.10",
-                        parent=self.dialog)
-                    return
+                    bad(key, entry, f"«{value}» — нужна дата, как 01.10")
+                    continue
                 self.settings.set(key, value, commit=False)
 
             self.settings.set('booking_enabled',
@@ -1492,7 +1559,8 @@ class SettingsDialog:
             for key, entry in self.company_fields.items():
                 self.settings.set(key, entry.get().strip(), commit=False)
 
-            self.settings.set('export_folder', folder, commit=False)
+            if folder_ok:
+                self.settings.set('export_folder', folder, commit=False)
             self.settings.set('shift_autoclose_enabled',
                               '1' if self.autoclose_var.get() else '0', commit=False)
             self.settings.set('shift_autoclose_time', self.autoclose_time.get(), commit=False)
@@ -1532,6 +1600,26 @@ class SettingsDialog:
             from services import sync_nudge
 
             sync_nudge.request('изменены настройки')
+
+            if problems:
+                lines = []
+                for key, entry, text in problems:
+                    section, title = self.field_info.get(key, (None, key))
+                    lines.append(f"• {section + ' → ' if section else ''}{title}: {text}")
+                # Открываем раздел с первой ошибкой — поле подсвечено
+                first_section = self.field_info.get(problems[0][0], (None,))[0]
+                if first_section and hasattr(self, 'open_section'):
+                    self.open_section(first_section)
+                self._scroll_to(problems[0][1])
+                problems[0][1].focus_set()
+                messagebox.showwarning(
+                    "Сохранено не всё",
+                    "Не сохранено — эти поля остались как были:\n\n"
+                    + "\n".join(lines)
+                    + "\n\nВсё остальное сохранено. Поправьте поля, "
+                      "подсвеченные красным, и нажмите «Сохранить» ещё раз.",
+                    parent=self.dialog)
+                return
 
             messagebox.showinfo(
                 "Готово",

@@ -16,8 +16,13 @@ POLL_MS = 2000
 
 
 class CallKeyCheck:
-    def __init__(self, parent, token, phone=''):
+    def __init__(self, parent, token, phone='', on_confirmed=None):
+        """
+        on_confirmed — что сделать, когда звонок подтверждён: настройки
+        сохраняют ключ сразу. Вернёт текст ошибки — покажем его.
+        """
         self.token = token
+        self.on_confirmed = on_confirmed
         self.check_id = None
         self.until = 0
         self.closed = False
@@ -128,8 +133,20 @@ class CallKeyCheck:
                 return
             state, caller = value
             if state == flashcall.CONFIRMED:
-                self._finish('✓ Всё работает: звонок' + (f' с {caller}' if caller else '')
-                             + ' подтверждён. Сохраните настройки — ключ уедет на сервер.', 'ok')
+                text = '✓ Всё работает: звонок' + (f' с {caller}' if caller else '') + ' подтверждён.'
+                if self.on_confirmed is None:
+                    self._finish(text + ' Сохраните настройки — ключ уедет на сервер.', 'ok')
+                    return
+                # Ключ рабочий — сохраняем сразу, «Сохранить» не нужен
+                try:
+                    problem = self.on_confirmed()
+                except Exception as e:
+                    problem = str(e)
+                if problem:
+                    self._finish(text + ' Но ключ не сохранился: ' + problem, 'bad')
+                else:
+                    self._finish(text + ' Ключ сохранён и отправляется на сервер — '
+                                 'через минуту вход в дашборд будет по звонку.', 'ok')
             elif state == flashcall.EXPIRED or time.time() >= self.until:
                 self._finish('Звонка не было. Ключ рабочий — номер выдан, но звонок не дошёл: '
                              'звоните именно с указанного номера, не со скрытого. '
