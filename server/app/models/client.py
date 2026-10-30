@@ -98,7 +98,7 @@ class Car(Base):
     client_id = Column(Integer, ForeignKey('clients.id'), nullable=True, index=True)
 
     # Госномер в том же нормализованном виде, что и в цеху
-    license_plate = Column(String(20), nullable=False, index=True)
+    license_plate = Column(String(50), nullable=False, index=True)
     vehicle_type = Column(String(20), nullable=True)
     wheel_diameter = Column(String(10), nullable=True)
     wheels_assembled = Column(Boolean, nullable=True)

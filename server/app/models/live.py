@@ -33,7 +33,7 @@ class LiveTicket(Base):
     # Пропуск к своему месту: лежит в куке телефона
     token = Column(String(64), nullable=False, unique=True, index=True)
 
-    license_plate = Column(String(20), nullable=False)
+    license_plate = Column(String(50), nullable=False)
     phone = Column(String(20), nullable=True)
     wheel_diameter = Column(String(10), nullable=True)
     wheels_assembled = Column(Boolean, nullable=True)

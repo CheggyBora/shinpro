@@ -85,7 +85,7 @@ class OpenOrder(Base):
                      index=True)
 
     local_id = Column(Integer, nullable=False)
-    license_plate = Column(String(20), nullable=False)
+    license_plate = Column(String(50), nullable=False)
 
     # work — на посту, waiting — ждёт очереди
     state = Column(String(16), default='waiting', nullable=False)
@@ -143,7 +143,7 @@ class OrderPhoto(Base):
     # Номер наряда в базе цеха. По нему приёмщик видит фото в наряде,
     # а клиент — в своей истории
     order_local_id = Column(Integer, nullable=True, index=True)
-    license_plate = Column(String(20), nullable=True)
+    license_plate = Column(String(50), nullable=True)
 
     path = Column(String(255), nullable=False)
     comment = Column(Text, nullable=True)
@@ -233,7 +233,7 @@ class WorkOffer(Base):
     client_id = Column(Integer, ForeignKey('clients.id'), nullable=True,
                        index=True)
     order_local_id = Column(Integer, nullable=False, index=True)
-    license_plate = Column(String(20), nullable=True)
+    license_plate = Column(String(50), nullable=True)
     photo_id = Column(Integer, ForeignKey('order_photos.id'), nullable=True)
 
     # [{"local_id": 12, "name": "Замена шины R16", "price": 650}]
@@ -305,7 +305,7 @@ class Arrival(Base):
                      index=True)
     photo_id = Column(Integer, ForeignKey('order_photos.id'), nullable=True)
 
-    plate = Column(String(20), nullable=False, server_default='')
+    plate = Column(String(50), nullable=False, server_default='')
     # «tire», «wash» или «tire,wash» — как у наряда
     directions = Column(String(20), default='tire', nullable=False,
                         server_default='tire')

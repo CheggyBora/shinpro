@@ -67,7 +67,7 @@ class Appointment(Base):
     scheduled_at = Column(DateTime, nullable=False, index=True)
     duration_minutes = Column(Integer, default=60, nullable=False)
 
-    license_plate = Column(String(20), nullable=True, index=True)
+    license_plate = Column(String(50), nullable=True, index=True)
     client_name = Column(String(200), nullable=True)
     client_phone = Column(String(20), nullable=True)
 
@@ -139,7 +139,7 @@ class StoredSet(Base):
                      index=True)
 
     client_id = Column(Integer, ForeignKey('clients.id'), nullable=True, index=True)
-    license_plate = Column(String(20), nullable=True, index=True)
+    license_plate = Column(String(50), nullable=True, index=True)
 
     storage_type = Column(String(50), nullable=True)     # шины / шины с дисками
     wheel_type = Column(String(50), nullable=True)       # литые / штампованные
@@ -183,7 +183,7 @@ class Visit(Base):
                      index=True)
 
     client_id = Column(Integer, ForeignKey('clients.id'), nullable=True, index=True)
-    license_plate = Column(String(20), nullable=True, index=True)
+    license_plate = Column(String(50), nullable=True, index=True)
 
     visited_at = Column(DateTime, nullable=False, index=True)
     # Когда наряд создан в цеху. visited_at — когда пробит. Старые наряды,

@@ -84,7 +84,7 @@ class Task(Base):
     title = Column(String(200), nullable=False)
     note = Column(Text, nullable=True)
 
-    license_plate = Column(String(20), nullable=True)
+    license_plate = Column(String(50), nullable=True)
     # Для показа там, где клиента в базе нет
     client_name = Column(String(200), nullable=True)
     client_phone = Column(String(20), nullable=True)
