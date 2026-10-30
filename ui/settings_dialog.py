@@ -411,6 +411,10 @@ class SettingsDialog:
                    "и при «Забыли ПИН». Без ключа flashcall.ru войти будет нельзя.")
 
         self._secret_row(content, 'call_token', "Ключ flashcall.ru:")
+        # Ключ раньше просто сохранялся — ошибку узнавали, когда не могли
+        # войти. Проверяем пробным звонком (решение владельца 30.10.2026)
+        styles.create_button(content, "Проверить ключ пробным звонком", self.check_call_key,
+                             'Secondary.TButton').pack(anchor='w', pady=(0, 10))
 
         self._section(content, "Код в SMS — запасной путь")
         self._hint(content,
@@ -434,6 +438,16 @@ class SettingsDialog:
         self._hint(content,
                    "Ключи уезжают на сервер при ближайшем обмене. "
                    "Поменяли — через несколько секунд работает новый.")
+
+    def check_call_key(self):
+        """Пробный звонок с ключом из поля — даже если его ещё не сохранили."""
+        from ui.call_key_check import CallKeyCheck
+        token = self.text_fields['call_token'].get().strip()
+        if not token:
+            messagebox.showinfo("Вход по звонку", "Сначала вставьте ключ flashcall.ru",
+                                parent=self.dialog)
+            return
+        CallKeyCheck(self.dialog, token, self.settings.get('company_phone', '') or '')
 
     def _secret_row(self, parent, key, title):
         """

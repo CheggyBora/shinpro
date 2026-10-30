@@ -55,6 +55,7 @@ TESTS = [
     ('Календарь: комментарии, время с–до, месяц', 'test_calendar_views.py'),
     ('Время наряда: создан и пробит', 'test_order_times.py'),
     ('Отчёты людям из «Доступа» дашборда', 'test_staff_reports.py'),
+    ('Проверка ключа звонков пробным звонком', 'test_flashcall_check.py'),
     ('Срочная досылка важного', 'test_sync_nudge.py'),
     ('Тестовый запуск без связи', 'test_offline_mode.py'),
     ('Время правки настроек', 'test_settings_stamps.py'),
