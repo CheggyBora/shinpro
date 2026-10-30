@@ -199,6 +199,57 @@ def cmd_payments(db, args):
     print(f'Всего: {money(total)}, оплачено до {day(account.paid_until)}')
 
 
+def cmd_staff(db, args):
+    """
+    Кто входит в дашборд: роль, задан ли ПИН и когда, подтверждён ли номер.
+
+    Телефон — только последние четыре цифры: вывод могут прочитать через
+    плечо или переслать, а для того, чтобы узнать себя, хватает хвоста.
+    """
+    from app.models import StaffUser
+    rows = db.query(StaffUser).order_by(StaffUser.account_id, StaffUser.id).all()
+    if not rows:
+        print('Сотрудников нет')
+        return
+    names = {row.id: row.slug or row.name for row in db.query(Account).all()}
+
+    def when(moment):
+        return moment.strftime('%d.%m %H:%M') if moment else '—'
+
+    for row in rows:
+        digits = ''.join(ch for ch in row.phone or '' if ch.isdigit())
+        pin = f'ПИН задан {when(row.pin_updated_at)}' if row.pin_hash else 'ПИН не задан'
+        if row.pin_hash and row.pin_failures:
+            pin += f', ошибок подряд: {row.pin_failures}'
+        print(f'№{row.id:<4} {names.get(row.account_id, "?"):<14} …{digits[-4:]:<5} '
+              f'{row.role_title:<9} {"" if row.is_active else "ЗАКРЫТ  "}{pin}; '
+              f'номер подтверждён: {when(row.phone_verified_at)}; '
+              f'последний вход: {when(row.last_seen_at)}'
+              + (f'; {row.name}' if row.name else ''))
+
+
+def cmd_reset_pin(db, args):
+    """
+    Сбросить ПИН сотрудника: при входе он подтвердит номер (звонком или
+    кодом) и придумает новый. Нужен, если ПИН забыт, а «Забыли ПИН?» не
+    помогает — например, ни звонок, ни SMS ещё не подключены.
+    """
+    from app.models import StaffUser
+    from app.utils import normalize_phone
+    phone = normalize_phone(args.phone)
+    rows = db.query(StaffUser).filter(StaffUser.phone == phone).all()
+    if not rows:
+        print('Такого номера среди сотрудников нет. Список: manage.py staff')
+        return
+    for row in rows:
+        row.pin_hash = None
+        row.pin_updated_at = None
+        row.pin_failures = 0
+        row.pin_blocked_at = None
+    db.commit()
+    print(f'ПИН сброшен у {len(rows)} учётк(и). При входе — подтвердить номер и придумать новый ПИН.')
+
+
 def cmd_block(db, args):
     account = find_account(db, args.account)
     billing.block(db, account, args.reason)
@@ -683,6 +734,10 @@ def main():
     unblock = commands.add_parser('unblock', help='открыть доступ')
     unblock.add_argument('account')
 
+    commands.add_parser('staff', help='кто входит в дашборд: ПИН, подтверждение номера')
+    reset_pin = commands.add_parser('reset-pin', help='сбросить ПИН сотрудника')
+    reset_pin.add_argument('phone', help='номер, например +79099018931')
+
     commands.add_parser('overdue', help='кто не заплатил')
     commands.add_parser('check', help='всё ли готово к работе')
 
@@ -745,6 +800,8 @@ def main():
             'block': cmd_block,
             'unblock': cmd_unblock,
             'overdue': cmd_overdue,
+            'staff': cmd_staff,
+            'reset-pin': cmd_reset_pin,
             'check': cmd_check,
             'bot': cmd_bot,
             'notify': cmd_notify,
