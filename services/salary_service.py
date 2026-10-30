@@ -196,9 +196,13 @@ class SalaryService:
             return {}, []
         return self.distribute(order)
 
-    def process_payment(self, order_id: int, payment_method: str, total_amount: float):
+    def process_payment(self, order_id: int, payment_method: str, total_amount: float,
+                        cash_amount: float = None):
         """
         Провести оплату и начислить зарплату.
+
+        payment_method — cash, card или mixed: раздельно, тогда
+        cash_amount — сколько наличными, остальное картой.
 
         Возвращает список услуг, которые некому было начислить, —
         [{'name', 'base'}]. Пустой — всё разошлось по людям.
@@ -215,6 +219,18 @@ class SalaryService:
                 f"Наряд №{order_id} уже оплачен "
                 f"({order.total_amount:.2f} руб.). Повторная оплата невозможна."
             )
+
+        from models import PAY_CASH, PAY_CARD, PAY_MIXED
+        if payment_method not in (PAY_CASH, PAY_CARD, PAY_MIXED):
+            raise ValueError("Неизвестный способ оплаты")
+        if payment_method == PAY_MIXED:
+            cash_amount = round(float(cash_amount or 0), 2)
+            if not 0 < cash_amount < round(total_amount, 2):
+                raise ValueError(
+                    f"Наличными — больше нуля и меньше {total_amount:.2f} руб.: "
+                    f"остаток пойдёт картой")
+        else:
+            cash_amount = None
 
         # Мойка начисляется тому, кто её делал, — пока не выбрали, пробить
         # нельзя: зарплату было бы некому начислить
@@ -267,6 +283,7 @@ class SalaryService:
 
         order.paid_at = get_moscow_time()
         order.payment_method = payment_method
+        order.cash_amount = cash_amount
         order.total_amount = total_amount
         order.consumables_amount = order_service.calculate_consumables(order_id)
         order.salary_base = order_service.calculate_salary_base(order_id)

@@ -47,7 +47,7 @@ class OrderPaymentMixin:
         
         dialog = tk.Toplevel(self.frame)
         dialog.title("Оплата")
-        dialog.geometry("400x300")
+        dialog.geometry("440x420")
         dialog.configure(bg=styles.COLORS['bg'])
         styles.center_window(dialog, self.frame.winfo_toplevel())
         
@@ -63,10 +63,70 @@ class OrderPaymentMixin:
         radio_frame = ttk.Frame(content, style='White.TFrame')
         radio_frame.pack(fill='x', pady=(0, 20))
         
-        ttk.Radiobutton(radio_frame, text="Наличные", variable=payment_var, value='cash').pack(anchor='w', pady=5)
-        ttk.Radiobutton(radio_frame, text="Безналичный расчёт", variable=payment_var, value='card').pack(anchor='w', pady=5)
+        for text, value in (("Наличные", 'cash'), ("Безналичный расчёт", 'card'),
+                            ("Раздельно: часть наличными, часть картой", 'mixed')):
+            ttk.Radiobutton(radio_frame, text=text, variable=payment_var, value=value,
+                            command=lambda: show_split()).pack(anchor='w', pady=5)
+
+        # Раздельно (решение владельца 30.10.2026): вписывают, сколько
+        # наличными, — картой остаток, считается сам
+        split_frame = ttk.Frame(content, style='White.TFrame')
+        cash_row = ttk.Frame(split_frame, style='White.TFrame')
+        cash_row.pack(fill='x', pady=3)
+        styles.create_label(cash_row, "Наличными:", 'Card.TLabel').pack(side='left')
+        cash_var = tk.StringVar()
+        cash_entry = ttk.Entry(cash_row, textvariable=cash_var, width=12,
+                               font=(styles.DEFAULT_FONT, 12))
+        cash_entry.pack(side='left', padx=8)
+        styles.create_label(cash_row, "руб.", 'Card.TLabel').pack(side='left')
+        card_label = styles.create_label(split_frame, "", 'Card.TLabel')
+        card_label.configure(font=(styles.DEFAULT_FONT, 11, 'bold'))
+        card_label.pack(anchor='w', pady=(6, 0))
+        split_hint = styles.create_label(split_frame, "", 'Card.TLabel')
+        split_hint.configure(foreground=styles.COLORS['text_secondary'], wraplength=380, justify='left')
+        split_hint.pack(anchor='w', pady=(4, 0))
+
+        def cash_part():
+            """Сколько наличными или None, если вписано не то."""
+            try:
+                value = round(float(cash_var.get().replace(',', '.').replace(' ', '')), 2)
+            except ValueError:
+                return None
+            return value if 0 < value < round(total, 2) else None
+
+        def update_split(*_):
+            cash = cash_part()
+            if cash is None:
+                card_label.configure(text="Картой: —", foreground=styles.COLORS['text_secondary'])
+                split_hint.configure(text=f"Впишите наличные: больше 0 и меньше {total:.2f}")
+                return
+            card_label.configure(text=f"Картой: {total - cash:.2f} руб.",
+                                 foreground=styles.COLORS['primary'])
+            split_hint.configure(text=f"Проведите {total - cash:.2f} на терминале. "
+                                      f"В кассу смены — только {cash:.2f} наличными.")
+
+        def show_split():
+            if payment_var.get() == 'mixed':
+                split_frame.pack(fill='x', pady=(0, 10), before=button_frame)
+                update_split()
+                cash_entry.focus_set()
+            else:
+                split_frame.pack_forget()
+
+        cash_var.trace_add('write', update_split)
         
         def pay_and_print():
+            cash_amount = None
+            if payment_var.get() == 'mixed':
+                cash_amount = cash_part()
+                if cash_amount is None:
+                    messagebox.showwarning(
+                        "Раздельная оплата",
+                        f"Впишите, сколько наличными: больше 0 и меньше {total:.2f} руб. "
+                        f"Остаток пойдёт картой.", parent=dialog)
+                    cash_entry.focus_set()
+                    return
+
             # Блокируем кнопку, чтобы двойной клик не запустил оплату дважды
             pay_button.config(state='disabled')
 
@@ -91,7 +151,8 @@ class OrderPaymentMixin:
                 self.order_service.finish_work(self.order.id)
                 self.cancel_autosave()
 
-                self.salary_service.process_payment(self.order.id, payment_var.get(), total)
+                self.salary_service.process_payment(self.order.id, payment_var.get(), total,
+                                                    cash_amount)
                 self.db.refresh(self.order)
             except Exception as e:
                 log.error(f"Ошибка оплаты: {e}")

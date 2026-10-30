@@ -875,8 +875,24 @@ class OrderService:
     REFUND = 'refund'        # вернули деньги клиенту
     REVERSAL = 'reversal'    # сторно: пробили по ошибке
 
+    @staticmethod
+    def refund_split(order):
+        """
+        Сколько ещё можно вернуть наличными и сколько на карту.
+
+        У раздельной оплаты наличными не больше, чем ими дали, за вычетом
+        уже возвращённого из кассы; у остальных — весь доступный остаток
+        тем способом, которым платили.
+        """
+        available = round(float(order.total_amount or 0) - float(order.refunded_amount or 0), 2)
+        cash = max(0.0, round(order.cash_part - float(order.refunded_cash or 0), 2))
+        if order.payment_method != 'mixed':
+            cash = available if order.payment_method == 'cash' else 0.0
+        cash = min(cash, available)
+        return cash, round(available - cash, 2)
+
     def refund_order(self, order_id: int, amount: float = None,
-                     reason: str = '', refund_type: str = REFUND):
+                     reason: str = '', refund_type: str = REFUND, cash: float = None):
         """
         Вернуть деньги по наряду полностью или частично.
 
@@ -911,11 +927,25 @@ class OrderService:
                 return False, (f"К возврату доступно {available:.2f} руб., "
                                f"запрошено {amount:.2f} руб.")
 
+            # Сколько из возврата — наличными. Заплатили одним способом —
+            # тем же и возвращаем; раздельно — сколько указали, не больше,
+            # чем дали наличными
+            cash_left, card_left = self.refund_split(order)
+            if order.payment_method == 'mixed':
+                cash = round(float(cash or 0), 2)
+                if cash < 0 or cash > cash_left + 0.004:
+                    return False, f"Наличными можно вернуть не больше {cash_left:.2f} руб."
+                if amount - cash > card_left + 0.004:
+                    return False, (f"На карту можно вернуть не больше {card_left:.2f} руб. — "
+                                   f"остальное наличными")
+            else:
+                cash = amount if order.payment_method == 'cash' else 0.0
+
             # Наличные возвращаются из кассы — нужна открытая смена: в
             # ней и запишется расходный ордер (docs/cash.md)
             from services.cash_service import CashService
-            cash = CashService(self.db)
-            if order.payment_method == 'cash' and cash.current_shift() is None:
+            register = CashService(self.db)
+            if cash > 0 and register.current_shift() is None:
                 return False, "Откройте смену: наличные возвращаются из кассы"
 
             # Откатываем зарплату соразмерно возвращаемой доле
@@ -961,8 +991,9 @@ class OrderService:
             order.refunded_at = get_moscow_time()
             order.refund_type = refund_type
             order.refund_reason = (reason or '').strip() or 'Не указана'
-            if order.payment_method == 'cash':
-                cash.from_refund(order, amount)
+            if cash > 0:
+                order.refunded_cash = round(float(order.refunded_cash or 0) + cash, 2)
+                register.from_refund(order, cash)
 
             self.db.commit()
 

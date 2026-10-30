@@ -234,7 +234,7 @@ class HistoryTab:
                 total_services = sum(item.quantity for item in items)
                 services_text = f"{total_services} {'услуга' if total_services == 1 else 'услуг' if total_services > 4 or total_services == 0 else 'услуги'}"
                 
-                payment_method = 'Наличные' if order.payment_method == 'cash' else 'Безнал'
+                payment_method = order.payment_title
                 
                 # Пометка состояния: удалён, возвращён или гарантийный.
                 # Строка дополнительно подкрашивается по тегу.
@@ -392,7 +392,7 @@ class HistoryTab:
         auto_discount_text = f"Автоскидка 5%: {'Да' if order.auto_discount else 'Нет'}"
         styles.create_label(total_frame, auto_discount_text, 'Card.TLabel').pack(anchor='w', pady=2)
         
-        payment_method = 'Наличные' if order.payment_method == 'cash' else 'Безналичный'
+        payment_method = order.payment_title
         styles.create_label(total_frame, f"Способ оплаты: {payment_method}", 'Card.TLabel').pack(anchor='w', pady=2)
         
         total_label = styles.create_label(total_frame, f"ИТОГО: {order.total_amount:.2f} руб.", 'CardHeading.TLabel')
@@ -483,6 +483,24 @@ class HistoryTab:
                   background=styles.COLORS['bg_card'],
                   foreground=styles.COLORS['text_secondary']).pack(anchor='w', pady=(0, 12))
 
+        # Раздельная оплата — сколько из возврата наличными из кассы
+        cash_entry = None
+        if order.payment_method == 'mixed':
+            cash_left, card_left = order_service.refund_split(order)
+            styles.create_label(content, "Из них наличными из кассы, руб.:",
+                                'Card.TLabel').pack(anchor='w', pady=(0, 5))
+            cash_entry = styles.create_entry(content, width=20)
+            cash_entry.insert(0, f"{cash_left:.2f}")
+            cash_entry.pack(fill='x', pady=(0, 4))
+            ttk.Label(content,
+                      text=f"Платили раздельно: {order.payment_title}. Наличными можно "
+                           f"вернуть до {cash_left:.2f}, на карту — до {card_left:.2f} руб.",
+                      font=(styles.DEFAULT_FONT, 9),
+                      background=styles.COLORS['bg_card'],
+                      foreground=styles.COLORS['text_secondary'],
+                      wraplength=370, justify='left').pack(anchor='w', pady=(0, 12))
+            dialog.geometry("430x500")
+
         styles.create_label(content, "Причина:", 'Card.TLabel').pack(anchor='w', pady=(0, 5))
         reason_entry = styles.create_entry(content, width=40)
         reason_entry.pack(fill='x', pady=(0, 8))
@@ -501,6 +519,14 @@ class HistoryTab:
                 messagebox.showerror("Ошибка", "Сумма должна быть числом", parent=dialog)
                 return
 
+            cash = None
+            if cash_entry is not None:
+                try:
+                    cash = float(cash_entry.get().replace(',', '.') or 0)
+                except ValueError:
+                    messagebox.showerror("Ошибка", "Наличные — числом", parent=dialog)
+                    return
+
             reason = reason_entry.get().strip()
             if not reason:
                 messagebox.showerror("Ошибка", "Укажите причину возврата", parent=dialog)
@@ -516,7 +542,7 @@ class HistoryTab:
                 return
 
             success, message = order_service.refund_order(
-                order_id, amount=amount, reason=reason, refund_type=kind)
+                order_id, amount=amount, reason=reason, refund_type=kind, cash=cash)
 
             if success:
                 dialog.destroy()

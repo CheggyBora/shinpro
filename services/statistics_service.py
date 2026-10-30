@@ -103,7 +103,7 @@ class StatisticsService:
                 'refund_reason': order.refund_reason,
                 # Что осталось шиномонтажу после возврата, материалов и зарплаты
                 'margin': round(net - consumables - salary_total, 2),
-                'payment_method': 'Наличные' if order.payment_method == 'cash' else 'Безнал',
+                'payment_method': order.payment_title,
             })
 
         return report

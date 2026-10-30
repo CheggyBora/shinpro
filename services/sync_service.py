@@ -650,6 +650,7 @@ class SyncService:
                 'vehicle_type': order.vehicle_type,
                 'wheel_diameter': order.wheel_diameter,
                 'payment_method': order.payment_method,
+                'cash_amount': order.cash_amount,
                 'consumables_amount': order.consumables_amount or 0.0,
                 'salary_base': order.salary_base or 0.0,
                 'general_discount': order.general_discount or 0,

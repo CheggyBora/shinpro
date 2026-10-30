@@ -615,6 +615,15 @@ var section = null;
 // Мелочи
 // ------------------------------------------------------------------
 
+// Как заплатили. Раздельно — «Наличные 2 000 ₽ + карта 3 400 ₽»
+function payTitle(order) {
+  if (order.payment_method === 'mixed') {
+    const cash = order.cash_amount || 0;
+    return 'Наличные ' + money(cash) + ' + карта ' + money((order.total_amount || 0) - cash);
+  }
+  return order.payment_method === 'card' ? 'Карта' : 'Наличные';
+}
+
 function money(value) {
   var number = Math.round(Number(value) || 0);
   return number.toLocaleString('ru-RU') + ' ₽';
@@ -1416,7 +1425,7 @@ function loadOrders(masterId) {
           + '</span></div>'
           + '<div class="money">' + money(part ? row.direction_amount : row.total_amount)
           + '<small>' + (part ? 'из ' + money(row.total_amount) + ' · ' : '')
-          + (row.payment_method === 'card' ? 'карта' : 'наличные')
+          + payTitle(row).toLowerCase()
           + '</small></div></button>';
       }).join('') + '</div>');
 
@@ -2422,7 +2431,7 @@ function openOrder(id, shopId) {
         + spanText(card.opened_at, card.visited_at) + '</b></div>';
     }
     html += '<div class="line"><span>Оплата</span><b>'
-      + (card.payment_method === 'card' ? 'Карта' : 'Наличные') + '</b></div>';
+      + payTitle(card) + '</b></div>';
     if (card.actual_minutes != null) {
       html += '<div class="line"><span>Время работы</span><b>' + card.actual_minutes
         + ' мин' + (card.planned_minutes ? ' из ' + card.planned_minutes : '')

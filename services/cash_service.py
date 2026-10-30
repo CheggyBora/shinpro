@@ -112,7 +112,7 @@ class CashService:
     def totals(self, shift):
         """{'start', 'paid_cash', 'came', 'went', 'expected'}. Возвраты — в ордерах."""
         start = shift.cash_start or 0.0
-        paid_cash = sum(o.total_amount or 0 for o in self.paid_orders(shift) if o.payment_method == 'cash')
+        paid_cash = sum(o.cash_part for o in self.paid_orders(shift))
         came = went = 0.0
         for row in self.orders(shift):
             effect = row.cash_effect
@@ -142,12 +142,18 @@ class CashService:
                          'text': f'Пересчитали: {money(shift.cash_start)}',
                          'amount': shift.cash_start, 'effect': 0.0, 'order': None})
         for o in self.paid_orders(shift):
-            cash = o.payment_method == 'cash'
+            cash = o.cash_part
             plate = o.car.license_plate if o.car else ''
+            if not cash:
+                text = 'оплата картой — в кассу не идёт'
+            elif o.card_part:
+                text = f'наличными {money(cash)} + картой {money(o.card_part)} — в кассу только наличные'
+            else:
+                text = 'оплата наличными'
             rows.append({'time': as_naive(o.paid_at), 'tag': 'paid' if cash else 'card',
                          'what': f'Наряд №{o.id}',
-                         'text': f'{plate} · ' + ('оплата наличными' if cash else 'оплата картой — в кассу не идёт'),
-                         'amount': o.total_amount or 0, 'effect': (o.total_amount or 0) if cash else 0.0,
+                         'text': f'{plate} · ' + text,
+                         'amount': o.total_amount or 0, 'effect': cash,
                          'order': None})
         for row in self.orders(shift):
             title = f'{KIND_TITLES[row.kind]} №{row.number}'

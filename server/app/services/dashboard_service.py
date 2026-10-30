@@ -169,6 +169,17 @@ class DashboardService:
                        if _line_direction(item) == self.direction)
         return (order.total_amount or 0.0) * self._share(order)
 
+    def _cash_share(self, order):
+        """
+        Какая доля наряда пришла наличными: 1, 0 или у раздельной
+        оплаты — наличные от итога. Выручку направления делим так же.
+        """
+        if order.payment_method == 'cash':
+            return 1.0
+        if order.payment_method == 'mixed' and order.total_amount:
+            return min(1.0, (order.cash_amount or 0.0) / order.total_amount)
+        return 0.0
+
     def _consumables(self, order):
         """
         Расходники наряда в выбранном направлении.
@@ -256,10 +267,11 @@ class DashboardService:
         refunded = sum(self._refund(order)
                        for order in self._refunds_in(period))
 
-        cash = sum(self._revenue(order) for order in orders
-                   if order.payment_method == 'cash')
-        card = sum(self._revenue(order) for order in orders
-                   if order.payment_method == 'card')
+        # Раздельная оплата делится: наличная часть — в наличные, остаток
+        # — в карту. Наряд без способа оплаты не идёт ни туда, ни туда
+        cash = sum(self._revenue(order) * self._cash_share(order) for order in orders)
+        card = sum(self._revenue(order) * (1 - self._cash_share(order)) for order in orders
+                   if order.payment_method in ('card', 'mixed'))
 
         consumables = sum(self._consumables(order) for order in orders)
         warranty = [order for order in orders if order.is_warranty]
@@ -662,7 +674,11 @@ class DashboardService:
         query = self._orders_query(self._period(day_from, day_to))
 
         if payment_method:
-            query = query.filter(Visit.payment_method == payment_method)
+            # Раздельная оплата — и в «наличных», и в «карте»
+            methods = [payment_method]
+            if payment_method in ('cash', 'card'):
+                methods.append('mixed')
+            query = query.filter(Visit.payment_method.in_(methods))
 
         if employee_local_id is not None:
             # Подзапросом, а не соединением: строк начислений у человека
@@ -720,6 +736,8 @@ class DashboardService:
             'license_plate': order.license_plate,
             'total_amount': round(order.total_amount or 0.0, 2),
             'payment_method': order.payment_method,
+            'cash_amount': (round(order.cash_amount or 0.0, 2)
+                            if order.payment_method == 'mixed' else None),
             'is_warranty': order.is_warranty,
             'refunded_amount': round(order.refunded_amount or 0.0, 2),
             # В отчёты удалённый наряд не идёт, но открыть его карточку

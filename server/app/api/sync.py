@@ -133,6 +133,7 @@ class VisitIn(BaseModel):
     vehicle_type: Optional[str] = None
     wheel_diameter: Optional[str] = None
     payment_method: Optional[str] = None
+    cash_amount: Optional[float] = None
     consumables_amount: float = 0.0
     salary_base: float = 0.0
     general_discount: int = 0
@@ -526,6 +527,7 @@ def push(payload: PushIn, db: Session = Depends(get_db),
         row.vehicle_type = item.vehicle_type
         row.wheel_diameter = item.wheel_diameter
         row.payment_method = item.payment_method
+        row.cash_amount = item.cash_amount if item.payment_method == 'mixed' else None
         row.consumables_amount = item.consumables_amount
         row.salary_base = item.salary_base
         row.general_discount = item.general_discount

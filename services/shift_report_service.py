@@ -65,7 +65,7 @@ class ShiftReportService:
         consumables = sum(float(o.consumables_amount or 0) for o in orders)
         salary_total = round(sum(by_master.values()), 2)
 
-        cash = sum(float(o.total_amount or 0) for o in orders if o.payment_method == 'cash')
+        cash = sum(o.cash_part for o in orders)
         card = revenue - cash
 
         duration = (as_naive(end) - start).total_seconds() / 3600 if start else 0

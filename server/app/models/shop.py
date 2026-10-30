@@ -205,6 +205,9 @@ class Visit(Base):
     wheel_diameter = Column(String(10), nullable=True)
 
     payment_method = Column(String(20), nullable=True)
+    # Раздельная оплата (payment_method = mixed): сколько наличными,
+    # картой — остаток. У cash и card пусто
+    cash_amount = Column(Float, nullable=True)
     consumables_amount = Column(Float, default=0.0, nullable=False)
     salary_base = Column(Float, default=0.0, nullable=False)
 

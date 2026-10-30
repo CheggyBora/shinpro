@@ -163,8 +163,12 @@ class PrintService:
             pair("Скидка", f"-{discount:.0f} ₽", size=8)
         pair("ИТОГО", f"{final_total:.0f} ₽", size=10)
 
-        payment = "Наличные" if order.payment_method == "cash" else "Карта"
-        line(f"Оплата: {payment}", size=7)
+        if order.payment_method == 'mixed':
+            # Узкая лента: раздельную оплату — двумя строками
+            pair("Наличными", f"{order.cash_part:.0f} ₽", size=7)
+            pair("Картой", f"{order.card_part:.0f} ₽", size=7)
+        else:
+            line(f"Оплата: {order.payment_title.lower()}", size=7)
 
         if order.recommendations and order.recommendations.strip():
             separator()
@@ -394,8 +398,7 @@ class PrintService:
         # Способ оплаты
         y -= 30
         c.setFont(self.font_name, 12)
-        payment_method = "Наличные" if order.payment_method == "cash" else "Карта"
-        c.drawString(50, y, f"Способ оплаты: {payment_method}")
+        c.drawString(50, y, f"Способ оплаты: {order.payment_title}")
 
         # Рекомендации мастера.
         # Раньше мастер их записывал, а клиент никогда не видел —

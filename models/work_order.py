@@ -3,6 +3,23 @@ from sqlalchemy.orm import relationship
 from config import Base
 from utils import get_moscow_time
 
+# Как заплатили. Раздельно — часть наличными, часть картой (решение
+# владельца 30.10.2026): наличная часть в cash_amount, картой — остаток
+PAY_CASH, PAY_CARD, PAY_MIXED = 'cash', 'card', 'mixed'
+
+
+def _rub(value):
+    return f"{value:,.0f}".replace(',', ' ') + ' ₽'
+
+
+def payment_title(method, total, cash_amount=None):
+    """«Наличные», «Карта» или «Наличные 2 000 ₽ + карта 3 400 ₽»."""
+    if method == PAY_MIXED:
+        cash = float(cash_amount or 0)
+        return f"Наличные {_rub(cash)} + карта {_rub(float(total or 0) - cash)}"
+    return 'Наличные' if method == PAY_CASH else 'Карта'
+
+
 class WorkOrder(Base):
     __tablename__ = 'work_orders'
     
@@ -19,6 +36,9 @@ class WorkOrder(Base):
     paid_at = Column(DateTime(timezone=True), nullable=True)
     payment_method = Column(String(20), nullable=True)
     total_amount = Column(Float, default=0.0)
+    # Раздельная оплата: сколько из total_amount дали наличными. У
+    # «cash» и «card» пусто — там всё одним способом
+    cash_amount = Column(Float, nullable=True)
     status = Column(String(20), default='draft')
     employee_ids = Column(String(200), nullable=True)
     recommendations = Column(Text, nullable=True)
@@ -81,6 +101,9 @@ class WorkOrder(Base):
     refunded_at = Column(DateTime(timezone=True), nullable=True)
     refund_reason = Column(String(500), nullable=True)
     refund_type = Column(String(20), nullable=True)  # refund | reversal
+    # Сколько из возвращённого отдали наличными, из кассы. У раздельной
+    # оплаты наличными нельзя вернуть больше, чем ими заплатили
+    refunded_cash = Column(Float, default=0.0)
 
     # Гарантийная переделка — отдельный наряд на ту же машину, услуги в
     # нём по 0 ₽ (решение владельца 26.10.2026). Товары — по цене: вентиль
@@ -94,5 +117,23 @@ class WorkOrder(Base):
     deleted_at = Column(DateTime(timezone=True), nullable=True)
     deleted_reason = Column(String(500), nullable=True)
     
+    @property
+    def cash_part(self):
+        """Сколько по наряду пришло наличными — столько ушло в кассу."""
+        total = float(self.total_amount or 0)
+        if self.payment_method == PAY_CASH:
+            return total
+        if self.payment_method == PAY_MIXED:
+            return round(min(total, float(self.cash_amount or 0)), 2)
+        return 0.0
+
+    @property
+    def card_part(self):
+        return round(float(self.total_amount or 0) - self.cash_part, 2)
+
+    @property
+    def payment_title(self):
+        return payment_title(self.payment_method, self.total_amount, self.cash_amount)
+
     car = relationship("Car", backref="work_orders")
     client = relationship("Client", backref="work_orders")
