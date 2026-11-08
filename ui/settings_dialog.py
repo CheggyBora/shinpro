@@ -898,6 +898,19 @@ class SettingsDialog:
             ttk.Checkbutton(content, text=text, variable=var,
                             command=self.save_directions).pack(anchor='w', pady=2)
 
+        # Магазин (решение владельца 08.11.2026): карточки товаров,
+        # продажа без машины и товары в любом наряде
+        self.shop_var = tk.BooleanVar(value=directions.shop_on(self.db))
+        ttk.Checkbutton(content, text="Магазин — продажа товаров (аксессуары и т. п.)",
+                        variable=self.shop_var,
+                        command=lambda: directions.set_shop_on(
+                            self.db, self.shop_var.get())).pack(anchor='w', pady=2)
+        self._hint(content,
+                   "Включено — сверху появляется «Магазин»: карточки товаров с фото, "
+                   "продажа без машины, а в любом наряде — «+ Товар из магазина». "
+                   "Остатки магазина ведутся всегда. Кому с продаж — в «Мастерах и "
+                   "зарплате».")
+
         self._build_stock_switch(content)
         self._build_photo_switch(content)
 
@@ -971,11 +984,45 @@ class SettingsDialog:
                             command=lambda: self.settings.set(
                                 'salary_base_admin', self.admin_base_var.get())).pack(
                 side='left', padx=(10, 0))
+        self._build_shop_salary(content)
         self._hint(content,
-                   "Процент администратора — со всего наряда: шиномонтаж, мойка и товары. "
+                   "Процент администратора — со всего наряда: шиномонтаж, мойка и товары "
+                   "направлений (магазин — по правилам магазина ниже). "
                    "Начисляется тем, кто на смене в категории «Администратор», сверху — "
                    "мастерам и мойщикам не меньше. Двое на смене — делят поровну. "
                    "Ставка — «Сотрудники» → «Изменить ставку».")
+
+    def _build_shop_salary(self, content):
+        """Кому с продаж магазина и от чего (решение владельца 08.11.2026)."""
+        from services import directions
+        frame = ttk.Frame(content, style='White.TFrame')
+        frame.pack(fill='x', pady=(10, 2))
+        styles.create_label(frame, "Магазин — кому с продаж:", 'Card.TLabel').pack(anchor='w')
+        row = ttk.Frame(frame, style='White.TFrame')
+        row.pack(fill='x', pady=(2, 2))
+        self.shop_pay_var = tk.StringVar(value=directions.shop_pay_to(self.db))
+        for value, text in ((directions.SHOP_PAY_NONE, 'никому'),
+                            (directions.SHOP_PAY_ADMIN, 'администратору на смене'),
+                            (directions.SHOP_PAY_SELLER, 'продавцу'),
+                            (directions.SHOP_PAY_BOTH, 'продавцу и администратору')):
+            ttk.Radiobutton(row, text=text, value=value, variable=self.shop_pay_var,
+                            command=lambda: self.settings.set(
+                                'shop_salary_to', self.shop_pay_var.get())).pack(
+                side='left', padx=(0, 12))
+        row = ttk.Frame(frame, style='White.TFrame')
+        row.pack(fill='x', pady=(2, 2))
+        styles.create_label(row, "от чего:", 'Card.TLabel').pack(side='left')
+        self.shop_base_var = tk.StringVar(value=directions.shop_salary_base(self.db))
+        for value, text in (('sale', 'от суммы продажи'), ('margin', 'от наценки (продажа − закупка)')):
+            ttk.Radiobutton(row, text=text, value=value, variable=self.shop_base_var,
+                            command=lambda: self.settings.set(
+                                'shop_salary_base', self.shop_base_var.get())).pack(
+                side='left', padx=(10, 0))
+        self._hint(frame,
+                   "Каждому — по его «ставке магазина» («Сотрудники» → «Изменить ставку»). "
+                   "Продавец выбирается при продаже, по умолчанию — администратор на смене. "
+                   "У карточки указан бонус, ₽ — по этому товару бонус вместо процента. "
+                   "Администраторов на смене двое — делят поровну.")
 
     def _build_stock_switch(self, content):
         self._section(content, "Склад")
@@ -988,6 +1035,17 @@ class SettingsDialog:
                    "списываются проданные товары и материалы по услугам, при "
                    "полном возврате — возвращаются. Остаток может уйти в минус: "
                    "главному придёт сообщение в Telegram.")
+        from services import directions
+        row = ttk.Frame(content, style='White.TFrame')
+        row.pack(fill='x', pady=(4, 6))
+        styles.create_label(row, "Если товара нет на складе:", 'Card.TLabel').pack(side='left')
+        self.negative_var = tk.StringVar(value=directions.stock_negative(self.db))
+        for value, text in (('warn', 'продавать с предупреждением'),
+                            ('block', 'не давать продать')):
+            ttk.Radiobutton(row, text=text, value=value, variable=self.negative_var,
+                            command=lambda: self.settings.set(
+                                'stock_negative', self.negative_var.get())).pack(
+                side='left', padx=(10, 0))
 
     def _build_wash(self, content):
         """Посты мойки и запись на мойку."""

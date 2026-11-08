@@ -150,7 +150,7 @@ class OrderService:
             raise
     
     def add_service_to_order(self, order_id: int, service_id: int,
-                             wheels=None) -> WorkOrderItem:
+                             wheels=None, employee_id=None, quantity=None) -> WorkOrderItem:
         """
         Добавить услугу в наряд.
 
@@ -161,7 +161,7 @@ class OrderService:
         from services.wheel_service import parse, join
 
         wheels = parse(join(wheels or []))
-        count = len(wheels) or 1
+        count = int(quantity) if quantity else (len(wheels) or 1)
         try:
             order = self.db.query(WorkOrder).filter(WorkOrder.id == order_id).first()
             service = self.db.query(Service).filter(Service.id == service_id).first()
@@ -171,7 +171,8 @@ class OrderService:
 
             from services import directions as _directions
             wanted = getattr(service, 'direction', None) or 'tire'
-            if wanted not in _directions.parse(order.directions):
+            # Товар магазина — в любой наряд: направление ему не нужно
+            if wanted != _directions.SHOP and wanted not in _directions.parse(order.directions):
                 raise ValueError(
                     "Это услуга мойки — сначала «+ Мойка» в наряде" if wanted == 'wash'
                     else "Это услуга шиномонтажа — сначала «+ Шиномонтаж» в наряде")
@@ -182,6 +183,12 @@ class OrderService:
                 WorkOrderItem.service_id == service_id
             ).first()
             
+            if service.is_goods:
+                # Товара нет на складе — «не давать продать» (Настройки → Склад)
+                from services.stock_service import StockService
+                already = existing_item.quantity if existing_item else 0
+                StockService(self.db).check_available(service.id, already + count)
+
             if existing_item:
                 # Увеличиваем количество
                 existing_item.quantity += count
@@ -231,6 +238,9 @@ class OrderService:
                 is_goods=bool(service.is_goods),
                 direction=getattr(service, 'direction', None) or 'tire',
             )
+            # Товар магазина — кто продал: выбран или администратор на смене
+            if item.direction == _directions.SHOP:
+                item.employee_id = employee_id or self._default_seller()
             # На смене один человек — назначаемая строка его, выбирать некого
             from services import directions as _directions
             if _directions.assigned(self.db, item.direction):
@@ -246,6 +256,18 @@ class OrderService:
             self.db.rollback()
             raise
     
+    def _default_seller(self):
+        """Кто продал, если не выбрали: администратор на смене, иначе один на смене."""
+        from models import WorkShift
+        from services.employee_role_service import EmployeeRoleService
+        roles = EmployeeRoleService(self.db)
+        on_shift = [s.employee for s in self.db.query(WorkShift).filter(
+            WorkShift.end_time.is_(None)).all() if s.employee is not None]
+        admin = next((e for e in on_shift if roles.is_admin(e)), None)
+        if admin is not None:
+            return admin.id
+        return on_shift[0].id if len(on_shift) == 1 else None
+
     @staticmethod
     def _tell_server(reason):
         """

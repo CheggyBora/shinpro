@@ -114,8 +114,8 @@ class StockService:
             import uuid
             direction = fields.get('direction')
             kind = fields.get('kind')
-            if direction not in ('tire', 'wash'):
-                raise StockError('Выберите, шиномонтаж это или мойка')
+            if direction not in ('tire', 'wash', 'shop'):
+                raise StockError('Выберите, шиномонтаж это, мойка или магазин')
             if kind not in (GOODS, MATERIAL):
                 raise StockError('Выберите: товар или материал')
             item = StockItem(uid=str(uuid.uuid4()), direction=direction, kind=kind, name=name)
@@ -126,6 +126,19 @@ class StockService:
         item.price = price
         item.purchase_price = purchase
         item.min_quantity = number('min_quantity', item.min_quantity)
+        # Карточка магазина: категория, артикул, бонус продавцу
+        for key in ('category', 'sku'):
+            if key in fields:
+                setattr(item, key, (fields.get(key) or '').strip()[:60] or None)
+        if 'bonus' in fields:
+            raw = fields.get('bonus')
+            try:
+                bonus = float(str(raw).replace(',', '.')) if raw not in ('', None) else None
+            except ValueError:
+                raise StockError('Бонус продавцу — числом или пусто')
+            if bonus is not None and bonus < 0:
+                raise StockError('Бонус не может быть меньше нуля')
+            item.bonus = bonus or None
         item.updated_at = get_moscow_time()
         self.db.flush()
         if item.kind == GOODS:
@@ -270,10 +283,38 @@ class StockService:
                 plan[item.id] = plan.get(item.id, 0) + row.quantity * count
         return plan
 
+    def item_of(self, service_id):
+        """Позиция склада, которой продаётся товар прайса."""
+        return self.db.query(StockItem).filter(StockItem.service_id == service_id).first()
+
+    def tracked(self, item):
+        """
+        Ведём ли остаток этой позиции. У магазина — всегда: карточка без
+        остатка магазину не нужна. Остальное — когда склад включён.
+        """
+        return item is not None and (item.direction == 'shop' or self.enabled())
+
+    def check_available(self, service_id, wanted):
+        """
+        Хватит ли товара (Настройки → Склад: «не давать продать»). Нет —
+        StockError с понятной причиной. «Продавать с предупреждением» —
+        не мешаем: в минус уйдёт, придёт сообщение.
+        """
+        from services import directions
+        item = self.item_of(service_id)
+        if not self.tracked(item) or directions.stock_negative(self.db) != 'block':
+            return
+        if (item.quantity or 0) < wanted:
+            have = item.quantity or 0
+            raise StockError(f'«{item.name}»: на складе {have:g} {item.unit} — '
+                             f'продать {wanted:g} нельзя (Настройки → Склад)')
+
     def write_off_order(self, order_id):
-        """Пробили наряд — списать материалы и товары. Повторно не списывает."""
-        if not self.enabled():
-            return []
+        """
+        Пробили наряд — списать материалы и товары. Повторно не списывает.
+        Склад выключен — списываем только магазин: его остатки ведутся всегда.
+        """
+        shop_only = not self.enabled()
         done = self.db.query(StockMove).filter(
             StockMove.order_id == order_id, StockMove.reason == 'order').first()
         if done is not None:
@@ -282,7 +323,7 @@ class StockService:
         gone_negative = []
         for item_id, amount in self._plan(order_id).items():
             item = self.get(item_id)
-            if item is None:
+            if item is None or (shop_only and item.direction != 'shop'):
                 continue
             before, after = self._move(item, -amount, 'order', order_id=order_id)
             if before >= 0 > after:

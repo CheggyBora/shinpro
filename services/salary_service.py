@@ -171,7 +171,67 @@ class SalaryService:
             share['lines'].append({'name': name, 'base': round(base, 2), 'percent': percent,
                                    'shared': 1, 'amount': round(amount, 2), 'direction': direction})
         self._admins(order, people)
+        self._shop(order, people)
         return people, nobody
+
+    def _shop(self, order, people):
+        """
+        С продаж магазина (решение владельца 08.11.2026) — по настройке:
+        никому, администратору на смене, продавцу строки или обоим, каждому
+        по его ставке магазина. От суммы продажи или от наценки. У карточки
+        задан бонус, ₽ — по этому товару вместо процента.
+        """
+        from models import WorkShift
+        from models.stock import StockItem
+        from services import directions
+        from services.employee_role_service import EmployeeRoleService
+        from services.order_service import OrderService
+
+        mode = directions.shop_pay_to(self.db)
+        if mode == directions.SHOP_PAY_NONE:
+            return
+        lines = [i for i in self.db.query(WorkOrderItem).filter(
+            WorkOrderItem.work_order_id == order.id).all()
+            if (getattr(i, 'direction', None) or 'tire') == directions.SHOP]
+        if not lines:
+            return
+        admins = []
+        if mode in (directions.SHOP_PAY_ADMIN, directions.SHOP_PAY_BOTH):
+            roles = EmployeeRoleService(self.db)
+            for shift in self.db.query(WorkShift).filter(WorkShift.end_time.is_(None)).all():
+                if shift.employee is not None and roles.is_admin(shift.employee) \
+                        and shift.employee not in admins:
+                    admins.append(shift.employee)
+        margin = directions.shop_salary_base(self.db) == 'margin'
+
+        def give(employee_id, line, base, percent, bonus, shared):
+            if bonus:
+                amount = bonus * (line.quantity or 1) / shared
+            else:
+                amount = base * percent / 100 / shared
+            if amount <= 0:
+                return
+            name = line.service.name if line.service else f'Позиция №{line.id}'
+            share = people.setdefault(employee_id, {'amount': 0.0, 'lines': [], 'skipped': []})
+            share['amount'] = round(share['amount'] + amount, 2)
+            share['lines'].append({'name': 'Магазин: ' + name, 'base': round(base, 2),
+                                   'percent': None if bonus else percent, 'bonus': bonus,
+                                   'shared': shared, 'amount': round(amount, 2),
+                                   'direction': directions.SHOP})
+
+        for line in lines:
+            base = OrderService.item_total(line)
+            if margin:
+                base -= OrderService.item_consumables(line)
+            base = max(0.0, base)
+            card = self.db.query(StockItem).filter(StockItem.service_id == line.service_id).first()
+            bonus = card.bonus if card is not None and card.bonus else None
+            if mode in (directions.SHOP_PAY_SELLER, directions.SHOP_PAY_BOTH) and line.employee_id:
+                seller = self.db.query(Employee).filter(Employee.id == line.employee_id).first()
+                if seller is not None:
+                    give(seller.id, line, base, float(seller.shop_percent or 0), bonus, 1)
+            for admin in admins:
+                give(admin.id, line, base, float(admin.shop_percent or 0), bonus, len(admins))
 
     def _admins(self, order, people):
         """
@@ -201,20 +261,26 @@ class SalaryService:
             WorkOrderItem.work_order_id == order.id).all()
         minus = directions.admin_salary_base(self.db) == 'minus'
         bases = {}
+        # Строки до округлений — сводим к итогу наряда, как в отчётах.
+        # Доля считается от всех строк: итог наряда включает и магазин
+        lines_total = sum(OrderService.item_total(i) for i in items)
+        # Магазин у администратора — по своим правилам (_shop): здесь его
+        # не считаем, иначе с продажи заплатили бы дважды
+        items = [i for i in items if (getattr(i, 'direction', None) or 'tire') != directions.SHOP]
         for item in items:
             base = OrderService.item_total(item)
             if minus and not getattr(item, 'is_goods', False):
                 base -= OrderService.item_consumables(item)
             direction = getattr(item, 'direction', None) or 'tire'
             bases[direction] = bases.get(direction, 0.0) + base
-        # Строки до округлений — сводим к итогу наряда, как в отчётах
-        lines_total = sum(OrderService.item_total(i) for i in items)
+        if not bases:
+            return
         order_total = float(order.total_amount or 0) or OrderService(self.db).calculate_total(order.id)
         scale = (order_total / lines_total) if lines_total else 0.0
         title = 'Администратор: ' + ('вся сумма без расходников' if minus else 'вся сумма наряда')
         for admin in admins:
             percent = float(admin.admin_percent or 0)
-            if percent <= 0:
+            if percent <= 0 or not any(base > 0 for base in bases.values()):
                 continue
             share = people.setdefault(admin.id, {'amount': 0.0, 'lines': [], 'skipped': []})
             for direction, base in bases.items():
@@ -369,12 +435,22 @@ class SalaryService:
 
 def wash_share(transaction):
     """Какая доля начисления — за мойку, по строкам разбора. None — разбора нет."""
+    shares = direction_shares(transaction)
+    return None if shares is None else shares.get('wash', 0.0)
+
+
+def direction_shares(transaction):
+    """Доли начисления по направлениям: {'tire': 0.6, 'wash': 0.3, 'shop': 0.1}."""
     detail = read_detail(transaction) or {}
     lines = detail.get('lines') or []
     total = sum(l.get('amount') or 0 for l in lines)
     if not total:
         return None
-    return sum(l.get('amount') or 0 for l in lines if l.get('direction') == 'wash') / total
+    shares = {}
+    for line in lines:
+        key = line.get('direction') or 'tire'
+        shares[key] = shares.get(key, 0.0) + (line.get('amount') or 0) / total
+    return shares
 
 
 def by_direction(transactions):
@@ -388,27 +464,33 @@ def by_direction(transactions):
     """
     own = {}
     for row in transactions:
-        share = wash_share(row)
-        if share is not None and (row.amount or 0) > 0:
-            own.setdefault(row.employee_id, share)
+        shares = direction_shares(row)
+        if shares is not None and (row.amount or 0) > 0:
+            own.setdefault(row.employee_id, shares)
     result = []
     for row in transactions:
         amount = round(row.amount or 0.0, 2)
-        share = wash_share(row)
-        if share is None:
-            share = own.get(row.employee_id, 0.0)
-        if not share:
-            result.append((row, {'tire': amount}))
-            continue
-        result.append((row, _split(amount, share)))
+        shares = direction_shares(row)
+        if shares is None:
+            shares = own.get(row.employee_id) or {'tire': 1.0}
+        result.append((row, _split(amount, shares)))
     return result
 
 
-def _split(amount, share):
-    wash_part = round(amount * share, 2)
-    parts = {'wash': wash_part}
-    if round(amount - wash_part, 2):
-        parts['tire'] = round(amount - wash_part, 2)
+def _split(amount, shares):
+    """
+    Разделить сумму по долям направлений. Остаток от округлений — в
+    шиномонтаж (или в первое направление), чтобы части сходились с суммой.
+    """
+    parts = {}
+    for key in ('wash', 'shop'):
+        if shares.get(key):
+            part = round(amount * shares[key], 2)
+            if part:
+                parts[key] = part
+    rest = round(amount - sum(parts.values()), 2)
+    if rest or not parts:
+        parts['tire'] = round(parts.get('tire', 0.0) + rest, 2)
     return parts
 
 

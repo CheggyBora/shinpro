@@ -19,6 +19,9 @@ class Employee(Base):
     # Ставка администратора — процент со всего наряда. Пока не задана — 0:
     # сколько платить администратору, решает владелец
     admin_percent = Column(Float, default=0.0, server_default='0', nullable=False)
+    # Ставка с продаж магазина — продавцу и администратору, смотря что
+    # выбрано в настройках
+    shop_percent = Column(Float, default=0.0, server_default='0', nullable=False)
     created_at = Column(DateTime(timezone=True), default=get_moscow_time)
     is_active = Column(Boolean, default=True)
 

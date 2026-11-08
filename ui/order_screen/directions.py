@@ -204,9 +204,11 @@ class OrderDirectionsMixin:
 
     @needs_shift
     def choose_item_employee(self, item):
-        if not directions.assigned(self.db, item.direction or 'tire'):
+        shop = (item.direction or 'tire') == directions.SHOP
+        if not shop and not directions.assigned(self.db, item.direction or 'tire'):
             return
-        who = self._choose_person(f'Кто делал «{item.service.name}»?')
+        who = self._choose_person(f'Кто продал «{item.service.name}»?' if shop
+                                  else f'Кто делал «{item.service.name}»?')
         if not who:
             return
         self.order_service.set_item_employee(item.id, who)

@@ -703,6 +703,8 @@ class EmployeesTab:
         choices = [(d, directions.TITLES[d]) for d in directions.enabled(self.db)]
         if employee is not None and EmployeeRoleService(self.db).is_admin(employee):
             choices.append(('admin', 'Администратор: со всего наряда'))
+        if directions.shop_on(self.db):
+            choices.append(('shop', 'Магазин: с продаж'))
         direction = directions.TIRE
         if len(choices) > 1:
             from ui.order_screen.directions import ask_choice
@@ -795,6 +797,8 @@ class EmployeesTab:
         text = f"{emp.salary_percent:.1f}"
         if directions.wash_on(self.db):
             text += f" / мойка {emp.wash_percent or 0:.1f}"
+        if directions.shop_on(self.db) and emp.shop_percent:
+            text += f" / магазин {emp.shop_percent:.1f}"
         if EmployeeRoleService(self.db).is_admin(emp):
             admin = emp.admin_percent or 0
             text += f" / админ {admin:.1f} со всего" if admin else " / админ: ставка не задана"

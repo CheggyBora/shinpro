@@ -126,10 +126,14 @@ class ShiftReportService:
         lines += [
             f"Средний чек: {summary['average_check']:.0f} ₽",
         ]
-        # Мойка работает — выручку показываем и по направлениям
-        if summary.get('by_direction', {}).get('wash'):
-            lines += [f"  шиномонтаж: {summary['by_direction'].get('tire', 0):.0f} ₽",
-                      f"  мойка: {summary['by_direction'].get('wash', 0):.0f} ₽"]
+        # Мойка или магазин — выручку показываем и по направлениям
+        parts = summary.get('by_direction', {})
+        if parts.get('wash') or parts.get('shop'):
+            lines.append(f"  шиномонтаж: {parts.get('tire', 0):.0f} ₽")
+            if parts.get('wash'):
+                lines.append(f"  мойка: {parts.get('wash', 0):.0f} ₽")
+            if parts.get('shop'):
+                lines.append(f"  магазин: {parts.get('shop', 0):.0f} ₽")
         lines += [
             "",
             f"Расходники: {summary['consumables']:.0f} ₽",

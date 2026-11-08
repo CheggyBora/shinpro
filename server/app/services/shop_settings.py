@@ -217,6 +217,11 @@ def wash_on(db, shop):
     return is_on(get(db, 'direction_wash', shop=shop) or '0')
 
 
+def shop_on(db, shop):
+    """Работает ли у точки магазин (08.11.2026). Пустое — выключено."""
+    return is_on(get(db, 'direction_shop', shop=shop) or '0')
+
+
 def wash_booking_on(db, shop):
     """
     Принимает ли точка запись на мойку через кабинет.

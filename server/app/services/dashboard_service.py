@@ -41,7 +41,9 @@ from app.utils import now as shop_now
 
 TIRE = 'tire'
 WASH = 'wash'
-DIRECTIONS = (TIRE, WASH)
+# Магазин — строки с товарами магазина и начисления с продаж (08.11.2026)
+SHOP = 'shop'
+DIRECTIONS = (TIRE, WASH, SHOP)
 
 
 def clean_direction(value):

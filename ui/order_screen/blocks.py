@@ -17,7 +17,8 @@ import styles
 from services import directions
 
 COLUMNS = ('Услуга', 'Кол-во', 'Цена', 'Скидка', 'Итого', 'Кто')
-COLORS = {directions.TIRE: ('#1d4ed8', '#dbeafe'), directions.WASH: ('#0f766e', '#ccfbf1')}
+COLORS = {directions.TIRE: ('#1d4ed8', '#dbeafe'), directions.WASH: ('#0f766e', '#ccfbf1'),
+          directions.SHOP: ('#be185d', '#fce7f3')}
 
 
 def _plural(n):
@@ -96,6 +97,9 @@ class OrderBlocksMixin:
     def _is_collapsed(self, direction, have):
         if direction in self.collapsed_by_hand:
             return self.collapsed_by_hand[direction]
+        # Товары магазина видны всегда: их немного, и их надо видеть в чеке
+        if direction == directions.SHOP:
+            return False
         return len(have) > 1 and direction != self._mode()
 
     def render_blocks(self):
@@ -104,19 +108,32 @@ class OrderBlocksMixin:
         self.trees, self.block_parts = {}, {}
         have = directions.parse(self.order.directions)
         self._rendered_directions = list(have)
+        # Продажа без машины — только блок магазина
+        from services.shop_service import ShopService
+        sale = ShopService.is_sale(self.order)
+        if sale:
+            have = []
         for direction in have:
             self._block(direction, have)
+        # Товары магазина — своим блоком, когда они есть в наряде
+        self._has_shop = sale or self._shop_lines()
+        if self._has_shop:
+            self._block(directions.SHOP, have + [directions.SHOP])
         # Подпись мастеров нужна всегда (её обновляет таймер), даже когда
         # блока шиномонтажа нет
         if not hasattr(self, 'employees_label') or not self.employees_label.winfo_exists():
             self.employees_label = ttk.Label(self.blocks_holder)
-        missing = [d for d in directions.enabled(self.db) if d not in have]
-        if missing and self.order.status != 'paid':
+        missing = [d for d in directions.enabled(self.db) if d not in have] if not sale else []
+        shop = directions.shop_on(self.db) and self.order.status != 'paid'
+        if (missing or shop) and self.order.status != 'paid':
             row = ttk.Frame(self.blocks_holder, style='White.TFrame')
             row.pack(anchor='w', fill='x', pady=(6, 0))
             for direction in missing:
                 styles.create_button(row, f'+ {directions.TITLES[direction]}',
                                      lambda d=direction: self.add_direction(d),
+                                     'Compact.Secondary.TButton').pack(side='left', padx=(0, 6))
+            if shop:
+                styles.create_button(row, '+ Товар из магазина', self.add_from_shop,
                                      'Compact.Secondary.TButton').pack(side='left', padx=(0, 6))
         # Совместимость: правка строк работает с «текущей» таблицей
         if self.trees:
@@ -151,7 +168,9 @@ class OrderBlocksMixin:
                  font=(styles.DEFAULT_FONT, 10, 'bold')).pack(side='left', padx=(10, 2), pady=4)
         open_order = self.order.status != 'paid'
 
-        if direction == directions.TIRE:
+        if direction == directions.SHOP:
+            note('товары · кто продал — двойной щелчок по «Продал»')
+        elif direction == directions.TIRE:
             vehicle = {'car': 'Легковой', 'suv': 'Джип/Кроссовер', 'truck': 'Категория С'}.get(
                 self.order.vehicle_type, self.order.vehicle_type or '')
             note(' · '.join(x for x in (vehicle, self.order.wheel_diameter) if x))
@@ -184,7 +203,7 @@ class OrderBlocksMixin:
         summary.pack(side='right', padx=(0, 10))
         # Услуги «чужого» направления — списком: кнопки сверху показывают
         # только выбранное в переключателе
-        if open_order and direction != self._mode():
+        if open_order and direction != self._mode() and direction != directions.SHOP:
             add = tk.Label(head, text=f'+ услуга {"мойки" if direction == directions.WASH else "шиномонтажа"}',
                            bg='#ffffff', fg=styles.COLORS['primary'], cursor='hand2',
                            font=(styles.DEFAULT_FONT, 9), padx=8, pady=1,
@@ -201,8 +220,11 @@ class OrderBlocksMixin:
                                              ('Итого', 'Итого', 90, 'center'), ('Кто', 'Кто делал', 120, 'center')):
             tree.heading(column, text=title)
             tree.column(column, width=width, anchor=anchor)
-        # Кто делал — только у мойки: её начисляют тому, кто мыл
-        if not directions.assigned(self.db, direction):
+        # Кто делал — только у мойки: её начисляют тому, кто мыл. У
+        # магазина — кто продал
+        if direction == directions.SHOP:
+            tree.heading('Кто', text='Продал')
+        elif not directions.assigned(self.db, direction):
             tree.configure(displaycolumns=COLUMNS[:5])
         tree.pack(side='left', fill='x', expand=True)
         scroll = ttk.Scrollbar(body, orient='vertical', command=tree.yview)
@@ -217,6 +239,20 @@ class OrderBlocksMixin:
     def _on_tree(self, event, handler):
         self.items_tree = event.widget
         return handler(event)
+
+    def _shop_lines(self):
+        from models import WorkOrderItem
+        return self.db.query(WorkOrderItem).filter(
+            WorkOrderItem.work_order_id == self.order.id,
+            WorkOrderItem.direction == directions.SHOP).first() is not None
+
+    def add_from_shop(self):
+        from ui.shop_tab import ShopPicker
+        ShopPicker(self.frame, self.db, self.order, on_added=self._after_shop)
+
+    def _after_shop(self):
+        self.render_blocks()
+        self.refresh_items()
 
     def toggle_block(self, direction):
         have = directions.parse(self.order.directions)

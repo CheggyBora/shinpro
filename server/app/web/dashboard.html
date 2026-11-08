@@ -1102,7 +1102,7 @@ function query(path) {
 var dashDirection = 'tire';
 try {
   var savedDash = localStorage.getItem('dashDirection');
-  if (savedDash === 'tire' || savedDash === 'wash') dashDirection = savedDash;
+  if (savedDash === 'tire' || savedDash === 'wash' || savedDash === 'shop') dashDirection = savedDash;
 } catch (e) {}
 
 // Разделы, которые считаются по направлению. У календаря и склада свой
@@ -1113,8 +1113,25 @@ function washOn() {
   return shownShops().some(function (shop) { return shop.wash_enabled; });
 }
 
+// Магазин (08.11.2026) — третья кнопка переключателя
+function shopOn() {
+  return shownShops().some(function (shop) { return shop.shop_enabled; });
+}
+
+function dirOptions() {
+  var list = [DIRS[0]];
+  if (washOn()) list.push(DIRS[1]);
+  if (shopOn()) list.push({ key: 'shop', title: 'Магазин' });
+  return list;
+}
+
 // Направление для запросов: пусто — всё вместе, как до мойки
-function dashDir() { return washOn() ? dashDirection : ''; }
+function dashDir() {
+  var options = dirOptions();
+  if (options.length < 2) return '';
+  var known = options.some(function (item) { return item.key === dashDirection; });
+  return known ? dashDirection : 'tire';
+}
 
 function withDir(path) {
   var dir = dashDir();
@@ -1124,13 +1141,14 @@ function withDir(path) {
 
 function drawDirection() {
   var box = $('dirSwitch');
-  box.hidden = !washOn() || !DIR_SECTIONS[section];
+  box.hidden = dirOptions().length < 2 || !DIR_SECTIONS[section];
   if (box.hidden) return;
 
+  var current = dashDir();
   box.innerHTML = '<div class="seg-in" role="group" aria-label="Направление">'
-    + DIRS.map(function (item) {
+    + dirOptions().map(function (item) {
       return '<button type="button" data-dir="' + item.key + '" aria-pressed="'
-        + (item.key === dashDirection) + '">' + item.title + '</button>';
+        + (item.key === current) + '">' + item.title + '</button>';
     }).join('') + '</div>';
 
   [].slice.call(box.querySelectorAll('button')).forEach(function (button) {

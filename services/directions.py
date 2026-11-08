@@ -11,7 +11,12 @@
 пост.
 """
 TIRE, WASH = 'tire', 'wash'
-TITLES = {TIRE: 'Шиномонтаж', WASH: 'Мойка'}
+# Магазин (решение владельца 08.11.2026) — не направление наряда, а
+# продажа товаров: отдельная вкладка, продажа без машины и товары в любом
+# наряде. Строки наряда с товарами магазина помечены direction='shop'
+SHOP = 'shop'
+TITLES = {TIRE: 'Шиномонтаж', WASH: 'Мойка', SHOP: 'Магазин'}
+SHOP_KEY = 'direction_shop'
 
 TIRE_KEY = 'direction_tire'
 WASH_KEY = 'direction_wash'
@@ -48,6 +53,41 @@ def tire_on(db):
 
 def wash_on(db):
     return _flag(db, WASH_KEY, '0')
+
+
+def shop_on(db):
+    return _flag(db, SHOP_KEY, '0')
+
+
+def set_shop_on(db, on):
+    _settings(db).set(SHOP_KEY, '1' if on else '0')
+    if ON_CHANGE is not None:
+        try:
+            ON_CHANGE()
+        except Exception:
+            pass
+
+
+# Кому с продаж магазина (решение владельца 08.11.2026): никому,
+# администратору на смене, продавцу или обоим — каждому по его ставке
+# магазина. От суммы продажи или от наценки (продажа − закупка)
+SHOP_PAY_NONE, SHOP_PAY_ADMIN, SHOP_PAY_SELLER, SHOP_PAY_BOTH = 'none', 'admin', 'seller', 'both'
+
+
+def shop_pay_to(db):
+    value = _settings(db).get('shop_salary_to') or SHOP_PAY_NONE
+    return value if value in (SHOP_PAY_NONE, SHOP_PAY_ADMIN, SHOP_PAY_SELLER, SHOP_PAY_BOTH) \
+        else SHOP_PAY_NONE
+
+
+def shop_salary_base(db):
+    """sale — от суммы продажи, margin — от наценки."""
+    return 'margin' if _settings(db).get('shop_salary_base') == 'margin' else 'sale'
+
+
+def stock_negative(db):
+    """Товара нет на складе: warn — продать с предупреждением, block — не давать."""
+    return 'block' if _settings(db).get('stock_negative') == 'block' else 'warn'
 
 
 # Мастера шиномонтажа — по наряду, а не все на смене. Отдельный тумблер в

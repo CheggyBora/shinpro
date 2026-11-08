@@ -317,8 +317,10 @@ class OrderItemsMixin:
         # Направления наряда поменялись — сначала перестроить блоки
         from services import directions as _directions
         trees = getattr(self, 'trees', None) or {'tire': self.items_tree}
-        if hasattr(self, 'render_blocks') and \
-                _directions.parse(self.order.directions) != getattr(self, '_rendered_directions', None):
+        shop_now = any((getattr(i, 'direction', None) or 'tire') == _directions.SHOP for i in items)
+        if hasattr(self, 'render_blocks') and (
+                _directions.parse(self.order.directions) != getattr(self, '_rendered_directions', None)
+                or shop_now != bool(getattr(self, '_has_shop', False))):
             self.render_blocks()
             trees = self.trees
         for tree in trees.values():
@@ -345,7 +347,10 @@ class OrderItemsMixin:
 
             who = ''
             from services import directions as _directions
-            if _directions.assigned(self.db, getattr(item, 'direction', None) or 'tire'):
+            if (getattr(item, 'direction', None) or 'tire') == _directions.SHOP:
+                from ui.order_screen.directions import employee_name
+                who = employee_name(self.db, item.employee_id) if item.employee_id else 'выбрать ▾'
+            elif _directions.assigned(self.db, getattr(item, 'direction', None) or 'tire'):
                 from ui.order_screen.directions import employee_name
                 who = employee_name(self.db, item.employee_id) if item.employee_id else 'выбрать ▾'
             tree = trees.get(getattr(item, 'direction', None) or 'tire') or next(iter(trees.values()))

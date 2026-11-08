@@ -36,6 +36,13 @@ class StockItem(Base):
 
     # Товар продаётся в наряде как позиция прайса — вот она
     service_id = Column(Integer, nullable=True)
+    # Карточка товара магазина (08.11.2026): категория, артикул, фото
+    # (файл в photos/shop рядом с базой) и бонус продавцу, ₽ с единицы —
+    # указан, тогда вместо процента
+    category = Column(String(60), nullable=True)
+    sku = Column(String(60), nullable=True)
+    photo = Column(String(200), nullable=True)
+    bonus = Column(Float, nullable=True)
     is_active = Column(Boolean, nullable=False, default=True, server_default='1')
     updated_at = Column(DateTime(timezone=True), default=get_moscow_time)
 

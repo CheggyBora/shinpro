@@ -850,6 +850,8 @@ class SyncService:
             'live_queue_enabled': '1' if self._live_queue_on() else '0',
             # Мойка включена — в дашборде календарь с переключателем
             'direction_wash': settings.get('direction_wash'),
+            # Магазин — третья кнопка направлений в дашборде
+            'direction_shop': settings.get('direction_shop'),
             'stock_enabled': settings.get('stock_enabled'),
             # Видят ли мастера свой заработок в кабинете на телефоне
             'master_salary_visible': settings.get('master_salary_visible') or '0',

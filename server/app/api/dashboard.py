@@ -86,7 +86,8 @@ def shops(staff: StaffUser = Depends(current_staff),
     return [{'id': row.id, 'slug': row.slug, 'name': row.name,
              'address': row.address, 'last_sync_at': row.last_sync_at,
              'stock_enabled': shop_settings.stock_on(db, row),
-             'wash_enabled': shop_settings.wash_on(db, row)}
+             'wash_enabled': shop_settings.wash_on(db, row),
+             'shop_enabled': shop_settings.shop_on(db, row)}
             for row in tenancy.shops_of(db, staff.account_id)]
 
 

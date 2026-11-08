@@ -12,7 +12,7 @@ import styles
 from models.stock import GOODS, MATERIAL, KIND_TITLES, UNITS
 from services.stock_service import StockService, StockError, fmt_qty
 
-DIRECTION_TITLES = {'tire': 'Шиномонтаж', 'wash': 'Мойка'}
+DIRECTION_TITLES = {'tire': 'Шиномонтаж', 'wash': 'Мойка', 'shop': 'Магазин'}
 
 
 class StockTab:
@@ -81,10 +81,15 @@ class StockTab:
         for child in self.filters.winfo_children():
             child.destroy()
         from services import directions
-        if directions.wash_on(self.db):
+        if directions.wash_on(self.db) or directions.shop_on(self.db):
             tk.Label(self.filters, text='Направление:', bg=styles.COLORS['bg_card'],
                      fg=styles.COLORS['text_secondary']).pack(side='left', padx=(0, 6))
-            for value, title in ((None, 'Все'), ('tire', 'Шиномонтаж'), ('wash', 'Мойка')):
+            options = [(None, 'Все'), ('tire', 'Шиномонтаж')]
+            if directions.wash_on(self.db):
+                options.append(('wash', 'Мойка'))
+            if directions.shop_on(self.db):
+                options.append(('shop', 'Магазин'))
+            for value, title in options:
                 self._chip(title, self.direction == value, lambda v=value: self._set('direction', v))
         tk.Label(self.filters, text='Вид:', bg=styles.COLORS['bg_card'],
                  fg=styles.COLORS['text_secondary']).pack(side='left', padx=(12, 6))
@@ -176,7 +181,11 @@ class ItemDialog:
         kinds = ttk.Frame(form, style='White.TFrame')
         kinds.grid(row=1, column=1, sticky='w')
         if item is None:
-            for value, title in (('tire', 'Шиномонтаж'), ('wash', 'Мойка')):
+            from services import directions as _directions
+            places = [('tire', 'Шиномонтаж'), ('wash', 'Мойка')]
+            if _directions.shop_on(db):
+                places.append(('shop', 'Магазин'))
+            for value, title in places:
                 ttk.Radiobutton(where, text=title, value=value, variable=self.direction).pack(side='left', padx=(0, 12))
             for value, title in ((GOODS, 'Товар (продаётся)'), (MATERIAL, 'Материал (уходит на услуги)')):
                 ttk.Radiobutton(kinds, text=title, value=value, variable=self.kind).pack(side='left', padx=(0, 12))

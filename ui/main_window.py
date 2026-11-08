@@ -90,6 +90,9 @@ class MainWindow:
         from ui.cash_tab import CashTab
         self.cash_tab = CashTab(self.content, self.db)
         self.stock_tab.on_changed = lambda: self._calendar_badge()
+        # Магазин (08.11.2026) — третья кнопка сверху, когда включён
+        from ui.shop_tab import ShopTab
+        self.shop_tab = ShopTab(self.content, self.db, app=self)
 
         self.nav.add('Сотрудники', self.employees_tab.frame)
         self.nav.add('Наряды', self.orders_tab.frame)
@@ -98,6 +101,7 @@ class MainWindow:
         self.nav.add('Клиенты', self.clients_tab.frame)
         self.nav.add('Хранение шин', self.tire_storage_tab.frame)
         self.nav.add('Покраска', self.paint_tab.frame)
+        self.nav.add('Магазин', self.shop_tab.frame)
         self.nav.add('Склад', self.stock_tab.frame)
         self.nav.add('Касса', self.cash_tab.frame)
         self.nav.add('Отчёты', self.statistics_tab.frame)
@@ -337,10 +341,15 @@ class MainWindow:
         enabled = directions.enabled(self.db)
         if self.orders_tab.mode not in enabled:
             self.orders_tab.mode = enabled[0]
-        if len(enabled) < 2:
+        # Магазин — третьей кнопкой: открывает свой раздел, режим нарядов
+        # не трогает
+        shop = directions.shop_on(self.db)
+        buttons = list(enabled) + ([directions.SHOP] if shop else [])
+        if len(buttons) < 2:
             return
-        for direction in enabled:
-            on = direction == self.orders_tab.mode
+        in_shop = getattr(self, '_in_shop', False)
+        for direction in buttons:
+            on = (direction == directions.SHOP) if in_shop else (direction == self.orders_tab.mode)
             label = tk.Label(self.mode_switch, text=directions.TITLES[direction], cursor='hand2',
                              font=(styles.DEFAULT_FONT, 11, 'bold' if on else 'normal'),
                              bg='#ffffff' if on else styles.COLORS['primary_dark'],
@@ -350,6 +359,16 @@ class MainWindow:
             label.bind('<Button-1>', lambda e, d=direction: self.set_mode(d))
 
     def set_mode(self, mode):
+        from services import directions
+        if mode == directions.SHOP:
+            self.nav.select_frame(self.shop_tab.frame)
+            return
+        if getattr(self, '_in_shop', False):
+            self._in_shop = False
+            self.nav.select_frame(self.orders_tab.frame)
+            if mode == self.orders_tab.mode:
+                self.draw_mode_switch()
+                return
         if mode == self.orders_tab.mode:
             return
         self.orders_tab.set_mode(mode)
@@ -364,9 +383,11 @@ class MainWindow:
         tire = self.orders_tab.mode == directions.TIRE
         self.nav.set_visible(self.tire_storage_tab.frame, tire)
         self.nav.set_visible(self.paint_tab.frame, tire)
-        # Склад — только когда его ведут (docs/stock.md)
+        # Склад — когда его ведут (docs/stock.md) или работает магазин:
+        # остатки магазина ведутся всегда
         from services.stock_service import stock_on
-        self.nav.set_visible(self.stock_tab.frame, stock_on(self.db))
+        self.nav.set_visible(self.stock_tab.frame, stock_on(self.db) or directions.shop_on(self.db))
+        self.nav.set_visible(self.shop_tab.frame, directions.shop_on(self.db))
         self._calendar_badge()
         self.refresh_shift_status()
 
@@ -655,6 +676,18 @@ class MainWindow:
     def on_section_change(self, index):
         """При переходе между разделами обновляем строку состояния смены."""
         self.refresh_shift_status()
+
+        # Магазин: свежие карточки и остатки; кнопка сверху — подсвечена
+        in_shop = self.nav.title_at(index) == 'Магазин'
+        if in_shop:
+            try:
+                self.shop_tab.load()
+            except Exception as e:
+                self.db.rollback()
+                log.warning(f"Магазин не обновился: {e}")
+        if in_shop != getattr(self, '_in_shop', False):
+            self._in_shop = in_shop
+            self.draw_mode_switch()
 
         # Услугу могли только что добавить в прайс-лист — вернувшись
         # в наряды, мастер должен увидеть её кнопку сразу
