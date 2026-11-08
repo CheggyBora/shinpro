@@ -8,7 +8,9 @@
 """
 from datetime import timedelta
 
-from models import TireStorage, Settings
+from sqlalchemy import or_
+
+from models import TireStorage, Settings, Car
 from utils import get_moscow_time, normalize_plate, normalize_phone
 
 # Цены хранения по размеру, если в настройках ничего не задано
@@ -198,6 +200,38 @@ class TireStorageService:
             TireStorage.status.desc(),
             TireStorage.accepted_date.desc()
         ).all()
+
+    def search(self, text):
+        """
+        Комплекты «что помню» (решение владельца 08.11.2026): кусок номера,
+        последние цифры телефона, имя владельца, марка шин, № комплекта.
+        Сначала лежащие на хранении, потом выданные.
+
+        Комплектов немного — сверяем здесь: SQLite не сравнивает кириллицу
+        без учёта регистра, а «нокиан» должен найти «Nokian».
+        """
+        from services import search_service
+        text = (text or '').strip()
+        if not text:
+            return self.get_all_stored()
+        found = search_service.find(self.db, text)
+        plates = {car.license_plate for car in self.db.query(Car).filter(
+            or_(Car.id.in_(found['car_ids']), Car.client_id.in_(found['client_ids']))).all()} \
+            if (found['car_ids'] or found['client_ids']) else set()
+        needle = text.lower()
+
+        def fits(row):
+            return (row.id == found['number']
+                    or row.car_number in plates
+                    or (row.client_id is not None and row.client_id in found['client_ids'])
+                    or search_service.plate_matches(row.car_number, text)
+                    or search_service.phone_matches(row.client_phone, text)
+                    or search_service.name_matches(row.client_name, text)
+                    or (len(needle) >= 3 and row.brand and needle in row.brand.lower())
+                    or (len(needle) >= 3 and row.driver_license
+                        and needle.replace(' ', '') in row.driver_license.lower().replace(' ', '')))
+
+        return [row for row in self.get_all_stored() if fits(row)]
 
     def release_storage(self, storage_id):
         """Выдать комплект владельцу."""

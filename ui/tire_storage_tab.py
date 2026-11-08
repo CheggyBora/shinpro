@@ -233,9 +233,10 @@ class TireStorageTab:
         
         search_frame = ttk.Frame(card_inner, style='White.TFrame')
         search_frame.pack(fill='x', pady=5)
-        styles.create_label(search_frame, "Номер автомобиля:", 'Card.TLabel').pack(side='left', padx=(0, 10))
+        styles.create_label(search_frame, "Номер, телефон, имя, марка:", 'Card.TLabel').pack(side='left', padx=(0, 10))
         self.search_car_entry = styles.create_entry(search_frame, width=20)
         self.search_car_entry.pack(side='left', padx=(0, 10))
+        self.search_car_entry.bind('<Return>', lambda e: self.search_storage())
         styles.create_button(search_frame, "Найти", self.search_storage, 'Primary.TButton').pack(side='left')
 
         # Наклейку можно перепечатать в любой момент: отклеилась,
@@ -739,13 +740,8 @@ class TireStorageTab:
                 f"В ближайшие {days} дней срок ни у кого не кончается.")
 
     def search_storage(self):
-        # Номер нормализуем, чтобы комплект нашёлся при любом написании
-        car_number = normalize_plate(self.search_car_entry.get())
-
-        if not car_number:
-            storages = self.service.get_all_stored()
-        else:
-            storages = self.service.search_by_car_number(car_number)
+        # Поиск «что помню»: кусок номера, телефон, имя, марка, № комплекта
+        storages = self.service.search(self.search_car_entry.get())
 
         self._fill_tree(storages)
 

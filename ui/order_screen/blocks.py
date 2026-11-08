@@ -54,12 +54,13 @@ class OrderBlocksMixin:
             menu.add_separator()
             menu.add_command(label="Принять на хранение", command=self.storage_accept)
             stored = self._stored_sets()
-            menu.add_command(label="Выдать с хранения" + (
-                f"  №{', №'.join(str(s.id) for s in stored)}" if stored else ""),
-                command=self.storage_release)
-            # Комплект на складе — заказать его к дате прямо из наряда:
-            # задача в календарь и сообщение тому, кто возит
+            # Выдавать и заказывать — только то, что лежит: у машины без
+            # комплектов этих пунктов нет (замечание владельца 08.11.2026)
             if stored:
+                menu.add_command(label="Выдать с хранения  №" + ', №'.join(
+                    str(s.id) for s in stored), command=self.storage_release)
+                # Комплект на складе — заказать его к дате прямо из наряда:
+                # задача в календарь и сообщение тому, кто возит
                 menu.add_command(label="Заказать со склада" + (
                     f"  №{stored[0].id}" if len(stored) == 1 else "…"),
                     command=self.storage_order)

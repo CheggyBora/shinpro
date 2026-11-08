@@ -20,7 +20,8 @@ class HistoryTab:
 
         # Активный фильтр. None во всех полях = показываем все наряды.
         self.current_car_ids = None
-        self.current_client_id = None
+        self.current_client_ids = None
+        self.current_order_ids = None
         self.current_filter_text = None
 
         search_card = styles.create_card_frame(self.frame)
@@ -29,13 +30,13 @@ class HistoryTab:
         search_inner = ttk.Frame(search_card, style='White.TFrame')
         search_inner.pack(fill='both', expand=True, padx=20, pady=20)
 
-        styles.create_label(search_inner, "Поиск по номеру автомобиля или телефону клиента",
+        styles.create_label(search_inner, "Поиск: часть номера, телефон, имя клиента или № наряда",
                             'CardHeading.TLabel').pack(anchor='w', pady=(0, 15))
 
         search_frame = ttk.Frame(search_inner, style='White.TFrame')
         search_frame.pack(fill='x')
 
-        styles.create_label(search_frame, "Номер авто или телефон:", 'Card.TLabel').pack(side='left', padx=(0, 10))
+        styles.create_label(search_frame, "Что помните:", 'Card.TLabel').pack(side='left', padx=(0, 10))
         self.license_entry = styles.create_entry(search_frame, width=24)
         self.license_entry.pack(side='left', padx=(0, 10))
         self.license_entry.bind('<Return>', lambda e: self.search_history())
@@ -121,65 +122,62 @@ class HistoryTab:
     
     def search_history(self):
         """
-        Поиск нарядов по номеру автомобиля или по телефону клиента.
-
-        Сначала пробуем номер машины — тогда показываем наряды по ней одной.
-        Если не нашли, ищем клиента по телефону или имени и показываем
-        наряды сразу по всем его машинам.
+        Поиск нарядов «что помню» (решение владельца 08.11.2026): кусок
+        номера, последние цифры телефона, имя клиента или номер наряда.
+        Совпадения складываются — видно всё, что подходит.
         """
+        from services import search_service
+
         query_text = self.license_entry.get().strip()
         if not query_text:
-            messagebox.showwarning("Предупреждение", "Введите номер автомобиля или телефон клиента")
+            messagebox.showwarning("Предупреждение",
+                                   "Введите номер машины, телефон, имя или номер наряда")
             return
 
         try:
-            # 1. Номер автомобиля (в любом написании)
-            plate = normalize_plate(query_text)
-            car = self.db.query(Car).filter(Car.license_plate == plate).first() if plate else None
+            found = search_service.find(self.db, query_text)
+            client_ids = set(found['client_ids'])
+            car_ids = set(found['car_ids'])
+            # Машины найденных клиентов — их наряды бывают и без клиента
+            for client_id in client_ids:
+                car_ids.update(c.id for c in self.client_service.get_client_cars(client_id))
+            order_ids = set()
+            if found['number'] is not None and self.db.query(WorkOrder).filter(
+                    WorkOrder.id == found['number']).first() is not None:
+                order_ids.add(found['number'])
 
-            if car:
-                self.current_car_ids = [car.id]
-                self.current_client_id = None
-                owner = car.client
-                if owner:
-                    self.current_filter_text = (
-                        f"Автомобиль {car.license_plate} · владелец: "
-                        f"{owner.name or 'без имени'} {format_phone(owner.phone) if owner.phone else ''}".strip()
-                    )
-                else:
-                    self.current_filter_text = f"Автомобиль {car.license_plate}"
-                self.current_page = 1
-                self.load_page()
+            if not car_ids and not client_ids and not order_ids:
+                messagebox.showinfo(
+                    "Информация",
+                    f"По запросу «{query_text}» ничего не найдено.\n\n"
+                    f"Ищите по части номера машины, последним цифрам телефона, "
+                    f"имени клиента или номеру наряда.")
                 return
 
-            # 2. Клиент по телефону или имени — показываем все его машины
-            clients = self.client_service.search(query_text, limit=1)
-            if clients:
-                client = clients[0]
-                cars = self.client_service.get_client_cars(client.id)
-                self.current_car_ids = [c.id for c in cars]
-                self.current_client_id = client.id
-                plates = ', '.join(c.license_plate for c in cars) or 'машин не закреплено'
-                self.current_filter_text = (
-                    f"Клиент {client.name or 'без имени'} "
-                    f"{format_phone(client.phone) if client.phone else ''} · {plates}".strip()
-                )
-                self.current_page = 1
-                self.load_page()
-                return
-
-            messagebox.showinfo(
-                "Информация",
-                f"По запросу «{query_text}» ничего не найдено.\n\n"
-                f"Можно искать по номеру автомобиля, телефону клиента или его имени."
-            )
+            self.current_car_ids = sorted(car_ids)
+            self.current_client_ids = sorted(client_ids)
+            self.current_order_ids = sorted(order_ids)
+            parts = []
+            if car_ids:
+                plates = [c.license_plate for c in self.db.query(Car).filter(
+                    Car.id.in_(car_ids)).order_by(Car.license_plate).limit(6).all()]
+                more = len(car_ids) - len(plates)
+                parts.append('машины: ' + ', '.join(plates) + (f' и ещё {more}' if more > 0 else ''))
+            if client_ids:
+                parts.append(f'клиентов: {len(client_ids)}')
+            if order_ids:
+                parts.append('наряд №' + ', №'.join(str(i) for i in order_ids))
+            self.current_filter_text = f"«{query_text}» — " + '; '.join(parts)
+            self.current_page = 1
+            self.load_page()
         except Exception as e:
             self.db.rollback()
             messagebox.showerror("Ошибка", f"Не удалось выполнить поиск:\n{str(e)}")
 
     def show_all_history(self):
         self.current_car_ids = None
-        self.current_client_id = None
+        self.current_client_ids = None
+        self.current_order_ids = None
         self.current_filter_text = None
         self.license_entry.delete(0, 'end')
         self.current_page = 1
@@ -201,11 +199,13 @@ class HistoryTab:
             conditions = []
             if self.current_car_ids:
                 conditions.append(WorkOrder.car_id.in_(self.current_car_ids))
-            if self.current_client_id:
-                conditions.append(WorkOrder.client_id == self.current_client_id)
+            if self.current_client_ids:
+                conditions.append(WorkOrder.client_id.in_(self.current_client_ids))
+            if self.current_order_ids:
+                conditions.append(WorkOrder.id.in_(self.current_order_ids))
             if conditions:
                 query = query.filter(or_(*conditions))
-            elif self.current_car_ids is not None or self.current_client_id is not None:
+            elif self.current_car_ids is not None:
                 # Клиент найден, но за ним не закреплено ни одной машины
                 query = query.filter(False)
             
