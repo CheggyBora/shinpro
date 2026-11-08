@@ -126,7 +126,15 @@ class ShopService:
         lines = [(card, int(qty)) for card, qty in lines if card is not None and int(qty) > 0]
         if not lines:
             raise StockError('Добавьте в продажу хотя бы один товар')
-        current = ShiftService(self.db).get_current_shift()
+        # Процент с продаж включён — продаёт один человек, его и выбирают
+        # (решение владельца 09.11.2026). Выключен — продавец не нужен
+        if directions.shop_pay_on(self.db):
+            seller_id = seller_id or OrderService(self.db)._default_seller()
+            if not seller_id:
+                raise ValueError('Выберите, кто продал')
+        else:
+            seller_id = None
+        current =ShiftService(self.db).get_current_shift()
         order = WorkOrder(car_id=self.sale_car().id, client_id=None, wheel_diameter='',
                           vehicle_type='car', status='draft', directions=directions.SHOP,
                           shift_id=current.id if current else None)

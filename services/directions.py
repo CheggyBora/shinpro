@@ -68,16 +68,26 @@ def set_shop_on(db, on):
             pass
 
 
-# Кому с продаж магазина (решение владельца 08.11.2026): никому,
-# администратору на смене, продавцу или обоим — каждому по его ставке
-# магазина. От суммы продажи или от наценки (продажа − закупка)
-SHOP_PAY_NONE, SHOP_PAY_ADMIN, SHOP_PAY_SELLER, SHOP_PAY_BOTH = 'none', 'admin', 'seller', 'both'
+# Процент с продаж магазина (решение владельца 09.11.2026): включён —
+# при продаже выбирают одного продавца, ему и процент по его ставке
+# магазина; выключен — продажа просто пробивается. От суммы продажи или
+# от наценки (продажа − закупка). Раньше было «никому / администратору /
+# продавцу / обоим» — любое «кому-то» теперь значит «включён»
+SHOP_PAY_NONE, SHOP_PAY_SELLER = 'none', 'seller'
 
 
 def shop_pay_to(db):
     value = _settings(db).get('shop_salary_to') or SHOP_PAY_NONE
-    return value if value in (SHOP_PAY_NONE, SHOP_PAY_ADMIN, SHOP_PAY_SELLER, SHOP_PAY_BOTH) \
-        else SHOP_PAY_NONE
+    return SHOP_PAY_SELLER if value in ('seller', 'both', 'admin') else SHOP_PAY_NONE
+
+
+def shop_pay_on(db):
+    """Процент с продаж сотрудникам включён: продавца выбирают при продаже."""
+    return shop_pay_to(db) == SHOP_PAY_SELLER
+
+
+def set_shop_pay_on(db, on):
+    _settings(db).set('shop_salary_to', SHOP_PAY_SELLER if on else SHOP_PAY_NONE)
 
 
 def shop_salary_base(db):

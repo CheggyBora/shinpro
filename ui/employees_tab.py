@@ -106,9 +106,22 @@ class EmployeesTab:
         styles.create_label(reg_frame, "Категория:", 'Card.TLabel').pack(side='left', padx=(0, 8))
         self.employee_role_box = ttk.Combobox(reg_frame, state='readonly', width=18)
         self.employee_role_box.pack(side='left', padx=(0, 10))
+        self.employee_role_box.bind('<<ComboboxSelected>>', lambda e: self._role_picked())
         self.fill_role_box()
-        styles.create_button(reg_frame, "Зарегистрировать", self.register_employee,
-                             'Primary.TButton').pack(side='left')
+
+        # Администратор — сразу с процентом с выручки (решение владельца
+        # 09.11.2026): от мастеров и мойщиков не зависит
+        admin_row = ttk.Frame(card_inner, style='White.TFrame')
+        admin_row.pack(fill='x', pady=(10, 0))
+        self.new_admin_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(admin_row, text="Администратор", variable=self.new_admin_var,
+                        command=self._admin_toggled).pack(side='left')
+        self.new_admin_label = styles.create_label(admin_row, "% от выручки:", 'Card.TLabel')
+        self.new_admin_percent = styles.create_entry(admin_row, width=6)
+        self.new_admin_hint = styles.create_label(
+            admin_row, "с шиномонтажа и мойки, сверху — мастерам не меньше", 'Muted.TLabel')
+        styles.create_button(admin_row, "Зарегистрировать", self.register_employee,
+                             'Primary.TButton').pack(side='right')
 
         emp_card = styles.create_card_frame(left_frame)
         emp_card.pack(fill='both', expand=True)
@@ -223,15 +236,64 @@ class EmployeesTab:
         # Обновляем отображение статуса смены (в конце после создания всех элементов)
         self.update_shift_status()
     
+    def _admin_toggled(self):
+        """Галочка «Администратор» — поле процента; категория — его."""
+        if self.new_admin_var.get():
+            self.new_admin_label.pack(side='left', padx=(14, 6))
+            self.new_admin_percent.pack(side='left')
+            self.new_admin_hint.pack(side='left', padx=(8, 0))
+            admin = next((t for t, i in self._role_ids.items() if i in self._admin_role_ids), None)
+            if admin:
+                self.employee_role_box.set(admin)
+            self.employee_role_box.state(['disabled'])
+            self.new_admin_percent.focus_set()
+        else:
+            for widget in (self.new_admin_label, self.new_admin_percent, self.new_admin_hint):
+                widget.pack_forget()
+            self.employee_role_box.state(['!disabled'])
+            if self._role_ids.get(self.employee_role_box.get()) in self._admin_role_ids:
+                self.employee_role_box.set(next(iter(self._role_ids), 'Мастер'))
+
+    def _role_picked(self):
+        """Выбрали категорию «Администратор» — это та же галочка."""
+        if self._role_ids.get(self.employee_role_box.get()) in self._admin_role_ids \
+                and not self.new_admin_var.get():
+            self.new_admin_var.set(True)
+            self._admin_toggled()
+
     def register_employee(self):
         try:
             emp_id = int(self.employee_id_entry.get())
+        except ValueError:
+            messagebox.showerror("Ошибка", "Номер сотрудника — числом")
+            return
+        try:
             name = self.employee_name_entry.get()
-            role_id = self._role_ids.get(self.employee_role_box.get())
-            self.service.register_employee(emp_id, name, role_id=role_id)
-            messagebox.showinfo("Успех", f"Сотрудник {emp_id} зарегистрирован")
+            admin_percent = None
+            if self.new_admin_var.get():
+                text = self.new_admin_percent.get().strip().replace(',', '.')
+                if not text:
+                    messagebox.showerror("Администратор", "Укажите процент от выручки")
+                    self.new_admin_percent.focus_set()
+                    return
+                try:
+                    admin_percent = float(text)
+                except ValueError:
+                    raise ValueError("Процент от выручки — числом, например 5")
+            role_id = None if admin_percent is not None else \
+                self._role_ids.get(self.employee_role_box.get())
+            self.service.register_employee(emp_id, name, role_id=role_id,
+                                           admin_percent=admin_percent)
+            messagebox.showinfo("Успех", f"Сотрудник {emp_id} зарегистрирован" +
+                                (f" — администратор, {admin_percent:g}% от выручки"
+                                 if admin_percent is not None else ""))
             self.employee_id_entry.delete(0, tk.END)
             self.employee_name_entry.delete(0, tk.END)
+            self.new_admin_percent.delete(0, tk.END)
+            if self.new_admin_var.get():
+                self.new_admin_var.set(False)
+                self._admin_toggled()
+            self.fill_role_box()
             self.refresh_employees()
         except ValueError as e:
             messagebox.showerror("Ошибка", str(e))
@@ -607,6 +669,7 @@ class EmployeesTab:
             log.error(f"Не удалось прочитать категории: {e}")
             roles = []
         self._role_ids = {role.title: role.id for role in roles}
+        self._admin_role_ids = {role.id for role in roles if role.is_admin}
         titles = list(self._role_ids) or ['Мастер']
         self.employee_role_box.configure(values=titles)
         if self.employee_role_box.get() not in titles:
@@ -702,7 +765,7 @@ class EmployeesTab:
         employee = self.db.query(Employee).get(emp_id)
         choices = [(d, directions.TITLES[d]) for d in directions.enabled(self.db)]
         if employee is not None and EmployeeRoleService(self.db).is_admin(employee):
-            choices.append(('admin', 'Администратор: со всего наряда'))
+            choices.append(('admin', 'Администратор: % от выручки'))
         if directions.shop_on(self.db):
             choices.append(('shop', 'Магазин: с продаж'))
         direction = directions.TIRE

@@ -85,22 +85,30 @@ db.refresh(scent)
 check('склад выключен — магазин всё равно списан', scent.quantity == 8, str(scent.quantity))
 check('с продаж никому', not db.query(SalaryTransaction).filter_by(work_order_id=sale.id).count())
 
-print('\n=== Продавцу и администратору ===')
+print('\n=== Процент с продаж включён: только продавцу ===')
+# Было «продавцу и администратору» — теперь это просто «включено»
 settings.set('shop_salary_to', 'both')
+check('старое «обоим» — включено', directions.shop_pay_on(db))
+try:
+    shop.create_sale([(scent, 1)])
+    check('без продавца продажа не пробивается', False)
+except ValueError as e:
+    check('без продавца продажа не пробивается', 'кто продал' in str(e), str(e))
+db.rollback()
 sale = shop.create_sale([(scent, 2)], seller_id=1)
 salary.process_payment(sale.id, 'cash', orders.calculate_total(sale.id))
 pay = {t.employee_id: t.amount for t in db.query(SalaryTransaction).filter_by(work_order_id=sale.id)}
-check('продавцу 10% от 300, администратору 4%', pay == {1: 30.0, 2: 12.0}, str(pay))
+check('продавцу 10% от 300, администратору — ничего', pay == {1: 30.0}, str(pay))
 settings.set('shop_salary_base', 'margin')
 sale = shop.create_sale([(scent, 1)], seller_id=1)
 salary.process_payment(sale.id, 'cash', orders.calculate_total(sale.id))
 pay = {t.employee_id: t.amount for t in db.query(SalaryTransaction).filter_by(work_order_id=sale.id)}
-check('от наценки: 10% и 4% от (150 − 50)', pay == {1: 10.0, 2: 4.0}, str(pay))
+check('от наценки: 10% от (150 − 50)', pay == {1: 10.0}, str(pay))
 settings.set('shop_salary_base', 'sale')
 sale = shop.create_sale([(mats, 1)], seller_id=1)
 salary.process_payment(sale.id, 'cash', orders.calculate_total(sale.id))
 pay = {t.employee_id: t.amount for t in db.query(SalaryTransaction).filter_by(work_order_id=sale.id)}
-check('бонус по карточке вместо процента — 100 ₽ каждому', pay == {1: 100.0, 2: 100.0}, str(pay))
+check('бонус по карточке вместо процента — 100 ₽ продавцу', pay == {1: 100.0}, str(pay))
 
 print('\n=== Не давать продать, когда нет ===')
 db.refresh(mats)
@@ -120,13 +128,21 @@ settings.set('shop_salary_to', 'seller')
 order = orders.create_order('А100АА77', 'R16', 'car', create_client=False)
 orders.add_service_to_order(order.id, 1)
 line = orders.add_service_to_order(order.id, scent.service_id)
-check('строка магазина, продавец — администратор на смене', line.direction == 'shop'
-      and line.employee_id == 2, f'{line.direction} {line.employee_id}')
+check('на смене двое — продавец сам не подставился', line.direction == 'shop'
+      and line.employee_id is None, f'{line.direction} {line.employee_id}')
+try:
+    salary.process_payment(order.id, 'cash', orders.calculate_total(order.id))
+    check('без продавца наряд не пробивается', False)
+except ValueError as e:
+    check('без продавца наряд не пробивается', 'кто продал' in str(e), str(e))
+db.rollback()
+# Продал сам администратор — получает один раз, как продавец
+orders.set_item_employee(line.id, 2)
 salary.process_payment(order.id, 'cash', orders.calculate_total(order.id))
 rows = db.query(SalaryTransaction).filter_by(work_order_id=order.id).all()
 admin_row = next(r for r in rows if r.employee_id == 2)
 parts = dict(by_direction([admin_row]))[admin_row]
-check('администратору: 5% шиномонтажа + 4% магазина, магазин не дважды',
+check('администратору: 5% шиномонтажа + 4% магазина как продавцу, не дважды',
       round(admin_row.amount, 2) == round(2000 * 0.05 + 150 * 0.04, 2), str(admin_row.amount))
 check('в дашборд — по направлениям', parts == {'tire': 100.0, 'shop': 6.0}, str(parts))
 

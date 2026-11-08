@@ -66,6 +66,21 @@ class EmployeeRoleService:
         settings.set(self.ADMIN_SEEDED_KEY, '1', commit=False)
         self.db.commit()
 
+    def admin_role(self):
+        """Категория администратора. Её удалили — заводим заново: человека
+        отметили администратором при создании, значит, она нужна."""
+        self.roles()
+        role = self.db.query(EmployeeRole).filter(EmployeeRole.is_admin.is_(True)).order_by(
+            EmployeeRole.id).first()
+        if role is None:
+            role = self.db.query(EmployeeRole).filter(EmployeeRole.title == self.ADMIN_TITLE).first()
+            if role is None:
+                role = EmployeeRole(title=self.ADMIN_TITLE, can_work_alone=True)
+                self.db.add(role)
+            role.is_admin = True
+            self.db.commit()
+        return role
+
     def roles(self):
         self.ensure_defaults()
         self.ensure_admin()
@@ -168,15 +183,39 @@ class EmployeeRoleService:
         role = self.role_of(employee)
         return True if role is None else role.can_work_alone is not False
 
-    def service_names(self):
+    def service_names(self, direction=None):
         """
         Услуги, которые можно исключить: работы из прайса, без товаров.
         По названию — одна строка на «Правку» для всех типов машин.
+        direction — только этого направления ('tire', 'wash').
         """
-        rows = self.db.query(Service.name).filter(
+        query = self.db.query(Service.name).filter(
             Service.is_active.isnot(False),
-            Service.is_goods.isnot(True)).distinct().all()
-        return sorted({name for (name,) in rows if name})
+            Service.is_goods.isnot(True))
+        if direction == 'tire':
+            query = query.filter((Service.direction == 'tire') | Service.direction.is_(None))
+        elif direction:
+            query = query.filter(Service.direction == direction)
+        return sorted({name for (name,) in query.distinct().all() if name})
+
+    def set_goods(self, role_id, directions_list):
+        """Администратору — с товаров каких направлений платить."""
+        role = self.get(role_id)
+        if role is None:
+            raise ValueError('Категория не найдена')
+        chosen = [d for d in ('tire', 'wash') if d in set(directions_list)]
+        before = role.goods_from
+        role.goods_directions = ','.join(chosen) or None
+        self.db.commit()
+        if set(chosen) != before:
+            from services.audit_service import AuditService
+            titles = {'tire': 'шиномонтажа', 'wash': 'мойки'}
+            AuditService(self.db).log(
+                'employee_role.goods',
+                f"Категория «{role.title}»: с товаров — " +
+                (', '.join(titles[d] for d in chosen) if chosen else 'не платить'),
+                entity_type='employee_role', entity_id=role.id)
+        return role
 
     # ------------------------------------------------------------------
     # Сотрудник

@@ -192,6 +192,8 @@ class OrderService:
             if existing_item:
                 # Увеличиваем количество
                 existing_item.quantity += count
+                if existing_item.direction == _directions.SHOP and employee_id:
+                    existing_item.employee_id = employee_id
                 if wheels:
                     existing_item.wheels = join(
                         parse(existing_item.wheels) + wheels)
@@ -248,6 +250,9 @@ class OrderService:
                 on_shift = self.db.query(WorkShift).filter(WorkShift.end_time.is_(None)).all()
                 if len(on_shift) == 1:
                     item.employee_id = on_shift[0].employee_id
+                washers = self.wash_masters(order) if item.direction == 'wash' else []
+                if washers:
+                    item.employee_id = washers[0]
             self.db.add(item)
             self.db.commit()
             self.db.refresh(item)
@@ -257,15 +262,20 @@ class OrderService:
             raise
     
     def _default_seller(self):
-        """Кто продал, если не выбрали: администратор на смене, иначе один на смене."""
+        """
+        Кто продал, если не выбрали. Процент с продаж выключен — никто: он
+        ни на что не влияет. Включён — сам подставляется, только если на
+        смене один человек; иначе продавца выбирают (решение владельца
+        09.11.2026), чтобы процент не ушёл не тому.
+        """
         from models import WorkShift
-        from services.employee_role_service import EmployeeRoleService
-        roles = EmployeeRoleService(self.db)
-        on_shift = [s.employee for s in self.db.query(WorkShift).filter(
-            WorkShift.end_time.is_(None)).all() if s.employee is not None]
-        admin = next((e for e in on_shift if roles.is_admin(e)), None)
-        if admin is not None:
-            return admin.id
+        from services import directions as _directions
+        if not _directions.shop_pay_on(self.db):
+            return None
+        on_shift = []
+        for shift in self.db.query(WorkShift).filter(WorkShift.end_time.is_(None)).all():
+            if shift.employee is not None and shift.employee.id not in [e.id for e in on_shift]:
+                on_shift.append(shift.employee)
         return on_shift[0].id if len(on_shift) == 1 else None
 
     @staticmethod
@@ -768,7 +778,9 @@ class OrderService:
         return order
 
     def assign_wash(self, order_id, employee_id, direction='wash'):
-        """Все услуги направления в наряде — на одного сотрудника."""
+        """Вся мойка в наряде — на одного сотрудника."""
+        if direction == 'wash':
+            return self.set_wash_masters(order_id, [employee_id] if employee_id else [])
         items = self.db.query(WorkOrderItem).filter(
             WorkOrderItem.work_order_id == order_id,
             WorkOrderItem.direction == direction).all()
@@ -776,6 +788,30 @@ class OrderService:
             item.employee_id = employee_id
         self.db.commit()
         return len(items)
+
+    def set_wash_masters(self, order_id, employee_ids):
+        """
+        Мойщики машины (решение владельца 09.11.2026): мойку наряда делят
+        они, каждый по своему проценту мойки ÷ сколько их. В строках —
+        первый из них: по строке мойку видит кабинет мастера и дашборд.
+        """
+        order = self.db.query(WorkOrder).filter(WorkOrder.id == order_id).first()
+        if order is None:
+            raise ValueError("Наряд не найден")
+        ids = [int(e) for e in dict.fromkeys(employee_ids) if e]
+        order.wash_employee_ids = ','.join(str(i) for i in ids) if ids else None
+        items = self.db.query(WorkOrderItem).filter(
+            WorkOrderItem.work_order_id == order_id,
+            WorkOrderItem.direction == 'wash').all()
+        for item in items:
+            item.employee_id = ids[0] if ids else None
+        self.db.commit()
+        return len(items)
+
+    def wash_masters(self, order):
+        """Мойщики наряда номерами: [3, 5]."""
+        from services.salary_service import ids_of
+        return ids_of(getattr(order, 'wash_employee_ids', None))
 
     def unpaid_orders(self, days=7):
         """

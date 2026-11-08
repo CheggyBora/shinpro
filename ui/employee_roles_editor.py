@@ -68,7 +68,7 @@ class EmployeeRolesEditor:
         # не входит (решение владельца 08.11.2026)
         self.admin_var = tk.BooleanVar(value=False)
         self.admin_box = ttk.Checkbutton(
-            right, text='Администратор: свой процент со всего наряда, шиномонтаж не делит',
+            right, text='Администратор: свой процент с выручки шиномонтажа и мойки, работу не делит',
             variable=self.admin_var, command=self.save_admin)
         self.admin_box.pack(anchor='w', pady=(0, 10))
 
@@ -130,30 +130,79 @@ class EmployeeRolesEditor:
         self.caption.config(
             text=f'«{role.title}»: отметьте услуги, с которых НЕ начислять')
 
-        names = self.service.service_names()
+        from services import directions
         excluded = role.excluded
-        # Две колонки: услуг в прайсе за тридцать, в одну не влезают
-        half = (len(names) + 1) // 2
-        for index, name in enumerate(names):
-            var = tk.BooleanVar(value=name in excluded)
-            box = ttk.Checkbutton(self.services_frame, text=name, variable=var,
-                                  command=self.save)
-            box.grid(row=index % half if half else 0, column=index // half if half else 0,
-                     sticky='w', padx=(0, 18), pady=1)
-            self.checks[name] = var
+        # Мойщикам — только процент (решение владельца 09.11.2026): у
+        # мастерских категорий — услуги шиномонтажа. Администратору —
+        # по направлениям, и с товаров — отдельно
+        groups = [('Шиномонтаж', self.service.service_names('tire'))]
+        if role.is_admin and directions.wash_on(self.db):
+            groups.append(('Мойка', self.service.service_names('wash')))
+        if len(groups) == 1:
+            groups = [(None, groups[0][1])]
+        row = 0
+        shown = set()
+        for title, names in groups:
+            if title:
+                self._small(title.upper(), bold=True).grid(row=row, column=0, columnspan=2,
+                                                            sticky='w', pady=(8 if row else 0, 2))
+                row += 1
+            # Две колонки: услуг в прайсе за тридцать, в одну не влезают
+            half = (len(names) + 1) // 2
+            for index, name in enumerate(names):
+                var = tk.BooleanVar(value=name in excluded)
+                box = ttk.Checkbutton(self.services_frame, text=name, variable=var,
+                                      command=self.save)
+                box.grid(row=row + (index % half if half else 0),
+                         column=index // half if half else 0, sticky='w', padx=(0, 18), pady=1)
+                self.checks[name] = var
+                shown.add(name)
+            row += half
+
+        self.goods_vars = {}
+        if role.is_admin:
+            self._small('С ТОВАРОВ (вентили, грузики, химия) — платить процент:', bold=True).grid(
+                row=row, column=0, columnspan=2, sticky='w', pady=(10, 2))
+            row += 1
+            have = [(directions.TIRE, 'с товаров шиномонтажа')]
+            if directions.wash_on(self.db):
+                have.append((directions.WASH, 'с товаров мойки'))
+            for key, text in have:
+                var = tk.BooleanVar(value=key in role.goods_from)
+                ttk.Checkbutton(self.services_frame, text=text, variable=var,
+                                command=self.save_goods).grid(row=row, column=0, columnspan=2,
+                                                              sticky='w', pady=1)
+                self.goods_vars[key] = var
+                row += 1
+            self._small('По умолчанию с товаров не платится. Магазин — по правилам магазина '
+                        '(Настройки → «От чего считается зарплата»).').grid(
+                row=row, column=0, columnspan=2, sticky='w')
+            row += 1
 
         # Исключённые услуги, которых в прайсе уже нет, не теряем молча:
-        # иначе снятая с прайса и возвращённая услуга начислялась бы всем
-        gone = sorted(excluded - set(names))
+        # снятая с прайса и возвращённая услуга начислялась бы всем
+        gone = sorted(excluded - set(self.service.service_names()))
         if gone:
-            ttk.Label(self.services_frame,
-                      text='Нет в прайсе, но исключены: ' + ', '.join(gone),
-                      font=(styles.DEFAULT_FONT, 9),
-                      background=styles.COLORS['bg_card'],
-                      foreground=styles.COLORS['text_secondary']).grid(
-                          row=half + 1, column=0, columnspan=2,
-                          sticky='w', pady=(8, 0))
-        self._gone = set(gone)
+            self._small('Нет в прайсе, но исключены: ' + ', '.join(gone)).grid(
+                row=row + 1, column=0, columnspan=2, sticky='w', pady=(8, 0))
+        # Исключённое, чего здесь не видно (мойка у мастерской категории),
+        # сохраняем как было
+        self._gone = excluded - shown
+
+    def _small(self, text, bold=False):
+        return ttk.Label(self.services_frame, text=text,
+                         font=(styles.DEFAULT_FONT, 9, 'bold') if bold else (styles.DEFAULT_FONT, 9),
+                         background=styles.COLORS['bg_card'],
+                         foreground=styles.COLORS['text_secondary'])
+
+    def save_goods(self):
+        if self.role_id is None:
+            return
+        try:
+            self.service.set_goods(self.role_id, [k for k, v in self.goods_vars.items() if v.get()])
+        except Exception as e:
+            self.db.rollback()
+            messagebox.showerror('Ошибка', f'Не удалось сохранить: {e}', parent=self.window)
 
     def save(self):
         if self.role_id is None:
@@ -179,6 +228,9 @@ class EmployeeRolesEditor:
             self.db.rollback()
             messagebox.showerror('Ошибка', f'Не удалось сохранить: {e}',
                                  parent=self.window)
+            return
+        # У администратора — свой список: мойка и товары
+        self.draw_services()
 
     def save_alone(self):
         if self.role_id is None:

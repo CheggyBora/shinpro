@@ -41,6 +41,9 @@ class WorkOrder(Base):
     cash_amount = Column(Float, nullable=True)
     status = Column(String(20), default='draft')
     employee_ids = Column(String(200), nullable=True)
+    # Мойщики машины (решение владельца 09.11.2026): мойку делят они, как
+    # мастера шиномонтаж, — каждому по его проценту мойки ÷ сколько их
+    wash_employee_ids = Column(String(200), nullable=True)
     recommendations = Column(Text, nullable=True)
     
     # Плановое время работ в минутах. Меняется ТОЛЬКО по кнопке

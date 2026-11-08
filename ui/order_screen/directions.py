@@ -4,7 +4,7 @@
 Наряд один на машину. Приехал на шиномонтаж и решил помыться — «+ Мойка»
 добавляет второе направление в тот же наряд: спрашивает класс машины,
 если его ещё не знаем, и занимает пост мойки. Услуги мойки начисляются
-тому, кто их делал: его выбирают в строке или сразу «Все на одного».
+мойщикам машины: их выбирают в блоке мойки («Мойщики ▾»), делят поровну.
 """
 import tkinter as tk
 from tkinter import ttk, messagebox
@@ -19,6 +19,13 @@ def employee_name(db, employee_id):
     from models import Employee
     employee = db.query(Employee).filter(Employee.id == employee_id).first()
     return employee.title if employee is not None else f'№{employee_id}'
+
+
+def short_name(db, employee_id):
+    """Коротко — для шапки блока и колонки «Кто делал»: имя или №."""
+    from models import Employee
+    employee = db.query(Employee).filter(Employee.id == employee_id).first()
+    return (employee.name if employee is not None and employee.name else f'№{employee_id}')
 
 
 def wash_people(db):
@@ -171,15 +178,30 @@ class OrderDirectionsMixin:
     @needs_shift
     def choose_masters(self):
         """Кто работает на посту — им и делится шиномонтаж наряда."""
-        people = wash_people(self.db)
         chosen = {int(i) for i in (self.order.employee_ids or '').split(',') if i.strip()}
+        self._pick_people('Мастера наряда', 'Кто работает на этом наряде:', chosen,
+                          lambda ids: self.order_service.set_order_masters(self.order.id, ids))
+
+    @needs_shift
+    def choose_washers(self):
+        """Мойщики машины — им и делится мойка наряда (решение владельца 09.11.2026)."""
+        chosen = set(self.order_service.wash_masters(self.order))
+
+        def save(ids):
+            self.order_service.set_wash_masters(self.order.id, ids)
+            self.render_blocks()
+            self.refresh_items()
+        self._pick_people('Мойщики', 'Кто моет эту машину (мойку делят поровну):', chosen, save)
+
+    def _pick_people(self, title, prompt, chosen, on_save):
+        people = wash_people(self.db)
         dialog = tk.Toplevel(self.frame)
-        dialog.title('Мастера наряда')
+        dialog.title(title)
         dialog.configure(bg=styles.COLORS['bg_card'])
         dialog.transient(self.frame.winfo_toplevel())
         body = ttk.Frame(dialog, style='White.TFrame')
         body.pack(fill='both', expand=True, padx=18, pady=14)
-        styles.create_label(body, 'Кто работает на этом наряде:', 'Card.TLabel').pack(anchor='w', pady=(0, 8))
+        styles.create_label(body, prompt, 'Card.TLabel').pack(anchor='w', pady=(0, 8))
         marks = {}
         for person in people:
             marks[person.id] = tk.BooleanVar(value=person.id in chosen)
@@ -187,7 +209,7 @@ class OrderDirectionsMixin:
 
         def save():
             ids = [pid for pid, var in marks.items() if var.get()]
-            self.order_service.set_order_masters(self.order.id, ids)
+            on_save(ids)
             self.db.refresh(self.order)
             dialog.destroy()
             self.update_employees_display()
@@ -205,6 +227,11 @@ class OrderDirectionsMixin:
     @needs_shift
     def choose_item_employee(self, item):
         shop = (item.direction or 'tire') == directions.SHOP
+        if shop and not directions.shop_pay_on(self.db):
+            return
+        if (item.direction or 'tire') == directions.WASH:
+            self.choose_washers()
+            return
         if not shop and not directions.assigned(self.db, item.direction or 'tire'):
             return
         who = self._choose_person(f'Кто продал «{item.service.name}»?' if shop

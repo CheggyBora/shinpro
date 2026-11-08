@@ -19,14 +19,24 @@ class EmployeeService:
         self.db = db
     
     def register_employee(self, employee_id: int, name: str = None,
-                          role_id=None) -> Employee:
+                          role_id=None, admin_percent=None) -> Employee:
         """
         Завести сотрудника. Категорию можно выбрать сразу: новому ещё
         ничего не начислено, и PIN тут не нужен. Менять её потом — по PIN.
+
+        admin_percent — заводим администратора (решение владельца
+        09.11.2026): категория «Администратор» и его процент с выручки.
         """
         existing = self.db.query(Employee).filter(Employee.id == employee_id).first()
         if existing:
             raise ValueError(f"Сотрудник с номером {employee_id} уже существует")
+
+        if admin_percent is not None:
+            admin_percent = float(admin_percent)
+            if not 0 < admin_percent <= 100:
+                raise ValueError("Процент администратора — от 0 до 100")
+            from services.employee_role_service import EmployeeRoleService
+            role_id = EmployeeRoleService(self.db).admin_role().id
 
         if role_id is not None:
             from services.employee_role_service import EmployeeRoleService
@@ -35,7 +45,7 @@ class EmployeeService:
 
         employee = Employee(id=employee_id, salary_percent=40.0,
                             name=(name or '').strip() or None,
-                            role_id=role_id)
+                            role_id=role_id, admin_percent=admin_percent or 0.0)
         self.db.add(employee)
         self.db.commit()
         self.db.refresh(employee)

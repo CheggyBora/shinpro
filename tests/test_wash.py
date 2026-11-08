@@ -100,14 +100,20 @@ try:
 except ValueError as e:
     check('оплата без сотрудника — отказ', 'кто делал' in str(e), str(e))
 orders.assign_wash(wash_order.id, 1)
-orders.set_item_employee(item_salon.id, 2)
 people, nobody = salary.preview(wash_order.id)
-check('кузов — первому по 30%', people[1]['amount'] == 270.0, str(people.get(1)))
-check('салон — второму по 25%', people[2]['amount'] == 300.0, str(people.get(2)))
+check('вся мойка на одного: 30% от 900 + 1200', people[1]['amount'] == 630.0, str(people.get(1)))
+# Двое мыли машину — делят каждую услугу, как мастера шиномонтаж
+# (решение владельца 09.11.2026): каждому его процент ÷ 2
+orders.set_wash_masters(wash_order.id, [1, 2])
+db.refresh(wash_order)
+check('мойщики записаны в наряд', orders.wash_masters(wash_order) == [1, 2])
+people, nobody = salary.preview(wash_order.id)
+check('первому: (900 + 1200) × 30% ÷ 2 = 315', people[1]['amount'] == 315.0, str(people.get(1)))
+check('второму: (900 + 1200) × 25% ÷ 2 = 262,5', people[2]['amount'] == 262.5, str(people.get(2)))
 salary.process_payment(wash_order.id, 'card', orders.calculate_total(wash_order.id))
 paid = {t.employee_id: t.amount for t in db.query(SalaryTransaction).filter(
     SalaryTransaction.work_order_id == wash_order.id).all()}
-check('начислено по строкам', paid == {1: 270.0, 2: 300.0}, str(paid))
+check('начислено обоим', paid == {1: 315.0, 2: 262.5}, str(paid))
 check('пост мойки освободился', WashPosts(db).first_free() == 1)
 
 print()
@@ -132,7 +138,7 @@ check('в наряде оба направления', mixed.directions == 'tire
 check('мойка заняла пост', mixed.wash_post_number == 1)
 wash_line = orders.add_service_to_order(mixed.id, body.id)
 check('мойка седана — 700', wash_line.price == 700)
-orders.set_item_employee(wash_line.id, 2)
+orders.set_wash_masters(mixed.id, [2])
 people, _ = salary.preview(mixed.id)
 check('шиномонтаж делят оба по 40%: по 400', people[1]['amount'] == 400.0, str(people.get(1)))
 check('второму ещё мойка 25% от 700', people[2]['amount'] == 400.0 + 175.0, str(people.get(2)))

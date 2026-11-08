@@ -40,7 +40,15 @@ class OrderPaymentMixin:
             messagebox.showwarning("Кто делал",
                                    "Выберите, кто делал: " + ", ".join(missing) +
                                    "\n(двойной щелчок по колонке «Кто делал» "
-                                   "или «Всё на: … ▾» в блоке мойки)")
+                                   "или «Мойщики ▾» в блоке мойки)")
+            self.choose_washers()
+            return
+
+        unsold = self.salary_service.unsold_shop(self.order.id)
+        if unsold:
+            messagebox.showwarning("Кто продал",
+                                   "Выберите, кто продал: " + ", ".join(unsold) +
+                                   "\n(двойной щелчок по колонке «Продал» в блоке магазина)")
             return
 
         total = self.order_service.calculate_total(self.order.id)

@@ -1,12 +1,20 @@
 """
-Зарплата — все настройки разом (проверка 08.11.2026).
+Зарплата — все настройки разом (проверка 08.11.2026, правила 09.11.2026).
 
 Ожидаемое здесь посчитано руками по правилам, а не взято из программы:
 если правило и программа разойдутся, тест это покажет.
 
 Люди: Иван — мастер (40% шиномонтаж, 10% магазин), Пётр — сезонный
-съёмщик (40%, правка дисков ему не начисляется), Анна — мойка 30%,
-Ольга — администратор (5% со всего наряда, 4% с магазина).
+съёмщик (40%, правка дисков ему не начисляется), Анна и Мария — мойка 30%,
+Семён — мастер 40%, Ольга и Ирина — администраторы (5% с выручки, 4% с
+магазина, если продали сами).
+
+Правила владельца 09.11.2026:
+  · мойщики машины делят мойку, как мастера шиномонтаж;
+  · администратору — со всех услуг шиномонтажа и мойки, кроме
+    исключённых; с товаров — только если включено (по умолчанию нет);
+  · с магазина — только тому, кто продал, и только когда процент с
+    продаж включён.
 """
 import _setup
 from _setup import use_temp_db, check, finish
@@ -15,7 +23,7 @@ use_temp_db('salary_matrix')
 _setup.silence_dialogs()
 
 from config import init_db, SessionLocal
-from models import Service, Employee, SalaryTransaction, WorkShift
+from models import Service, Employee, SalaryTransaction
 from services import EmployeeService, OrderService, SalaryService, directions
 from services.employee_role_service import EmployeeRoleService
 from services.settings_service import SettingsService
@@ -34,16 +42,21 @@ MOUNT, RIM, VALVE = 1, 2, 3
 
 roles = EmployeeRoleService(db)
 by_title = {r.title: r for r in roles.roles()}
+ADMIN_ROLE = by_title['Администратор'].id
 roles.set_excluded(by_title['Сезонный съёмщик'].id, ['Правка литого диска'])
-IVAN, PETR, ANNA, OLGA = 1, 2, 3, 4
+IVAN, PETR, ANNA, OLGA, IRINA, MARIA, SEMEN = 1, 2, 3, 4, 5, 6, 7
 staff = EmployeeService(db)
 for number, name, role in ((IVAN, 'Иван', 'Мастер'), (PETR, 'Пётр', 'Сезонный съёмщик'),
-                           (ANNA, 'Анна', 'Мастер'), (OLGA, 'Ольга', 'Администратор')):
+                           (ANNA, 'Анна', 'Мастер'), (MARIA, 'Мария', 'Мастер'),
+                           (SEMEN, 'Семён', 'Мастер')):
     staff.register_employee(number, name=name, role_id=by_title[role].id)
+# Администраторов заводят галочкой с процентом от выручки
+staff.register_employee(OLGA, name='Ольга', admin_percent=5)
+check('галочка «Администратор» — категория администратора и 5%',
+      roles.is_admin(db.query(Employee).get(OLGA)) and db.query(Employee).get(OLGA).admin_percent == 5)
 for e in db.query(Employee).all():
     e.salary_percent, e.wash_percent, e.shop_percent = 40, 30, 0
 db.query(Employee).get(IVAN).shop_percent = 10
-db.query(Employee).get(OLGA).admin_percent = 5
 db.query(Employee).get(OLGA).shop_percent = 4
 db.commit()
 ShiftService(db).open_shift(open_posts=2)
@@ -74,24 +87,39 @@ order = tire_order('А001АА77', MOUNT, RIM, VALVE)
 check('в мастерах наряда Иван и Пётр, администратора нет', order.employee_ids == '1,2', order.employee_ids)
 got = pay(order)
 # Шиномонтаж: (2000 − 300) × 40% ÷ 2 = 340 каждому. Правка: только Иван — 1500 × 40% = 600.
-# Вентиль — товар: мастерам 0. Ольга: 5% × (2000 + 1500 + 250) = 187,5
-check('Иван 940, Пётр 340, Ольга 187,5', got == {IVAN: 940.0, PETR: 340.0, OLGA: 187.5}, str(got))
+# Вентиль — товар: мастерам 0, администратору по умолчанию тоже.
+# Ольга: 5% × (2000 + 1500) = 175
+check('Иван 940, Пётр 340, Ольга 175 (с товара — нет)',
+      got == {IVAN: 940.0, PETR: 340.0, OLGA: 175.0}, str(got))
 
-print('\n=== 2. База шиномонтажа «от выручки» ===')
+print('\n=== 2. Администратору — и с товаров шиномонтажа ===')
+roles.set_goods(ADMIN_ROLE, ['tire'])
+got = pay(tire_order('А011АА77', MOUNT, RIM, VALVE))
+check('Ольга 5% × (2000 + 1500 + 250) = 187,5', got.get(OLGA) == 187.5, str(got))
+
+print('\n=== 3. Администратору — без правки (исключение) ===')
+roles.set_excluded(ADMIN_ROLE, ['Правка литого диска'])
+got = pay(tire_order('А012АА77', MOUNT, RIM, VALVE))
+check('Ольга 5% × (2000 + 250) = 112,5, мастерам как было',
+      got == {IVAN: 940.0, PETR: 340.0, OLGA: 112.5}, str(got))
+roles.set_excluded(ADMIN_ROLE, [])
+roles.set_goods(ADMIN_ROLE, [])
+
+print('\n=== 4. База шиномонтажа «от выручки» ===')
 settings.set('salary_base_tire', 'revenue')
 got = pay(tire_order('А002АА77', MOUNT, RIM))
 # 2000 × 40% ÷ 2 = 400; правка Ивану 600; Ольга 5% × 3500 = 175
 check('Иван 1000, Пётр 400, Ольга 175', got == {IVAN: 1000.0, PETR: 400.0, OLGA: 175.0}, str(got))
 settings.set('salary_base_tire', 'minus')
 
-print('\n=== 3. Администратор «за вычетом расходников» ===')
+print('\n=== 5. Администратор «за вычетом расходников» ===')
 settings.set('salary_base_admin', 'minus')
 got = pay(tire_order('А003АА77', MOUNT, VALVE))
-# 5% × ((2000 − 300) + 250) = 97,5 — с товара вычитаются только расходники, закупка — нет
-check('Ольга 97,5', got.get(OLGA) == 97.5, str(got))
+# 5% × (2000 − 300) = 85; вентиль — товар, по умолчанию не платится
+check('Ольга 85', got.get(OLGA) == 85.0, str(got))
 settings.set('salary_base_admin', 'revenue')
 
-print('\n=== 4. Скидка 10% ===')
+print('\n=== 6. Скидка 10% ===')
 order = tire_order('А004АА77', MOUNT)
 orders.update_general_discount(order.id, 10)
 got = pay(order)
@@ -99,7 +127,7 @@ got = pay(order)
 check('скидка уменьшает базу: Иван и Пётр по 300, Ольга 90',
       got == {IVAN: 300.0, PETR: 300.0, OLGA: 90.0}, str(got))
 
-print('\n=== 5. Мастеров выбирают в наряде ===')
+print('\n=== 7. Мастеров выбирают в наряде ===')
 directions.set_tire_assign(db, True)
 order = tire_order('А005АА77', MOUNT)
 check('сами не встали', not order.employee_ids)
@@ -108,7 +136,7 @@ got = pay(order)
 check('всё Ивану: 1700 × 40% = 680', got == {IVAN: 680.0, OLGA: 100.0}, str(got))
 directions.set_tire_assign(db, False)
 
-print('\n=== 6. Мойка + шиномонтаж + магазин, продавцу и администратору ===')
+print('\n=== 8. Мойка + шиномонтаж + магазин ===')
 directions.set_enabled(db, True, True)
 wash = db.query(Service).filter(Service.direction == 'wash',
                                 Service.name.like('Мойка кузова%')).first()
@@ -116,47 +144,54 @@ wash.price_sedan, wash.consumable_cost = 1000, 100
 db.commit()
 staff.start_shift(ANNA)
 directions.set_shop_on(db, True)
-card = ShopService(db).save_card(name='Ароматизатор', price=150, purchase_price=50, quantity=10)
-settings.set('shop_salary_to', 'both')
+card = ShopService(db).save_card(name='Ароматизатор', price=150, purchase_price=50, quantity=30)
+directions.set_shop_pay_on(db, True)
 order = tire_order('А006АА77', MOUNT)
 check('с мойкой мастера сами не встают — ни Анна, ни Ольга', not order.employee_ids)
 orders.set_order_masters(order.id, [IVAN])
 orders.add_direction(order.id, 'wash', wash_class='sedan')
 orders.add_service_to_order(order.id, wash.id)
-orders.assign_wash(order.id, ANNA)
+orders.set_wash_masters(order.id, [ANNA])
 orders.add_service_to_order(order.id, card.service_id, employee_id=IVAN)
 got = pay(order)
 # Иван: шиномонтаж 1700 × 40% = 680 + магазин 10% × 150 = 15 → 695
 # Анна: мойка (1000 − 100) × 30% = 270
-# Ольга: 5% × (2000 + 1000) = 150 + магазин 4% × 150 = 6 → 156
-check('Иван 695, Анна 270, Ольга 156', got == {IVAN: 695.0, ANNA: 270.0, OLGA: 156.0}, str(got))
+# Ольга: 5% × (2000 + 1000) = 150; с магазина — нет: продал Иван
+check('Иван 695, Анна 270, Ольга 150', got == {IVAN: 695.0, ANNA: 270.0, OLGA: 150.0}, str(got))
 mixed = order
 
-print('\n=== 7. Магазин «от наценки», бонус по карточке ===')
+print('\n=== 9. Магазин «от наценки», бонус, продал администратор ===')
 settings.set('shop_salary_base', 'margin')
-sale = ShopService(db).create_sale([(card, 2)], seller_id=IVAN)
-got = pay(sale)
-# Наценка 2 × (150 − 50) = 200: Иван 10% = 20, Ольга 4% = 8. Со всего наряда у Ольги — 0: это магазин
-check('Иван 20, Ольга 8', got == {IVAN: 20.0, OLGA: 8.0}, str(got))
+got = pay(ShopService(db).create_sale([(card, 2)], seller_id=IVAN))
+# Наценка 2 × (150 − 50) = 200: Иван 10% = 20. Администратору — 0: продал не он
+check('Иван 20, больше никому', got == {IVAN: 20.0}, str(got))
+got = pay(ShopService(db).create_sale([(card, 2)], seller_id=OLGA))
+check('продала Ольга — ей 4% от 200 = 8, один раз', got == {OLGA: 8.0}, str(got))
 ShopService(db).save_card(card, bonus=30)
 got = pay(ShopService(db).create_sale([(card, 2)], seller_id=IVAN))
-check('бонус 30 ₽ за штуку вместо процента: по 60', got == {IVAN: 60.0, OLGA: 60.0}, str(got))
+check('бонус 30 ₽ за штуку вместо процента: Ивану 60', got == {IVAN: 60.0}, str(got))
+ShopService(db).save_card(card, bonus=0)
 settings.set('shop_salary_base', 'sale')
+directions.set_shop_pay_on(db, False)
+got = pay(ShopService(db).create_sale([(card, 1)], seller_id=IVAN))
+check('процент с продаж выключен — никому', got == {}, str(got))
+directions.set_shop_pay_on(db, True)
 
-print('\n=== 8. Возврат половины ===')
+print('\n=== 10. Возврат половины ===')
 paid = orders.calculate_total(mixed.id)
 ok, _ = orders.refund_order(mixed.id, amount=paid / 2, reason='тест', cash=paid / 2)
 left = {}
 for t in db.query(SalaryTransaction).filter_by(work_order_id=mixed.id):
     left[t.employee_id] = round(left.get(t.employee_id, 0) + t.amount, 2)
-check('у каждого осталась половина', ok and left == {IVAN: 347.5, ANNA: 135.0, OLGA: 78.0}, str(left))
+check('у каждого осталась половина', ok and left == {IVAN: 347.5, ANNA: 135.0, OLGA: 75.0}, str(left))
 ok, _ = orders.refund_order(mixed.id, reason='всё')
 left = {}
 for t in db.query(SalaryTransaction).filter_by(work_order_id=mixed.id):
     left[t.employee_id] = round(left.get(t.employee_id, 0) + t.amount, 2)
 check('полный возврат — у всех 0', ok and all(v == 0 for v in left.values()), str(left))
 
-print('\n=== 9. Гарантийная переделка ===')
+print('\n=== 11. Гарантийная переделка ===')
+roles.set_goods(ADMIN_ROLE, ['tire'])
 first = tire_order('А009АА77', MOUNT, VALVE)
 orders.set_order_masters(first.id, [IVAN])
 pay(first)
@@ -166,18 +201,54 @@ orders.set_order_masters(redo.id, [IVAN])
 # Переделка копирует только услуги по 0 ₽; вентиль ставят заново — по цене
 orders.add_service_to_order(redo.id, VALVE)
 got = pay(redo)
-# Услуги по 0 ₽ — мастеру 0; вентиль по цене — Ольге 5% × 250 = 12,5
+# Услуги по 0 ₽ — мастеру 0; вентиль по цене — Ольге 5% × 250 = 12,5 (товары включены)
 check('мастеру 0, администратору с товара 12,5', got == {OLGA: 12.5}, str(got))
+roles.set_goods(ADMIN_ROLE, [])
 
-print('\n=== 10. Два администратора ===')
-staff.register_employee(5, name='Ирина', role_id=by_title['Администратор'].id)
-db.query(Employee).get(5).admin_percent = 5
+print('\n=== 12. Пример владельцу: двое мастеров, двое мойщиков, двое администраторов ===')
+# Правка — администратору 0%, с товаров шиномонтажа — да; ароматизатор продал Иван
+roles.set_excluded(ADMIN_ROLE, ['Правка литого диска'])
+roles.set_goods(ADMIN_ROLE, ['tire'])
+staff.register_employee(IRINA, name='Ирина', admin_percent=5)
+for number in (IRINA, MARIA, SEMEN):
+    staff.start_shift(number)
+db.query(Employee).get(IRINA).shop_percent = 0
 db.commit()
-staff.start_shift(5)
-order = tire_order('А010АА77', MOUNT)
-orders.set_order_masters(order.id, [IVAN])
+order = tire_order('А012АА77', MOUNT, RIM, VALVE)
+orders.set_order_masters(order.id, [IVAN, SEMEN])
+orders.add_direction(order.id, 'wash', wash_class='sedan')
+orders.add_service_to_order(order.id, wash.id)
+orders.set_wash_masters(order.id, [ANNA, MARIA])
+orders.add_service_to_order(order.id, card.service_id, employee_id=IVAN)
+check('наряд 4 900 ₽', orders.calculate_total(order.id) == 4900, str(orders.calculate_total(order.id)))
 got = pay(order)
-check('пополам: Ольга и Ирина по 50', got.get(OLGA) == 50.0 and got.get(5) == 50.0, str(got))
+# Иван: 340 + 300 + 15 = 655; Семён: 340 + 300 = 640
+# Анна и Мария: 900 × 30% ÷ 2 = 135
+# Ольга и Ирина: (2000 × 5% + 250 × 5% + 1000 × 5%) ÷ 2 = 162,5 ÷ 2 = 81,25
+check('Иван 655, Семён 640, Анна и Мария по 135, Ольга и Ирина по 81,25',
+      got == {IVAN: 655.0, SEMEN: 640.0, ANNA: 135.0, MARIA: 135.0, OLGA: 81.25, IRINA: 81.25},
+      str(got))
+check('всего 1 727,5', round(sum(got.values()), 2) == 1727.5, str(sum(got.values())))
+
+print('\n=== 13. Без мойщиков и продавца наряд не пробивается ===')
+order = tire_order('А013АА77', MOUNT)
+orders.set_order_masters(order.id, [IVAN])
+orders.add_direction(order.id, 'wash', wash_class='sedan')
+orders.add_service_to_order(order.id, wash.id)
+try:
+    salary.process_payment(order.id, 'cash', orders.calculate_total(order.id))
+    check('мойщики не выбраны — отказ', False)
+except ValueError as e:
+    check('мойщики не выбраны — отказ', 'кто делал' in str(e), str(e))
+db.rollback()
+orders.set_wash_masters(order.id, [ANNA])
+orders.add_service_to_order(order.id, card.service_id)
+try:
+    salary.process_payment(order.id, 'cash', orders.calculate_total(order.id))
+    check('продавец не выбран — отказ', False)
+except ValueError as e:
+    check('продавец не выбран — отказ', 'кто продал' in str(e), str(e))
+db.rollback()
 
 db.close()
 finish()

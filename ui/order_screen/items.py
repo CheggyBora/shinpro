@@ -347,11 +347,15 @@ class OrderItemsMixin:
 
             who = ''
             from services import directions as _directions
+            from ui.order_screen.directions import employee_name
+            washers = self.order_service.wash_masters(self.order)
             if (getattr(item, 'direction', None) or 'tire') == _directions.SHOP:
-                from ui.order_screen.directions import employee_name
                 who = employee_name(self.db, item.employee_id) if item.employee_id else 'выбрать ▾'
+            elif (getattr(item, 'direction', None) or 'tire') == _directions.WASH and washers:
+                # Мойку делят мойщики машины — у каждой строки они все
+                from ui.order_screen.directions import short_name
+                who = ', '.join(short_name(self.db, i) for i in washers)
             elif _directions.assigned(self.db, getattr(item, 'direction', None) or 'tire'):
-                from ui.order_screen.directions import employee_name
                 who = employee_name(self.db, item.employee_id) if item.employee_id else 'выбрать ▾'
             tree = trees.get(getattr(item, 'direction', None) or 'tire') or next(iter(trees.values()))
             tree.insert('', 'end', values=(

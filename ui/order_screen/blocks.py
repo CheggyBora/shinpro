@@ -169,7 +169,8 @@ class OrderBlocksMixin:
         open_order = self.order.status != 'paid'
 
         if direction == directions.SHOP:
-            note('товары · кто продал — двойной щелчок по «Продал»')
+            note('товары · кто продал — двойной щелчок по «Продал»' if directions.shop_pay_on(self.db)
+                 else 'товары')
         elif direction == directions.TIRE:
             vehicle = {'car': 'Легковой', 'suv': 'Джип/Кроссовер', 'truck': 'Категория С'}.get(
                 self.order.vehicle_type, self.order.vehicle_type or '')
@@ -190,7 +191,11 @@ class OrderBlocksMixin:
                 text = (f'Пост мойки {self.order.wash_post_number}' if self.order.wash_post_number
                         else 'Пост мойки не выбран')
                 pill(text + ' ▾', self.change_wash_post)
-                pill('Всё на: … ▾', self.assign_all_wash)
+                # Мойщики машины — делят мойку, как мастера шиномонтаж
+                # (решение владельца 09.11.2026)
+                self.washers_label = pill(self._washers_text(), self.choose_washers)
+            else:
+                note(self._washers_text().replace(' ▾', ''))
 
         toggle = tk.Label(head, text='развернуть ▾' if collapsed else 'свернуть ▴', bg='#ffffff',
                           fg=styles.COLORS['text_secondary'], cursor='hand2',
@@ -224,6 +229,8 @@ class OrderBlocksMixin:
         # магазина — кто продал
         if direction == directions.SHOP:
             tree.heading('Кто', text='Продал')
+            if not directions.shop_pay_on(self.db):
+                tree.configure(displaycolumns=COLUMNS[:5])
         elif not directions.assigned(self.db, direction):
             tree.configure(displaycolumns=COLUMNS[:5])
         tree.pack(side='left', fill='x', expand=True)
@@ -239,6 +246,13 @@ class OrderBlocksMixin:
     def _on_tree(self, event, handler):
         self.items_tree = event.widget
         return handler(event)
+
+    def _washers_text(self):
+        from ui.order_screen.directions import short_name
+        ids = self.order_service.wash_masters(self.order)
+        if not ids:
+            return 'Мойщики: выбрать ▾'
+        return 'Мойщики: ' + ', '.join(short_name(self.db, i) for i in ids) + ' ▾'
 
     def _shop_lines(self):
         from models import WorkOrderItem
@@ -267,6 +281,14 @@ class OrderBlocksMixin:
             total = sum(OrderService.item_total(i) for i in mine)
             n = len(mine)
             parts['summary'].config(text=f'{n} {_plural(n)} · {total:,.0f} ₽'.replace(',', ' '))
+        # Блоков несколько (шиномонтаж, мойка, магазин) — таблицы по
+        # строкам, а не по 8: иначе нижний блок уезжает за край экрана
+        trees = getattr(self, 'trees', {})
+        if len(trees) > 1:
+            limit = max(3, 8 // len(trees) + 1)
+            for direction, tree in trees.items():
+                n = sum(1 for i in items if (getattr(i, 'direction', None) or 'tire') == direction)
+                tree.configure(height=max(2, min(n + 1, limit)))
 
     def refresh_directions(self):
         """Направления наряда или режим сверху поменялись — перерисовать."""

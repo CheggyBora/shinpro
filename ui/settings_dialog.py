@@ -986,29 +986,25 @@ class SettingsDialog:
                 side='left', padx=(10, 0))
         self._build_shop_salary(content)
         self._hint(content,
-                   "Процент администратора — со всего наряда: шиномонтаж, мойка и товары "
-                   "направлений (магазин — по правилам магазина ниже). "
-                   "Начисляется тем, кто на смене в категории «Администратор», сверху — "
-                   "мастерам и мойщикам не меньше. Двое на смене — делят поровну. "
-                   "Ставка — «Сотрудники» → «Изменить ставку».")
+                   "Процент администратора — с выручки шиномонтажа и мойки, со всех услуг, "
+                   "кроме исключённых; с товаров — только если включено (Категории мастеров → "
+                   "«Администратор»). Магазин — по правилам магазина ниже. "
+                   "Начисляется тем, кто отметился на смене, сверху — мастерам и мойщикам "
+                   "не меньше. Двое на смене — делят поровну. Ставка — при создании "
+                   "сотрудника или «Сотрудники» → «Изменить ставку».")
 
     def _build_shop_salary(self, content):
         """Кому с продаж магазина и от чего (решение владельца 08.11.2026)."""
         from services import directions
         frame = ttk.Frame(content, style='White.TFrame')
         frame.pack(fill='x', pady=(10, 2))
-        styles.create_label(frame, "Магазин — кому с продаж:", 'Card.TLabel').pack(anchor='w')
-        row = ttk.Frame(frame, style='White.TFrame')
-        row.pack(fill='x', pady=(2, 2))
-        self.shop_pay_var = tk.StringVar(value=directions.shop_pay_to(self.db))
-        for value, text in ((directions.SHOP_PAY_NONE, 'никому'),
-                            (directions.SHOP_PAY_ADMIN, 'администратору на смене'),
-                            (directions.SHOP_PAY_SELLER, 'продавцу'),
-                            (directions.SHOP_PAY_BOTH, 'продавцу и администратору')):
-            ttk.Radiobutton(row, text=text, value=value, variable=self.shop_pay_var,
-                            command=lambda: self.settings.set(
-                                'shop_salary_to', self.shop_pay_var.get())).pack(
-                side='left', padx=(0, 12))
+        # Процент с продаж — одной галочкой (решение владельца 09.11.2026):
+        # включён — при продаже выбирают продавца, ему и процент
+        self.shop_pay_var = tk.BooleanVar(value=directions.shop_pay_on(self.db))
+        ttk.Checkbutton(frame, text="Магазин: процент с продаж сотрудникам (тому, кто продал)",
+                        variable=self.shop_pay_var,
+                        command=lambda: directions.set_shop_pay_on(
+                            self.db, self.shop_pay_var.get())).pack(anchor='w')
         row = ttk.Frame(frame, style='White.TFrame')
         row.pack(fill='x', pady=(2, 2))
         styles.create_label(row, "от чего:", 'Card.TLabel').pack(side='left')
@@ -1019,10 +1015,11 @@ class SettingsDialog:
                                 'shop_salary_base', self.shop_base_var.get())).pack(
                 side='left', padx=(10, 0))
         self._hint(frame,
-                   "Каждому — по его «ставке магазина» («Сотрудники» → «Изменить ставку»). "
-                   "Продавец выбирается при продаже, по умолчанию — администратор на смене. "
+                   "Включено — при продаже выбирают одного продавца (кто на смене), "
+                   "ему процент по его «ставке магазина» («Сотрудники» → «Изменить ставку»). "
+                   "Администратор получает с магазина, только если продал сам. "
                    "У карточки указан бонус, ₽ — по этому товару бонус вместо процента. "
-                   "Администраторов на смене двое — делят поровну.")
+                   "Выключено — продажа просто пробивается, продавца не спрашиваем.")
 
     def _build_stock_switch(self, content):
         self._section(content, "Склад")

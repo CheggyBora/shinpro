@@ -116,8 +116,9 @@ class ShopTab:
             styles.create_button(row, text, lambda c=change: self.change_line(c),
                                  'Compact.Secondary.TButton').pack(side='left', padx=(0, 4))
         styles.create_button(row, 'Очистить', self.clear, 'Compact.Secondary.TButton').pack(side='right')
-        seller_row = tk.Frame(body, bg=styles.COLORS['bg_card'])
-        seller_row.pack(fill='x', pady=(4, 2))
+        # «Продал» — только когда процент с продаж включён (решение
+        # владельца 09.11.2026): выключен — продажа просто пробивается
+        self.seller_row = seller_row = tk.Frame(body, bg=styles.COLORS['bg_card'])
         styles.create_label(seller_row, 'Продал:', 'Card.TLabel').pack(side='left')
         self.seller = tk.StringVar()
         self.seller_box = ttk.Combobox(seller_row, textvariable=self.seller, state='readonly', width=28)
@@ -211,16 +212,32 @@ class ShopTab:
     def _fill_sellers(self):
         from services.order_service import OrderService
         self._people = people_on_shift(self.db)
+        if directions.shop_pay_on(self.db):
+            self.seller_row.pack(fill='x', pady=(4, 2), before=self.total)
+        else:
+            self.seller_row.pack_forget()
         titles = [p.title for p in self._people]
         self.seller_box.config(values=titles)
         default = OrderService(self.db)._default_seller()
         chosen = next((p for p in self._people if p.id == default), None)
+        # Сам не подставляем никого, кроме единственного на смене: продавца
+        # выбирают, иначе процент уйдёт не тому
         if self.seller.get() not in titles:
-            self.seller.set(chosen.title if chosen else (titles[0] if titles else ''))
+            self.seller.set(chosen.title if chosen else '')
 
     def _seller_id(self):
+        if not directions.shop_pay_on(self.db):
+            return None
         person = next((p for p in getattr(self, '_people', []) if p.title == self.seller.get()), None)
         return person.id if person else None
+
+    def _seller_ok(self):
+        """Процент с продаж включён — без продавца не продаём."""
+        if directions.shop_pay_on(self.db) and not self._seller_id():
+            messagebox.showwarning('Магазин', 'Выберите, кто продал.', parent=self.frame)
+            self.seller_box.focus_set()
+            return False
+        return True
 
     def add(self, card, disabled=False):
         if disabled:
@@ -282,6 +299,8 @@ class ShopTab:
                 messagebox.showinfo('Магазин', 'Щёлкните по карточкам — товары встанут в продажу.',
                                     parent=self.frame)
             return
+        if not self._seller_ok():
+            return
         total = sum((card.price or 0) * qty for card, qty in lines)
         payment = ask_payment(self.frame, total)
         if payment is None:
@@ -328,6 +347,8 @@ class ShopTab:
         lines = self._cards_in_basket()
         if not lines:
             messagebox.showinfo('Магазин', 'Сначала выберите товары.', parent=self.frame)
+            return
+        if not self._seller_ok():
             return
         orders_tab = getattr(self.app, 'orders_tab', None) if self.app else None
         opened = list(getattr(orders_tab, 'active_orders', {}).values()) if orders_tab else []
@@ -554,14 +575,17 @@ class ShopPicker:
         self.qty = ttk.Spinbox(row, from_=1, to=999, width=5)
         self.qty.set(1)
         self.qty.pack(side='left', padx=(6, 14))
-        styles.create_label(row, 'Продал:', 'Card.TLabel').pack(side='left')
         self.people = people_on_shift(db)
         from services.order_service import OrderService
         default = OrderService(db)._default_seller()
         self.seller = ttk.Combobox(row, values=[p.title for p in self.people], state='readonly', width=24)
         chosen = next((p for p in self.people if p.id == default), None)
-        self.seller.set(chosen.title if chosen else (self.people[0].title if self.people else ''))
-        self.seller.pack(side='left', padx=6)
+        self.seller.set(chosen.title if chosen else '')
+        # «Продал» — только когда процент с продаж включён
+        self.pay_on = directions.shop_pay_on(db)
+        if self.pay_on:
+            styles.create_label(row, 'Продал:', 'Card.TLabel').pack(side='left')
+            self.seller.pack(side='left', padx=6)
         styles.create_button(body, 'Добавить в наряд', self.add, 'Primary.TButton').pack(fill='x', pady=(10, 0))
         self.fill()
         styles.center_window(self.dialog, parent.winfo_toplevel())
@@ -582,7 +606,10 @@ class ShopPicker:
         from models.stock import StockItem
         from services.order_service import OrderService
         card = self.db.query(StockItem).get(int(selection[0]))
-        seller = next((p for p in self.people if p.title == self.seller.get()), None)
+        seller = next((p for p in self.people if p.title == self.seller.get()), None)             if self.pay_on else None
+        if self.pay_on and seller is None:
+            messagebox.showwarning('Магазин', 'Выберите, кто продал.', parent=self.dialog)
+            return
         try:
             qty = max(1, int(self.qty.get()))
             OrderService(self.db).add_service_to_order(self.order.id, card.service_id,
