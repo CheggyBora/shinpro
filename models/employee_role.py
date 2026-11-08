@@ -29,6 +29,11 @@ class EmployeeRole(Base):
     # обслужит. Встать на смену он может, только когда мастер уже там
     can_work_alone = Column(Boolean, default=True, nullable=False)
 
+    # Администратор (решение владельца 08.11.2026): в делёжку мастеров
+    # не входит, получает свой процент со всего наряда — и шиномонтажа,
+    # и мойки. От чего — Настройки → «От чего считается зарплата»
+    is_admin = Column(Boolean, default=False, nullable=False)
+
     @property
     def excluded(self):
         """Названия услуг, с которых не начисляется, — множеством."""

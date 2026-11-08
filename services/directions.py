@@ -58,7 +58,13 @@ TIRE_ASSIGN_KEY = 'tire_assign_employees'
 
 
 def tire_assign(db):
-    return _flag(db, TIRE_ASSIGN_KEY, '0')
+    """
+    Мастеров шиномонтажа выбирают в наряде. С включённой мойкой — всегда
+    (решение владельца 08.11.2026): смена общая, и мойщики, отметившиеся
+    на смене, не должны делить шиномонтаж — исполнителей назначает
+    администратор.
+    """
+    return wash_on(db) or _flag(db, TIRE_ASSIGN_KEY, '0')
 
 
 def set_tire_assign(db, on):
@@ -132,6 +138,12 @@ def salary_base(db, direction):
     """От чего процент: revenue — итог строки после скидок, minus — минус расходник."""
     value = _settings(db).get(f'salary_base_{direction}') or 'minus'
     return 'revenue' if value == 'revenue' else 'minus'
+
+
+def admin_salary_base(db):
+    """Процент администратора: revenue — со всей суммы наряда, minus — без расходников."""
+    value = _settings(db).get('salary_base_admin') or 'revenue'
+    return 'minus' if value == 'minus' else 'revenue'
 
 
 def wash_booking_on(db):

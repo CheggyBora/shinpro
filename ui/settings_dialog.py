@@ -906,10 +906,16 @@ class SettingsDialog:
         from services import directions
         self._section(content, "Мастера шиномонтажа")
         self.tire_assign_var = tk.BooleanVar(value=directions.tire_assign(self.db))
-        ttk.Checkbutton(content, text="Выбирать мастеров на каждый наряд",
-                        variable=self.tire_assign_var,
-                        command=lambda: directions.set_tire_assign(
-                            self.db, self.tire_assign_var.get())).pack(anchor='w', pady=2)
+        assign_box = ttk.Checkbutton(content, text="Выбирать мастеров на каждый наряд",
+                                     variable=self.tire_assign_var,
+                                     command=lambda: directions.set_tire_assign(
+                                         self.db, self.tire_assign_var.get()))
+        assign_box.pack(anchor='w', pady=2)
+        if directions.wash_on(self.db):
+            # Смена общая с мойкой — исполнителей назначает администратор
+            assign_box.state(['disabled'])
+            self._hint(content, "Мойка включена — мастеров шиномонтажа всегда выбирают "
+                                "в наряде: иначе мойщики со смены делили бы шиномонтаж.")
         self._hint(content,
                    "Выключено — как всегда: шиномонтаж делят все, кто был на "
                    "смене при создании наряда. Включено — наряд ставят на пост, "
@@ -952,8 +958,24 @@ class SettingsDialog:
                                     f'salary_base_{d}', v.get())).pack(side='left', padx=(10, 0))
         self._hint(content,
                    "Выручка — сумма услуги после всех скидок. Минус расходники — "
-                   "то же, но без стоимости материалов услуги. С товаров зарплата "
-                   "не начисляется ни в одном варианте.")
+                   "то же, но без стоимости материалов услуги. С товаров мастерам "
+                   "зарплата не начисляется ни в одном варианте.")
+
+        row = ttk.Frame(content, style='White.TFrame')
+        row.pack(fill='x', pady=(6, 2))
+        styles.create_label(row, "Администратор:", 'Card.TLabel').pack(side='left')
+        self.admin_base_var = tk.StringVar(value=directions.admin_salary_base(self.db))
+        for value, text in (('revenue', 'от всей суммы наряда'),
+                            ('minus', 'от суммы за вычетом расходников')):
+            ttk.Radiobutton(row, text=text, value=value, variable=self.admin_base_var,
+                            command=lambda: self.settings.set(
+                                'salary_base_admin', self.admin_base_var.get())).pack(
+                side='left', padx=(10, 0))
+        self._hint(content,
+                   "Процент администратора — со всего наряда: шиномонтаж, мойка и товары. "
+                   "Начисляется тем, кто на смене в категории «Администратор», сверху — "
+                   "мастерам и мойщикам не меньше. Двое на смене — делят поровну. "
+                   "Ставка — «Сотрудники» → «Изменить ставку».")
 
     def _build_stock_switch(self, content):
         self._section(content, "Склад")

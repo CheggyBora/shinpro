@@ -152,7 +152,11 @@ class EmployeeService:
         if not employee:
             raise ValueError("Сотрудник не найден")
 
-        if direction == 'wash':
+        if direction == 'admin':
+            old_percent = employee.admin_percent
+            employee.admin_percent = new_percent
+            what = 'ставка администратора'
+        elif direction == 'wash':
             old_percent = employee.wash_percent
             employee.wash_percent = new_percent
             what = 'ставка мойки'

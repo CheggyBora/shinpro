@@ -43,8 +43,32 @@ class EmployeeRoleService:
     # Категории
     # ------------------------------------------------------------------
 
+    ADMIN_SEEDED_KEY = 'employee_role_admin_seeded'
+    ADMIN_TITLE = 'Администратор'
+
+    def ensure_admin(self):
+        """
+        Категория «Администратор» — один раз. Удалили или сняли отметку —
+        не возвращаем: значит, у владельца администратора нет.
+        """
+        from services.settings_service import SettingsService
+        settings = SettingsService(self.db)
+        if settings.get(self.ADMIN_SEEDED_KEY) == '1':
+            return
+        if not self.db.query(EmployeeRole).filter(EmployeeRole.is_admin.is_(True)).first():
+            same = self.db.query(EmployeeRole).filter(
+                EmployeeRole.title == self.ADMIN_TITLE).first()
+            if same is not None:
+                same.is_admin = True
+            else:
+                self.db.add(EmployeeRole(title=self.ADMIN_TITLE, can_work_alone=True,
+                                         is_admin=True))
+        settings.set(self.ADMIN_SEEDED_KEY, '1', commit=False)
+        self.db.commit()
+
     def roles(self):
         self.ensure_defaults()
+        self.ensure_admin()
         return self.db.query(EmployeeRole).order_by(EmployeeRole.id).all()
 
     def get(self, role_id):
@@ -126,6 +150,18 @@ class EmployeeRoleService:
         role.can_work_alone = bool(value)
         self.db.commit()
         return role
+
+    def set_admin(self, role_id, value):
+        role = self.get(role_id)
+        if role is None:
+            raise ValueError('Категория не найдена')
+        role.is_admin = bool(value)
+        self.db.commit()
+        return role
+
+    def is_admin(self, employee):
+        role = self.role_of(employee)
+        return bool(role is not None and role.is_admin)
 
     def can_work_alone(self, employee):
         """Без категории — обычный мастер: может."""

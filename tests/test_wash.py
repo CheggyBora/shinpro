@@ -113,6 +113,11 @@ check('пост мойки освободился', WashPosts(db).first_free() =
 print()
 print('=== Приехал на шиномонтаж — решил помыться ===')
 mixed = orders.create_order('М777ММ77', 'R16', 'car', create_client=False)
+# С мойкой мастеров шиномонтажа выбирают в наряде (решение 08.11.2026):
+# смена общая, и мойщики со смены не должны делить шиномонтаж
+check('с мойкой мастера сами в наряд не встают', mixed.employee_ids is None)
+orders.set_order_masters(mixed.id, [1, 2])
+db.refresh(mixed)
 tire_service = db.query(Service).filter(Service.name == 'Шиномонтаж').first()
 orders.add_service_to_order(mixed.id, tire_service.id)
 try:

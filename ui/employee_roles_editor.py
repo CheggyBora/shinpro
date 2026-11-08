@@ -62,7 +62,15 @@ class EmployeeRolesEditor:
         self.alone_box = ttk.Checkbutton(
             right, text='Может стоять на смене один (без мастера)',
             variable=self.alone_var, command=self.save_alone)
-        self.alone_box.pack(anchor='w', pady=(0, 10))
+        self.alone_box.pack(anchor='w', pady=(0, 4))
+
+        # Администратор — свой процент со всего наряда, в делёжку мастеров
+        # не входит (решение владельца 08.11.2026)
+        self.admin_var = tk.BooleanVar(value=False)
+        self.admin_box = ttk.Checkbutton(
+            right, text='Администратор: свой процент со всего наряда, шиномонтаж не делит',
+            variable=self.admin_var, command=self.save_admin)
+        self.admin_box.pack(anchor='w', pady=(0, 10))
 
         self.services_frame = ttk.Frame(right, style='White.TFrame')
         self.services_frame.pack(fill='both', expand=True)
@@ -112,9 +120,12 @@ class EmployeeRolesEditor:
         if role is None:
             self.caption.config(text='Добавьте категорию слева')
             self.alone_box.state(['disabled'])
+            self.admin_box.state(['disabled'])
             return
         self.alone_box.state(['!disabled'])
         self.alone_var.set(role.can_work_alone is not False)
+        self.admin_box.state(['!disabled'])
+        self.admin_var.set(bool(role.is_admin))
 
         self.caption.config(
             text=f'«{role.title}»: отметьте услуги, с которых НЕ начислять')
@@ -158,6 +169,16 @@ class EmployeeRolesEditor:
             return
         # Подпись «(без N)» в списке слева
         self.refresh(select_id=self.role_id)
+
+    def save_admin(self):
+        if self.role_id is None:
+            return
+        try:
+            self.service.set_admin(self.role_id, self.admin_var.get())
+        except Exception as e:
+            self.db.rollback()
+            messagebox.showerror('Ошибка', f'Не удалось сохранить: {e}',
+                                 parent=self.window)
 
     def save_alone(self):
         if self.role_id is None:

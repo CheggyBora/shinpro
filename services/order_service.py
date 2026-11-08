@@ -102,7 +102,13 @@ class OrderService:
             # на наряд (тумблер в настройках), список пуст — его заполнят
             # в самом наряде теми, кто работает на посту
             active_shifts = self.db.query(WorkShift).filter(WorkShift.end_time.is_(None)).all()
-            employee_ids_list = [str(shift.employee_id) for shift in active_shifts]
+            # Администратор шиномонтаж не делит — у него свой процент со
+            # всего наряда (решение владельца 08.11.2026). Работал руками —
+            # его отмечают в «Мастерах наряда»
+            from services.employee_role_service import EmployeeRoleService
+            roles = EmployeeRoleService(self.db)
+            employee_ids_list = [str(shift.employee_id) for shift in active_shifts
+                                 if not roles.is_admin(shift.employee)]
             if _directions.tire_assign(self.db):
                 employee_ids_list = []
             employee_ids_str = ','.join(employee_ids_list) if employee_ids_list else None

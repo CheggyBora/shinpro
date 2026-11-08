@@ -1,5 +1,6 @@
 import tkinter as tk
 from tkinter import ttk, messagebox, simpledialog
+from models import Employee
 from services import EmployeeService
 from services.shift_service import ShiftService
 from datetime import datetime, timedelta
@@ -694,13 +695,18 @@ class EmployeesTab:
         
         emp_id = int(self.employees_tree.item(selected[0])['values'][0])
         
-        # Мойка включена — у сотрудника две ставки: шиномонтажа и мойки
+        # Мойка включена — у сотрудника две ставки: шиномонтажа и мойки.
+        # Администратору — ещё своя, со всего наряда
         from services import directions
+        from services.employee_role_service import EmployeeRoleService
+        employee = self.db.query(Employee).get(emp_id)
+        choices = [(d, directions.TITLES[d]) for d in directions.enabled(self.db)]
+        if employee is not None and EmployeeRoleService(self.db).is_admin(employee):
+            choices.append(('admin', 'Администратор: со всего наряда'))
         direction = directions.TIRE
-        if directions.wash_on(self.db):
+        if len(choices) > 1:
             from ui.order_screen.directions import ask_choice
-            direction = ask_choice(self.frame, "Ставка", "Какую ставку меняем?",
-                                   [(d, directions.TITLES[d]) for d in directions.enabled(self.db)])
+            direction = ask_choice(self.frame, "Ставка", "Какую ставку меняем?", choices)
             if not direction:
                 return
 
@@ -785,9 +791,14 @@ class EmployeesTab:
     
     def _percent_text(self, emp):
         from services import directions
+        from services.employee_role_service import EmployeeRoleService
+        text = f"{emp.salary_percent:.1f}"
         if directions.wash_on(self.db):
-            return f"{emp.salary_percent:.1f} / мойка {emp.wash_percent or 0:.1f}"
-        return f"{emp.salary_percent:.1f}"
+            text += f" / мойка {emp.wash_percent or 0:.1f}"
+        if EmployeeRoleService(self.db).is_admin(emp):
+            admin = emp.admin_percent or 0
+            text += f" / админ {admin:.1f} со всего" if admin else " / админ: ставка не задана"
+        return text
 
     def refresh_employees(self):
         for item in self.employees_tree.get_children():

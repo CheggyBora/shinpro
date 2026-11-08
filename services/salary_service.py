@@ -170,7 +170,60 @@ class SalaryService:
             share['amount'] = round(share['amount'] + amount, 2)
             share['lines'].append({'name': name, 'base': round(base, 2), 'percent': percent,
                                    'shared': 1, 'amount': round(amount, 2), 'direction': direction})
+        self._admins(order, people)
         return people, nobody
+
+    def _admins(self, order, people):
+        """
+        Администраторы на смене — свой процент со всего наряда: и с
+        шиномонтажа, и с мойки (решение владельца 08.11.2026). Сверху, не
+        из доли мастеров. Двое на смене — делят поровну. База — вся сумма
+        наряда или она же без расходников (Настройки → «От чего считается
+        зарплата»). Строки — по направлениям: дашборд мойки показывает
+        свою часть.
+        """
+        from models import WorkShift
+        from services import directions
+        from services.employee_role_service import EmployeeRoleService
+        from services.order_service import OrderService
+
+        roles = EmployeeRoleService(self.db)
+        admins = []
+        for shift in self.db.query(WorkShift).filter(WorkShift.end_time.is_(None)).all():
+            employee = shift.employee
+            if employee is not None and roles.is_admin(employee) \
+                    and employee.id not in [a.id for a in admins]:
+                admins.append(employee)
+        if not admins:
+            return
+
+        items = self.db.query(WorkOrderItem).filter(
+            WorkOrderItem.work_order_id == order.id).all()
+        minus = directions.admin_salary_base(self.db) == 'minus'
+        bases = {}
+        for item in items:
+            base = OrderService.item_total(item)
+            if minus and not getattr(item, 'is_goods', False):
+                base -= OrderService.item_consumables(item)
+            direction = getattr(item, 'direction', None) or 'tire'
+            bases[direction] = bases.get(direction, 0.0) + base
+        # Строки до округлений — сводим к итогу наряда, как в отчётах
+        lines_total = sum(OrderService.item_total(i) for i in items)
+        order_total = float(order.total_amount or 0) or OrderService(self.db).calculate_total(order.id)
+        scale = (order_total / lines_total) if lines_total else 0.0
+        title = 'Администратор: ' + ('вся сумма без расходников' if minus else 'вся сумма наряда')
+        for admin in admins:
+            percent = float(admin.admin_percent or 0)
+            if percent <= 0:
+                continue
+            share = people.setdefault(admin.id, {'amount': 0.0, 'lines': [], 'skipped': []})
+            for direction, base in bases.items():
+                base = max(0.0, base * scale)
+                amount = base * percent / 100 / len(admins)
+                share['amount'] = round(share['amount'] + amount, 2)
+                share['lines'].append({'name': title, 'base': round(base, 2), 'percent': percent,
+                                       'shared': len(admins), 'amount': round(amount, 2),
+                                       'direction': direction})
 
     def _people_of(self, employee_ids):
         """[(employee_id, процент, исключённые услуги)] по наряду."""

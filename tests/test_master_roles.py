@@ -83,8 +83,9 @@ def amounts(paid):
 
 print('=== Категории по умолчанию ===')
 titles = [r.title for r in roles.roles()]
-check('мастер, сезонный мастер, сезонный съёмщик',
-      titles == ['Мастер', 'Сезонный мастер', 'Сезонный съёмщик'], str(titles))
+check('мастер, сезонный мастер, сезонный съёмщик и администратор',
+      titles == ['Мастер', 'Сезонный мастер', 'Сезонный съёмщик', 'Администратор'], str(titles))
+check('администратор отмечен', [r.title for r in roles.roles() if r.is_admin] == ['Администратор'])
 check('исключений по умолчанию нет ни у кого',
       all(not r.excluded for r in roles.roles()))
 names = roles.service_names()
@@ -289,7 +290,7 @@ check('при создании категорию выбирают из спис
 holder = tk.Toplevel(root)
 editor = editor_module.EmployeeRolesEditor(holder, ui_db, holder)
 root.update()
-check('категории показаны', editor.roles_list.size() == 2,
+check('категории показаны', editor.roles_list.size() == 3,
       str(editor.roles_list.get(0, 'end')))
 editor.roles_list.selection_clear(0, 'end')
 editor.roles_list.selection_set(1)

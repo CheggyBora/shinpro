@@ -59,6 +59,7 @@ TESTS = [
     ('Обмен не падает от длинных строк', 'test_sync_long_values.py'),
     ('Разделы задач и Telegram по разделам', 'test_task_sections.py'),
     ('Поиск «что помню»: наряды и хранение', 'test_search.py'),
+    ('Зарплата администратора: со всего наряда', 'test_admin_salary.py'),
     ('Отчёты людям из «Доступа» дашборда', 'test_staff_reports.py'),
     ('Проверка ключа звонков пробным звонком', 'test_flashcall_check.py'),
     ('Срочная досылка важного', 'test_sync_nudge.py'),

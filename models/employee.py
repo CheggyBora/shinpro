@@ -16,6 +16,9 @@ class Employee(Base):
     salary_percent = Column(Float, default=40.0, nullable=False)
     # Процент с услуг мойки — свой, отдельно от шиномонтажа
     wash_percent = Column(Float, default=30.0, server_default='30', nullable=False)
+    # Ставка администратора — процент со всего наряда. Пока не задана — 0:
+    # сколько платить администратору, решает владелец
+    admin_percent = Column(Float, default=0.0, server_default='0', nullable=False)
     created_at = Column(DateTime(timezone=True), default=get_moscow_time)
     is_active = Column(Boolean, default=True)
 
