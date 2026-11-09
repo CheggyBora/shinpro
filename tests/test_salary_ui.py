@@ -74,17 +74,15 @@ wash_names = set(roles.service_names('wash'))
 editor.role_id = master_role.id
 editor.draw_services()
 check('у мастера — только шиномонтаж', wash_names and not (set(editor.checks) & wash_names))
-check('у мастера нет «с товаров»', not editor.goods_vars)
 editor.role_id = admin_role.id
 editor.draw_services()
 check('у администратора — и мойка', wash_names <= set(editor.checks))
-check('у администратора «с товаров» — выключено', set(editor.goods_vars) == {'tire', 'wash'}
-      and not any(v.get() for v in editor.goods_vars.values()))
-editor.goods_vars['tire'].set(True)
-editor.save_goods()
+editor.checks['Мойка кузова, 2 фазы'].set(True)
+editor.save()
 db.expire_all()
 role = roles.get(admin_role.id)
-check('сохранилось: с товаров шиномонтажа', role.goods_from == {'tire'})
+check('сохранилось: мойка кузова администратору не начисляется',
+      'Мойка кузова, 2 фазы' in role.excluded)
 window.destroy()
 
 print('\n=== Наряд: мойщики машины ===')

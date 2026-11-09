@@ -12,7 +12,7 @@
 Правила владельца 09.11.2026:
   · мойщики машины делят мойку, как мастера шиномонтаж;
   · администратору — со всех услуг шиномонтажа и мойки, кроме
-    исключённых; с товаров — только если включено (по умолчанию нет);
+    исключённых; с товаров шиномонтажа и мойки — никому;
   · с магазина — только тому, кто продал, и только когда процент с
     продаж включён.
 """
@@ -92,18 +92,12 @@ got = pay(order)
 check('Иван 940, Пётр 340, Ольга 175 (с товара — нет)',
       got == {IVAN: 940.0, PETR: 340.0, OLGA: 175.0}, str(got))
 
-print('\n=== 2. Администратору — и с товаров шиномонтажа ===')
-roles.set_goods(ADMIN_ROLE, ['tire'])
-got = pay(tire_order('А011АА77', MOUNT, RIM, VALVE))
-check('Ольга 5% × (2000 + 1500 + 250) = 187,5', got.get(OLGA) == 187.5, str(got))
-
 print('\n=== 3. Администратору — без правки (исключение) ===')
 roles.set_excluded(ADMIN_ROLE, ['Правка литого диска'])
 got = pay(tire_order('А012АА77', MOUNT, RIM, VALVE))
-check('Ольга 5% × (2000 + 250) = 112,5, мастерам как было',
-      got == {IVAN: 940.0, PETR: 340.0, OLGA: 112.5}, str(got))
+check('Ольга 5% × 2000 = 100 (без правки и вентиля), мастерам как было',
+      got == {IVAN: 940.0, PETR: 340.0, OLGA: 100.0}, str(got))
 roles.set_excluded(ADMIN_ROLE, [])
-roles.set_goods(ADMIN_ROLE, [])
 
 print('\n=== 4. База шиномонтажа «от выручки» ===')
 settings.set('salary_base_tire', 'revenue')
@@ -191,7 +185,6 @@ for t in db.query(SalaryTransaction).filter_by(work_order_id=mixed.id):
 check('полный возврат — у всех 0', ok and all(v == 0 for v in left.values()), str(left))
 
 print('\n=== 11. Гарантийная переделка ===')
-roles.set_goods(ADMIN_ROLE, ['tire'])
 first = tire_order('А009АА77', MOUNT, VALVE)
 orders.set_order_masters(first.id, [IVAN])
 pay(first)
@@ -201,14 +194,12 @@ orders.set_order_masters(redo.id, [IVAN])
 # Переделка копирует только услуги по 0 ₽; вентиль ставят заново — по цене
 orders.add_service_to_order(redo.id, VALVE)
 got = pay(redo)
-# Услуги по 0 ₽ — мастеру 0; вентиль по цене — Ольге 5% × 250 = 12,5 (товары включены)
-check('мастеру 0, администратору с товара 12,5', got == {OLGA: 12.5}, str(got))
-roles.set_goods(ADMIN_ROLE, [])
+# Услуги по 0 ₽ — мастеру 0; вентиль — товар: с него никому
+check('никому: услуги по 0 ₽, с товара не начисляется', got == {}, str(got))
 
 print('\n=== 12. Пример владельцу: двое мастеров, двое мойщиков, двое администраторов ===')
-# Правка — администратору 0%, с товаров шиномонтажа — да; ароматизатор продал Иван
+# Правка администратору исключена, с товаров никому; ароматизатор продал Иван
 roles.set_excluded(ADMIN_ROLE, ['Правка литого диска'])
-roles.set_goods(ADMIN_ROLE, ['tire'])
 staff.register_employee(IRINA, name='Ирина', admin_percent=5)
 for number in (IRINA, MARIA, SEMEN):
     staff.start_shift(number)
@@ -224,11 +215,11 @@ check('наряд 4 900 ₽', orders.calculate_total(order.id) == 4900, str(orde
 got = pay(order)
 # Иван: 340 + 300 + 15 = 655; Семён: 340 + 300 = 640
 # Анна и Мария: 900 × 30% ÷ 2 = 135
-# Ольга и Ирина: (2000 × 5% + 250 × 5% + 1000 × 5%) ÷ 2 = 162,5 ÷ 2 = 81,25
-check('Иван 655, Семён 640, Анна и Мария по 135, Ольга и Ирина по 81,25',
-      got == {IVAN: 655.0, SEMEN: 640.0, ANNA: 135.0, MARIA: 135.0, OLGA: 81.25, IRINA: 81.25},
+# Ольга и Ирина: (2000 × 5% + 1000 × 5%) ÷ 2 = 150 ÷ 2 = 75
+check('Иван 655, Семён 640, Анна и Мария по 135, Ольга и Ирина по 75',
+      got == {IVAN: 655.0, SEMEN: 640.0, ANNA: 135.0, MARIA: 135.0, OLGA: 75.0, IRINA: 75.0},
       str(got))
-check('всего 1 727,5', round(sum(got.values()), 2) == 1727.5, str(sum(got.values())))
+check('всего 1 715', round(sum(got.values()), 2) == 1715.0, str(sum(got.values())))
 
 print('\n=== 13. Без мойщиков и продавца наряд не пробивается ===')
 order = tire_order('А013АА77', MOUNT)

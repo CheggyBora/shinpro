@@ -34,15 +34,6 @@ class EmployeeRole(Base):
     # и мойки. От чего — Настройки → «От чего считается зарплата»
     is_admin = Column(Boolean, default=False, nullable=False)
 
-    # Администратору — с товаров каких направлений платить: «tire,wash».
-    # Пусто — с товаров не платить (по умолчанию, решение владельца
-    # 09.11.2026). С услуг — со всех, кроме исключённых выше
-    goods_directions = Column(String(50), nullable=True)
-
-    @property
-    def goods_from(self):
-        return {part.strip() for part in (self.goods_directions or '').split(',') if part.strip()}
-
     @property
     def excluded(self):
         """Названия услуг, с которых не начисляется, — множеством."""

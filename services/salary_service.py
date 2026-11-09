@@ -260,9 +260,9 @@ class SalaryService:
         не из доли мастеров и мойщиков.
 
         С каких строк — по категории «Администратор», методом исключения:
-        со всех услуг, кроме отмеченных; с товаров направления — только
-        если включено (по умолчанию нет). Магазин — не здесь: с продажи
-        получает только продавец.
+        со всех услуг, кроме отмеченных. С товаров шиномонтажа и мойки не
+        получает никто — ни мастера, ни администратор (решение владельца
+        09.11.2026). Магазин — не здесь: с продажи получает только продавец.
 
         Двое на смене — каждую строку делят те, кому она начисляется,
         поровну: как мастера шиномонтаж. База — вся сумма строки или она
@@ -280,7 +280,7 @@ class SalaryService:
         rules = {}
         for admin in admins:
             role = roles.role_of(admin)
-            rules[admin.id] = (role.excluded if role else set(), role.goods_from if role else set())
+            rules[admin.id] = role.excluded if role else set()
 
         items = self.db.query(WorkOrderItem).filter(
             WorkOrderItem.work_order_id == order.id).order_by(WorkOrderItem.id).all()
@@ -295,22 +295,16 @@ class SalaryService:
             direction = getattr(item, 'direction', None) or 'tire'
             if direction == directions.SHOP:
                 continue
-            goods = bool(getattr(item, 'is_goods', False))
+            if getattr(item, 'is_goods', False):
+                continue
             name = item.service.name if item.service else f'Позиция №{item.id}'
             base = OrderService.item_total(item)
-            if minus and not goods:
+            if minus:
                 base -= OrderService.item_consumables(item)
             base = max(0.0, base * scale)
             if base <= 0:
                 continue
-            takers = []
-            for admin in admins:
-                excluded, goods_from = rules[admin.id]
-                if goods and direction not in goods_from:
-                    continue
-                if not goods and name in excluded:
-                    continue
-                takers.append(admin)
+            takers = [admin for admin in admins if name not in rules[admin.id]]
             for admin in admins:
                 if admin not in takers:
                     share = people.setdefault(admin.id, {'amount': 0.0, 'lines': [], 'skipped': []})

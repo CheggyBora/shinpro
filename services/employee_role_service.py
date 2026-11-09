@@ -198,25 +198,6 @@ class EmployeeRoleService:
             query = query.filter(Service.direction == direction)
         return sorted({name for (name,) in query.distinct().all() if name})
 
-    def set_goods(self, role_id, directions_list):
-        """Администратору — с товаров каких направлений платить."""
-        role = self.get(role_id)
-        if role is None:
-            raise ValueError('Категория не найдена')
-        chosen = [d for d in ('tire', 'wash') if d in set(directions_list)]
-        before = role.goods_from
-        role.goods_directions = ','.join(chosen) or None
-        self.db.commit()
-        if set(chosen) != before:
-            from services.audit_service import AuditService
-            titles = {'tire': 'шиномонтажа', 'wash': 'мойки'}
-            AuditService(self.db).log(
-                'employee_role.goods',
-                f"Категория «{role.title}»: с товаров — " +
-                (', '.join(titles[d] for d in chosen) if chosen else 'не платить'),
-                entity_type='employee_role', entity_id=role.id)
-        return role
-
     # ------------------------------------------------------------------
     # Сотрудник
     # ------------------------------------------------------------------

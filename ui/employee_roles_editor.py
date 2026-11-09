@@ -159,24 +159,10 @@ class EmployeeRolesEditor:
                 shown.add(name)
             row += half
 
-        self.goods_vars = {}
         if role.is_admin:
-            self._small('С ТОВАРОВ (вентили, грузики, химия) — платить процент:', bold=True).grid(
-                row=row, column=0, columnspan=2, sticky='w', pady=(10, 2))
-            row += 1
-            have = [(directions.TIRE, 'с товаров шиномонтажа')]
-            if directions.wash_on(self.db):
-                have.append((directions.WASH, 'с товаров мойки'))
-            for key, text in have:
-                var = tk.BooleanVar(value=key in role.goods_from)
-                ttk.Checkbutton(self.services_frame, text=text, variable=var,
-                                command=self.save_goods).grid(row=row, column=0, columnspan=2,
-                                                              sticky='w', pady=1)
-                self.goods_vars[key] = var
-                row += 1
-            self._small('По умолчанию с товаров не платится. Магазин — по правилам магазина '
-                        '(Настройки → «От чего считается зарплата»).').grid(
-                row=row, column=0, columnspan=2, sticky='w')
+            self._small('С товаров шиномонтажа и мойки (вентили, грузики, химия) не начисляется '
+                        'никому. Магазин — тому, кто продал.').grid(
+                row=row, column=0, columnspan=2, sticky='w', pady=(10, 0))
             row += 1
 
         # Исключённые услуги, которых в прайсе уже нет, не теряем молча:
@@ -194,15 +180,6 @@ class EmployeeRolesEditor:
                          font=(styles.DEFAULT_FONT, 9, 'bold') if bold else (styles.DEFAULT_FONT, 9),
                          background=styles.COLORS['bg_card'],
                          foreground=styles.COLORS['text_secondary'])
-
-    def save_goods(self):
-        if self.role_id is None:
-            return
-        try:
-            self.service.set_goods(self.role_id, [k for k, v in self.goods_vars.items() if v.get()])
-        except Exception as e:
-            self.db.rollback()
-            messagebox.showerror('Ошибка', f'Не удалось сохранить: {e}', parent=self.window)
 
     def save(self):
         if self.role_id is None:
