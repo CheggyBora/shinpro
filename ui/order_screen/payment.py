@@ -169,6 +169,9 @@ class OrderPaymentMixin:
 
                 self.salary_service.process_payment(self.order.id, payment_var.get(), total,
                                                     cash_amount)
+                if review_var.get():
+                    self.order.ask_review = True
+                    self.db.commit()
                 self.db.refresh(self.order)
             except Exception as e:
                 log.error(f"Ошибка оплаты: {e}")
@@ -297,6 +300,12 @@ class OrderPaymentMixin:
                 messagebox.showerror("Ошибка", str(e))
         
         # Две кнопки: Оплатить (печать) и Просмотр
+        # Отзыв — только с пометкой (решение владельца 13.11.2026): клиенту,
+        # подключённому к кабинету или боту, придут ссылки на карты и сайт
+        review_var = tk.BooleanVar(value=False)
+        if self.order.client_id:
+            ttk.Checkbutton(content, text="Предложить оставить отзыв",
+                            variable=review_var).pack(anchor='w', pady=(4, 0))
         button_frame = ttk.Frame(content, style='White.TFrame')
         button_frame.pack(fill='x', pady=(10, 0))
         

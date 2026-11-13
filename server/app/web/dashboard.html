@@ -1286,8 +1286,30 @@ function loadSummary() {
       + '</div>';
 
     html += '<div class="card"><h2>Выручка по дням</h2>' + bars(data.by_day) + '</div>';
+    html += controlCard(data.control);
     show(html);
   }).catch(function (e) { show(''); fail(e.message); });
+}
+
+// Контроль (решение владельца 13.11.2026): крупные скидки, возвраты,
+// расхождения кассы — показать в сводке, без уведомлений
+function controlCard(data) {
+  if (!data) return '';
+  var rows = [];
+  data.discounts.forEach(function (r) {
+    rows.push(['Скидка ' + r.percent + '%', '№' + r.local_id + ' ' + r.plate, '−' + money(r.amount), r.shop || '']);
+  });
+  data.refunds.forEach(function (r) {
+    rows.push(['Возврат', '№' + r.local_id + ' ' + r.plate, money(r.amount), r.reason]);
+  });
+  data.cash.forEach(function (r) {
+    rows.push([r.diff < 0 ? 'Недостача' : 'Излишек', 'смена №' + r.local_id, money(Math.abs(r.diff)), r.reason]);
+  });
+  return '<div class="card"><h2>Контроль</h2>' + (rows.length ? rows.map(function (r) {
+    return '<div class="row"><div class="main"><b>' + escape(r[0]) + ' · ' + escape(r[1]) + '</b><span>'
+      + escape(r[3] || '') + '</span></div><div class="money">' + r[2] + '</div></div>';
+  }).join('') : '<div class="hint">Замечаний нет. Скидки от ' + data.threshold + '%, возвраты и '
+    + 'расхождения кассы появятся здесь.</div>') + '</div>';
 }
 
 function tile(title, value, extra, color) {
@@ -1385,6 +1407,8 @@ function loadMasters() {
         + (!currentShop && row.shop_name ? escape(row.shop_name) + ' · ' : '')
         + row.orders + ' ' + plural(row.orders, 'наряд', 'наряда', 'нарядов')
         + ' · выработка ' + money(row.revenue)
+        + (row.orders ? ' · средний чек ' + money(row.average_check) : '')
+        + (row.warranty ? ' · <b class="bad">переделок: ' + row.warranty + '</b>' : '')
         + (row.salary_percent ? ' · ' + row.salary_percent + '%' : '') + '</span></div>'
         + '<div class="money">' + money(row.salary) + '</div></button>';
     }).join('') + '</div>');
@@ -1844,6 +1868,20 @@ function drawBrand(data) {
   // её рисует drawBot
   html += '<div class="card" id="botCard"><h2>Бот в Telegram</h2><div class="hint">Проверяем…</div></div>';
 
+  // Отзывы (решение владельца 13.11.2026): ссылки уходят клиенту, только
+  // если при оплате наряда отметили «Предложить оставить отзыв»
+  var reviews = data.reviews || {};
+  html += '<div class="card"><h2>Ссылки на отзывы</h2>'
+    + '<div class="hint" style="margin-bottom:8px">Клиенту, у которого при оплате отметили «Предложить '
+    + 'оставить отзыв», через 2 часа придёт «спасибо» и эти ссылки — в Telegram или уведомлением кабинета.</div>'
+    + '<div class="form">'
+    + [['yandex', 'Яндекс Карты'], ['gis', '2ГИС'], ['site', 'Отзывы на сайте']].map(function (item) {
+        return '<div class="field"><label for="rv_' + item[0] + '">' + item[1] + '</label>'
+          + '<input id="rv_' + item[0] + '" data-review="' + item[0] + '" placeholder="https://…" value="'
+          + escape(reviews[item[0]] || '') + '" autocapitalize="off" spellcheck="false"></div>';
+      }).join('') + '</div>'
+    + '<button class="go" type="button" id="rvSave">Сохранить ссылки</button></div>';
+
   html += '<div class="card"><h2>Адреса</h2>'
     + data.ours.map(function (item) {
         return '<div class="row"><div class="main"><b>' + escape(item.name) + ' ' + domainTag(item)
@@ -1918,6 +1956,14 @@ function drawBrand(data) {
   }
 
   api('/dashboard/bot').then(drawBot).catch(function () {});
+
+  $('rvSave').addEventListener('click', function () {
+    var links = {};
+    [].slice.call($('view').querySelectorAll('[data-review]')).forEach(function (input) {
+      links[input.getAttribute('data-review')] = input.value.trim();
+    });
+    save({ reviews: links });
+  });
 
   $('dAdd').addEventListener('click', function () {
     var name = $('dName').value.trim();

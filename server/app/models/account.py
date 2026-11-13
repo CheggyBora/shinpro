@@ -82,6 +82,10 @@ class Account(Base):
     # быть ничего от «РИФа». Задаётся в дашборде, раздел «Оформление»
     brand_name = Column(String(200), nullable=True)
     brand_color = Column(String(9), nullable=True)
+    # Куда клиенту оставить отзыв: {"yandex": …, "gis": …, "site": …}
+    # (решение владельца 13.11.2026). Ссылки уходят клиенту, только если
+    # при оплате наряда отметили «Предложить оставить отзыв»
+    review_links = Column(Text, nullable=True)
     # Квадрат PNG 512×512 — десятки КБ, держим в базе: копия базы
     # уносит его с собой, а файл рядом потерялся бы при переезде
     logo = Column(LargeBinary, nullable=True)

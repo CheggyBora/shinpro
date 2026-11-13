@@ -121,6 +121,19 @@ class StatisticsService:
 
         salaries = self._salary_by_order([o.id for o in orders])
         totals = {}
+        # Гарантийные переделки — по чьей работе: мастера исходного наряда
+        # (выработка мастеров, решение владельца 13.11.2026)
+        redo = {}
+        for order in orders:
+            if not getattr(order, 'is_warranty', False) or not order.warranty_of_id:
+                continue
+            first = self._salary_by_order([order.warranty_of_id]).get(order.warranty_of_id, [])
+            people = {e['employee_id'] for e in first if e['amount'] > 0}
+            original = self.db.query(WorkOrder).filter(WorkOrder.id == order.warranty_of_id).first()
+            if not people and original is not None:
+                people = {int(i) for i in (original.employee_ids or '').split(',') if i.strip().isdigit()}
+            for person in people:
+                redo[person] = redo.get(person, 0) + 1
 
         for order in orders:
             entries = salaries.get(order.id, [])
@@ -142,10 +155,20 @@ class StatisticsService:
                 share = (entry['amount'] / paid_out) if paid_out else 1 / len(entries)
                 master['revenue'] += revenue * share
 
+        for person in redo:
+            totals.setdefault(person, {'employee_id': person, 'orders': 0, 'salary': 0.0,
+                                       'revenue': 0.0})
+        from models import Employee
+        names = {e.id: e for e in self.db.query(Employee).filter(Employee.id.in_(list(totals))).all()}
         result = list(totals.values())
         for master in result:
             master['salary'] = round(master['salary'], 2)
             master['revenue'] = round(master['revenue'], 2)
+            employee = names.get(master['employee_id'])
+            master['name'] = employee.title if employee is not None else f"№{master['employee_id']}"
+            master['average_check'] = round(master['revenue'] / master['orders'], 2) \
+                if master['orders'] else 0.0
+            master['warranty'] = redo.get(master['employee_id'], 0)
 
         result.sort(key=lambda m: m['salary'], reverse=True)
         return result

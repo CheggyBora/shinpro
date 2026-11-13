@@ -643,6 +643,8 @@ class SyncService:
                 'services': services or None,
                 'recommendations': order.recommendations,
                 'is_warranty': bool(getattr(order, 'is_warranty', False)),
+                'ask_review': bool(getattr(order, 'ask_review', False)),
+                'warranty_of_local_id': getattr(order, 'warranty_of_id', None),
 
                 'changed_at': as_naive(changed_at),
                 'shift_local_id': order.shift_id,

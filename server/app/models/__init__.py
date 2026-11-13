@@ -5,7 +5,7 @@ from app.models.client import Client, Car, Device, LoginCode
 from app.models.notice import (Notice, TITLES, KIND_BOOKED, KIND_REMINDER,
                                KIND_CANCELLED, KIND_MOVED, KIND_STORAGE,
                                KIND_SEASON, KIND_READY, KIND_QUEUE,
-                               KIND_ARRIVE, KIND_LATE,
+                               KIND_ARRIVE, KIND_LATE, KIND_REVIEW,
                                ABOUT_AUTUMN, ABOUT_SPRING,
                                WAITING, SENT, FAILED, SKIPPED,
                                BY_TELEGRAM, BY_PUSH)
@@ -38,7 +38,7 @@ __all__ = [
     'Account', 'AccountPayment', 'Shop', 'AccountDomain', 'ConnectCode', 'ConnectAttempt',
     'Client', 'Car', 'Device', 'LoginCode',
     'Notice', 'TITLES', 'BY_TELEGRAM', 'BY_PUSH', 'KIND_BOOKED', 'KIND_REMINDER', 'KIND_CANCELLED', 'KIND_MOVED',
-    'KIND_STORAGE', 'KIND_SEASON', 'KIND_READY', 'KIND_QUEUE', 'KIND_ARRIVE', 'KIND_LATE',
+    'KIND_STORAGE', 'KIND_SEASON', 'KIND_READY', 'KIND_QUEUE', 'KIND_ARRIVE', 'KIND_LATE', 'KIND_REVIEW',
     'ABOUT_AUTUMN', 'ABOUT_SPRING',
     'WAITING', 'SENT', 'FAILED', 'SKIPPED',
     'MasterDevice', 'OpenOrder', 'OrderPhoto', 'Arrival', 'ShopService', 'WorkOffer', 'MasterEvent',

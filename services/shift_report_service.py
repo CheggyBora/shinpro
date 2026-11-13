@@ -152,6 +152,15 @@ class ShiftReportService:
                 lines.append(f"  {who}: {amount:.0f} ₽")
 
         lines += ["", f"Осталось шиномонтажу: <b>{summary['margin']:.0f} ₽</b>"]
+        # Контроль (решение владельца 13.11.2026): скидки, удалённые наряды,
+        # возвраты, расхождение кассы — без уведомлений, в отчёте
+        try:
+            from services import control_service
+            found = control_service.lines(control_service.control(
+                self.db, summary['start'], summary['end']))
+            lines += ["", "<b>Контроль</b>"] + (found or ["  замечаний нет"])
+        except Exception:
+            self.db.rollback()
         try:
             from services.cash_service import CashService
             lines += CashService(self.db).summary_lines(shift)

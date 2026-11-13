@@ -116,6 +116,7 @@ def _out(db, account):
         'logo_version': brand['logo_version'],
         'ours': ours,
         'own': own,
+        'reviews': __import__('app.services.reviews', fromlist=['x']).links_of(account),
     }
 
 
@@ -128,6 +129,8 @@ def get_brand(staff: StaffUser = Depends(require(PERM_STAFF)),
 class BrandIn(BaseModel):
     name: Optional[str] = None
     color: Optional[str] = None
+    # Ссылки на отзывы: {"yandex", "gis", "site"} (13.11.2026)
+    reviews: Optional[dict] = None
 
 
 @router.put('/brand', summary='Название и цвет')
@@ -135,7 +138,11 @@ def put_brand(payload: BrandIn, staff: StaffUser = Depends(require(PERM_STAFF)),
               db: Session = Depends(get_db)):
     account = _account(db, staff)
     try:
-        branding.set_brand(db, account, name=payload.name, color=payload.color)
+        if payload.reviews is not None:
+            from app.services import reviews
+            reviews.set_links(db, account, payload.reviews)
+        if payload.name is not None or payload.color is not None:
+            branding.set_brand(db, account, name=payload.name, color=payload.color)
     except branding.BrandError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(e))
     return _out(db, account)

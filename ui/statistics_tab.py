@@ -82,15 +82,18 @@ class StatisticsTab:
         self.orders_frame = ttk.Frame(content, style='BG.TFrame')
         self.masters_frame = ttk.Frame(content, style='BG.TFrame')
         self.norms_frame = ttk.Frame(content, style='BG.TFrame')
+        self.control_frame = ttk.Frame(content, style='BG.TFrame')
 
         self._build_summary()
         self._build_orders()
         self._build_masters()
         self._build_norms()
+        self._build_control()
 
         self.nav.add('Сводка', self.summary_frame)
         self.nav.add('По нарядам', self.orders_frame)
         self.nav.add('По мастерам', self.masters_frame)
+        self.nav.add('Контроль', self.control_frame)
         self.nav.add('Нормативы времени', self.norms_frame)
 
         self.reload()
@@ -195,13 +198,25 @@ class StatisticsTab:
         inner = ttk.Frame(card, style='White.TFrame')
         inner.pack(fill='both', expand=True, padx=20, pady=18)
 
-        styles.create_label(inner, "Заработок мастеров за период",
+        styles.create_label(inner, "Выработка мастеров за период",
                             'CardHeading.TLabel').pack(anchor='w', pady=(0, 12))
 
         self.masters_tree = self._make_tree(
             inner,
-            ('Мастер', 'Нарядов', 'Выручка по нарядам', 'Начислено'),
-            (200, 130, 200, 160))
+            ('Мастер', 'Машин', 'Выручка по нарядам', 'Средний чек', 'Начислено',
+             'Гарантийных переделок'),
+            (200, 90, 170, 130, 140, 170))
+
+    def _build_control(self):
+        """Контроль (решение владельца 13.11.2026): что требует внимания."""
+        card = styles.create_card_frame(self.control_frame)
+        card.pack(fill='both', expand=True, pady=(16, 0))
+        inner = ttk.Frame(card, style='White.TFrame')
+        inner.pack(fill='both', expand=True, padx=20, pady=18)
+        self.control_title = styles.create_label(inner, "Контроль за период", 'CardHeading.TLabel')
+        self.control_title.pack(anchor='w', pady=(0, 12))
+        self.control_tree = self._make_tree(inner, ('Что', 'Наряд / смена', 'Сумма', 'Подробно'),
+                                            (160, 200, 120, 420))
 
     def _build_norms(self):
         card = styles.create_card_frame(self.norms_frame)
@@ -244,6 +259,7 @@ class StatisticsTab:
             self.load_summary()
             self.load_orders()
             self.load_masters()
+            self.load_control()
             self.load_norms()
         except Exception as e:
             self.db.rollback()
@@ -331,12 +347,40 @@ class StatisticsTab:
             self.masters_tree.delete(row)
         for master in self.masters_data:
             self.masters_tree.insert('', 'end', values=(
-                f"№{master['employee_id']}",
+                master.get('name') or f"№{master['employee_id']}",
                 master['orders'],
                 f"{master['revenue']:.2f} ₽",
+                f"{master.get('average_check', 0):.0f} ₽",
                 f"{master['salary']:.2f} ₽",
+                master.get('warranty', 0) or '—',
             ))
         styles.stripe_rows(self.masters_tree)
+
+    def load_control(self):
+        from services import control_service
+        start, end = self.period()
+        report = control_service.control(self.db, start, end)
+        self.control_data = report
+        self.control_tree.delete(*self.control_tree.get_children())
+        for row in report['discounts']:
+            self.control_tree.insert('', 'end', values=(
+                f"Скидка {row['percent']}%", f"№{row['order_id']} {row['plate']}",
+                f"−{row['amount']:.0f} ₽", f"порог — {report['threshold']}%"))
+        for row in report['deleted']:
+            self.control_tree.insert('', 'end', values=(
+                'Удалён наряд', f"№{row['order_id']} {row['plate']}", f"{row['total']:.0f} ₽",
+                'был оплачен' if row['paid'] else 'не оплачен'))
+        for row in report['refunds']:
+            self.control_tree.insert('', 'end', values=(
+                'Возврат', f"№{row['order_id']} {row['plate']}", f"{row['amount']:.0f} ₽", row['reason']))
+        for row in report['cash']:
+            self.control_tree.insert('', 'end', values=(
+                'Недостача' if row['diff'] < 0 else 'Излишек', f"смена №{row['shift_id']}",
+                f"{abs(row['diff']):.0f} ₽", row['reason']))
+        count = len(self.control_tree.get_children())
+        self.control_title.config(text="Контроль за период — " + (
+            f"замечаний: {count}" if count else "замечаний нет"))
+        styles.stripe_rows(self.control_tree)
 
     def load_norms(self):
         self.norms_data = self.stats_service.get_duration_accuracy(min_orders=5)
@@ -501,10 +545,25 @@ class StatisticsTab:
             name, title = 'отчёт_по_нарядам', 'Отчёт по нарядам'
 
         elif section == 2:
-            headers = ['Мастер', 'Нарядов', 'Выручка по нарядам', 'Начислено']
-            rows = [[f"№{m['employee_id']}", m['orders'], m['revenue'], m['salary']]
+            headers = ['Мастер', 'Машин', 'Выручка по нарядам', 'Средний чек', 'Начислено',
+                       'Гарантийных переделок']
+            rows = [[m.get('name') or f"№{m['employee_id']}", m['orders'], m['revenue'],
+                     m.get('average_check', 0), m['salary'], m.get('warranty', 0)]
                     for m in self.masters_data]
-            name, title = 'отчёт_по_мастерам', 'Отчёт по мастерам'
+            name, title = 'выработка_мастеров', 'Выработка мастеров'
+
+        elif section == 3:
+            report = self.control_data
+            headers = ['Что', 'Наряд / смена', 'Сумма', 'Подробно']
+            rows = ([[f"Скидка {r['percent']}%", f"№{r['order_id']} {r['plate']}", -r['amount'], '']
+                     for r in report['discounts']]
+                    + [['Удалён наряд', f"№{r['order_id']} {r['plate']}", r['total'],
+                        'был оплачен' if r['paid'] else 'не оплачен'] for r in report['deleted']]
+                    + [['Возврат', f"№{r['order_id']} {r['plate']}", r['amount'], r['reason']]
+                       for r in report['refunds']]
+                    + [['Недостача' if r['diff'] < 0 else 'Излишек', f"смена №{r['shift_id']}",
+                        r['diff'], r['reason']] for r in report['cash']])
+            name, title = 'контроль', 'Контроль'
 
         else:
             headers = ['Услуга', 'Норматив, мин', 'Фактически, мин',

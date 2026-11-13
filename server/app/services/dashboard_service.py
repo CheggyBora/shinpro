@@ -306,7 +306,45 @@ class DashboardService:
             # аренду, налоги и прочее программа не знает и знать не должна
             'left': round(revenue - refunded - float(salary) - consumables, 2),
             'by_day': self.by_day(day_from, day_to, period),
+            'control': self.control(orders, period),
         }
+
+    def control(self, orders, period):
+        """
+        Контроль (решение владельца 13.11.2026): крупные скидки, возвраты,
+        расхождения кассы за период — показать, а не будить.
+        """
+        from app.models import ShopShift
+        from app.services import shop_settings
+        edge = 15
+        for shop_id in (self.shop_ids or []):
+            try:
+                edge = int(shop_settings.get(self.db, 'control_discount_percent', shop=shop_id) or edge)
+            except (TypeError, ValueError):
+                pass
+            break
+        titles = self._shop_titles()
+        discounts = []
+        for order in orders:
+            biggest = max([int(order.general_discount or 0)]
+                          + [int(i.discount_percent or 0) for i in order.items])
+            if biggest >= edge:
+                full = sum((i.unit_price or 0) * (i.quantity or 1) for i in order.items)
+                discounts.append({'local_id': order.local_id, 'plate': order.license_plate or '',
+                                  'percent': biggest, 'shop': titles.get(order.shop_id),
+                                  'amount': round(max(0.0, full - (order.total_amount or 0)), 2)})
+        refunds = [{'local_id': o.local_id, 'plate': o.license_plate or '', 'shop': titles.get(o.shop_id),
+                    'amount': round(o.refunded_amount or 0, 2), 'reason': o.refund_reason or ''}
+                   for o in self._refunds_in(period)]
+        shifts = self.db.query(ShopShift).filter(ShopShift.cash_diff.isnot(None),
+                                                 ShopShift.started_at >= period.wide_start,
+                                                 ShopShift.started_at <= period.wide_end)
+        if self.shop_ids is not None:
+            shifts = shifts.filter(ShopShift.shop_id.in_(self.shop_ids))
+        cash = [{'local_id': s.local_id, 'shop': titles.get(s.shop_id), 'diff': round(s.cash_diff, 2),
+                 'reason': s.cash_diff_reason or ''}
+                for s in shifts.all() if abs(s.cash_diff or 0) >= 0.01]
+        return {'threshold': edge, 'discounts': discounts, 'refunds': refunds, 'cash': cash}
 
     def by_day(self, day_from, day_to, period=None):
         """
@@ -467,6 +505,19 @@ class DashboardService:
             group['salary'] += accrual.amount or 0.0
             group['visits'][visit.id] = visit
 
+        # Гарантийные переделки — по чьей работе: мастера исходного наряда
+        redo = {}
+        warranty_visits = self._only_mine(self.db.query(Visit).filter(
+            Visit.is_deleted.is_(False), Visit.is_warranty.is_(True),
+            Visit.warranty_of_local_id.isnot(None), self._in_period(period))).all()
+        for visit in warranty_visits:
+            first = self.db.query(Visit).filter(Visit.shop_id == visit.shop_id,
+                                                Visit.local_id == visit.warranty_of_local_id).first()
+            if first is None:
+                continue
+            for person in {a.employee_local_id for a in first.accruals if (a.amount or 0) > 0}:
+                redo[(visit.shop_id, person)] = redo.get((visit.shop_id, person), 0) + 1
+
         rows = [(shop_id, local_id, len(group['visits']), group['salary'],
                  sum(self._salary_base(visit)
                      for visit in group['visits'].values()),
@@ -494,6 +545,8 @@ class DashboardService:
                 # работы, а не его доля в деньгах
                 'salary_base': round(float(base or 0), 2),
                 'revenue': round(float(revenue or 0), 2),
+                'average_check': round(float(revenue or 0) / orders, 2) if orders else 0.0,
+                'warranty': redo.get((shop_id, local_id), 0),
             })
 
         result.sort(key=lambda item: item['salary'], reverse=True)

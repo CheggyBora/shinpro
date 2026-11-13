@@ -193,6 +193,11 @@ class Visit(Base):
     services = Column(Text, nullable=True)           # по услуге в строке
     recommendations = Column(Text, nullable=True)
     is_warranty = Column(Boolean, default=False, nullable=False)
+    # Отзыв: отметили при оплате — когда поставили сообщение клиенту
+    ask_review = Column(Boolean, nullable=True)
+    # Гарантийная переделка — какого наряда цеха (выработка мастеров)
+    warranty_of_local_id = Column(Integer, nullable=True)
+    review_planned_at = Column(DateTime, nullable=True)
 
     # --- Для дашборда ---------------------------------------------------
     # Когда наряд последний раз менялся в цеху: оплата, возврат, удаление.

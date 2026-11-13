@@ -126,6 +126,9 @@ class VisitIn(BaseModel):
     services: Optional[str] = None
     recommendations: Optional[str] = None
     is_warranty: bool = False
+    # Предложить отзыв — галочка при оплате (13.11.2026)
+    ask_review: Optional[bool] = None
+    warranty_of_local_id: Optional[int] = None
 
     # Деньги и работа — для дашборда. Приложению клиента это не отдаётся
     changed_at: Optional[datetime] = None
@@ -556,6 +559,13 @@ def push(payload: PushIn, db: Session = Depends(get_db),
         row.directions = _directions(item.directions)
         row.wash_class = clean_wash_class(item.wash_class)
         db.flush()
+        if item.warranty_of_local_id:
+            row.warranty_of_local_id = item.warranty_of_local_id
+        if item.ask_review:
+            row.ask_review = True
+            if row.review_planned_at is None and not item.is_deleted:
+                from app.services import reviews
+                reviews.plan(db, shop, row, owner)
 
         # Позиции и начисления кладём заново. Наряд мог измениться как
         # угодно — позицию убрали, скидку поправили, — и сверять построчно
