@@ -48,4 +48,41 @@ class WashPosts:
                 raise ValueError(f'Пост мойки {post} занят')
         order.wash_post_number = post
         self.db.commit()
+        from services.order_service import OrderService
+        OrderService(self.db).apply_wash_post(order)
         return order
+
+    # --- кто на каком посту в эту смену (решение владельца 13.11.2026) ---
+
+    def _shift(self):
+        from services.shift_service import ShiftService
+        return ShiftService(self.db).get_current_shift()
+
+    def staff(self):
+        """{пост: {'washers': [..], 'admin': id}} текущей смены."""
+        import json
+        shift = self._shift()
+        try:
+            raw = json.loads(shift.wash_post_staff or '{}') if shift is not None else {}
+        except ValueError:
+            raw = {}
+        return {int(k): v for k, v in raw.items() if str(k).isdigit()}
+
+    def post_staff(self, post):
+        return self.staff().get(int(post)) if post else None
+
+    def set_post_staff(self, post, washers, admin=None):
+        """Поставить на пост мойщиков и администратора на эту смену."""
+        import json
+        shift = self._shift()
+        if shift is None:
+            raise ValueError('Смена не открыта')
+        staff = self.staff()
+        washers = [int(w) for w in dict.fromkeys(washers or []) if w]
+        if washers or admin:
+            staff[int(post)] = {'washers': washers, 'admin': int(admin) if admin else None}
+        else:
+            staff.pop(int(post), None)
+        shift.wash_post_staff = json.dumps({str(k): v for k, v in staff.items()})
+        self.db.commit()
+        return staff

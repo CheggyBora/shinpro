@@ -171,6 +171,8 @@ class OrderBlocksMixin:
         if direction == directions.SHOP:
             note('товары · кто продал — двойной щелчок по «Продал»' if directions.shop_pay_on(self.db)
                  else 'товары')
+            if open_order and directions.admin_shop_on(self.db) and self._many_admins():
+                pill(self._admin_text(direction), lambda: self.choose_order_admin(directions.SHOP))
         elif direction == directions.TIRE:
             vehicle = {'car': 'Легковой', 'suv': 'Джип/Кроссовер', 'truck': 'Категория С'}.get(
                 self.order.vehicle_type, self.order.vehicle_type or '')
@@ -185,6 +187,10 @@ class OrderBlocksMixin:
                 self.employees_label = ttk.Label(head, text='', background=bg,
                                                  font=(styles.DEFAULT_FONT, 9))
                 self.employees_label.pack(side='left', padx=(8, 0))
+            # Двое администраторов и больше — процент получает выбранный
+            # (решение владельца 13.11.2026)
+            if open_order and self._many_admins():
+                pill(self._admin_text(direction), lambda: self.choose_order_admin(directions.TIRE))
         else:
             note(directions.class_title(self.order.wash_class))
             if open_order:
@@ -194,6 +200,8 @@ class OrderBlocksMixin:
                 # Мойщики машины — делят мойку, как мастера шиномонтаж
                 # (решение владельца 09.11.2026)
                 self.washers_label = pill(self._washers_text(), self.choose_washers)
+                if self._many_admins():
+                    pill(self._admin_text(direction), lambda: self.choose_order_admin(directions.WASH))
             else:
                 note(self._washers_text().replace(' ▾', ''))
 
@@ -231,7 +239,7 @@ class OrderBlocksMixin:
             tree.heading('Кто', text='Продал')
             if not directions.shop_pay_on(self.db):
                 tree.configure(displaycolumns=COLUMNS[:5])
-        elif not directions.assigned(self.db, direction):
+        elif not directions.assigned(self.db, direction) and not directions.tire_assign(self.db):
             tree.configure(displaycolumns=COLUMNS[:5])
         tree.pack(side='left', fill='x', expand=True)
         scroll = ttk.Scrollbar(body, orient='vertical', command=tree.yview)
@@ -246,6 +254,16 @@ class OrderBlocksMixin:
     def _on_tree(self, event, handler):
         self.items_tree = event.widget
         return handler(event)
+
+    def _many_admins(self):
+        from services.salary_service import SalaryService
+        return len(SalaryService(self.db).admins_on_shift()) >= 2
+
+    def _admin_text(self, direction):
+        from services.salary_service import SalaryService
+        admin = SalaryService(self.db).order_admins(self.order).get(direction)
+        name = (admin.name or f'№{admin.id}') if admin is not None else 'выбрать'
+        return f'Админ: {name} ▾'
 
     def _washers_text(self):
         from ui.order_screen.directions import short_name

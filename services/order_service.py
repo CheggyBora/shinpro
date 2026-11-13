@@ -138,6 +138,7 @@ class OrderService:
                 from services.wash_posts import WashPosts
                 order.wash_post_number = WashPosts(self.db).first_free()
                 self.db.commit()
+                self.apply_wash_post(order)
 
             # Машина должна появиться на телефоне мастера сразу, а не
             # через десять минут: он подходит к ней прямо сейчас, и
@@ -556,25 +557,16 @@ class OrderService:
 
     def calculate_salary_base(self, order_id: int) -> float:
         """
-        База, от которой начисляется зарплата: работа минус расходники.
-
-        Товары в базу не входят вовсе. Вентиль мастер не делал, он его
-        достал с полки, и процент с перепродажи — это не зарплата за
-        работу, а скидка себе в убыток.
+        База, от которой начисляется зарплата исполнителям — те же строки,
+        что берёт расчёт (SalaryService._lines): «минус расходники» — работы
+        без расходников, товаров нет; «от выручки» — всё, и товары
+        направления тоже (решение владельца 13.11.2026). Магазин — не здесь.
 
         Не опускается ниже нуля: если материалы вышли дороже работы,
         механик не должен уходить в минус.
         """
-        items = self.db.query(WorkOrderItem).filter(
-            WorkOrderItem.work_order_id == order_id).all()
-
         from services.salary_service import SalaryService
-        salary = SalaryService(self.db)
-        base = 0.0
-        for item in items:
-            if getattr(item, 'is_goods', False):
-                continue
-            base += salary._base(item)
+        base = sum(b for _item, _name, b in SalaryService(self.db)._lines(order_id))
 
         return round(max(0.0, base), 2)
 
@@ -756,6 +748,8 @@ class OrderService:
                 order.post_number = queue.first_free_post()
         order.directions = _directions.join(have + [direction])
         self.db.commit()
+        if direction == _directions.WASH:
+            self.apply_wash_post(order)
         return order
 
     def set_item_employee(self, item_id, employee_id):
@@ -807,6 +801,53 @@ class OrderService:
             item.employee_id = ids[0] if ids else None
         self.db.commit()
         return len(items)
+
+    def set_order_admin(self, order_id, direction, employee_id):
+        """
+        Администратор наряда по направлению (решение владельца 13.11.2026):
+        двое и больше на смене — процент получает выбранный.
+        """
+        from services.salary_service import admin_map, admin_join
+        order = self.db.query(WorkOrder).filter(WorkOrder.id == order_id).first()
+        if order is None:
+            raise ValueError("Наряд не найден")
+        mapping = admin_map(order.admin_ids)
+        if employee_id:
+            mapping[direction] = int(employee_id)
+        else:
+            mapping.pop(direction, None)
+        order.admin_ids = admin_join(mapping)
+        self.db.commit()
+        return order
+
+    def set_item_executors(self, item_id, employee_ids):
+        """
+        Строку делал не тот, кто в наряде (решение владельца 13.11.2026):
+        её делят эти исполнители. Пусто — снова как в наряде.
+        """
+        item = self.db.query(WorkOrderItem).filter(WorkOrderItem.id == item_id).first()
+        if item is None:
+            raise ValueError("Позиция не найдена")
+        ids = [int(e) for e in dict.fromkeys(employee_ids or []) if e]
+        item.employee_ids = ','.join(str(i) for i in ids) if ids else None
+        self.db.commit()
+        return item
+
+    def apply_wash_post(self, order):
+        """
+        Наряд встал на пост мойки — мойщики и администратор поста (их
+        ставят на смену) подставляются в него, если в наряде ещё не выбраны.
+        """
+        from services.wash_posts import WashPosts
+        staff = WashPosts(self.db).post_staff(order.wash_post_number)
+        if not staff:
+            return
+        if staff.get('washers') and not self.wash_masters(order):
+            self.set_wash_masters(order.id, staff['washers'])
+        if staff.get('admin'):
+            from services.salary_service import admin_map
+            if not admin_map(order.admin_ids).get('wash'):
+                self.set_order_admin(order.id, 'wash', staff['admin'])
 
     def wash_masters(self, order):
         """Мойщики наряда номерами: [3, 5]."""

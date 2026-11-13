@@ -38,6 +38,9 @@ class WorkOrderItem(Base):
     # делал: начисляется ему, а не всем на смене
     direction = Column(String(10), default='tire', server_default='tire', nullable=False)
     employee_id = Column(Integer, nullable=True)
+    # Исполнители этой строки, если её делал не тот, кто в наряде
+    # (решение владельца 13.11.2026): «7» или «3,4». Пусто — как в наряде
+    employee_ids = Column(String(200), nullable=True)
 
     work_order = relationship("WorkOrder", backref="items")
     service = relationship("Service", backref="order_items")

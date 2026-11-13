@@ -76,32 +76,41 @@ class SalaryService:
     def __init__(self, db: Session):
         self.db = db
 
-    def _work_of(self, order_id):
+    def _lines(self, order_id):
         """
-        Работы наряда для зарплаты: [(название, база)].
+        Строки наряда для зарплаты исполнителям: [(строка, название, база)].
 
-        База — стоимость позиции со всеми скидками минус расходники. Не
-        ниже нуля: если материалы вышли дороже работы, мастер не уходит
-        в минус. Товары не входят: вентиль мастер не делал, он достал
-        его с полки.
+        Товары шиномонтажа и мойки (вентили, химия) входят, только когда
+        у направления база «от выручки»: тогда процент со всего. При базе
+        «минус расходники» товар — расходник, с него не начисляется
+        (решение владельца 13.11.2026). Магазин — не здесь (_shop).
         """
-        from services.order_service import OrderService
+        from services import directions
 
         items = self.db.query(WorkOrderItem).filter(
-            WorkOrderItem.work_order_id == order_id).order_by(
-                WorkOrderItem.id).all()
-
-        work = []
+            WorkOrderItem.work_order_id == order_id).order_by(WorkOrderItem.id).all()
+        lines = []
         for item in items:
-            if getattr(item, 'is_goods', False):
+            direction = getattr(item, 'direction', None) or 'tire'
+            if direction == directions.SHOP:
                 continue
-            # Назначенное считается отдельно — тому, кто делал (distribute)
-            if self._is_assigned(item):
+            if getattr(item, 'is_goods', False) and \
+                    directions.salary_base(self.db, direction) != 'revenue':
                 continue
-            base = self._base(item)
             name = item.service.name if item.service else f'Позиция №{item.id}'
-            work.append((name, base))
-        return work
+            lines.append((item, name, self._base(item)))
+        return lines
+
+    def _work_of(self, order_id):
+        """
+        Работы шиномонтажа, которые делят мастера наряда: [(название, база)].
+        Без строк, отданных другим исполнителям, и без товаров: по ним
+        мастера наряда не нужны.
+        """
+        return [(name, base) for item, name, base in self._lines(order_id)
+                if (getattr(item, 'direction', None) or 'tire') == 'tire'
+                and not getattr(item, 'is_goods', False)
+                and not ids_of(getattr(item, 'employee_ids', None))]
 
     def _base(self, item):
         """
@@ -123,31 +132,37 @@ class SalaryService:
         from services import directions
         return directions.assigned(self.db, getattr(item, 'direction', None) or 'tire')
 
-    def _wash_of(self, order_id):
+    def _who(self, order, item):
         """
-        Назначаемые строки: [(название, база, [кто делал], направление)].
+        Кто делал строку, если не мастера наряда по общему правилу:
+        исполнители строки (их выбрали отдельно), у мойки — мойщики машины,
+        а до них — тот, кто стоит в строке. None — строку делят мастера
+        шиномонтажа наряда.
+        """
+        own = ids_of(getattr(item, 'employee_ids', None))
+        if own:
+            return own
+        if (getattr(item, 'direction', None) or 'tire') == 'tire':
+            return None
+        washers = ids_of(getattr(order, 'wash_employee_ids', None))
+        return washers or ([item.employee_id] if item.employee_id else [])
 
-        Кто делал — мойщики машины, выбранные в наряде (решение владельца
-        09.11.2026). Не выбраны — тот, кто стоит в строке: так считались
-        наряды до этого, и так же — когда на смене один человек.
-        """
+    def _wash_of(self, order_id):
+        """Строки со своими исполнителями: [(название, база, [кто], направление)]."""
         order = self.db.query(WorkOrder).filter(WorkOrder.id == order_id).first()
-        washers = ids_of(getattr(order, 'wash_employee_ids', None)) if order is not None else []
-        items = self.db.query(WorkOrderItem).filter(
-            WorkOrderItem.work_order_id == order_id).order_by(WorkOrderItem.id).all()
         lines = []
-        for item in items:
-            if getattr(item, 'is_goods', False) or not self._is_assigned(item):
+        for item, name, base in self._lines(order_id):
+            who = self._who(order, item)
+            if who is None:
                 continue
-            base = self._base(item)
-            name = item.service.name if item.service else f'Позиция №{item.id}'
-            who = washers or ([item.employee_id] if item.employee_id else [])
-            lines.append((name, base, who, getattr(item, 'direction', None) or 'tire'))
+            lines.append((name, base, who, getattr(item, 'direction', None) or 'tire',
+                          bool(getattr(item, 'is_goods', False))))
         return lines
 
     def unassigned_wash(self, order_id):
-        """Назначаемые услуги, у которых не выбрано, кто делал."""
-        return [name for name, _base, who, _d in self._wash_of(order_id) if not who]
+        """Услуги, у которых не выбрано, кто делал (товар без мойщика не держит)."""
+        return [name for name, _base, who, _d, goods in self._wash_of(order_id)
+                if not who and not goods]
 
     def unsold_shop(self, order_id):
         """Товары магазина без продавца — когда процент с продаж включён."""
@@ -160,21 +175,47 @@ class SalaryService:
                     WorkOrderItem.direction == directions.SHOP).all()
                 if not i.employee_id]
 
+    @staticmethod
+    def _add(people, employee_id, amount, line):
+        share = people.setdefault(employee_id, {'amount': 0.0, 'raw': 0.0, 'lines': [], 'skipped': []})
+        share['raw'] = share.get('raw', share['amount']) + amount
+        share['amount'] = round(share['raw'], 2)
+        share['lines'].append(line)
+
     def distribute(self, order):
         """
-        Кому сколько по наряду. Шиномонтаж — как всегда: делят мастера,
-        бывшие на смене при создании, по проценту шиномонтажа. Мойка —
-        так же (решение владельца 09.11.2026): делят мойщики машины, каждый
-        по своему проценту мойки ÷ сколько их. Исключений у мойщиков нет —
-        только процент.
+        Кому сколько по наряду (решения владельца 26.10–13.11.2026).
+
+        Шиномонтаж — делят мастера наряда, каждый по своему проценту ÷
+        сколько их, с исключениями по категориям. Мойка — так же мойщики
+        машины, только процент. Любую строку можно отдать другим
+        исполнителям — тогда её делят они. Товары направления — только при
+        базе «от выручки». Администратор — свой процент сверху, магазин —
+        продавцу.
         """
-        employee_ids = [int(i.strip()) for i in (order.employee_ids or '').split(',')
-                        if i.strip()]
+        from services import directions
+
+        employee_ids = ids_of(order.employee_ids)
         tire_work = self._work_of(order.id)
         people, nobody = split(tire_work, self._people_of(employee_ids)) \
             if employee_ids and tire_work else ({}, [{'name': n, 'base': round(b, 2)}
                                        for n, b in tire_work if b > 0])
-        for name, base, who, direction in self._wash_of(order.id):
+        # Товары шиномонтажа при базе «от выручки» — мастерам наряда, без
+        # исключений категорий: исключают работы, а не вентиль
+        for item, name, base in self._lines(order.id):
+            if (item.direction or 'tire') != 'tire' or not item.is_goods \
+                    or ids_of(item.employee_ids) or base <= 0:
+                continue
+            if not employee_ids:
+                nobody.append({'name': name, 'base': round(base, 2)})
+                continue
+            for employee_id, percent, _excluded in self._people_of(employee_ids):
+                amount = base * percent / 100 / len(employee_ids)
+                self._add(people, employee_id, amount, {
+                    'name': name, 'base': round(base, 2), 'percent': percent,
+                    'shared': len(employee_ids), 'amount': round(amount, 2), 'direction': 'tire'})
+
+        for name, base, who, direction, _goods in self._wash_of(order.id):
             if not who:
                 if base > 0:
                     nobody.append({'name': name, 'base': round(base, 2)})
@@ -182,17 +223,13 @@ class SalaryService:
             for employee_id in who:
                 employee = self.db.query(Employee).filter(Employee.id == employee_id).first()
                 # Мойка — по ставке мойки, шиномонтаж — по ставке шиномонтажа
-                own = (employee.wash_percent if direction == 'wash' else employee.salary_percent) \
-                    if employee is not None else None
+                own = (employee.wash_percent if direction == directions.WASH
+                       else employee.salary_percent) if employee is not None else None
                 percent = own if own is not None else FALLBACK_PERCENT
                 amount = base * percent / 100 / len(who)
-                share = people.setdefault(employee_id, {'amount': 0.0, 'raw': 0.0,
-                                                        'lines': [], 'skipped': []})
-                share['raw'] = share.get('raw', share['amount']) + amount
-                share['amount'] = round(share['raw'], 2)
-                share['lines'].append({'name': name, 'base': round(base, 2), 'percent': percent,
-                                       'shared': len(who), 'amount': round(amount, 2),
-                                       'direction': direction})
+                self._add(people, employee_id, amount, {
+                    'name': name, 'base': round(base, 2), 'percent': percent,
+                    'shared': len(who), 'amount': round(amount, 2), 'direction': direction})
         self._admins(order, people)
         self._shop(order, people)
         for share in people.values():
@@ -201,11 +238,11 @@ class SalaryService:
 
     def _shop(self, order, people):
         """
-        С продаж магазина (решение владельца 09.11.2026): процент с продаж
-        включён — продавцу строки, по его ставке магазина. Продаёт один
-        человек — один и получает, администратор тоже только когда продал
-        сам. От суммы продажи или от наценки. У карточки задан бонус, ₽ —
-        по этому товару вместо процента.
+        С продаж магазина: процент с продаж включён — продавцу строки, по
+        его ставке магазина. От суммы продажи или от наценки. У карточки
+        задан бонус, ₽ — по этому товару вместо процента. Продал
+        администратор, которому и так идёт его процент с магазина, —
+        второй раз не получает (решение владельца 13.11.2026).
         """
         from models.stock import StockItem
         from services import directions
@@ -217,9 +254,14 @@ class SalaryService:
             WorkOrderItem.work_order_id == order.id).all()
             if (getattr(i, 'direction', None) or 'tire') == directions.SHOP and i.employee_id]
         margin = directions.shop_salary_base(self.db) == 'margin'
+        shop_admin = self.order_admins(order).get(directions.SHOP) \
+            if directions.admin_shop_on(self.db) else None
         for line in lines:
             seller = self.db.query(Employee).filter(Employee.id == line.employee_id).first()
             if seller is None:
+                continue
+            if shop_admin is not None and seller.id == shop_admin.id \
+                    and float(shop_admin.admin_percent or 0) > 0:
                 continue
             base = OrderService.item_total(line)
             if margin:
@@ -253,73 +295,96 @@ class SalaryService:
                 admins.append(employee)
         return admins
 
+    def order_admins(self, order):
+        """
+        Администратор наряда по направлениям: {'tire': Employee, ...}.
+        Выбран в наряде (или пришёл с поста мойки) — он. Не выбран, а на
+        смене один — он. Двое и больше и не выбран — None: выбирают.
+        """
+        chosen = admin_map(getattr(order, 'admin_ids', None))
+        on_shift = self.admins_on_shift()
+        result = {}
+        for direction in ('tire', 'wash', 'shop'):
+            employee_id = chosen.get(direction)
+            if employee_id:
+                result[direction] = self.db.query(Employee).filter(Employee.id == employee_id).first()
+            elif len(on_shift) == 1:
+                result[direction] = on_shift[0]
+            else:
+                result[direction] = None
+        return result
+
+    def missing_admins(self, order_id):
+        """Направления наряда, где администраторов на смене несколько, а не выбран."""
+        from services import directions
+        order = self.db.query(WorkOrder).filter(WorkOrder.id == order_id).first()
+        if order is None or len(self.admins_on_shift()) < 2:
+            return []
+        have = {getattr(i, 'direction', None) or 'tire' for i in self.db.query(WorkOrderItem).filter(
+            WorkOrderItem.work_order_id == order_id).all()}
+        if not directions.admin_shop_on(self.db):
+            have.discard(directions.SHOP)
+        admins = self.order_admins(order)
+        return [directions.TITLES[d] for d in ('tire', 'wash', 'shop') if d in have and admins.get(d) is None]
+
     def _admins(self, order, people):
         """
-        Администраторы на смене — свой процент с выручки наряда, с
-        шиномонтажа и с мойки (решения владельца 08–09.11.2026). Сверху,
-        не из доли мастеров и мойщиков.
+        Администратор — свой процент с выручки наряда, сверху, не из доли
+        мастеров и мойщиков (решения владельца 08–13.11.2026).
 
-        С каких строк — по категории «Администратор», методом исключения:
-        со всех услуг, кроме отмеченных. С товаров шиномонтажа и мойки не
-        получает никто — ни мастера, ни администратор (решение владельца
-        09.11.2026). Магазин — не здесь: с продажи получает только продавец.
+        Кому: администратору наряда по направлению (order_admins) — один
+        на смене или выбранный; пополам больше не делят.
 
-        Двое на смене — каждую строку делят те, кому она начисляется,
-        поровну: как мастера шиномонтаж. База — вся сумма строки или она
-        же без расходников (Настройки → «От чего считается зарплата»).
+        С чего: со всех услуг шиномонтажа и мойки, кроме исключённых в его
+        категории. Товары направления — при базе «вся сумма» входят, при
+        «за вычетом расходников» нет. Магазин — если включено «с продажи
+        товаров», от суммы продажи.
         """
         from services import directions
         from services.employee_role_service import EmployeeRoleService
         from services.order_service import OrderService
 
-        admins = self.admins_on_shift()
-        admins = [a for a in admins if float(a.admin_percent or 0) > 0]
-        if not admins:
+        admins = self.order_admins(order)
+        if not any(a is not None and float(a.admin_percent or 0) > 0 for a in admins.values()):
             return
         roles = EmployeeRoleService(self.db)
-        rules = {}
-        for admin in admins:
-            role = roles.role_of(admin)
-            rules[admin.id] = role.excluded if role else set()
-
         items = self.db.query(WorkOrderItem).filter(
             WorkOrderItem.work_order_id == order.id).order_by(WorkOrderItem.id).all()
         minus = directions.admin_salary_base(self.db) == 'minus'
-        # Строки до округлений — сводим к итогу наряда, как в отчётах.
-        # Доля считается от всех строк: итог наряда включает и магазин
+        shop_on = directions.admin_shop_on(self.db)
+        # Строки до округлений — сводим к итогу наряда, как в отчётах
         lines_total = sum(OrderService.item_total(i) for i in items)
         order_total = float(order.total_amount or 0) or OrderService(self.db).calculate_total(order.id)
         scale = (order_total / lines_total) if lines_total else 0.0
-        raw = {}
         for item in items:
             direction = getattr(item, 'direction', None) or 'tire'
-            if direction == directions.SHOP:
+            admin = admins.get(direction)
+            if admin is None or float(admin.admin_percent or 0) <= 0:
                 continue
-            if getattr(item, 'is_goods', False):
-                continue
+            goods = bool(getattr(item, 'is_goods', False))
             name = item.service.name if item.service else f'Позиция №{item.id}'
             base = OrderService.item_total(item)
-            if minus:
-                base -= OrderService.item_consumables(item)
-            base = max(0.0, base * scale)
-            if base <= 0:
-                continue
-            takers = [admin for admin in admins if name not in rules[admin.id]]
-            for admin in admins:
-                if admin not in takers:
+            if direction == directions.SHOP:
+                if not shop_on:
+                    continue
+            else:
+                if goods and minus:
+                    continue
+                if minus:
+                    base -= OrderService.item_consumables(item)
+                role = roles.role_of(admin)
+                if not goods and role is not None and name in role.excluded:
                     share = people.setdefault(admin.id, {'amount': 0.0, 'lines': [], 'skipped': []})
                     if name not in share['skipped']:
                         share['skipped'].append(name)
-            for admin in takers:
-                percent = float(admin.admin_percent or 0)
-                amount = base * percent / 100 / len(takers)
-                share = people.setdefault(admin.id, {'amount': 0.0, 'lines': [], 'skipped': []})
-                raw[admin.id] = raw.get(admin.id, 0.0) + amount
-                share['lines'].append({'name': 'Администратор: ' + name, 'base': round(base, 2),
-                                       'percent': percent, 'shared': len(takers),
-                                       'amount': round(amount, 2), 'direction': direction})
-        for admin_id, amount in raw.items():
-            people[admin_id]['amount'] = round(people[admin_id]['amount'] + amount, 2)
+                    continue
+            base = max(0.0, base * scale)
+            if base <= 0:
+                continue
+            percent = float(admin.admin_percent or 0)
+            self._add(people, admin.id, base * percent / 100, {
+                'name': 'Администратор: ' + name, 'base': round(base, 2), 'percent': percent,
+                'shared': 1, 'amount': round(base * percent / 100, 2), 'direction': direction})
 
     def _people_of(self, employee_ids):
         """[(employee_id, процент, исключённые услуги)] по наряду."""
@@ -391,6 +456,10 @@ class SalaryService:
         unsold = self.unsold_shop(order_id)
         if unsold:
             raise ValueError("Выберите, кто продал: " + ", ".join(unsold))
+        # Администраторов на смене несколько — процент получает выбранный
+        missing_admin = self.missing_admins(order_id)
+        if missing_admin:
+            raise ValueError("Выберите администратора: " + ", ".join(missing_admin).lower())
 
         # Используем сохранённых сотрудников из наряда. Наряд только мойки
         # обходится без них — там каждая строка со своим сотрудником
@@ -548,3 +617,17 @@ def ids_of(value):
         if part.isdigit() and int(part) not in result:
             result.append(int(part))
     return result
+
+
+def admin_map(value):
+    """«tire:5,wash:6» → {'tire': 5, 'wash': 6}."""
+    result = {}
+    for part in str(value or '').split(','):
+        key, _, number = part.partition(':')
+        if key.strip() and number.strip().isdigit():
+            result[key.strip()] = int(number)
+    return result
+
+
+def admin_join(mapping):
+    return ','.join(f'{k}:{v}' for k, v in mapping.items() if v) or None

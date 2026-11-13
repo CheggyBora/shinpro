@@ -139,5 +139,60 @@ check('процент включён — колонка «Продал» ест�
       'Кто' in widget.trees['shop'].cget('displaycolumns'),
       str(widget.trees['shop'].cget('displaycolumns')))
 
+print('\n=== Строку делал другой ===')
+mount = db.query(Service).filter(Service.name == 'Шиномонтаж', Service.vehicle_type == 'car').first()
+orders.add_service_to_order(order.id, mount.id)
+widget.render_blocks()
+widget.refresh_items()
+root.update()
+rows = [widget.trees['tire'].item(r)['values'] for r in widget.trees['tire'].get_children()]
+check('у шиномонтажа колонка «Кто делал»: как в наряде', rows and rows[0][5] == 'как в наряде', str(rows))
+line = next(i for i in orders.get_order_items(order.id) if i.service_id == mount.id)
+widget.choose_item_executors(line)
+dialog = widget._masters_dialog
+dialog.marks[2].set(True)
+dialog.save()
+root.update()
+rows = [widget.trees['tire'].item(r)['values'] for r in widget.trees['tire'].get_children()]
+check('отдали Марии — в строке она', rows and rows[0][5] == 'Мария', str(rows))
+
+print('\n=== Двое администраторов: выбор в наряде и посты мойки ===')
+staff.register_employee(10, name='Ирина', admin_percent=5)
+staff.start_shift(9)
+staff.start_shift(10)
+widget.render_blocks()
+widget.refresh_items()
+root.update()
+pills = [t for t in texts(widget.blocks_holder) if str(t).startswith('Админ:')]
+check('в шиномонтаже и мойке — «Админ: выбрать ▾»',
+      pills.count('Админ: выбрать ▾') == 2, str(pills))
+import ui.order_screen.directions as order_directions
+order_directions.ask_choice = lambda *a, **k: 9
+widget.choose_order_admin('tire')
+root.update()
+pills = [t for t in texts(widget.blocks_holder) if str(t).startswith('Админ:')]
+check('выбрали Ольгу в шиномонтаже', 'Админ: Ольга ▾' in pills, str(pills))
+
+from ui.wash_post_staff import WashPostStaffDialog
+from services.wash_posts import WashPosts
+posts = WashPostStaffDialog(root, db)
+marks, admin_var = posts.rows[1]
+marks[1].set(True)
+marks[2].set(True)
+admin_var.set(next(a.title for a in posts.admins if a.id == 10))
+posts.save()
+check('пост 1 на смену: Анна, Мария, Ирина', WashPosts(db).post_staff(1) == {'washers': [1, 2], 'admin': 10},
+      str(WashPosts(db).post_staff(1)))
+
+print('\n=== Магазин: администратор продажи ===')
+directions.set_admin_shop_on(db, True)
+app.shop_tab.load()
+root.update()
+check('процент администратору с магазина и двое на смене — поле «Администратор»',
+      app.shop_tab.admin_row.winfo_manager() == 'pack')
+directions.set_admin_shop_on(db, False)
+app.shop_tab.load()
+check('выключено — поля нет', app.shop_tab.admin_row.winfo_manager() == '')
+
 root.destroy()
 finish()

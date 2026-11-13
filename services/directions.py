@@ -90,6 +90,22 @@ def set_shop_pay_on(db, on):
     _settings(db).set('shop_salary_to', SHOP_PAY_SELLER if on else SHOP_PAY_NONE)
 
 
+ADMIN_SHOP_KEY = 'salary_admin_shop'
+
+
+def admin_shop_on(db):
+    """
+    Администратору — его процент с выручки и с продаж магазина (решение
+    владельца 13.11.2026). Продал он сам — процент продавца второй раз
+    не получает.
+    """
+    return _flag(db, ADMIN_SHOP_KEY, '0')
+
+
+def set_admin_shop_on(db, on):
+    _settings(db).set(ADMIN_SHOP_KEY, '1' if on else '0')
+
+
 def shop_salary_base(db):
     """sale — от суммы продажи, margin — от наценки."""
     return 'margin' if _settings(db).get('shop_salary_base') == 'margin' else 'sale'

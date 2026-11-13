@@ -347,10 +347,17 @@ class OrderItemsMixin:
 
             who = ''
             from services import directions as _directions
-            from ui.order_screen.directions import employee_name
+            from ui.order_screen.directions import employee_name, short_name
+            from services.salary_service import ids_of
             washers = self.order_service.wash_masters(self.order)
+            own = ids_of(getattr(item, 'employee_ids', None))
             if (getattr(item, 'direction', None) or 'tire') == _directions.SHOP:
                 who = employee_name(self.db, item.employee_id) if item.employee_id else 'выбрать ▾'
+            elif own:
+                # Строку делал не тот, кто в наряде
+                who = ', '.join(short_name(self.db, i) for i in own)
+            elif (getattr(item, 'direction', None) or 'tire') == _directions.TIRE:
+                who = 'как в наряде'
             elif (getattr(item, 'direction', None) or 'tire') == _directions.WASH and washers:
                 # Мойку делят мойщики машины — у каждой строки они все
                 from ui.order_screen.directions import short_name

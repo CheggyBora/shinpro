@@ -59,6 +59,11 @@ class EmployeesTab:
         self.start_shift_btn.pack(side='left', padx=(0, 5))
         self.end_shift_btn = styles.create_button(shift_frame, "Закончить смену", self.end_shift, 'Danger.TButton')
         self.end_shift_btn.pack(side='left')
+        # Мойка: кто на каком посту в эту смену (решение владельца 13.11.2026)
+        from services import directions as _directions
+        if _directions.wash_on(self.db):
+            styles.create_button(shift_frame, "Посты мойки…", self.open_wash_posts,
+                                 'Secondary.TButton').pack(side='left', padx=(10, 0))
         
         styles.create_label(shift_inner, "Текущие смены:", 'Card.TLabel').pack(anchor='w', pady=(15, 5))
         
@@ -236,6 +241,10 @@ class EmployeesTab:
         # Обновляем отображение статуса смены (в конце после создания всех элементов)
         self.update_shift_status()
     
+    def open_wash_posts(self):
+        from ui.wash_post_staff import WashPostStaffDialog
+        WashPostStaffDialog(self.frame, self.db)
+
     def _admin_toggled(self):
         """Галочка «Администратор» — поле процента; категория — его."""
         if self.new_admin_var.get():

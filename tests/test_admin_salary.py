@@ -104,14 +104,25 @@ parts = dict(by_direction([admin_row]))[admin_row]
 check('доля администратора делится по направлениям', parts == {'wash': 75.0, 'tire': 200.0},
       str(parts))
 
-print('\n=== Двое администраторов — пополам ===')
+print('\n=== Двое администраторов — процент выбранному (решение 13.11.2026) ===')
 staff.register_employee(5, role_id=admin_role.id)
 staff.start_shift(5)
 db.query(Employee).get(5).admin_percent = 5
 db.commit()
-order = paid_order('К500КК77', masters=[1])
+fresh = orders.create_order('К500КК77', 'R16', 'car', create_client=False)
+orders.add_service_to_order(fresh.id, 1)
+orders.set_order_masters(fresh.id, [1])
+try:
+    salary.process_payment(fresh.id, 'cash', orders.calculate_total(fresh.id))
+    check('не выбран — пробить нельзя', False)
+except ValueError as e:
+    check('не выбран — пробить нельзя', 'администратора' in str(e), str(e))
+db.rollback()
+orders.set_order_admin(fresh.id, 'tire', 4)
+salary.process_payment(fresh.id, 'cash', orders.calculate_total(fresh.id))
+order = fresh
 money = accrued(order)
-check('каждому — половина 5%', money[4] == 100.0 and money[5] == 100.0, str(money))
+check('выбранному — весь 5%, второму ничего', money.get(4) == 200.0 and not money.get(5), str(money))
 
 print('\n=== Возврат ===')
 ok, message = orders.refund_order(order.id, reason='тест')

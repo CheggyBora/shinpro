@@ -117,7 +117,9 @@ line = orders.add_service_to_order(third.id, tire.id)
 check('расходник строки — по расходу склада', line.consumable_cost == 75)
 orders.add_service_to_order(third.id, valve_service.id)
 orders.add_service_to_order(third.id, valve_service.id)
-check('с товара зарплаты нет: 2000 × 40% ÷ 2', pay(third) == [400, 400])
+# База «от выручки» — процент со всего, и с товаров (решение владельца 13.11.2026):
+# 2000 × 40% ÷ 2 = 400 + вентили 2 × 150 × 40% ÷ 2 = 60
+check('«от выручки» — и с товара: 400 + 60', pay(third) == [460, 460])
 db.refresh(mushroom)
 db.refresh(valve)
 check('грибок: 3 − 1,5 = 1,5 — мало', mushroom.quantity == 1.5 and mushroom.state == 'low')

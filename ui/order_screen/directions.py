@@ -225,14 +225,43 @@ class OrderDirectionsMixin:
         self._masters_dialog = dialog
 
     @needs_shift
+    def choose_order_admin(self, direction):
+        """Двое администраторов и больше — чей наряд (решение владельца 13.11.2026)."""
+        from services.salary_service import SalaryService
+        admins = SalaryService(self.db).admins_on_shift()
+        if not admins:
+            messagebox.showinfo('Администратор', 'Администраторов на смене нет', parent=self.frame)
+            return
+        who = ask_choice(self.frame, 'Администратор',
+                         f'Администратор — {directions.TITLES[direction].lower()}:',
+                         [(a.id, a.title) for a in admins])
+        if not who:
+            return
+        self.order_service.set_order_admin(self.order.id, direction, who)
+        self.db.refresh(self.order)
+        self.render_blocks()
+        self.refresh_items()
+
+    @needs_shift
+    def choose_item_executors(self, item):
+        """Эту строку делал не тот, кто в наряде, — её делят выбранные."""
+        from services.salary_service import ids_of
+        chosen = set(ids_of(getattr(item, 'employee_ids', None)))
+
+        def save(ids):
+            self.order_service.set_item_executors(item.id, ids)
+            self.refresh_items()
+        self._pick_people('Кто делал', f'Кто делал «{item.service.name}»\n'
+                          '(ничего не отметить — как в наряде):', chosen, save)
+
+    @needs_shift
     def choose_item_employee(self, item):
         shop = (item.direction or 'tire') == directions.SHOP
         if shop and not directions.shop_pay_on(self.db):
             return
-        if (item.direction or 'tire') == directions.WASH:
-            self.choose_washers()
-            return
-        if not shop and not directions.assigned(self.db, item.direction or 'tire'):
+        if not shop:
+            if (item.direction or 'tire') == directions.WASH or directions.tire_assign(self.db):
+                self.choose_item_executors(item)
             return
         who = self._choose_person(f'Кто продал «{item.service.name}»?' if shop
                                   else f'Кто делал «{item.service.name}»?')

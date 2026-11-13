@@ -44,6 +44,14 @@ class OrderPaymentMixin:
             self.choose_washers()
             return
 
+        missing_admin = self.salary_service.missing_admins(self.order.id)
+        if missing_admin:
+            messagebox.showwarning("Администратор",
+                                   "Администраторов на смене несколько — выберите, чей наряд: " +
+                                   ", ".join(missing_admin).lower() +
+                                   "\n(«Админ ▾» в блоке направления)")
+            return
+
         unsold = self.salary_service.unsold_shop(self.order.id)
         if unsold:
             messagebox.showwarning("Кто продал",

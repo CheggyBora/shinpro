@@ -987,10 +987,12 @@ class SettingsDialog:
         self._build_shop_salary(content)
         self._hint(content,
                    "Процент администратора — с выручки шиномонтажа и мойки, со всех услуг, "
-                   "кроме исключённых (Категории мастеров → «Администратор»). С товаров "
-                   "шиномонтажа и мойки не начисляется никому. Магазин — по правилам ниже. "
+                   "кроме исключённых (Категории мастеров → «Администратор»). Товары "
+                   "шиномонтажа и мойки — при базе «от выручки» входят, при «минус расходники» "
+                   "нет; так же у мастеров и мойщиков. Магазин — по правилам ниже. "
                    "Начисляется тем, кто отметился на смене, сверху — мастерам и мойщикам "
-                   "не меньше. Двое на смене — делят поровну. Ставка — при создании "
+                   "не меньше. Двое и больше на смене — процент получает выбранный в наряде "
+                   "(на мойке — с поста). Ставка — при создании "
                    "сотрудника или «Сотрудники» → «Изменить ставку».")
 
     def _build_shop_salary(self, content):
@@ -1005,6 +1007,13 @@ class SettingsDialog:
                         variable=self.shop_pay_var,
                         command=lambda: directions.set_shop_pay_on(
                             self.db, self.shop_pay_var.get())).pack(anchor='w')
+        # Администратору — его процент с выручки и с магазина (13.11.2026)
+        self.admin_shop_var = tk.BooleanVar(value=directions.admin_shop_on(self.db))
+        ttk.Checkbutton(frame, text="Администратору — его процент и с продаж магазина "
+                                    "(продал сам — процент продавца второй раз не получает)",
+                        variable=self.admin_shop_var,
+                        command=lambda: directions.set_admin_shop_on(
+                            self.db, self.admin_shop_var.get())).pack(anchor='w')
         row = ttk.Frame(frame, style='White.TFrame')
         row.pack(fill='x', pady=(2, 2))
         styles.create_label(row, "от чего:", 'Card.TLabel').pack(side='left')

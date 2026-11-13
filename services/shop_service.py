@@ -116,7 +116,7 @@ class ShopService:
             self.db.commit()
         return car
 
-    def create_sale(self, lines, seller_id=None):
+    def create_sale(self, lines, seller_id=None, admin_id=None):
         """
         Продажа без машины: [(карточка, количество)] → наряд-продажа,
         ещё не оплаченный. Пробивают его как наряд (SalaryService).
@@ -150,6 +150,8 @@ class ShopService:
             self.db.delete(order)
             self.db.commit()
             raise
+        if admin_id:
+            orders.set_order_admin(order.id, directions.SHOP, admin_id)
         self.db.refresh(order)
         return order
 

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, Float, String, DateTime
+from sqlalchemy import Column, Integer, Float, String, DateTime, Text
 from config import Base
 from utils import get_moscow_time
 
@@ -23,3 +23,7 @@ class Shift(Base):
     cash_counted = Column(Float, nullable=True)
     cash_diff = Column(Float, nullable=True)
     cash_diff_reason = Column(String(300), nullable=True)
+    # Кто на каком посту мойки в эту смену (решение владельца 13.11.2026):
+    # {"1": {"washers": [3, 4], "admin": 5}}. Наряд встал на пост — мойщики
+    # и администратор подставляются в него сами
+    wash_post_staff = Column(Text, nullable=True)

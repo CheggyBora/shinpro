@@ -123,6 +123,13 @@ class ShopTab:
         self.seller = tk.StringVar()
         self.seller_box = ttk.Combobox(seller_row, textvariable=self.seller, state='readonly', width=28)
         self.seller_box.pack(side='left', padx=(8, 0))
+        # Администратор продажи — когда ему идёт процент с магазина, а на
+        # смене их несколько (решение владельца 13.11.2026)
+        self.admin_row = admin_row = tk.Frame(body, bg=styles.COLORS['bg_card'])
+        styles.create_label(admin_row, 'Администратор:', 'Card.TLabel').pack(side='left')
+        self.sale_admin = tk.StringVar()
+        self.admin_box = ttk.Combobox(admin_row, textvariable=self.sale_admin, state='readonly', width=24)
+        self.admin_box.pack(side='left', padx=(8, 0))
         self.total = tk.Label(body, text='Итого: 0 ₽', bg=styles.COLORS['bg_card'], fg=styles.COLORS['primary'],
                               font=(styles.DEFAULT_FONT, 15, 'bold'))
         self.total.pack(anchor='e', pady=(8, 6))
@@ -216,6 +223,16 @@ class ShopTab:
             self.seller_row.pack(fill='x', pady=(4, 2), before=self.total)
         else:
             self.seller_row.pack_forget()
+        from services.salary_service import SalaryService
+        self._admins = SalaryService(self.db).admins_on_shift()
+        if directions.admin_shop_on(self.db) and len(self._admins) >= 2:
+            self.admin_row.pack(fill='x', pady=(2, 2), before=self.total)
+        else:
+            self.admin_row.pack_forget()
+        admin_titles = [a.title for a in self._admins]
+        self.admin_box.config(values=admin_titles)
+        if self.sale_admin.get() not in admin_titles:
+            self.sale_admin.set('')
         titles = [p.title for p in self._people]
         self.seller_box.config(values=titles)
         default = OrderService(self.db)._default_seller()
@@ -231,11 +248,19 @@ class ShopTab:
         person = next((p for p in getattr(self, '_people', []) if p.title == self.seller.get()), None)
         return person.id if person else None
 
+    def _admin_id(self):
+        admin = next((a for a in getattr(self, '_admins', []) if a.title == self.sale_admin.get()), None)
+        return admin.id if admin else None
+
     def _seller_ok(self):
         """Процент с продаж включён — без продавца не продаём."""
         if directions.shop_pay_on(self.db) and not self._seller_id():
             messagebox.showwarning('Магазин', 'Выберите, кто продал.', parent=self.frame)
             self.seller_box.focus_set()
+            return False
+        if self.admin_row.winfo_manager() and not self._admin_id():
+            messagebox.showwarning('Магазин', 'Выберите администратора продажи.', parent=self.frame)
+            self.admin_box.focus_set()
             return False
         return True
 
@@ -308,7 +333,7 @@ class ShopTab:
         method, cash = payment
         from services import SalaryService, OrderService
         try:
-            order = self.shop.create_sale(lines, seller_id=self._seller_id())
+            order = self.shop.create_sale(lines, seller_id=self._seller_id(), admin_id=self._admin_id())
             amount = OrderService(self.db).calculate_total(order.id)
             SalaryService(self.db).process_payment(order.id, method, amount, cash)
         except (StockError, ValueError) as e:
