@@ -439,8 +439,13 @@ class CalendarService:
         return task
 
     def storage_from_warehouse(self, storage, day, time=None, why=None, created_by=None):
-        """Заказали комплект со склада к дате."""
+        """Заказали комплект со склада к дате — он «едет», пока не нажмут «Приехало»."""
+        from datetime import datetime as _dt
         note = storage_title(storage) + (f'\n{why}' if why else '')
+        hour, minute = (int(x) for x in (time or '00:00').split(':')[:2])
+        storage.delivery_for = _dt.combine(parse_day(day), _dt.min.time()).replace(hour=hour, minute=minute)
+        storage.delivery_state = 'ordered'
+        storage.arrived_at = None
         return self.create(
             title=f'Привезти со склада №{storage.id}', due_date=day, due_time=time,
             category=STORAGE, note=note, license_plate=storage.car_number,

@@ -155,6 +155,9 @@ class StoredSet(Base):
     requested_for = Column(DateTime, nullable=True)
     request_state = Column(String(20), nullable=True, index=True)
     requested_at = Column(DateTime, nullable=True)
+    # Комплект привезли со склада в цех — приёмщик нажал «Приехало»
+    # (решение владельца 13.11.2026). Клиенту — «колёса приехали»
+    arrived_at = Column(DateTime, nullable=True)
 
     client = relationship('Client')
 

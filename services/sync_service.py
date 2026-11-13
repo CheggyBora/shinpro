@@ -701,6 +701,8 @@ class SyncService:
                 'accepted_at': as_naive(row.accepted_date),
                 'expires_at': as_naive(row.expires_at),
                 'status': row.status,
+                # «Приехало» — сервер скажет клиенту «колёса приехали»
+                'arrived_at': as_naive(row.arrived_at) if row.delivery_state == 'arrived' else None,
             })
         return storage
 
@@ -1105,6 +1107,14 @@ class SyncService:
         note = (f"Клиент заказал через приложение на "
                 f"{when:%d.%m.%Y %H:%M}" if when
                 else 'Клиент отменил заявку через приложение')
+        # Заказ со склада — комплект «едет», пока не нажмут «Приехало»
+        if when:
+            row.delivery_for = when
+            row.delivery_state = 'ordered'
+            row.arrived_at = None
+        elif row.delivery_state == 'ordered':
+            row.delivery_for = None
+            row.delivery_state = None
 
         existing = (row.comments or '').strip()
         # Прошлые заявки не затираем: по ним видно, что человек уже

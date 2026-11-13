@@ -1250,7 +1250,7 @@ class SettingsDialog:
             ('storage_months', 'Срок хранения, месяцев (0 — без срока)'),
             ('storage_warn_days', 'Предупредить за, дней'),
             ('storage_lead_days',
-             'Выдача со склада: записывать не раньше чем через, дней'),
+             'Вызов со склада за, суток (отсчёт со следующего дня: 13-го при 2 — запись с 16-го)'),
         ]):
             styles.create_label(grid, title, 'Card.TLabel').grid(
                 row=row, column=0, sticky='w', pady=3)

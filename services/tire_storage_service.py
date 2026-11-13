@@ -201,6 +201,41 @@ class TireStorageService:
             TireStorage.accepted_date.desc()
         ).all()
 
+    # ------------------------------------------------------------------
+    # Заказ со склада: «едут» и «приехало» (решение владельца 13.11.2026)
+    # ------------------------------------------------------------------
+
+    def in_transit(self):
+        """Комплекты, заказанные со склада и ещё не приехавшие, — по дате."""
+        rows = self.db.query(TireStorage).filter(TireStorage.status == 'stored',
+                                                 TireStorage.delivery_state == 'ordered').all()
+        return sorted(rows, key=lambda r: (r.delivery_for is None, r.delivery_for or get_moscow_time()))
+
+    def mark_arrived(self, storage, by=None):
+        """
+        Комплект привезли в цех. Задача «Привезти со склада» — сделана;
+        клиенту сервер напишет «колёса приехали, ждём вас» при обмене.
+        """
+        from models import CalendarTask
+        from services.calendar_service import CalendarService
+        if storage.delivery_state != 'ordered':
+            raise ValueError('Этот комплект не заказывали со склада')
+        storage.delivery_state = 'arrived'
+        storage.arrived_at = get_moscow_time()
+        self.db.commit()
+        calendar = CalendarService(self.db)
+        for task in self.db.query(CalendarTask).filter(
+                CalendarTask.storage_ref == str(storage.id), CalendarTask.done_at.is_(None),
+                CalendarTask.deleted.is_(False)).all():
+            if task.title.startswith('Привезти со склада'):
+                calendar.set_done(task, True, by=by)
+        try:
+            from services import sync_nudge
+            sync_nudge.request('комплект приехал')
+        except Exception:
+            pass
+        return storage
+
     def search(self, text):
         """
         Комплекты «что помню» (решение владельца 08.11.2026): кусок номера,

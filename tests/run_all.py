@@ -72,6 +72,7 @@ TESTS = [
     ('Контроль в отчётах и выработка мастеров', 'test_control.py'),
     ('Копия базы на сервере и восстановление', 'test_cloud_backup.py'),
     ('QR для отзыва при пробитии', 'test_review_qr.py'),
+    ('Едут со склада и «Приехало»', 'test_storage_transit.py'),
     ('Отчёты людям из «Доступа» дашборда', 'test_staff_reports.py'),
     ('Проверка ключа звонков пробным звонком', 'test_flashcall_check.py'),
     ('Срочная досылка важного', 'test_sync_nudge.py'),

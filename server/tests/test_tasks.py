@@ -449,7 +449,8 @@ with TestClient(app) as http:
     print()
     print('=== Кабинет: «привезите комплект к дате» ===')
     sent.clear()
-    wanted = datetime.combine(TODAY + timedelta(days=2), time(10, 0))
+    # За двое суток со следующего дня (13.11.2026) — не раньше чем через три дня
+    wanted = datetime.combine(TODAY + timedelta(days=3), time(10, 0))
     first_try = http.post(f'/storage/{set_ids[2]}/request', headers=cabinet,
                           json={'at': wanted.isoformat()})
     check('заявка принята', first_try.status_code == 200, first_try.text[:200])

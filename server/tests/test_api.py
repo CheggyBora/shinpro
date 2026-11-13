@@ -326,8 +326,13 @@ with TestClient(app) as client:
     check('слишком срочная заявка отклонена', early.status_code == 400,
           str(early.json()))
 
+    # За двое суток, отсчёт со следующего дня (13.11.2026): +2 дня — рано, +3 — можно
+    too_soon = client.post(f'/storage/{stored_id}/request', headers=headers,
+                           json={'at': (shop_now() + timedelta(days=2)).isoformat()})
+    check('через двое суток — ещё рано: отсчёт со следующего дня', too_soon.status_code == 400,
+          str(too_soon.json()))
     ordered = client.post(f'/storage/{stored_id}/request', headers=headers,
-                          json={'at': (shop_now() + timedelta(days=2)).isoformat()})
+                          json={'at': (shop_now() + timedelta(days=3)).isoformat()})
     check('заявка принята', ordered.status_code == 200, str(ordered.json()))
     check('видно, что ждём цеха',
           ordered.json()['request_state'] == 'pending',
@@ -350,9 +355,10 @@ with TestClient(app) as client:
     check('сказано, что день закрыт', with_set[0]['is_closed'] is True)
 
     closed = [day for day in with_set if day['storage_too_soon']]
-    check('закрыто ровно два дня', len(closed) == 2, str(len(closed)))
-    check('третий уже открыт', with_set[2]['storage_too_soon'] is False,
-          str(with_set[2]['day']))
+    # Сегодня 13-е, за двое суток — запись с 16-го: закрыты 13, 14, 15
+    check('закрыто три дня: сегодня и два следующих', len(closed) == 3, str(len(closed)))
+    check('четвёртый уже открыт', with_set[3]['storage_too_soon'] is False,
+          str(with_set[3]['day']))
 
     print()
     print('=== Через голову приложения записаться тоже нельзя ===')

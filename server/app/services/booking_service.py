@@ -297,11 +297,15 @@ class BookingService:
                                             shop=self.shop))
 
     def storage_ready_from(self, now=None):
-        """С какого дня можно записываться с выдачей со склада."""
+        """
+        С какого дня можно записываться с выдачей со склада. Отсчёт — со
+        следующего дня (решение владельца 13.11.2026): сегодня 13-е, за
+        двое суток — запись с 16-го, за сутки — с 15-го.
+        """
         lead = self.storage_lead_days()
         if not lead:
             return None
-        return ((now or shop_now()) + timedelta(days=lead)).date()
+        return ((now or shop_now()) + timedelta(days=lead + 1)).date()
 
     def calendar(self, wheels_assembled=None, now=None, with_storage=False):
         """

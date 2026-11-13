@@ -216,6 +216,8 @@ class StorageIn(BaseModel):
     accepted_at: Optional[datetime] = None
     expires_at: Optional[datetime] = None
     status: str = 'stored'
+    # Привезли со склада («Приехало» в цеху). Старая программа не шлёт
+    arrived_at: Optional[datetime] = None
 
 
 class OpenCarIn(BaseModel):
@@ -715,6 +717,19 @@ def push(payload: PushIn, db: Session = Depends(get_db),
         row.status = item.status
         if owner is not None:
             row.client_id = owner.id
+        # «Приехало» — клиенту «колёса приехали, ждём вас»; один раз
+        if item.arrived_at is not None and row.arrived_at is None:
+            row.arrived_at = item.arrived_at
+            db.flush()
+            try:
+                from app.services import storage_arrival
+                storage_arrival.tell_client(db, shop, row)
+            except Exception as e:
+                import logging
+                logging.getLogger('tire_server').warning('Клиенту о приезде комплекта не сказали: %s', e)
+        elif item.arrived_at is None and 'arrived_at' in item.model_fields_set:
+            # Комплект снова заказали — следующий «приехал» тоже скажем
+            row.arrived_at = None
         db.flush()
         result.storage += 1
 

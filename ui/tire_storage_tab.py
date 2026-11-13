@@ -303,6 +303,10 @@ class TireStorageTab:
         # и сообщение в Telegram тому, кто возит (docs/calendar.md)
         styles.create_button(btn_frame, "Заказать со склада",
                              self.order_from_warehouse, 'Primary.TButton').pack(side='left', padx=(10, 0))
+        # Что едет со склада — и «Приехало», когда привезли (13.11.2026)
+        self.transit_button = styles.create_button(btn_frame, "Едут со склада",
+                                                   self.open_transit, 'Secondary.TButton')
+        self.transit_button.pack(side='left', padx=(10, 0))
         
         # Загружаем все комплекты при создании вкладки
         self.search_storage()
@@ -739,6 +743,9 @@ class TireStorageTab:
                 "Хранение",
                 f"В ближайшие {days} дней срок ни у кого не кончается.")
 
+    def open_transit(self):
+        TransitDialog(self.frame, self.db, on_change=self.search_storage)
+
     def search_storage(self):
         # Поиск «что помню»: кусок номера, телефон, имя, марка, № комплекта
         storages = self.service.search(self.search_car_entry.get())
@@ -753,6 +760,11 @@ class TireStorageTab:
         for storage in storages:
             # Определяем статус и дату выдачи
             status_text = "На хранении" if storage.status == 'stored' else "Выдан"
+            if storage.status == 'stored' and storage.delivery_state == 'ordered':
+                status_text = ("Едет к " + storage.delivery_for.strftime('%d.%m')) \
+                    if storage.delivery_for else "Едет со склада"
+            elif storage.status == 'stored' and storage.delivery_state == 'arrived':
+                status_text = "Привезли"
 
             release_date = storage.released_date.strftime('%d.%m.%Y %H:%M') if storage.released_date else '-'
             deadline = storage.expires_at.strftime('%d.%m.%Y') if storage.expires_at else '-'
@@ -1165,3 +1177,71 @@ class WarehouseOrderDialog:
         telegram_outbox.queue(self.db, 'storage', text)
         self.dialog.destroy()
         messagebox.showinfo("Склад", "Заказано: задача в календаре, сообщение отправлено в Telegram")
+
+
+class TransitDialog:
+    """
+    Едут со склада (решение владельца 13.11.2026): заказанные комплекты по
+    дате. Привезли — «Приехало»: задача «Привезти» сделана, клиенту
+    приходит «колёса приехали, ждём вас на записи».
+    """
+
+    def __init__(self, parent, db, on_change=None):
+        from services.tire_storage_service import TireStorageService
+        self.db, self.on_change = db, on_change
+        self.service = TireStorageService(db)
+        self.dialog = tk.Toplevel(parent)
+        self.dialog.title("Едут со склада")
+        self.dialog.configure(bg=styles.COLORS['bg_card'])
+        self.dialog.transient(parent.winfo_toplevel())
+        body = ttk.Frame(self.dialog, style='White.TFrame')
+        body.pack(fill='both', expand=True, padx=18, pady=14)
+        styles.create_label(body, "Заказаны со склада и ещё не приехали", 'CardHeading.TLabel').pack(anchor='w')
+        styles.create_label(body, "Привезли — выберите комплект и нажмите «Приехало»: клиенту придёт, "
+                                  "что колёса на месте и когда его ждём.", 'Muted.TLabel').pack(anchor='w', pady=(2, 8))
+        buttons = ttk.Frame(body, style='White.TFrame')
+        buttons.pack(side='bottom', fill='x', pady=(10, 0))
+        styles.create_button(buttons, "Приехало", self.arrived, 'Success.TButton').pack(side='left')
+        styles.create_button(buttons, "Закрыть", self.dialog.destroy, 'Secondary.TButton').pack(side='right')
+        self.tree = ttk.Treeview(body, columns=('id', 'when', 'plate', 'set', 'client'), show='headings', height=10)
+        for key, title, width in (('id', '№', 50), ('when', 'К дате', 120), ('plate', 'Номер авто', 110),
+                                  ('set', 'Комплект', 260), ('client', 'Клиент', 200)):
+            self.tree.heading(key, text=title)
+            self.tree.column(key, width=width, anchor='w' if key in ('set', 'client') else 'center')
+        self.tree.pack(fill='both', expand=True)
+        self.tree.tag_configure('late', foreground='#b91c1c')
+        self.fill()
+        styles.center_window(self.dialog, parent.winfo_toplevel())
+
+    def fill(self):
+        from services.calendar_service import storage_title
+        self.tree.delete(*self.tree.get_children())
+        now = get_moscow_time()
+        for row in self.service.in_transit():
+            when = row.delivery_for.strftime('%d.%m %H:%M').replace(' 00:00', '') if row.delivery_for else '—'
+            late = row.delivery_for is not None and row.delivery_for.replace(tzinfo=None) < now.replace(tzinfo=None)
+            self.tree.insert('', 'end', iid=str(row.id), values=(
+                row.id, when, row.car_number, storage_title(row),
+                ' · '.join(x for x in (row.client_name, row.client_phone) if x)),
+                tags=('late',) if late else ())
+        if not self.tree.get_children():
+            self.tree.insert('', 'end', iid='empty', values=('', '', '', 'Ничего не едет', ''))
+
+    def arrived(self):
+        from models import TireStorage
+        chosen = [i for i in self.tree.selection() if i != 'empty']
+        if not chosen:
+            messagebox.showinfo("Едут со склада", "Выберите комплект в списке.", parent=self.dialog)
+            return
+        for item in chosen:
+            row = self.db.query(TireStorage).get(int(item))
+            try:
+                self.service.mark_arrived(row, by='Цех')
+            except ValueError as e:
+                messagebox.showerror("Едут со склада", str(e), parent=self.dialog)
+                return
+        self.fill()
+        if self.on_change:
+            self.on_change()
+        messagebox.showinfo("Едут со склада", "Отмечено: приехало. Клиенту придёт сообщение, "
+                                              "что колёса на месте.", parent=self.dialog)

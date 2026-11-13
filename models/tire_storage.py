@@ -35,5 +35,12 @@ class TireStorage(Base):
 
     released_date = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), default=get_moscow_time)
+
+    # Заказ со склада (решение владельца 13.11.2026): к какой дате везут,
+    # «едет» (ordered) или «приехал» (arrived) и когда. «Приехало» —
+    # клиенту приходит «колёса приехали, ждём вас»
+    delivery_for = Column(DateTime(timezone=True), nullable=True)
+    delivery_state = Column(String(12), nullable=True)
+    arrived_at = Column(DateTime(timezone=True), nullable=True)
     
     work_order = relationship("WorkOrder", backref="tire_storage")

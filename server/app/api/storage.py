@@ -76,6 +76,17 @@ def request_delivery(set_id: int, payload: StorageRequestIn,
                             detail='Этот комплект уже выдан')
 
     now = shop_now()
+    # Тот же срок, что при записи (решение владельца 13.11.2026): за
+    # сколько суток заказывать — настройка точки, отсчёт со следующего дня
+    from app.services.booking_service import BookingService
+    from app.models import Shop
+    shop = db.get(Shop, row.shop_id) if row.shop_id else None
+    ready_from = BookingService(db, shop).storage_ready_from(now) if shop is not None else None
+    if ready_from is not None and payload.at.date() < ready_from:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail=f'Комплект со склада привезут не раньше {ready_from:%d.%m}. '
+                   f'Если нужно срочно — позвоните в шиномонтаж')
     if payload.at < now + timedelta(hours=MIN_HOURS_AHEAD):
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
