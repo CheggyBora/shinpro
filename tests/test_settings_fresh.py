@@ -116,8 +116,8 @@ def fake_call(self, method, fields, files=None):
 
 
 TelegramService._call = fake_call
-dialog.token_entry.delete(0, 'end')
-dialog.token_entry.insert(0, '123:BOT-TOKEN')
+# Бот живёт на сервере (13.11.2026): токен приходит обменом
+TelegramService(db).adopt_org_bot({'username': 'rif_test_bot', 'token': '123:BOT-TOKEN'}, [])
 # Без mainloop окно не примет ответ из чужого потока — проверка идёт здесь же
 import threading
 

@@ -75,9 +75,6 @@ dialog.route_vars[('shift', '-100600')].set(True)
 dialog.save_route('shift')
 check('галочка «Отчёт за смену» включает отправку', dialog.recipients[1].enabled is True)
 
-dialog.token_entry.delete(0, tk.END)
-dialog.token_entry.insert(0, '999:XYZ')
-
 dialog.save()
 root.update()
 
@@ -88,7 +85,6 @@ check('телефон сохранён', saved.get('company_phone') == '+7 495 1
 check('адрес сохранён', saved.get('company_address') == 'г. Тула, ул. Мира, 5')
 
 telegram = TelegramService(db)
-check('токен сохранён', telegram.get_token() == '999:XYZ')
 recipients = telegram.get_recipients()
 check('оба получателя сохранены', len(recipients) == 2, str(len(recipients)))
 check('оба включены', len(telegram.get_active_recipients()) == 2)
@@ -97,12 +93,11 @@ check('окно закрылось', dialog.dialog.winfo_exists() == 0)
 print('\n=== Проверка связи без токена не падает ===')
 second = settings_module.SettingsDialog(root, db)
 root.update()
-second.token_entry.delete(0, tk.END)
 second.recipients = []
 second.test_telegram()
 root.update()
-check('сказано, чего не хватает',
-      'токен' in second.telegram_status.cget('text').lower(),
+check('сказано, где подключить бота — в дашборде',
+      'дашборд' in second.telegram_status.cget('text').lower(),
       second.telegram_status.cget('text'))
 second.dialog.destroy()
 

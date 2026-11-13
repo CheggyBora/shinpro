@@ -516,30 +516,27 @@ class SettingsDialog:
         таблица «кому что» дублировали друг друга, отчёта за смену в
         таблице не было, а контрагенты настраивались совсем в другом месте.
         """
+        # Бот один на организацию и живёт на сервере (решение владельца
+        # 13.11.2026): токен вписывают в дашборде, сюда он приходит обменом
         self._section(content, "1. Бот")
+        org_bot = self.telegram.org_bot()
         self._hint(content,
-                   "Создайте бота через @BotFather и вставьте его токен. «Проверить связь» "
-                   "сохранит его сразу — получатели для этого не нужны.")
+                   "Бот живёт на сервере: подключают его в дашборде → «Оформление» → "
+                   "«Бот в Telegram» (токен от @BotFather). Сюда он приходит при обмене, "
+                   "вместе с теми, кто нажал «Старт».")
         token_row = ttk.Frame(content, style='White.TFrame')
         token_row.pack(fill='x', pady=(0, 4))
-        self.token_entry = styles.create_entry(token_row, width=52)
-        self.token_entry.insert(0, self.telegram.get_token())
-        self.token_entry.pack(side='left')
-        org_bot = self.telegram.org_bot()
-        if org_bot:
-            # Бот на сервере — токен оттуда, меняют его в дашборде
-            self.token_entry.configure(state='disabled')
-        styles.create_button(token_row, "Проверить связь", self.test_telegram,
-                             'Secondary.TButton').pack(side='left', padx=(8, 0))
+        styles.create_button(token_row, "Проверить связь" if org_bot else "Обменяться сейчас",
+                             self.test_telegram, 'Secondary.TButton').pack(side='left')
         self.telegram_status = ttk.Label(content, text="", font=(styles.DEFAULT_FONT, 9),
                                          background=styles.COLORS['bg_card'],
                                          foreground=styles.COLORS['text_secondary'],
                                          wraplength=620, justify='left')
         self.telegram_status.pack(anchor='w', pady=(0, 8))
-        if org_bot:
-            self.telegram_status.config(
-                text=f"Бот @{org_bot} работает на сервере: сообщения ему забирает сервер, "
-                     f"список людей приходит при обмене. Менять — в дашборде → «Оформление».")
+        self.telegram_status.config(
+            text=(f"✓ Бот @{org_bot} работает на сервере." if org_bot
+                  else "Бот ещё не подключён в дашборде."),
+            foreground=styles.COLORS['success'] if org_bot else styles.COLORS['text_secondary'])
 
         self._section(content, "2. Люди — кто нажал «Старт» у бота")
         self._hint(content,
@@ -1390,15 +1387,11 @@ class SettingsDialog:
         Новые появляются выключенными: нажал «Старт» — ещё не значит,
         что человеку нужна сводка по смене с выручкой.
         """
-        token = self.token_entry.get().strip()
-        if not token:
+        if not self.telegram.org_bot():
             messagebox.showinfo("Получатели",
-                                "Сначала вставьте токен бота",
+                                "Бот ещё не подключён: дашборд → «Оформление» → «Бот в Telegram».",
                                 parent=self.dialog)
             return
-
-        # Токен мог быть только что вписан и ещё не сохранён
-        self.telegram.save_token(token)
 
         try:
             added, seen = self.telegram.fetch_people()
@@ -1425,20 +1418,16 @@ class SettingsDialog:
             messagebox.showinfo(
                 "Получатели",
                 "Боту никто не написал.\n\nДайте человеку ссылку "
-                "(кнопка «Ссылка на бота») и попросите нажать «Старт».\n"
-                "Телеграм хранит сообщения сутки: если нажали давно, "
-                "пусть напишут боту ещё раз.",
+                "(кнопка «Ссылка на бота») и попросите нажать «Старт». "
+                "Он появится здесь после обмена с сервером — обычно в пределах минуты.",
                 parent=self.dialog)
 
     def show_bot_link(self):
         """Ссылку даём человеку — по ней он откроет бота и нажмёт «Старт»."""
-        token = self.token_entry.get().strip()
-        if not token:
-            messagebox.showinfo("Бот", "Сначала вставьте токен бота",
-                                parent=self.dialog)
+        if not self.telegram.org_bot():
+            messagebox.showinfo("Бот", "Бот ещё не подключён: дашборд → «Оформление» → "
+                                       "«Бот в Telegram».", parent=self.dialog)
             return
-
-        self.telegram.save_token(token)
 
         try:
             link = self.telegram.bot_link()
@@ -1619,16 +1608,20 @@ class SettingsDialog:
 
     def test_telegram(self):
         """Проверить связь, не блокируя окно."""
-        token = self.token_entry.get().strip()
-        if not token:
+        if not self.telegram.org_bot():
+            # Бота ещё нет — попросим сервер об обмене: вдруг его только
+            # что подключили в дашборде
+            try:
+                from services import sync_nudge
+                sync_nudge.request('проверка бота')
+            except Exception:
+                pass
             self.telegram_status.config(
-                text="Вставьте токен бота от @BotFather",
+                text="Бот не подключён. Подключите его в дашборде → «Оформление» → "
+                     "«Бот в Telegram»; обмен уже запрошен — откройте настройки снова через минуту.",
                 foreground=styles.COLORS['danger'])
             return
 
-        # Сохраняем сразу и отдельно от общего «Сохранить»: проверка идёт
-        # по сохранённым значениям, и токен не должен ждать остальных полей
-        self.telegram.save_token(token)
         self.telegram.save_recipients(self.recipients)
         self.telegram_status.config(text="Проверяем связь…",
                                     foreground=styles.COLORS['text_secondary'])
@@ -1643,8 +1636,8 @@ class SettingsDialog:
             try:
                 name, result = self.telegram.test_connection()
                 if result is None:
-                    done(True, f"✓ Бот @{name} отвечает, токен сохранён. Получателей пока нет: "
-                               f"«Ссылка на бота» → человек жмёт «Старт» → «Кто написал боту».")
+                    done(True, f"✓ Бот @{name} отвечает. Получателей пока нет: "
+                               f"«Ссылка на бота» → человек жмёт «Старт» → «Обновить список».")
                 else:
                     done(result.all_delivered, f"Бот @{name}. {result.summary()}")
             except TelegramError as e:
@@ -1780,8 +1773,6 @@ class SettingsDialog:
             self.settings.set('thermal_receipt_enabled',
                               '1' if self.thermal_var.get() else '0', commit=False)
             self.settings.set('thermal_receipt_width', self.thermal_width.get(), commit=False)
-
-            self.telegram.save_token(self.token_entry.get())
 
             # Ключи от звонков и SMS. Провайдер включается сам, как
             # только появился ключ: держать отдельный переключатель
