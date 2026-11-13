@@ -138,6 +138,10 @@ class EmployeesTab:
         header_frame.pack(fill='x', pady=(0, 10))
         styles.create_label(header_frame, "Список сотрудников", 'CardHeading.TLabel').pack(side='left')
         styles.create_button(header_frame, "Изменить ставку", self.change_salary_percent, 'Secondary.TButton').pack(side='right')
+        # Кто согласует работы с партнёрами — в кабинете на телефоне
+        # (решение владельца 13.11.2026)
+        styles.create_button(header_frame, "Партнёры", self.toggle_partners,
+                             'Secondary.TButton').pack(side='right', padx=(0, 8))
         # Категория решает, с каких услуг человеку начисляется: съёмщику
         # не идёт процент с ремонта и правки. Сами списки услуг — в
         # Настройках → Категории мастеров
@@ -892,10 +896,38 @@ class EmployeesTab:
                 emp.name or '',
                 roles.role_title(emp),
                 self._percent_text(emp),
-                'ПИН есть' if getattr(emp, 'phone_pin_hash', None) else '—',
+                ('ПИН есть' if getattr(emp, 'phone_pin_hash', None) else '—')
+                + (' · партнёры' if getattr(emp, 'can_partners', False) else ''),
                 emp.created_at.strftime('%d.%m.%Y')
             ))
     
+    def toggle_partners(self):
+        """Согласует с партнёрами: переписка, цена, отказ — в кабинете на телефоне."""
+        selected = self.employees_tree.selection()
+        if not selected:
+            messagebox.showwarning("Партнёры", "Выберите сотрудника в списке")
+            return
+        from models import Employee
+        emp_id = int(self.employees_tree.item(selected[0])['values'][0])
+        employee = self.db.query(Employee).get(emp_id)
+        if employee is None:
+            return
+        on = not bool(employee.can_partners)
+        question = (f"{employee.title}: согласовывать работы с партнёрами?\n\n"
+                    "В кабинете на телефоне появится вкладка «Партнёры»: переписка с партнёром, "
+                    "его цена, «готово», цена клиенту." if on
+                    else f"{employee.title}: больше не согласовывает с партнёрами?")
+        if not messagebox.askyesno("Партнёры", question):
+            return
+        employee.can_partners = on
+        self.db.commit()
+        try:
+            from services import sync_nudge
+            sync_nudge.request('кто согласует с партнёрами')
+        except Exception:
+            pass
+        self.refresh_employees()
+
     def refresh_active_shifts(self):
         self.active_shifts_list.delete(0, tk.END)
         shifts = self.service.get_active_shifts()

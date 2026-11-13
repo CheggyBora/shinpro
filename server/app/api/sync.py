@@ -164,6 +164,8 @@ class EmployeeIn(BaseModel):
     # ПИН для телефона мастера — отпечатком. Старая программа не шлёт:
     # тогда ПИН на сервере не трогаем
     pin_hash: Optional[str] = None
+    # Согласует работы с партнёрами (13.11.2026). Старая программа не шлёт
+    can_partners: Optional[bool] = None
 
 
 class PayoutIn(BaseModel):
@@ -639,6 +641,8 @@ def push(payload: PushIn, db: Session = Depends(get_db),
         row.is_active = item.is_active
         if 'pin_hash' in item.model_fields_set:
             row.pin_hash = (item.pin_hash or '').strip()[:64] or None
+        if item.can_partners is not None:
+            row.can_partners = bool(item.can_partners)
         db.flush()
         result.employees += 1
 

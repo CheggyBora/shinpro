@@ -380,6 +380,9 @@ class ShopEmployee(Base):
     # приёмщик в программе: «Сотрудники» → «ПИН для телефона». Пусто —
     # войти в кабинет мастера этим сотрудником нельзя
     pin_hash = Column(String(64), nullable=True)
+    # Согласует работы с партнёрами: видит переписку в кабинете на
+    # телефоне, пишет партнёру, принимает цену (решение владельца 13.11.2026)
+    can_partners = Column(Boolean, default=False, nullable=False, server_default='0')
 
     @property
     def title(self):

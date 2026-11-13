@@ -181,5 +181,43 @@ job8 = partners.create_job(weld.uid, 'Сварка для своих', 1000, par
 check('наряд на «ПАРТНЁР»', partners.order_of(job8).car.license_plate == 'ПАРТНЁР')
 check('задача в календаре без номера', job8.license_plate is None)
 
+print('\n=== Правки с сервера: чат, кабинет, дашборд ===')
+calendar = CalendarService(db)
+
+
+def from_server(task, **changes):
+    item = calendar.task_payload(task)
+    item.update(changes)
+    from datetime import datetime, timedelta
+    item['updated_at'] = (datetime.now() + timedelta(hours=2)).isoformat()
+    calendar.apply_server({'tasks': [item]})
+    db.refresh(task)
+    return task
+
+
+order9 = orders.create_order('Т999ТТ77', 'R16', 'car', create_client=False)
+job9 = partners.create_job(weld.uid, 'Сварка из чата', 3000, order_id=order9.id, creator_id=IVAN,
+                           salary={'salary_to': SAL_CREATOR, 'salary_mode': MODE_MARGIN_ALL})
+check('в обмене работа уходит с полями партнёра', calendar.task_payload(job9).get('partner_kind') == 'work'
+      and calendar.task_payload(job9).get('order_local_id') == order9.id)
+pay(order9)
+from_server(job9, partner_price=1000, partner_status=ST_WORK)
+got = {}
+for t in db.query(SalaryTransaction).filter_by(work_order_id=order9.id):
+    got[t.employee_id] = round(got.get(t.employee_id, 0) + t.amount, 2)
+check('цена из чата после оплаты наряда — Ивану досчитана маржа 2000', got.get(IVAN) == 2000.0, str(got))
+count = db.query(CashOrder).count()
+from_server(job9, partner_status=ST_PAID, pay_method=PAY_CASH, pay_note='из дашборда')
+rko = db.query(CashOrder).order_by(CashOrder.id.desc()).first()
+check('оплатили из дашборда наличными — РКО 1000 «Партнёры» проведён здесь',
+      db.query(CashOrder).count() == count + 1 and rko.amount == 1000 and rko.method == METHOD_CASH
+      and rko.category == 'Партнёры')
+from_server(job9, partner_status=ST_PAID, pay_method=PAY_CASH, pay_note='из дашборда ещё раз')
+check('та же оплата второй раз — второго РКО нет', db.query(CashOrder).count() == count + 1)
+job10 = partners.create_job(weld.uid, 'Сварка, передумали', 2500, partner_price=1200, plate='Х100ХХ77')
+order10 = partners.order_of(job10)
+from_server(job10, partner_status=ST_REFUSED)
+check('отказ с телефона — строки в наряде нет', orders.calculate_total(order10.id) == 0)
+
 db.close()
 finish()

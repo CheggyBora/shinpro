@@ -347,17 +347,27 @@ def handle_update(db, account, update):
     chat_id = chat.get('id')
     text = (message.get('text') or '').strip()
 
-    if not chat_id:
-        return None
-
     # Бот на сервере — кто ему пишет, цех узнаёт отсюда (раньше сам, через
     # getUpdates). Личные переписки, не группы-шум: группу тоже запомним —
     # туда владелец может слать сводку
+    if chat_id:
+        try:
+            remember_chat(db, account, chat)
+        except Exception as e:
+            db.rollback()
+            log.warning(f'Бот: не запомнили чат {chat_id}: {e}')
+
+    # Партнёры (13.11.2026): кнопки заявки, цена, переписка по работе
     try:
-        remember_chat(db, account, chat)
+        from app.services import partners
+        if partners.handle_update(db, account, update):
+            return None
     except Exception as e:
         db.rollback()
-        log.warning(f'Бот: не запомнили чат {chat_id}: {e}')
+        log.warning(f'Бот: сообщение партнёра не разобрано: {e}')
+
+    if not chat_id:
+        return None
 
     if text.startswith('/start'):
         parts = text.split(maxsplit=1)

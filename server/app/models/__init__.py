@@ -13,7 +13,7 @@ from app.models.photo import (MasterDevice, OpenOrder, OrderPhoto, Arrival,
                               ShopService, WorkOffer, MasterEvent)
 from app.models.push import PushSubscription
 from app.models.live import LiveTicket
-from app.models.task import (Task, Counterparty, CATEGORIES, CATEGORY_TITLES,
+from app.models.task import (Task, Counterparty, PartnerMessage, PartnerQuote, CATEGORIES, CATEGORY_TITLES,
                              SOURCES)
 from app.models.stock import StockItem
 from app.models.cash import CashOrder
@@ -33,6 +33,7 @@ from app.models.staff import (StaffUser, StaffAction, ROLE_OWNER, ROLE_ADMIN,
                               REPORTS, REPORT_KINDS)
 
 __all__ = [
+    'PartnerMessage', 'PartnerQuote',
     'TelegramChat',
     'Account', 'AccountPayment', 'Shop', 'AccountDomain', 'ConnectCode', 'ConnectAttempt',
     'Client', 'Car', 'Device', 'LoginCode',

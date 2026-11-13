@@ -391,6 +391,38 @@ nav.tabs button[aria-current="page"] { color: var(--brand); }
   <p class="note">Начисление появляется, когда наряд оплачен и цех обменялся с сервером.</p>
 </section>
 
+<!-- Партнёры: работы у партнёров (решение владельца 13.11.2026) -->
+<section id="screenPartners" hidden>
+  <div id="pList"></div>
+  <button type="button" class="ghost" id="pReload">Обновить</button>
+</section>
+
+<section id="screenPartner" hidden>
+  <div class="card" style="padding:12px 14px">
+    <b id="pjTitle"></b>
+    <div class="sub" id="pjInfo"></div>
+    <div class="sub" id="pjPrices"></div>
+  </div>
+  <div class="chips" id="pjActions"></div>
+  <div class="card" style="padding:12px 14px">
+    <label for="pjPrice" style="font-size:14px">Цена партнёра (если договорились по телефону)</label>
+    <div style="display:flex;gap:8px;margin-top:6px">
+      <input id="pjPrice" inputmode="decimal" style="flex:1;min-width:0;padding:12px;font-size:17px;border:1px solid var(--line);border-radius:10px">
+      <button type="button" id="pjSavePrice" style="width:auto;padding:12px 16px">Сохранить</button>
+    </div>
+  </div>
+  <h2 class="section">Переписка</h2>
+  <div id="pjMessages"></div>
+  <div class="card" style="padding:10px;display:flex;gap:8px;align-items:center">
+    <label style="width:48px;height:48px;display:flex;align-items:center;justify-content:center;border:1px solid var(--line);border-radius:10px;flex:0 0 auto" aria-label="Фото партнёру">
+      <input id="pjPhoto" type="file" accept="image/*" capture="environment" hidden>
+      <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
+    </label>
+    <input id="pjText" placeholder="Сообщение партнёру…" style="flex:1;min-width:0;padding:12px;font-size:16px;border:1px solid var(--line);border-radius:10px">
+    <button type="button" id="pjSend" style="width:auto;padding:12px 14px">Отпр.</button>
+  </div>
+</section>
+
 <!-- Новая машина: снимок → номер → «Создать наряд» -->
 <section id="screenArrival" hidden>
   <img class="car-photo" id="arrPhoto" alt="Снимок машины">
@@ -446,6 +478,7 @@ nav.tabs button[aria-current="page"] { color: var(--brand); }
 <nav class="tabs" id="tabs" hidden>
   <button type="button" data-tab="cars" aria-current="page">Машины</button>
   <button type="button" data-tab="earn">Заработок</button>
+  <button type="button" data-tab="partners">Партнёры</button>
 </nav>
 
 <script>
@@ -461,18 +494,25 @@ var state = { key: null, me: null, picked: null, order: null, chip: '', offerPic
 function $(id) { return document.getElementById(id); }
 
 var SCREENS = ['screenConnect', 'screenHome', 'screenWho', 'screenCars', 'screenOrder',
-               'screenOffer', 'screenEarn', 'screenArrival', 'screenArrivalDone'];
+               'screenOffer', 'screenEarn', 'screenArrival', 'screenArrivalDone',
+               'screenPartners', 'screenPartner'];
 
 function show(name, back) {
   SCREENS.forEach(function (id) { $(id).hidden = (id !== name); });
   $('backBtn').hidden = !back;
   state.back = back || null;
   var inside = state.me && state.me.employee;
-  $('logoutBtn').hidden = !(inside && (name === 'screenCars' || name === 'screenEarn'));
-  $('tabs').hidden = !(inside && state.me.salary_visible
-                       && (name === 'screenCars' || name === 'screenEarn'));
+  var tabbed = name === 'screenCars' || name === 'screenEarn' || name === 'screenPartners';
+  $('logoutBtn').hidden = !(inside && tabbed);
+  // Вкладки: «Заработок» — если владелец открыл, «Партнёры» — кто согласует
+  var earnOn = !!(inside && state.me.salary_visible);
+  var partnersOn = !!(inside && state.me.partners);
+  $('tabs').hidden = !(inside && (earnOn || partnersOn) && tabbed);
   [].slice.call($('tabs').querySelectorAll('button')).forEach(function (button) {
-    var on = (button.getAttribute('data-tab') === 'earn') === (name === 'screenEarn');
+    var tab = button.getAttribute('data-tab');
+    button.hidden = (tab === 'earn' && !earnOn) || (tab === 'partners' && !partnersOn);
+    var current = name === 'screenEarn' ? 'earn' : (name === 'screenPartners' ? 'partners' : 'cars');
+    var on = tab === current;
     if (on) button.setAttribute('aria-current', 'page'); else button.removeAttribute('aria-current');
   });
   window.scrollTo(0, 0);
@@ -1126,8 +1166,116 @@ function loadEarn() {
 
 [].slice.call($('tabs').querySelectorAll('button')).forEach(function (button) {
   button.addEventListener('click', function () {
-    if (button.getAttribute('data-tab') === 'earn') loadEarn(); else loadCars();
+    var tab = button.getAttribute('data-tab');
+    if (tab === 'earn') loadEarn(); else if (tab === 'partners') loadPartners(); else loadCars();
   });
+});
+
+// --- Партнёры: работы у партнёров (решение владельца 13.11.2026) ------------
+
+var PSTATUS = { agree: '#fef3c7', client: '#fef3c7', work: '#dbeafe', wait_pay: '#ffedd5',
+                paid: '#d1fae5', refused: '#e2e8f0' };
+
+function loadPartners() {
+  api('/m/partners').then(function (data) {
+    $('title').textContent = 'Работы у партнёров';
+    $('pList').innerHTML = data.jobs.length ? data.jobs.map(function (job) {
+      return '<button type="button" class="card" data-pjob="' + escape(job.uid) + '" style="display:block;width:100%;text-align:left;padding:12px 14px">'
+        + '<b>' + escape(job.title) + '</b>'
+        + '<div class="sub">' + escape(job.partner || '—') + ' · с клиента ' + money(job.our_price) + '</div>'
+        + '<span style="display:inline-block;margin-top:6px;padding:2px 8px;border-radius:6px;font-size:13px;font-weight:600;background:'
+        + (PSTATUS[job.status] || '#e2e8f0') + ';color:#0f172a">' + escape(job.status_title) + '</span></button>';
+    }).join('') : '<div class="empty">Открытых работ у партнёров нет</div>';
+    [].slice.call($('pList').querySelectorAll('[data-pjob]')).forEach(function (button) {
+      button.addEventListener('click', function () { openPartner(button.getAttribute('data-pjob')); });
+    });
+    show('screenPartners');
+  }).catch(function (e) {
+    if (e.status === 401) return showStranger();
+    alert(e.message);
+    loadCars();
+  });
+}
+
+$('pReload').addEventListener('click', loadPartners);
+
+function openPartner(uid) {
+  api('/m/partners/' + encodeURIComponent(uid)).then(drawPartner).catch(function (e) { alert(e.message); });
+}
+
+function drawPartner(job) {
+  state.pjob = job;
+  $('title').textContent = job.partner || 'Партнёр';
+  $('pjTitle').textContent = job.title;
+  $('pjInfo').textContent = job.kind_title + ' · ' + job.status_title
+    + (job.partner_bot ? '' : (job.invite ? ' · партнёр не в боте — ссылка: ' + job.invite : ''));
+  $('pjPrices').textContent = 'С клиента ' + money(job.our_price) + ' · партнёру '
+    + (job.partner_price == null ? 'не указано' : money(job.partner_price));
+  $('pjPrice').value = job.partner_price == null ? '' : job.partner_price;
+  var actions = [];
+  if (job.status === 'agree') actions.push(['send', 'Отправить заявку партнёру']);
+  if (job.status === 'client') actions.push(['quote', 'Цену — клиенту'], ['client_yes', 'Клиент согласен'],
+                                            ['client_no', 'Клиент отказался']);
+  if (job.status === 'work') actions.push(['finish', 'Партнёр сделал']);
+  if (['agree', 'client', 'work'].indexOf(job.status) >= 0) actions.push(['refuse', 'Отказ партнёра']);
+  $('pjActions').innerHTML = actions.map(function (a) {
+    return '<button type="button" data-pact="' + a[0] + '">' + a[1] + '</button>';
+  }).join('');
+  [].slice.call($('pjActions').querySelectorAll('[data-pact]')).forEach(function (button) {
+    button.addEventListener('click', function () { partnerAct(button.getAttribute('data-pact')); });
+  });
+  $('pjMessages').innerHTML = (job.messages || []).map(function (m) {
+    var mine = m.author === 'staff', system = m.author === 'system';
+    return '<div style="display:flex;justify-content:' + (system ? 'center' : (mine ? 'flex-end' : 'flex-start'))
+      + ';margin:6px 0"><div class="card" style="margin:0;max-width:85%;padding:8px 12px;background:'
+      + (system ? '#ede9fe' : (mine ? '#dbeafe' : '')) + '">'
+      + (m.photo ? '<img alt="Фото" data-pphoto="' + m.id + '" style="max-width:100%;border-radius:8px;display:block">' : '')
+      + (m.text ? escape(m.text) : '') + '<div class="sub" style="font-size:12px">' + escape(m.name)
+      + ' · ' + escape((m.at || '').slice(11, 16)) + '</div></div></div>';
+  }).join('') || '<div class="note">Пока пусто — отправьте заявку партнёру.</div>';
+  [].slice.call($('pjMessages').querySelectorAll('[data-pphoto]')).forEach(function (img) {
+    img.src = '/m/partners/' + encodeURIComponent(job.uid) + '/photo/' + img.getAttribute('data-pphoto');
+  });
+  show('screenPartner', loadPartners);
+}
+
+function partnerAct(action) {
+  var base = '/m/partners/' + encodeURIComponent(state.pjob.uid);
+  var call = action === 'send' ? api(base + '/send', { method: 'POST' })
+    : action === 'quote' ? api(base + '/quote', { method: 'POST' })
+    : api(base + '/status', { method: 'POST', json: { action: action } });
+  call.then(function (job) {
+    if (job.quote_sent) {
+      alert(job.quote_sent.sent ? 'Цена отправлена клиенту в Telegram.'
+        : 'Клиент не подключён к боту — отправьте ему ссылку: ' + job.quote_sent.link);
+    }
+    drawPartner(job);
+  }).catch(function (e) { alert(e.message); });
+}
+
+$('pjSavePrice').addEventListener('click', function () {
+  api('/m/partners/' + encodeURIComponent(state.pjob.uid) + '/price',
+      { method: 'POST', json: { price: $('pjPrice').value } })
+    .then(drawPartner).catch(function (e) { alert(e.message); });
+});
+
+$('pjSend').addEventListener('click', function () {
+  var text = $('pjText').value.trim();
+  if (!text) return;
+  api('/m/partners/' + encodeURIComponent(state.pjob.uid) + '/message', { method: 'POST', json: { text: text } })
+    .then(function (job) { $('pjText').value = ''; drawPartner(job); })
+    .catch(function (e) { alert(e.message); });
+});
+
+$('pjPhoto').addEventListener('change', function () {
+  var file = $('pjPhoto').files[0];
+  if (!file) return;
+  var form = new FormData();
+  form.append('photo', file);
+  form.append('text', $('pjText').value.trim());
+  api('/m/partners/' + encodeURIComponent(state.pjob.uid) + '/message', { method: 'POST', body: form })
+    .then(function (job) { $('pjText').value = ''; $('pjPhoto').value = ''; drawPartner(job); })
+    .catch(function (e) { alert(e.message); });
 });
 
 // --- Новая машина (docs/order_photo.md) -------------------------------------

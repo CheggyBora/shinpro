@@ -474,6 +474,7 @@ class CalendarService:
             'deleted': bool(task.deleted), 'source': task.source,
             'created_by': task.created_by, 'created_at': _iso(task.created_at),
             'updated_at': _iso(task.updated_at),
+            **partner_payload(task),
         }
 
     @staticmethod
@@ -502,6 +503,7 @@ class CalendarService:
         for row in list(sent_tasks) + list(sent_parties):
             row.synced_at = row.updated_at
         changed = 0
+        partner_changed = []
         for item in answer.get('tasks') or []:
             task = self.by_uid(item.get('uid'))
             theirs = _parse(item.get('updated_at'))
@@ -532,12 +534,17 @@ class CalendarService:
                         'source', 'created_by'):
                 setattr(task, key, item.get(key))
             task.title = task.title or ''
+            before = (task.partner_status, task.partner_price, task.pay_method) \
+                if task.partner_kind else None
+            apply_partner(task, item)
             task.done_at = _parse(item.get('done_at'))
             task.deleted = bool(item.get('deleted'))
             task.created_at = _parse(item.get('created_at')) or task.created_at or moment
             task.updated_at = theirs or moment
             task.synced_at = task.updated_at
             changed += 1
+            if task.partner_kind:
+                partner_changed.append((task, before))
         for item in answer.get('counterparties') or []:
             row = self.counterparty(item.get('uid'))
             theirs = _parse(item.get('updated_at'))
@@ -561,6 +568,18 @@ class CalendarService:
             row.synced_at = row.updated_at
             changed += 1
         self.db.commit()
+        # Работы у партнёров, поправленные на сервере: цена из чата,
+        # оплата из дашборда, отказ — сделать своё в цеху
+        if partner_changed:
+            from services.partner_service import PartnerService
+            partners = PartnerService(self.db)
+            for task, before in partner_changed:
+                try:
+                    partners.after_server(task, before)
+                except Exception as e:
+                    self.db.rollback()
+                    from logger import log
+                    log.error(f'Работа у партнёра {task.uid}: не применили правку сервера: {e}')
         return changed
 
 
@@ -622,3 +641,41 @@ def _parse(value):
         return as_naive(datetime.fromisoformat(str(value)))
     except ValueError:
         return None
+
+
+# Работа у партнёра (решения владельца 13.11.2026): поля ходят с задачей
+PARTNER_KINDS = ('work', 'paint', 'tires')
+PARTNER_STATUSES = ('agree', 'client', 'work', 'wait_pay', 'paid', 'refused')
+
+
+def partner_payload(task):
+    if not getattr(task, 'partner_kind', None):
+        return {}
+    return {'partner_kind': task.partner_kind, 'partner_status': task.partner_status,
+            'our_price': task.our_price, 'partner_price': task.partner_price,
+            'needs_client': task.needs_client, 'order_local_id': task.order_id,
+            'pay_method': task.pay_method, 'pay_note': task.pay_note,
+            'paid_at': _iso(task.paid_at)}
+
+
+def apply_partner(task, item):
+    """Поля партнёра от сервера — только если он их прислал. Наряд и
+    правило зарплаты — свои, цеховые: сервер их не меняет."""
+    if 'partner_kind' not in item:
+        return
+    kind = item.get('partner_kind')
+    if kind not in PARTNER_KINDS:
+        return
+    task.partner_kind = kind
+    status = item.get('partner_status')
+    task.partner_status = status if status in PARTNER_STATUSES else task.partner_status
+    for key in ('our_price', 'partner_price'):
+        value = item.get(key)
+        setattr(task, key, None if value in (None, '') else float(value))
+    if item.get('needs_client') is not None:
+        task.needs_client = bool(item.get('needs_client'))
+    if item.get('order_local_id') and not task.order_id:
+        task.order_id = int(item['order_local_id'])
+    task.pay_method = item.get('pay_method') or task.pay_method
+    task.pay_note = item.get('pay_note') if 'pay_note' in item else task.pay_note
+    task.paid_at = _parse(item.get('paid_at')) or task.paid_at

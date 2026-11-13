@@ -448,7 +448,8 @@ class SyncService:
                       'wash_percent': getattr(row, 'wash_percent', None),
                       'is_active': bool(row.is_active),
                       # Кабинет мастера: пусто — ПИН снят, телефон выйдет
-                      'pin_hash': getattr(row, 'phone_pin_hash', None) or ''}
+                      'pin_hash': getattr(row, 'phone_pin_hash', None) or '',
+                      'can_partners': bool(getattr(row, 'can_partners', False))}
                      for row in self.db.query(Employee).all()]
 
         # Касса: у открытой смены «должно быть» — текущий остаток

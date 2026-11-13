@@ -25,6 +25,9 @@ class TelegramChat(Base):
     username = Column(String(64), nullable=True)
     name = Column(String(200), nullable=True)
     started_at = Column(DateTime, default=shop_now, nullable=False)
+    # Ждём от этого человека ответ на кнопку: «price:<uid работы>» —
+    # следующее число будет ценой партнёра
+    pending = Column(String(60), nullable=True)
     last_at = Column(DateTime, default=shop_now, nullable=False)
 
     __table_args__ = (UniqueConstraint('account_id', 'chat_id', name='uq_telegram_chats_account_chat'),)

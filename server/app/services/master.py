@@ -154,6 +154,8 @@ def me(db, device, shop):
                      if person is not None else None),
         'employees': employees(db, shop),
         'salary_visible': salary_visible(db, shop),
+        # Согласует работы с партнёрами — в кабинете вкладка «Партнёры»
+        'partners': bool(person is not None and person.can_partners),
     }
 
 

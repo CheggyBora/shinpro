@@ -304,7 +304,61 @@ def to_dict(task):
         'created_by': task.created_by,
         'created_at': _iso(task.created_at),
         'updated_at': _iso(task.updated_at),
+        **partner_dict(task),
     }
+
+
+# Поля работы у партнёра (решения владельца 13.11.2026). Цех их шлёт и
+# принимает вместе с задачей; старый цех их не знает — не трогаем
+PARTNER_KINDS = ('work', 'paint', 'tires')
+PARTNER_STATUSES = ('agree', 'client', 'work', 'wait_pay', 'paid', 'refused')
+PAY_METHODS = ('cash', 'noncash', 'other')
+
+
+def partner_dict(task):
+    if not task.partner_kind:
+        return {}
+    return {
+        'partner_kind': task.partner_kind,
+        'partner_status': task.partner_status,
+        'our_price': task.our_price,
+        'partner_price': task.partner_price,
+        'needs_client': task.needs_client,
+        'order_local_id': task.order_local_id,
+        'pay_method': task.pay_method,
+        'pay_note': task.pay_note,
+        'paid_at': _iso(task.paid_at),
+    }
+
+
+def _number(value):
+    try:
+        return None if value in (None, '') else round(float(value), 2)
+    except (TypeError, ValueError):
+        return None
+
+
+def apply_partner(row, item):
+    """Поля работы у партнёра из цеха — только если цех их прислал."""
+    if 'partner_kind' not in item:
+        return
+    kind = item.get('partner_kind')
+    row.partner_kind = kind if kind in PARTNER_KINDS else None
+    if row.partner_kind is None:
+        return
+    status = item.get('partner_status')
+    row.partner_status = status if status in PARTNER_STATUSES else 'agree'
+    row.our_price = _number(item.get('our_price'))
+    row.partner_price = _number(item.get('partner_price'))
+    row.needs_client = None if item.get('needs_client') is None else bool(item.get('needs_client'))
+    try:
+        row.order_local_id = int(item['order_local_id']) if item.get('order_local_id') else None
+    except (TypeError, ValueError):
+        row.order_local_id = None
+    method = item.get('pay_method')
+    row.pay_method = method if method in PAY_METHODS else None
+    row.pay_note = _text(item.get('pay_note'), 300)
+    row.paid_at = parse_moment(item.get('paid_at'))
 
 
 def counterparty_dict(row):
@@ -404,6 +458,7 @@ def merge_tasks(db, shop, items, now=None):
         source = str(item.get('source') or SOURCE_SHOP).strip().lower()
         row.source = source if source in SOURCES else SOURCE_SHOP
         row.created_by = _text(item.get('created_by'), LIMITS['created_by'])
+        apply_partner(row, item)
         row.updated_at = theirs
         db.flush()
 

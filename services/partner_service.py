@@ -378,12 +378,50 @@ class PartnerService:
         for task in tasks:
             task.partner_status = ST_PAID
             task.pay_method = method
+            # Ордер провели здесь — с сервера второй раз не проводим
+            task.pay_ref = 'here'
             task.pay_note = (note or '')[:300] or None
             task.paid_at = moment
             task.done_at = task.done_at or moment
             self._touch(task)
         self.db.commit()
         return orders_made
+
+    # ------------------------------------------------------------------
+    # Правки с сервера
+    # ------------------------------------------------------------------
+
+    def after_server(self, task, before):
+        """
+        Работу поправили на сервере (чат, кабинет, дашборд) — сделать своё:
+        цена партнёра пришла после оплаты наряда — досчитать зарплату;
+        отказ — убрать строку из неоплаченного наряда; оплатили из
+        дашборда — провести РКО или расход по безналу (один раз).
+        """
+        from services.cash_service import CashService
+        from models.cash import KIND_OUT, METHOD_CASH, METHOD_NONCASH
+
+        status, price, method = before or (None, None, None)
+        if task.partner_price != price:
+            self.settle_late(task)
+        if task.partner_status == ST_REFUSED and status != ST_REFUSED:
+            order = self.order_of(task)
+            line = self.line_of(task)
+            if order is not None and order.status != 'paid' and line is not None:
+                self.db.delete(line)
+                self.db.commit()
+        if task.partner_status == ST_PAID and task.pay_method in (PAY_CASH, PAY_NONCASH) \
+                and not task.pay_ref and task.partner_price:
+            party = self.db.query(Counterparty).filter(Counterparty.uid == task.counterparty_uid).first()
+            text = f'{party.name if party else "Партнёр"}: {number_of(task)} {task.title}'
+            if task.pay_note:
+                text += f' · {task.pay_note}'
+            row = CashService(self.db).create(
+                KIND_OUT, CASH_CATEGORY, task.partner_price,
+                METHOD_CASH if task.pay_method == PAY_CASH else METHOD_NONCASH,
+                note=text[:300], check_category=False, commit=False)
+            task.pay_ref = getattr(row, 'uid', None) or 'server'
+            self.db.commit()
 
     # ------------------------------------------------------------------
     # Зарплата

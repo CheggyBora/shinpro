@@ -33,6 +33,9 @@ class Employee(Base):
     # приёмщик по админскому PIN: «Сотрудники» → «ПИН для телефона».
     # Пусто — войти этим сотрудником на телефоне нельзя
     phone_pin_hash = Column(String(64), nullable=True)
+    # Согласует работы с партнёрами: в кабинете на телефоне — переписка с
+    # партнёром, его цена (решение владельца 13.11.2026)
+    can_partners = Column(Boolean, default=False, nullable=False, server_default='0')
 
     @property
     def title(self):

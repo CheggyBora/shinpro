@@ -123,6 +123,9 @@ class CalendarTask(Base):
     pay_method = Column(String(10), nullable=True)
     pay_note = Column(String(300), nullable=True)
     paid_at = Column(DateTime(timezone=True), nullable=True)
+    # uid кассового ордера оплаты партнёру — чтобы РКО не провести дважды,
+    # когда оплату отметили в дашборде и она пришла обменом
+    pay_ref = Column(String(200), nullable=True)
 
     def __repr__(self):
         return f"<Задача {self.due_date} {self.due_time or ''} {self.category}: {self.title}>"

@@ -930,6 +930,7 @@ function remember() {
 // ------------------------------------------------------------------
 
 var ICONS = {
+  partners: '<circle cx="7" cy="8" r="3"/><circle cx="17" cy="8" r="3"/><path d="M2 20c0-3 2-5 5-5 2 0 3 1 5 2 2-1 3-2 5-2 3 0 5 2 5 5"/>',
   summary: '<path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 5-7"/>',
   services: '<path d="M4 6h16M4 12h16M4 18h10"/>',
   masters: '<circle cx="9" cy="8" r="3"/><path d="M3 20c0-3 3-5 6-5s6 2 6 5"/><path d="M17 11h4M19 9v4"/>',
@@ -971,6 +972,8 @@ function sections() {
   if (can('revenue')) list.push({ key: 'summary', title: 'Сводка' });
   // Календарь и склад — свои галочки в «Доступе» (решение 29.10.2026)
   if (can('calendar')) list.push({ key: 'calendar', title: 'Календарь' });
+  // Работы у партнёров и оплата им (решение владельца 13.11.2026)
+  if (can('calendar')) list.push({ key: 'partners', title: 'Партнёры' });
   if (can('stock') && stockOn()) list.push({ key: 'stock', title: 'Склад' });
   if (can('revenue')) list.push({ key: 'services', title: 'Услуги' });
   if (can('salary_all')) list.push({ key: 'masters', title: 'Мастера' });
@@ -1225,7 +1228,7 @@ function load() {
   var aboutPeople = section === 'staff' || section === 'salary'
                  || section === 'booking' || section === 'calendar'
                  || section === 'stock' || section === 'brand'
-                 || section === 'points' || section === 'customers';
+                 || section === 'points' || section === 'customers' || section === 'partners';
   $('period').style.display = aboutPeople ? 'none' : '';
   $('dates').style.display = aboutPeople ? 'none' : '';
   // Переключатель — после смены точки или раздела: у новой точки мойки
@@ -1233,6 +1236,7 @@ function load() {
   drawDirection();
 
   if (section === 'calendar') return loadCalendar();
+  if (section === 'partners') return loadPartners();
   if (section === 'stock') return loadStock();
   if (section === 'booking') return loadBooking();
   if (section === 'staff') return loadStaff();
@@ -3860,6 +3864,171 @@ function drawStock() {
 // Отменённый ордер и его отмена видны оба, а в итогах дают ноль.
 
 var CASH_KINDS = { 'in': 'Приходный', out: 'Расходный' };
+
+// ------------------------------------------------------------------
+// Партнёры: работы у партнёров, переписка, оплата партнёрам
+// ------------------------------------------------------------------
+
+var PARTNER_TAGS = { agree: 'warn', client: 'warn', work: '', wait_pay: 'bad', paid: 'ok', refused: '' };
+var partnerFilter = 'open';
+
+function partnerTag(job) {
+  return '<span class="tag ' + (PARTNER_TAGS[job.status] || '') + '">' + escape(job.status_title) + '</span>';
+}
+
+function loadPartners() {
+  api('/dashboard/partners' + (currentShop ? '?shop=' + encodeURIComponent(currentShop) : ''))
+    .then(drawPartners).catch(function (e) { show(''); fail(e.message); });
+}
+
+function drawPartners(data) {
+  var sum = data.summary;
+  var jobs = data.jobs.filter(function (job) {
+    if (partnerFilter === 'open') return ['agree', 'client', 'work', 'wait_pay'].indexOf(job.status) >= 0;
+    if (partnerFilter === 'pay') return job.status === 'wait_pay';
+    return true;
+  });
+  var html = '<div class="tiles">'
+    + tile('Оплата партнёрам', money(sum.owe), 'wide', sum.owe > 0 ? 'bad' : '')
+    + tile('В работе у партнёров', String(sum.in_work))
+    + tile('Наша маржа', money(sum.margin), '', 'ok')
+    + tile('Без цены партнёра', String(sum.no_price), '', sum.no_price ? 'bad' : '')
+    + '</div>';
+  html += '<div class="card"><div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">'
+    + [['open', 'Открытые'], ['pay', 'Ждут оплаты'], ['all', 'Все']].map(function (item) {
+        return '<button type="button" class="chip" data-pfilter="' + item[0] + '" aria-pressed="'
+          + (partnerFilter === item[0]) + '">' + item[1] + '</button>';
+      }).join('') + '</div>';
+  if (!jobs.length) html += '<div class="empty">Работ нет</div>';
+  html += jobs.map(function (job) {
+    var pick = job.status === 'wait_pay'
+      ? '<input type="checkbox" data-ppick="' + escape(job.uid) + '" aria-label="Отметить к оплате" style="width:20px;height:20px">' : '';
+    return '<div class="row">' + pick + '<div class="main"><b>' + escape(job.title) + ' ' + partnerTag(job)
+      + '</b><span>' + escape(job.kind_title) + ' · ' + escape(job.partner || '—')
+      + ' · с клиента ' + money(job.our_price) + ' · партнёру '
+      + (job.partner_price == null ? '<b class="bad">не указана</b>' : money(job.partner_price))
+      + (job.margin == null ? '' : ' · маржа ' + money(job.margin)) + '</span></div>'
+      + '<button class="link" type="button" data-popen="' + escape(job.uid) + '">Открыть</button></div>';
+  }).join('');
+  if (data.jobs.some(function (job) { return job.status === 'wait_pay'; })) {
+    html += '<div class="form" style="margin-top:12px"><div class="field"><label for="pMethod">Чем платим</label>'
+      + '<select id="pMethod"><option value="cash">Наличные из кассы (РКО)</option>'
+      + '<option value="noncash">Безнал с расчётного счёта</option><option value="other">Другое</option></select></div>'
+      + '<div class="field"><label for="pNote">Пометка</label><input id="pNote" placeholder="необязательно"></div></div>'
+      + '<button class="go" type="button" id="pPay">Оплатить отмеченные</button>'
+      + '<div class="hint">Наличные — касса на точке проведёт РКО при обмене; безнал — расход по безналу; '
+      + 'другое — нигде не учитывается.</div>';
+  }
+  html += '</div><div id="pCard"></div>';
+  show(html);
+
+  [].slice.call($('view').querySelectorAll('[data-pfilter]')).forEach(function (button) {
+    button.addEventListener('click', function () {
+      partnerFilter = button.getAttribute('data-pfilter');
+      drawPartners(data);
+    });
+  });
+  [].slice.call($('view').querySelectorAll('[data-popen]')).forEach(function (button) {
+    button.addEventListener('click', function () { openPartnerJob(button.getAttribute('data-popen')); });
+  });
+  if ($('pPay')) $('pPay').addEventListener('click', function () {
+    var uids = [].slice.call($('view').querySelectorAll('[data-ppick]')).filter(function (box) {
+      return box.checked;
+    }).map(function (box) { return box.getAttribute('data-ppick'); });
+    if (!uids.length) { fail('Отметьте работы к оплате'); return; }
+    api('/dashboard/partners/pay', { method: 'POST', body: {
+      uids: uids, method: $('pMethod').value, note: $('pNote').value } })
+      .then(drawPartners).catch(function (e) { fail(e.message); });
+  });
+}
+
+function openPartnerJob(uid) {
+  api('/dashboard/partners/' + encodeURIComponent(uid)).then(drawPartnerJob)
+    .catch(function (e) { fail(e.message); });
+}
+
+function drawPartnerJob(job) {
+  var card = $('pCard');
+  if (!card) return;
+  var messages = (job.messages || []).map(function (m) {
+    var mine = m.author === 'staff';
+    var system = m.author === 'system';
+    var photo = m.photo ? '<div data-pphoto="' + m.id + '" class="hint">фото — загружаем…</div>' : '';
+    return '<div style="margin:6px 0;display:flex;justify-content:' + (system ? 'center' : (mine ? 'flex-end' : 'flex-start'))
+      + '"><div style="max-width:80%;padding:8px 10px;border-radius:10px;background:'
+      + (system ? '#ede9fe' : (mine ? '#dbeafe' : 'var(--card, #fff)')) + ';border:1px solid var(--line)">'
+      + photo + (m.text ? escape(m.text) : '') + '<div class="hint" style="margin:2px 0 0">'
+      + escape(m.name) + ' · ' + escape((m.at || '').slice(11, 16)) + '</div></div></div>';
+  }).join('');
+  var actions = [];
+  if (job.status === 'agree') actions.push(['send', 'Отправить заявку партнёру']);
+  if (job.status === 'work' || job.status === 'client') actions.push(['send', 'Повторить партнёру с кнопкой «Готово»']);
+  if (job.status === 'client') actions.push(['quote', 'Цену — клиенту на согласование'],
+                                            ['client_yes', 'Клиент согласен'], ['client_no', 'Клиент отказался']);
+  if (job.status === 'work') actions.push(['finish', 'Партнёр сделал']);
+  if (['agree', 'client', 'work'].indexOf(job.status) >= 0) actions.push(['refuse', 'Отказ партнёра']);
+  var html = '<div class="card"><h2>' + escape(job.title) + ' ' + partnerTag(job) + '</h2>'
+    + '<div class="hint">' + escape(job.kind_title) + ' · партнёр: ' + escape(job.partner || '—')
+    + (job.partner_bot ? ' · в боте' : (job.invite ? ' · не подключён к боту — ссылка: ' + escape(job.invite) : ''))
+    + '</div>'
+    + '<div class="form"><div class="field"><label>С клиента</label><input value="' + money(job.our_price) + '" disabled></div>'
+    + '<div class="field"><label for="pjPrice">Цена партнёра</label><input id="pjPrice" inputmode="decimal" value="'
+    + (job.partner_price == null ? '' : job.partner_price) + '" placeholder="договорились по телефону"></div></div>'
+    + (['paid', 'refused'].indexOf(job.status) < 0
+       ? '<button class="chip" type="button" id="pjSavePrice">Сохранить цену партнёра</button>' : '')
+    + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin:12px 0">'
+    + actions.map(function (a) {
+        return '<button class="chip" type="button" data-pjact="' + a[0] + '">' + a[1] + '</button>';
+      }).join('') + '</div>'
+    + (job.quote ? '<div class="hint">Цена клиенту: ' + money(job.quote.price) + ' — '
+       + ({ pending: 'ждём ответа', yes: 'согласен', no: 'отказался', call: 'просит позвонить' }[job.quote.state] || '')
+       + '</div>' : '')
+    + (job.pay_method ? '<div class="hint">Оплачено: ' + escape(job.pay_title) + (job.pay_note ? ' · ' + escape(job.pay_note) : '') + '</div>' : '')
+    + '<h2 style="margin-top:14px">Переписка</h2>'
+    + (messages || '<div class="empty">Пока пусто</div>')
+    + '<div class="form"><div class="field"><label for="pjText">Сообщение партнёру</label>'
+    + '<input id="pjText" placeholder="Напишите…"></div></div>'
+    + '<button class="go" type="button" id="pjSend">Отправить</button></div>';
+  card.innerHTML = html;
+  card.scrollIntoView({ behavior: 'smooth' });
+
+  function after(promise) {
+    promise.then(function (answer) {
+      if (answer && answer.quote_sent) {
+        alert(answer.quote_sent.sent ? 'Цена отправлена клиенту в Telegram.'
+          : 'Клиент не подключён к боту — отправьте ему ссылку: ' + answer.quote_sent.link);
+      }
+      drawPartnerJob(answer);
+      api('/dashboard/partners' + (currentShop ? '?shop=' + encodeURIComponent(currentShop) : ''))
+        .then(function (data) { var keep = card.innerHTML; drawPartners(data); $('pCard').innerHTML = keep; drawPartnerJob(answer); });
+    }).catch(function (e) { fail(e.message); });
+  }
+  var base = '/dashboard/partners/' + encodeURIComponent(job.uid);
+  if ($('pjSavePrice')) $('pjSavePrice').addEventListener('click', function () {
+    after(api(base + '/price', { method: 'POST', body: { price: $('pjPrice').value } }));
+  });
+  [].slice.call(card.querySelectorAll('[data-pjact]')).forEach(function (button) {
+    button.addEventListener('click', function () {
+      var action = button.getAttribute('data-pjact');
+      if (action === 'send') return after(api(base + '/send', { method: 'POST' }));
+      if (action === 'quote') return after(api(base + '/quote', { method: 'POST' }));
+      after(api(base + '/status', { method: 'POST', body: { action: action } }));
+    });
+  });
+  $('pjSend').addEventListener('click', function () {
+    var text = $('pjText').value.trim();
+    if (!text) return;
+    after(api(base + '/message', { method: 'POST', body: { text: text } }));
+  });
+  [].slice.call(card.querySelectorAll('[data-pphoto]')).forEach(function (box) {
+    fetch(base + '/photo/' + box.getAttribute('data-pphoto'), { headers: { Authorization: 'Bearer ' + token } })
+      .then(function (answer) { return answer.ok ? answer.blob() : null; })
+      .then(function (blob) {
+        if (!blob) return;
+        box.outerHTML = '<img alt="Фото" style="max-width:100%;border-radius:8px" src="' + URL.createObjectURL(blob) + '">';
+      }).catch(function () {});
+  });
+}
 
 function loadCash() {
   api(query('/dashboard/cash')).then(function (data) {

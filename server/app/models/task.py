@@ -108,6 +108,19 @@ class Task(Base):
     created_at = Column(DateTime, default=shop_now, nullable=False)
     updated_at = Column(DateTime, default=shop_now, nullable=False)
 
+    # --- Работа у партнёра (решения владельца 13.11.2026) -------------
+    # Задача, которую делает контрагент: сварка, покраска, заказ шин.
+    # Наша цена — в наряде цеха, цена партнёра — только здесь и в отчётах
+    partner_kind = Column(String(10), nullable=True)
+    partner_status = Column(String(12), nullable=True)
+    our_price = Column(Float, nullable=True)
+    partner_price = Column(Float, nullable=True)
+    needs_client = Column(Boolean, nullable=True)
+    order_local_id = Column(Integer, nullable=True)
+    pay_method = Column(String(10), nullable=True)
+    pay_note = Column(String(300), nullable=True)
+    paid_at = Column(DateTime, nullable=True)
+
 
 class Counterparty(Base):
     """Поставщик, склад, покрасочная — с кем цех работает по задачам."""
@@ -130,6 +143,9 @@ class Counterparty(Base):
     note = Column(Text, nullable=True)
     # Ник в Telegram без «@»: задачу с контрагентом шлём и ему лично
     telegram = Column(String(64), nullable=True)
+    # Чат партнёра с ботом организации: заявки и кнопки «Назначить
+    # цену» / «Готово» уходят сюда (решение владельца 13.11.2026)
+    telegram_chat_id = Column(String(32), nullable=True)
     deleted = Column(Boolean, default=False, nullable=False,
                      server_default='0')
 
@@ -147,3 +163,38 @@ Index('ix_tasks_shop_updated', Task.shop_id, Task.updated_at)
 Index('ix_tasks_shop_due', Task.shop_id, Task.due_date)
 Index('ix_counterparties_shop_updated', Counterparty.shop_id,
       Counterparty.updated_at)
+
+
+class PartnerMessage(Base):
+    """
+    Переписка по работе у партнёра: сотрудники, партнёр и отметки системы
+    («Партнёр назначил цену: 2 000 ₽»). Видят те, кто согласует, и главный.
+    """
+    __tablename__ = 'partner_messages'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    shop_id = Column(Integer, ForeignKey('shops.id'), nullable=False, index=True)
+    task_uid = Column(String(40), nullable=False, index=True)
+    author = Column(String(10), nullable=False)          # staff / partner / system
+    name = Column(String(100), nullable=True)
+    text = Column(Text, nullable=True)
+    photo = Column(String(200), nullable=True)           # файл в папке фото
+    telegram_message_id = Column(Integer, nullable=True)
+    created_at = Column(DateTime, default=shop_now, nullable=False)
+
+
+class PartnerQuote(Base):
+    """
+    Цена работы на согласование клиенту (покраска, шины): ссылка без
+    входа, клиент отвечает «Да» / «Нет» / «Позвоните».
+    """
+    __tablename__ = 'partner_quotes'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    shop_id = Column(Integer, ForeignKey('shops.id'), nullable=False, index=True)
+    task_uid = Column(String(40), nullable=False, index=True)
+    token = Column(String(40), nullable=False, unique=True, index=True)
+    price = Column(Float, nullable=False)
+    state = Column(String(10), nullable=False, default='pending')
+    created_at = Column(DateTime, default=shop_now, nullable=False)
+    answered_at = Column(DateTime, nullable=True)
