@@ -2,8 +2,9 @@
 Отзывы клиентов (решение владельца 13.11.2026).
 
   · ссылки владелец вписывает в «Оформлении»;
-  · наряд с галочкой «Предложить оставить отзыв» — клиенту через 2 часа
-    «спасибо» и ссылки; без галочки — ничего; повторный обмен — не дубль;
+  · площадки — свой список (название и ссылка);
+  · наряд с галочкой «Предложить оставить отзыв» — через час карточка в
+    кабинете и сообщение; без галочки — ничего; повторный обмен — не дубль;
   · ссылок нет — не пишем.
 """
 import os
@@ -90,10 +91,14 @@ with TestClient(app) as http:
     check('без ссылок клиенту ничего', not reviews())
 
     print('\n=== Владелец вписал ссылки ===')
-    brand = http.put('/dashboard/brand', headers=owner, json={'reviews': {
-        'yandex': 'yandex.ru/maps/org/rif/123', 'gis': '', 'site': 'https://rif.ru/otzyvy'}}).json()
-    check('сохранились, без https дописан', brand['reviews'] == {
-        'yandex': 'https://yandex.ru/maps/org/rif/123', 'site': 'https://rif.ru/otzyvy'}, str(brand['reviews']))
+    brand = http.put('/dashboard/brand', headers=owner, json={'reviews': [
+        {'title': 'Яндекс Карты', 'url': 'yandex.ru/maps/org/rif/123'},
+        {'title': 'Авито', 'url': ''},
+        {'title': 'Отзыв на сайте', 'url': 'https://rif.ru/otzyvy'}]}).json()
+    check('свой список: пустая ссылка выброшена, https дописан, порядок свой', brand['reviews'] == [
+        {'title': 'Яндекс Карты', 'url': 'https://yandex.ru/maps/org/rif/123'},
+        {'title': 'Отзыв на сайте', 'url': 'https://rif.ru/otzyvy'}], str(brand['reviews']))
+    check('подсказки площадок есть', 'Google Карты' in brand['review_suggested'])
 
     http.post('/sync/push', headers=KEY, json={'visits': [visit(2, False)]})
     check('без галочки — ничего', not reviews())
@@ -101,7 +106,8 @@ with TestClient(app) as http:
     rows = reviews()
     check('с галочкой — «спасибо» со ссылками', len(rows) == 1 and 'yandex.ru/maps' in rows[0].text
           and 'rif.ru/otzyvy' in rows[0].text and '2ГИС' not in rows[0].text, str([r.text for r in rows]))
-    check('через 2 часа, а не у кассы', rows and rows[0].send_at > shop_now() + timedelta(minutes=100))
+    check('через час, а не у кассы', rows and shop_now() + timedelta(minutes=50) < rows[0].send_at
+          < shop_now() + timedelta(minutes=70))
     http.post('/sync/push', headers=KEY, json={'visits': [visit(3, True)]})
     check('повторный обмен того же наряда — не дубль', len(reviews()) == 1)
 
@@ -113,8 +119,25 @@ with TestClient(app) as http:
     page = http.get(f'/otzyv/{slug}')
     check('страница открывается без входа', page.status_code == 200 and 'Оставьте отзыв' in page.text)
     data = http.get(f'/public/review/{slug}').json()
-    check('на странице — две кнопки: Яндекс Карты и сайт',
-          [l['title'] for l in data['links']] == ['Яндекс Карты', 'Наш сайт'], str(data))
+    check('на странице — площадки из списка',
+          [l['title'] for l in data['links']] == ['Яндекс Карты', 'Отзыв на сайте'], str(data))
+
+    print('\n=== Карточка в кабинете клиента ===')
+    from app.models import Client, Visit
+    from app.services import reviews as review_service
+    db = SessionLocal()
+    client = db.query(Client).filter(Client.phone.like('%5554433')).first()
+    check('сразу после оплаты карточки ещё нет', review_service.for_client(db, client) is None)
+    row = db.query(Visit).filter(Visit.ask_review.is_(True), Visit.review_planned_at.isnot(None),
+                                 Visit.local_id == 3).first()
+    row.review_planned_at = shop_now() - timedelta(minutes=61)
+    db.commit()
+    card = review_service.for_client(db, client)
+    check('через час — «Оставьте отзыв» с площадками', card and card['visit_id'] == row.id
+          and [l['title'] for l in card['links']] == ['Яндекс Карты', 'Отзыв на сайте'], str(card))
+    review_service.close_for_client(db, client, row.id)
+    check('клиент закрыл — карточки нет', review_service.for_client(db, client) is None)
+    db.close()
     check('чужой адрес — 404', http.get('/public/review/net-takogo').status_code == 404)
 
 print('-' * 60)

@@ -304,7 +304,7 @@ class OrderPaymentMixin:
         # подключённому к кабинету или боту, придут ссылки на карты и сайт
         review_var = tk.BooleanVar(value=False)
         if self.order.client_id:
-            ttk.Checkbutton(content, text="Предложить оставить отзыв",
+            ttk.Checkbutton(content, text="Предложить оставить отзыв (через час — в кабинет клиента)",
                             variable=review_var).pack(anchor='w', pady=(4, 0))
         button_frame = ttk.Frame(content, style='White.TFrame')
         button_frame.pack(fill='x', pady=(10, 0))

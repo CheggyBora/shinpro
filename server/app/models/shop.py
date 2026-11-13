@@ -198,6 +198,8 @@ class Visit(Base):
     # Гарантийная переделка — какого наряда цеха (выработка мастеров)
     warranty_of_local_id = Column(Integer, nullable=True)
     review_planned_at = Column(DateTime, nullable=True)
+    # Клиент закрыл карточку «Оставьте отзыв» в кабинете (или нажал площадку)
+    review_closed_at = Column(DateTime, nullable=True)
 
     # --- Для дашборда ---------------------------------------------------
     # Когда наряд последний раз менялся в цеху: оплата, возврат, удаление.

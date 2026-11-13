@@ -117,6 +117,7 @@ def _out(db, account):
         'ours': ours,
         'own': own,
         'reviews': __import__('app.services.reviews', fromlist=['x']).links_of(account),
+        'review_suggested': __import__('app.services.reviews', fromlist=['x']).SUGGESTED,
     }
 
 
@@ -129,8 +130,8 @@ def get_brand(staff: StaffUser = Depends(require(PERM_STAFF)),
 class BrandIn(BaseModel):
     name: Optional[str] = None
     color: Optional[str] = None
-    # Ссылки на отзывы: {"yandex", "gis", "site"} (13.11.2026)
-    reviews: Optional[dict] = None
+    # Площадки для отзывов: [{"title", "url"}] (13.11.2026)
+    reviews: Optional[list] = None
 
 
 @router.put('/brand', summary='Название и цвет')

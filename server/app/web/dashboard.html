@@ -1868,19 +1868,18 @@ function drawBrand(data) {
   // её рисует drawBot
   html += '<div class="card" id="botCard"><h2>Бот в Telegram</h2><div class="hint">Проверяем…</div></div>';
 
-  // Отзывы (решение владельца 13.11.2026): ссылки уходят клиенту, только
-  // если при оплате наряда отметили «Предложить оставить отзыв»
-  var reviews = data.reviews || {};
-  html += '<div class="card"><h2>Ссылки на отзывы</h2>'
-    + '<div class="hint" style="margin-bottom:8px">Клиенту, у которого при оплате отметили «Предложить '
-    + 'оставить отзыв», через 2 часа придёт «спасибо» и эти ссылки — в Telegram или уведомлением кабинета.</div>'
-    + '<div class="form">'
-    + [['yandex', 'Яндекс Карты'], ['gis', '2ГИС'], ['site', 'Отзывы на сайте']].map(function (item) {
-        return '<div class="field"><label for="rv_' + item[0] + '">' + item[1] + '</label>'
-          + '<input id="rv_' + item[0] + '" data-review="' + item[0] + '" placeholder="https://…" value="'
-          + escape(reviews[item[0]] || '') + '" autocapitalize="off" spellcheck="false"></div>';
-      }).join('') + '</div>'
-    + '<button class="go" type="button" id="rvSave">Сохранить ссылки</button></div>';
+  // Площадки для отзывов (решение владельца 13.11.2026): свой список —
+  // название и ссылка. Они на странице по QR, в кабинете клиента и в
+  // сообщении после наряда с галочкой
+  html += '<div class="card"><h2>Площадки для отзывов</h2>'
+    + '<div class="hint" style="margin-bottom:8px">Куда клиенту оставить отзыв. Эти кнопки — на странице '
+    + 'по QR (кнопка в окне оплаты) и в кабинете клиента после наряда с галочкой «Предложить оставить отзыв».</div>'
+    + '<div id="rvRows"></div>'
+    + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0">'
+    + (data.review_suggested || []).map(function (title) {
+        return '<button class="chip" type="button" data-rvadd="' + attr(title) + '">+ ' + escape(title) + '</button>';
+      }).join('') + '<button class="chip" type="button" data-rvadd="">+ Своя</button></div>'
+    + '<button class="go" type="button" id="rvSave">Сохранить площадки</button></div>';
 
   html += '<div class="card"><h2>Адреса</h2>'
     + data.ours.map(function (item) {
@@ -1957,12 +1956,38 @@ function drawBrand(data) {
 
   api('/dashboard/bot').then(drawBot).catch(function () {});
 
-  $('rvSave').addEventListener('click', function () {
-    var links = {};
-    [].slice.call($('view').querySelectorAll('[data-review]')).forEach(function (input) {
-      links[input.getAttribute('data-review')] = input.value.trim();
+  var reviewRows = (data.reviews || []).slice();
+  function drawReviewRows() {
+    $('rvRows').innerHTML = reviewRows.length ? reviewRows.map(function (row, index) {
+      return '<div class="form" style="align-items:end"><div class="field"><label for="rvt' + index + '">Площадка</label>'
+        + '<input id="rvt' + index + '" data-rvt="' + index + '" value="' + attr(row.title) + '"></div>'
+        + '<div class="field"><label for="rvu' + index + '">Ссылка на отзыв</label>'
+        + '<input id="rvu' + index + '" data-rvu="' + index + '" value="' + attr(row.url) + '" placeholder="https://…" '
+        + 'autocapitalize="off" spellcheck="false"></div>'
+        + '<button class="link" type="button" data-rvdel="' + index + '">Убрать</button></div>';
+    }).join('') : '<div class="hint">Площадок нет — добавьте кнопкой ниже.</div>';
+    [].slice.call($('rvRows').querySelectorAll('[data-rvt]')).forEach(function (input) {
+      input.addEventListener('input', function () { reviewRows[+input.getAttribute('data-rvt')].title = input.value; });
     });
-    save({ reviews: links });
+    [].slice.call($('rvRows').querySelectorAll('[data-rvu]')).forEach(function (input) {
+      input.addEventListener('input', function () { reviewRows[+input.getAttribute('data-rvu')].url = input.value; });
+    });
+    [].slice.call($('rvRows').querySelectorAll('[data-rvdel]')).forEach(function (button) {
+      button.addEventListener('click', function () {
+        reviewRows.splice(+button.getAttribute('data-rvdel'), 1);
+        drawReviewRows();
+      });
+    });
+  }
+  drawReviewRows();
+  [].slice.call($('view').querySelectorAll('[data-rvadd]')).forEach(function (button) {
+    button.addEventListener('click', function () {
+      reviewRows.push({ title: button.getAttribute('data-rvadd'), url: '' });
+      drawReviewRows();
+    });
+  });
+  $('rvSave').addEventListener('click', function () {
+    save({ reviews: reviewRows.filter(function (row) { return (row.url || '').trim(); }) });
   });
 
   $('dAdd').addEventListener('click', function () {

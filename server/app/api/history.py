@@ -115,6 +115,21 @@ def offers(client: Client = Depends(current_client),
     return master.client_offers(db, client)
 
 
+@router.get('/review', summary='Оставьте отзыв — после наряда с галочкой')
+def review(client: Client = Depends(current_client), db: Session = Depends(get_db)):
+    from app.services import reviews
+
+    return reviews.for_client(db, client) or {}
+
+
+@router.post('/review/{visit_id}/close', summary='Клиент закрыл «Оставьте отзыв»')
+def review_close(visit_id: int, client: Client = Depends(current_client),
+                 db: Session = Depends(get_db)):
+    from app.services import reviews
+
+    return reviews.close_for_client(db, client, visit_id)
+
+
 @router.get('/photo/{photo_id}', include_in_schema=False)
 def photo_file(photo_id: int, key: str = '', db: Session = Depends(get_db)):
     """

@@ -744,6 +744,14 @@ input.code {
 
   <!-- ================================================ готово -->
   <!-- прошлые визиты и советы мастера -->
+  <!-- Оставьте отзыв: после наряда с галочкой (решение владельца 13.11.2026) -->
+  <div class="card" id="reviewCard" hidden>
+    <h2>Оставьте отзыв</h2>
+    <p class="hint" id="reviewHint"></p>
+    <div id="reviewLinks" style="display:flex;flex-direction:column;gap:8px"></div>
+    <button type="button" class="link" id="reviewClose" style="margin-top:8px">Скрыть</button>
+  </div>
+
   <div class="card" id="mediaCard" hidden>
     <h2>Из цеха</h2>
     <div id="offerList"></div>
@@ -1198,6 +1206,7 @@ function afterLogin() {
 // ============================================================ ИСТОРИЯ
 function loadHistory() {
   loadShopMedia();
+  loadReview();
   api('/history?limit=20').then(function (answer) {
     if (!answer.ok) { $('historyCard').hidden = true; return; }
     drawHistory(answer.data || []);
@@ -1241,6 +1250,28 @@ function drawHistory(rows) {
 // Что прислал мастер: снимки и видео по машине и «грыжа — замена шины
 // 650 ₽» на согласование. Ответ — на отдельной странице /o/…, той же,
 // что открывается из телеграма
+function loadReview() {
+  api('/history/review').then(function (answer) {
+    var data = answer.ok ? answer.data : null;
+    if (!data || !data.visit_id) { $('reviewCard').hidden = true; return; }
+    $('reviewHint').textContent = 'Спасибо, что заехали' + (data.shop ? ' в «' + data.shop + '»' : '')
+      + '! Будем благодарны за отзыв — это займёт минуту.';
+    $('reviewLinks').innerHTML = data.links.map(function (link) {
+      return '<a class="go" style="display:block;text-align:center;text-decoration:none;box-sizing:border-box" target="_blank" rel="noopener" href="'
+        + escapeHtml(link.url) + '" data-review-go>' + escapeHtml(link.title) + '</a>';
+    }).join('');
+    function close() {
+      api('/history/review/' + data.visit_id + '/close', { method: 'POST' });
+      $('reviewCard').hidden = true;
+    }
+    [].slice.call($('reviewLinks').querySelectorAll('[data-review-go]')).forEach(function (link) {
+      link.addEventListener('click', function () { setTimeout(close, 500); });
+    });
+    $('reviewClose').onclick = close;
+    $('reviewCard').hidden = false;
+  });
+}
+
 function loadShopMedia() {
   Promise.all([api('/history/offers'), api('/history/photos?limit=12')]).then(function (both) {
     var offers = both[0].ok ? (both[0].data || []) : [];

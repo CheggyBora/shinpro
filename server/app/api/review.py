@@ -43,8 +43,7 @@ def data(slug: str, db: Session = Depends(get_db)):
     account = db.get(Account, shop.account_id) if shop.account_id else None
     brand = branding.brand_of(db, account, shop)
     links = reviews.links_of(account)
-    return {'name': brand['name'], 'color': brand['color'],
-            'links': [{'key': key, 'title': reviews.TITLES[key], 'url': url} for key, url in links.items()]}
+    return {'name': brand['name'], 'color': brand['color'], 'links': links}
 
 
 @router.get('/sync/review-link', summary='Адрес страницы отзыва для QR')
