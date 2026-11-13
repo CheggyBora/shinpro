@@ -205,6 +205,66 @@ class TireStorageService:
     # Заказ со склада: «едут» и «приехало» (решение владельца 13.11.2026)
     # ------------------------------------------------------------------
 
+    def to_warehouse(self):
+        """Приняли — надо отвезти на склад: по дню."""
+        rows = self.db.query(TireStorage).filter(TireStorage.status == 'stored',
+                                                 TireStorage.warehouse_state == 'to_send').all()
+        return sorted(rows, key=lambda r: (r.warehouse_due is None, r.warehouse_due or get_moscow_time()))
+
+    def mark_sent(self, storage):
+        """Отвезли на склад."""
+        if storage.warehouse_state != 'to_send':
+            raise ValueError('Этот комплект не ждёт отправки на склад')
+        storage.warehouse_state = 'sent'
+        self.db.commit()
+        return storage
+
+    def move_calendar_tasks(self):
+        """
+        Один раз при обновлении (решение владельца 13.11.2026): хранение
+        больше не в календаре. Открытые «Отвезти на склад №…» становятся
+        «надо отвезти», «Привезти со склада №…» — «едут со склада»; сами
+        задачи удаляются, раздел «Хранение» в календаре прячется.
+        """
+        import re
+        from datetime import datetime as _dt
+        from models import CalendarTask
+        from models.calendar import STORAGE
+        from services.calendar_service import CalendarService
+        from services.settings_service import SettingsService
+        settings = SettingsService(self.db)
+        if settings.get('storage_out_of_calendar') == '1':
+            return 0
+        calendar = CalendarService(self.db)
+        moved = 0
+        for task in self.db.query(CalendarTask).filter(CalendarTask.category == STORAGE,
+                                                       CalendarTask.deleted.is_(False)).all():
+            if task.done_at is None:
+                numbers = [int(n) for n in re.findall(r'\d+', task.storage_ref or '')]
+                when = _dt.combine(task.due_date, _dt.min.time())
+                if task.due_time:
+                    hour, minute = (int(x) for x in task.due_time.split(':')[:2])
+                    when = when.replace(hour=hour, minute=minute)
+                for number in numbers:
+                    row = self.db.query(TireStorage).filter(TireStorage.id == number,
+                                                            TireStorage.status == 'stored').first()
+                    if row is None:
+                        continue
+                    if task.title.startswith('Отвезти на склад'):
+                        row.warehouse_state, row.warehouse_due = 'to_send', when
+                    elif task.title.startswith('Привезти со склада') and row.delivery_state != 'arrived':
+                        row.delivery_state, row.delivery_for = 'ordered', when
+            calendar.delete(task)
+            moved += 1
+        try:
+            from services import task_sections
+            task_sections.set_hidden(self.db, STORAGE, True)
+        except Exception:
+            self.db.rollback()
+        settings.set('storage_out_of_calendar', '1')
+        self.db.commit()
+        return moved
+
     def in_transit(self):
         """Комплекты, заказанные со склада и ещё не приехавшие, — по дате."""
         rows = self.db.query(TireStorage).filter(TireStorage.status == 'stored',

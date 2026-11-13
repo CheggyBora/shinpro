@@ -307,6 +307,9 @@ class TireStorageTab:
         self.transit_button = styles.create_button(btn_frame, "Едут со склада",
                                                    self.open_transit, 'Secondary.TButton')
         self.transit_button.pack(side='left', padx=(10, 0))
+        # Приняли — отвезти на склад (раньше задача календаря, 13.11.2026)
+        styles.create_button(btn_frame, "Надо отвезти на склад", self.open_to_warehouse,
+                             'Secondary.TButton').pack(side='left', padx=(10, 0))
         
         # Загружаем все комплекты при создании вкладки
         self.search_storage()
@@ -746,6 +749,9 @@ class TireStorageTab:
     def open_transit(self):
         TransitDialog(self.frame, self.db, on_change=self.search_storage)
 
+    def open_to_warehouse(self):
+        TransitDialog(self.frame, self.db, on_change=self.search_storage, mode='to_warehouse')
+
     def search_storage(self):
         # Поиск «что помню»: кусок номера, телефон, имя, марка, № комплекта
         storages = self.service.search(self.search_car_entry.get())
@@ -765,6 +771,8 @@ class TireStorageTab:
                     if storage.delivery_for else "Едет со склада"
             elif storage.status == 'stored' and storage.delivery_state == 'arrived':
                 status_text = "Привезли"
+            elif storage.status == 'stored' and storage.warehouse_state == 'to_send':
+                status_text = "Отвезти на склад"
 
             release_date = storage.released_date.strftime('%d.%m.%Y %H:%M') if storage.released_date else '-'
             deadline = storage.expires_at.strftime('%d.%m.%Y') if storage.expires_at else '-'
@@ -1186,25 +1194,30 @@ class TransitDialog:
     приходит «колёса приехали, ждём вас на записи».
     """
 
-    def __init__(self, parent, db, on_change=None):
+    def __init__(self, parent, db, on_change=None, mode='transit'):
         from services.tire_storage_service import TireStorageService
-        self.db, self.on_change = db, on_change
+        self.db, self.on_change, self.mode = db, on_change, mode
         self.service = TireStorageService(db)
+        sending = mode == 'to_warehouse'
         self.dialog = tk.Toplevel(parent)
-        self.dialog.title("Едут со склада")
+        self.dialog.title("Надо отвезти на склад" if sending else "Едут со склада")
         self.dialog.configure(bg=styles.COLORS['bg_card'])
         self.dialog.transient(parent.winfo_toplevel())
         body = ttk.Frame(self.dialog, style='White.TFrame')
         body.pack(fill='both', expand=True, padx=18, pady=14)
-        styles.create_label(body, "Заказаны со склада и ещё не приехали", 'CardHeading.TLabel').pack(anchor='w')
-        styles.create_label(body, "Привезли — выберите комплект и нажмите «Приехало»: клиенту придёт, "
-                                  "что колёса на месте и когда его ждём.", 'Muted.TLabel').pack(anchor='w', pady=(2, 8))
+        styles.create_label(body, "Приняли на хранение — отвезти на склад" if sending
+                            else "Заказаны со склада и ещё не приехали", 'CardHeading.TLabel').pack(anchor='w')
+        styles.create_label(body, "Отвезли — выберите комплект и нажмите «Отвезли»." if sending
+                            else "Привезли — выберите комплект и нажмите «Приехало»: клиенту придёт, "
+                                 "что колёса на месте и когда его ждём.", 'Muted.TLabel').pack(anchor='w', pady=(2, 8))
         buttons = ttk.Frame(body, style='White.TFrame')
         buttons.pack(side='bottom', fill='x', pady=(10, 0))
-        styles.create_button(buttons, "Приехало", self.arrived, 'Success.TButton').pack(side='left')
+        styles.create_button(buttons, "Отвезли" if sending else "Приехало", self.arrived,
+                             'Success.TButton').pack(side='left')
         styles.create_button(buttons, "Закрыть", self.dialog.destroy, 'Secondary.TButton').pack(side='right')
         self.tree = ttk.Treeview(body, columns=('id', 'when', 'plate', 'set', 'client'), show='headings', height=10)
-        for key, title, width in (('id', '№', 50), ('when', 'К дате', 120), ('plate', 'Номер авто', 110),
+        for key, title, width in (('id', '№', 50), ('when', 'Отвезти до' if sending else 'К дате', 120),
+                                  ('plate', 'Номер авто', 110),
                                   ('set', 'Комплект', 260), ('client', 'Клиент', 200)):
             self.tree.heading(key, text=title)
             self.tree.column(key, width=width, anchor='w' if key in ('set', 'client') else 'center')
@@ -1217,15 +1230,19 @@ class TransitDialog:
         from services.calendar_service import storage_title
         self.tree.delete(*self.tree.get_children())
         now = get_moscow_time()
-        for row in self.service.in_transit():
-            when = row.delivery_for.strftime('%d.%m %H:%M').replace(' 00:00', '') if row.delivery_for else '—'
-            late = row.delivery_for is not None and row.delivery_for.replace(tzinfo=None) < now.replace(tzinfo=None)
+        sending = self.mode == 'to_warehouse'
+        rows = self.service.to_warehouse() if sending else self.service.in_transit()
+        for row in rows:
+            moment = row.warehouse_due if sending else row.delivery_for
+            when = moment.strftime('%d.%m %H:%M').replace(' 00:00', '') if moment else '—'
+            late = moment is not None and moment.replace(tzinfo=None) < now.replace(tzinfo=None)
             self.tree.insert('', 'end', iid=str(row.id), values=(
                 row.id, when, row.car_number, storage_title(row),
                 ' · '.join(x for x in (row.client_name, row.client_phone) if x)),
                 tags=('late',) if late else ())
         if not self.tree.get_children():
-            self.tree.insert('', 'end', iid='empty', values=('', '', '', 'Ничего не едет', ''))
+            self.tree.insert('', 'end', iid='empty', values=(
+                '', '', '', 'Отвозить нечего' if sending else 'Ничего не едет', ''))
 
     def arrived(self):
         from models import TireStorage
@@ -1236,12 +1253,16 @@ class TransitDialog:
         for item in chosen:
             row = self.db.query(TireStorage).get(int(item))
             try:
-                self.service.mark_arrived(row, by='Цех')
+                if self.mode == 'to_warehouse':
+                    self.service.mark_sent(row)
+                else:
+                    self.service.mark_arrived(row, by='Цех')
             except ValueError as e:
                 messagebox.showerror("Едут со склада", str(e), parent=self.dialog)
                 return
         self.fill()
         if self.on_change:
             self.on_change()
-        messagebox.showinfo("Едут со склада", "Отмечено: приехало. Клиенту придёт сообщение, "
-                                              "что колёса на месте.", parent=self.dialog)
+        if self.mode != 'to_warehouse':
+            messagebox.showinfo("Едут со склада", "Отмечено: приехало. Клиенту придёт сообщение, "
+                                                  "что колёса на месте.", parent=self.dialog)

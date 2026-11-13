@@ -42,5 +42,10 @@ class TireStorage(Base):
     delivery_for = Column(DateTime(timezone=True), nullable=True)
     delivery_state = Column(String(12), nullable=True)
     arrived_at = Column(DateTime(timezone=True), nullable=True)
+    # Отвезти на склад после приёмки: к какому дню и отвезли ли
+    # (to_send / sent). Раньше это была задача календаря — теперь всё
+    # хранение на своей вкладке (решение владельца 13.11.2026)
+    warehouse_due = Column(DateTime(timezone=True), nullable=True)
+    warehouse_state = Column(String(12), nullable=True)
     
     work_order = relationship("WorkOrder", backref="tire_storage")

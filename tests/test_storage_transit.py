@@ -41,8 +41,8 @@ check('в списке «Едут со склада» — оба, по дате'
 print('\n=== Приехало ===')
 service.mark_arrived(first, by='Цех')
 check('отмечено: приехал', first.delivery_state == 'arrived' and first.arrived_at is not None)
-task = db.query(CalendarTask).filter(CalendarTask.storage_ref == str(first.id)).first()
-check('задача «Привезти со склада» сделана', task is not None and task.done_at is not None)
+check('в календаре задач хранения нет', not db.query(CalendarTask).filter(
+    CalendarTask.storage_ref == str(first.id)).count())
 check('в «едут» остался один', [r.id for r in service.in_transit()] == [second.id])
 pushed = {row['local_id']: row for row in SyncService(db)._collect_storage()}
 check('сервер получает время приезда — напишет клиенту', pushed[first.id]['arrived_at'] is not None
@@ -70,6 +70,35 @@ dialog.arrived()
 db.refresh(second)
 check('«Приехало» из окна', second.delivery_state == 'arrived' and 'empty' in dialog.tree.get_children())
 root.destroy()
+
+print('\n=== Надо отвезти на склад ===')
+third = service.accept_storage('С333СС77', 'AB3', 'Шины', 'R15', 'Kama', '', '')
+CalendarService(db).storage_to_warehouse(third, date.today() + timedelta(days=1))
+check('в «надо отвезти» — новый комплект', [r.id for r in service.to_warehouse()] == [third.id])
+service.mark_sent(third)
+check('«Отвезли» — из списка убран', not service.to_warehouse() and third.warehouse_state == 'sent')
+
+print('\n=== Старые задачи хранения из календаря — в списки, раз ===')
+from models import CalendarTask as Task
+from models.calendar import STORAGE
+fourth = service.accept_storage('Е444ЕЕ77', 'AB4', 'Шины', 'R18', 'Pirelli', '', '')
+fifth = service.accept_storage('К555КК77', 'AB5', 'Шины', 'R19', 'Yoko', '', '')
+cal = CalendarService(db)
+cal.create(title=f'Отвезти на склад №{fourth.id}', due_date=date.today(), category=STORAGE,
+           storage_ref=str(fourth.id))
+cal.create(title=f'Привезти со склада №{fifth.id}', due_date=date.today() + timedelta(days=2),
+           due_time='11:00', category=STORAGE, storage_ref=str(fifth.id))
+moved = service.move_calendar_tasks()
+db.refresh(fourth)
+db.refresh(fifth)
+check('перенесено две задачи, в календаре хранения не осталось', moved == 2 and not db.query(Task).filter(
+    Task.category == STORAGE, Task.deleted.is_(False)).count())
+check('«Отвезти» → надо отвезти, «Привезти» → едет к 11:00', fourth.warehouse_state == 'to_send'
+      and fifth.delivery_state == 'ordered' and fifth.delivery_for.strftime('%H:%M') == '11:00')
+check('второй раз — ничего', service.move_calendar_tasks() == 0)
+from services import task_sections
+check('раздел «Хранение» в календаре спрятан',
+      any(row['key'] == STORAGE and row.get('hidden') for row in task_sections.load(db)))
 
 db.close()
 finish()

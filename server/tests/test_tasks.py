@@ -387,44 +387,29 @@ with TestClient(app) as http:
     check('записался', booked.status_code == 200, booked.text[:200])
     appointment_id = booked.json()['id']
 
-    rows = server_task(f'cab-appt-{appointment_id}')
-    check('поставлена ровно одна задача', len(rows) == 1, str(len(rows)))
-    task = rows[0]
-    check('раздел — хранение', task.category == 'storage')
-    check('к дате и времени записи', task.due_date == at.date()
-          and task.due_time == '12:00', f'{task.due_date} {task.due_time}')
-    check('номер комплекта — цеховой', task.storage_ref == '58'
-          and '№58' in task.title, f'{task.storage_ref} / {task.title}')
-    check('машина и клиент', task.license_plate == 'А123ВВ777'
-          and task.client_name == 'Иван Петров' and task.client_phone == '79160000001')
-    check('источник — кабинет', task.source == 'cabinet')
-    check('в заметке — комплект', 'Шины с дисками' in (task.note or ''))
+    # Хранение больше не в календаре (решение владельца 13.11.2026): задачи
+    # нет — заказ комплекта уходит в цех обменом («Едут со склада»), а
+    # кладовщику сразу Telegram
+    check('задачи в календаре нет', not server_task(f'cab-appt-{appointment_id}'))
+
+    def stored(set_id):
+        db = SessionLocal()
+        try:
+            return db.query(StoredSet).filter(StoredSet.id == set_id).first()
+        finally:
+            db.close()
+
+    check('комплект заказан к записи', stored(set_ids[0]).requested_for == at
+          and stored(set_ids[0]).request_state == 'pending')
     check('сообщение ушло получателям склада, а не всем',
           [chat for chat, _ in sent] == ['200'], str(sent))
     check('в сообщении цеховой номер', sent and '№ 58' in sent[0][1],
           sent[0][1] if sent else '')
 
-    db = SessionLocal()
-    appointment = db.get(Appointment, appointment_id)
-    again = db.query(StoredSet).filter(StoredSet.id == set_ids[0]).all()
-    tasks.for_appointment(db, appointment, again, appointment.client)
-    db.commit()
-    db.close()
-    check('повтор не ставит вторую', len(server_task(f'cab-appt-{appointment_id}')) == 1)
-
-    code, answer = exchange(cursor)
-    check('задача из кабинета приехала в цех',
-          by_uid(answer['tasks'], f'cab-appt-{appointment_id}') is not None)
-    cursor = answer['now']
-
     cancelled = http.delete(f'/booking/{appointment_id}', headers=cabinet)
     check('запись отменена', cancelled.status_code == 200, cancelled.text[:200])
-    task = server_task(f'cab-appt-{appointment_id}')[0]
-    check('задача снята вместе с записью', task.deleted is True)
-    code, answer = exchange(cursor)
-    pulled = by_uid(answer['tasks'], f'cab-appt-{appointment_id}')
-    check('и цех об этом узнал', pulled is not None and pulled['deleted'] is True)
-    cursor = answer['now']
+    check('заказ комплекта снят вместе с записью', stored(set_ids[0]).requested_for is None
+          and stored(set_ids[0]).request_state == 'pending')
 
     print()
     print('=== Цех переносит и отменяет запись ===')
@@ -438,13 +423,12 @@ with TestClient(app) as http:
     moved = http.patch(f'/sync/appointments/{second_id}', headers=KEY, json={
         'scheduled_at': at2.replace(hour=15).isoformat()})
     check('перенесли', moved.status_code == 200, moved.text[:200])
-    task = server_task(f'cab-appt-{second_id}')[0]
-    check('задача поехала следом', task.due_time == '15:00', str(task.due_time))
+    check('заказ комплекта поехал следом', stored(set_ids[1]).requested_for == at2.replace(hour=15),
+          str(stored(set_ids[1]).requested_for))
 
     http.patch(f'/sync/appointments/{second_id}', headers=KEY,
                json={'status': 'cancelled'})
-    task = server_task(f'cab-appt-{second_id}')[0]
-    check('цех отменил — задача снята', task.deleted is True)
+    check('цех отменил — заказ снят', stored(set_ids[1]).requested_for is None)
 
     print()
     print('=== Кабинет: «привезите комплект к дате» ===')
@@ -454,20 +438,12 @@ with TestClient(app) as http:
     first_try = http.post(f'/storage/{set_ids[2]}/request', headers=cabinet,
                           json={'at': wanted.isoformat()})
     check('заявка принята', first_try.status_code == 200, first_try.text[:200])
-    http.post(f'/storage/{set_ids[2]}/request', headers=cabinet,
-              json={'at': wanted.isoformat()})
-    rows = server_task(f'cab-req-{set_ids[2]}')
-    check('две одинаковые заявки — одна задача', len(rows) == 1, str(len(rows)))
-    check('к дате и времени', rows[0].due_date == wanted.date()
-          and rows[0].due_time == '10:00')
-    check('заголовок с цеховым номером', rows[0].title == 'Привезти со склада №60',
-          rows[0].title)
+    check('задачи в календаре нет', not server_task(f'cab-req-{set_ids[2]}'))
     check('сообщения — кладовщику', sent and all(chat == '200' for chat, _ in sent),
           str(sent))
 
     http.delete(f'/storage/{set_ids[2]}/request', headers=cabinet)
-    check('заявку отменили — задача снята',
-          server_task(f'cab-req-{set_ids[2]}')[0].deleted is True)
+    check('заявку отменили', stored(set_ids[2]).requested_for is None)
 
     print()
     print('=== Получатели склада не заданы — общие ===')
@@ -478,7 +454,6 @@ with TestClient(app) as http:
     http.post(f'/storage/{set_ids[2]}/request', headers=cabinet,
               json={'at': wanted.isoformat()})
     check('ушло общим получателям', [chat for chat, _ in sent] == ['100'], str(sent))
-    check('задача ожила', server_task(f'cab-req-{set_ids[2]}')[0].deleted is False)
 
     db = SessionLocal()
     check('у другой точки сообщения не настроены — ей ничего',

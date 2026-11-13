@@ -429,14 +429,16 @@ class CalendarService:
     # ------------------------------------------------------------------
 
     def storage_to_warehouse(self, storage, day, created_by=None):
-        """Приняли на хранение — отвезти комплект на склад."""
-        title = f'Отвезти на склад №{storage.id}'
-        task = self.create(
-            title=title, due_date=day, category=STORAGE,
-            note=storage_title(storage), license_plate=storage.car_number,
-            client_name=storage.client_name, client_phone=storage.client_phone,
-            storage_ref=str(storage.id), source=SOURCE_AUTO, created_by=created_by)
-        return task
+        """
+        Приняли на хранение — отвезти комплект на склад. Не задача
+        календаря (решение владельца 13.11.2026): «Хранение шин» → «Надо
+        отвезти на склад» → «Отвезли».
+        """
+        from datetime import datetime as _dt
+        storage.warehouse_due = _dt.combine(parse_day(day), _dt.min.time())
+        storage.warehouse_state = 'to_send'
+        self.db.commit()
+        return storage
 
     def storage_from_warehouse(self, storage, day, time=None, why=None, created_by=None):
         """Заказали комплект со склада к дате — он «едет», пока не нажмут «Приехало»."""
@@ -446,11 +448,13 @@ class CalendarService:
         storage.delivery_for = _dt.combine(parse_day(day), _dt.min.time()).replace(hour=hour, minute=minute)
         storage.delivery_state = 'ordered'
         storage.arrived_at = None
-        return self.create(
-            title=f'Привезти со склада №{storage.id}', due_date=day, due_time=time,
-            category=STORAGE, note=note, license_plate=storage.car_number,
-            client_name=storage.client_name, client_phone=storage.client_phone,
-            storage_ref=str(storage.id), source=SOURCE_AUTO, created_by=created_by)
+        # Не задача календаря (решение владельца 13.11.2026): «Хранение
+        # шин» → «Едут со склада» → «Приехало». Зачем — в комментарий
+        if why:
+            stamp = f'Заказан со склада к {storage.delivery_for:%d.%m %H:%M}: {why}'
+            storage.comments = ((storage.comments or '') + '\n' + stamp).strip()[:1000]
+        self.db.commit()
+        return storage
 
     def paint_job(self, plate, day, diameter, wheels, total, details=None,
                   client_name=None, client_phone=None, created_by=None):

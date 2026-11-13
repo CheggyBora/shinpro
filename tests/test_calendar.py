@@ -187,11 +187,15 @@ storage = TireStorage(car_number='А123ВВ777', storage_type='Шины с ди�
                       brand='Nokian', price=5000, client_name='Иван Петров', client_phone='79161234567')
 db.add(storage)
 db.commit()
-to = calendar.storage_to_warehouse(storage, today + timedelta(days=1))
-check('«отвезти на склад» — раздел хранения', to.category == STORAGE and to.storage_ref == str(storage.id))
-back = calendar.storage_from_warehouse(storage, today + timedelta(days=3), '10:00', 'Перекидка')
-check('«привезти со склада» — к дате и времени',
-      back.due_time == '10:00' and 'Перекидка' in back.note and back.license_plate == 'А123ВВ777')
+# Хранение — не в календаре (решение владельца 13.11.2026): списки вкладки
+calendar.storage_to_warehouse(storage, today + timedelta(days=1))
+check('«отвезти на склад» — в списке вкладки, не задача', storage.warehouse_state == 'to_send'
+      and not db.query(CalendarTask).filter(CalendarTask.storage_ref == str(storage.id)).count())
+calendar.storage_from_warehouse(storage, today + timedelta(days=3), '10:00', 'Перекидка')
+check('«привезти со склада» — «едет» к дате и времени, не задача',
+      storage.delivery_state == 'ordered' and storage.delivery_for.strftime('%H:%M') == '10:00'
+      and 'Перекидка' in (storage.comments or '')
+      and not db.query(CalendarTask).filter(CalendarTask.storage_ref == str(storage.id)).count())
 paint = calendar.paint_job('К555КК77', today + timedelta(days=5), 'R17', 4, 18700,
                            details='Пескоструй', client_name='Иван Петров')
 check('покраска — с суммой', paint.category == PAINT and paint.amount == 18700)
@@ -249,9 +253,7 @@ st.accept_storage_with_payment('cash', 5000)
 db = SessionLocal()
 kept = db.query(TireStorage).filter(TireStorage.car_number == 'А123ВВ777').order_by(TireStorage.id.desc()).first()
 check('комплект принят с клиентом', kept.client_name == 'Иван Петров' and kept.client_id == order.client_id)
-task_to = db.query(CalendarTask).filter(CalendarTask.storage_ref == str(kept.id),
-                                       CalendarTask.title.like('Отвезти%')).first()
-check('задача «отвезти на склад»', task_to is not None and task_to.category == STORAGE)
+check('«надо отвезти на склад» — в списке вкладки', kept.warehouse_state == 'to_send')
 check('сообщение в очереди', db.query(TelegramOutbox).filter(
     TelegramOutbox.text.like('%Отвезти на склад%')).count() == 1)
 db.close()
@@ -267,9 +269,9 @@ dialog.time.delete(0, 'end')
 dialog.time.insert(0, '9:30')
 dialog.save()
 db = SessionLocal()
-task_back = db.query(CalendarTask).filter(CalendarTask.storage_ref == str(kept.id),
-                                         CalendarTask.title.like('Привезти%')).first()
-check('заказ со склада — задача', task_back is not None and task_back.due_time == '09:30')
+back = db.query(TireStorage).get(kept.id)
+check('заказ со склада — «едет» к 09:30', back.delivery_state == 'ordered'
+      and back.delivery_for.strftime('%H:%M') == '09:30')
 db.close()
 
 paint_tab = app.paint_tab

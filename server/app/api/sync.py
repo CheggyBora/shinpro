@@ -1107,7 +1107,7 @@ def patch_appointment(appointment_id: int, payload: AppointmentPatchIn,
     # снимается, перенесли — едет следом (docs/calendar.md)
     if row.status != was_status or row.scheduled_at != was_time:
         from app.services import tasks as _tasks
-        _tasks.follow_appointment(db, row)
+        _tasks.follow_appointment(db, row, was_time=was_time)
 
     db.commit()
 

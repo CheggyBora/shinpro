@@ -504,8 +504,9 @@ class BookingService:
             logging.getLogger('tire_server').warning(
                 'Напоминание не запланировано: %s', e)
 
+        # Задачи в календаре нет (13.11.2026): заказ встаёт в «Едут со
+        # склада» в цеху обменом, кладовщику — Telegram сразу
         if stored:
-            self._task_for_storage(appointment, stored, client)
             self._tell_the_shop(appointment, stored, client)
 
         return appointment

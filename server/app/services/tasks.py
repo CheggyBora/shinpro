@@ -777,15 +777,38 @@ def for_appointment(db, appointment, stored, client=None, now=None):
     }, now)
 
 
-def follow_appointment(db, appointment, now=None):
+def follow_storage(db, appointment, was_time=None):
     """
-    Запись отменили или перенесли — задача по ней тоже.
+    Запись с комплектом со склада отменили или перенесли — заказ
+    комплекта следом (13.11.2026): цех получит его обменом заявок и
+    поправит «Едут со склада».
+    """
+    from app.models import PENDING, StoredSet
+    if appointment.client_id is None or appointment.shop_id is None:
+        return []
+    old = was_time or appointment.scheduled_at
+    rows = db.query(StoredSet).filter(StoredSet.client_id == appointment.client_id,
+                                      StoredSet.shop_id == appointment.shop_id,
+                                      StoredSet.requested_for == old,
+                                      StoredSet.status == 'stored').all()
+    for row in rows:
+        row.requested_for = None if appointment.status == 'cancelled' else appointment.scheduled_at
+        row.request_state = PENDING
+        row.requested_at = shop_now()
+    return rows
+
+
+def follow_appointment(db, appointment, now=None, was_time=None):
+    """
+    Запись отменили или перенесли — задача по ней тоже (старые задачи) и
+    заказ комплекта со склада.
 
     Отменили — задача удаляется: везти комплект не к кому. Перенесли —
     едет следом: комплект нужен к новому времени, а не к старому.
     """
     if appointment.shop_id is None:
         return None
+    follow_storage(db, appointment, was_time)
     now = now or shop_now()
     uid = appointment_uid(appointment.id)
 
@@ -809,27 +832,12 @@ def follow_appointment(db, appointment, now=None):
 
 
 def for_storage_request(db, stored_set, now=None):
-    """Клиент попросил привезти комплект к дате — задача кладовщику."""
-    if stored_set.shop_id is None or stored_set.requested_for is None:
-        return None
-    now = now or shop_now()
-    at = stored_set.requested_for
-    client = stored_set.client
-    # Полночь — значит, к дате без времени
-    clock = None if at.time() == time.min else f'{at:%H:%M}'
-
-    return _upsert(db, stored_set.shop_id, request_uid(stored_set.id), {
-        'category': STORAGE,
-        'due_date': at.date(),
-        'due_time': clock,
-        'title': f'Привезти со склада №{set_number(stored_set)}',
-        'note': (f'№{set_number(stored_set)} — {set_title(stored_set)}\n'
-                 f'Клиент заказал из кабинета.'),
-        'license_plate': stored_set.license_plate,
-        'client_name': client.name if client else None,
-        'client_phone': client.phone if client else None,
-        'storage_ref': str(set_number(stored_set)),
-    }, now)
+    """
+    Клиент попросил привезти комплект к дате. Задачи в календаре больше
+    нет (решение владельца 13.11.2026): заказ уходит в цех обменом и
+    встаёт в «Хранение шин» → «Едут со склада»; кладовщику — Telegram.
+    """
+    return None
 
 
 def drop_storage_request(db, stored_set, now=None):

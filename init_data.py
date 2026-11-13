@@ -13,7 +13,17 @@ def initialize_data():
     # запас к прогнозу, автосохранение состава
     from services.settings_service import SettingsService
     SettingsService(db).ensure_defaults()
-    
+
+    # Хранение — не в календаре (решение владельца 13.11.2026): открытые
+    # задачи «Отвезти на склад» / «Привезти со склада» — в списки вкладки
+    # «Хранение шин», один раз
+    try:
+        from services.tire_storage_service import TireStorageService
+        TireStorageService(db).move_calendar_tasks()
+    except Exception as e:
+        db.rollback()
+        print(f"Задачи хранения из календаря не перенесены: {e}")
+
     # Создаём начальные цены на хранение шин для каждого размера
     storage_prices = {
         'storage_price_r13': '4000',
