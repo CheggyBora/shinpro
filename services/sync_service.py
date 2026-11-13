@@ -934,6 +934,17 @@ class SyncService:
                 stamps[key] = when.isoformat()
         return stamps
 
+    def _adopt_org_bot(self, pushed):
+        """Бот организации на сервере — токен и кто ему писал (13.11.2026)."""
+        if 'org_bot' not in (pushed or {}):
+            return
+        from services.telegram_service import TelegramService
+        try:
+            TelegramService(self.db).adopt_org_bot(pushed.get('org_bot'), pushed.get('telegram_people'))
+        except Exception as e:
+            self.db.rollback()
+            log.warning(f"Бот организации не принят: {e}")
+
     def _adopt_staff_reports(self, plan):
         """
         Кому из «Доступа» дашборда какие отчёты слать. Если среди них есть
@@ -1134,6 +1145,7 @@ class SyncService:
         # до остальной выкачки: по этим настройкам цех считает посты и
         # часы записи
         adopted = self._adopt_settings(pushed.get('from_server'))
+        self._adopt_org_bot(pushed)
         self._adopt_staff_reports(pushed.get('staff_reports'))
 
         requests = self._call('GET', '/sync/storage-requests')

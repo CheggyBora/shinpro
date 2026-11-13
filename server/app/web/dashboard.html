@@ -1762,6 +1762,47 @@ function domainTag(item) {
   return '<span class="tag ' + kind + '">' + escape(item.status_title) + '</span>';
 }
 
+// Бот в Telegram — один на организацию, им управляет сервер. Через него
+// уходят сводки, задачи, напоминания клиентам и переписка с партнёрами
+function drawBot(data) {
+  var card = $('botCard');
+  if (!card) return;
+  var html = '<h2>Бот в Telegram</h2>';
+  if (data.connected) {
+    html += '<div class="row"><div class="main"><b>@' + escape(data.username)
+      + ' <span class="tag ok">Работает на сервере</span></b>'
+      + '<span>Написали боту: ' + data.people + '. Через него уходят сводки, задачи, '
+      + 'напоминания клиентам и переписка с партнёрами — даже когда компьютер на точке выключен.</span>'
+      + '</div><button class="link" type="button" id="botOff">Отключить</button></div>';
+  } else {
+    html += '<div class="hint" style="margin-bottom:10px">Бот один на всю организацию и живёт на сервере: '
+      + 'переписка с партнёрами и сотрудниками работает и с телефона, и при выключенном компьютере на точке.</div>';
+    if (data.shop_bot) {
+      html += '<button class="go" type="button" id="botFromShop">Перенести бота из программы на точке</button>'
+        + '<div class="hint">Тот же бот, что уже вписан в программе: люди, нажавшие «Старт», останутся.</div>'
+        + '<div class="hint" style="margin-top:12px">Или другой бот:</div>';
+    }
+    html += '<div class="form"><div class="field"><label for="botToken">Токен от @BotFather</label>'
+      + '<input id="botToken" autocomplete="off" spellcheck="false" placeholder="123456:ABC…"></div></div>'
+      + '<button class="' + (data.shop_bot ? 'chip' : 'go') + '" type="button" id="botSave">Подключить</button>';
+  }
+  card.innerHTML = html;
+
+  function connect(body) {
+    api('/dashboard/bot', { method: 'POST', body: body }).then(drawBot)
+      .catch(function (e) { fail(e.message); });
+  }
+  if ($('botFromShop')) $('botFromShop').addEventListener('click', function () { connect({ from_shop: true }); });
+  if ($('botSave')) $('botSave').addEventListener('click', function () {
+    var value = $('botToken').value.trim();
+    if (value) connect({ token: value });
+  });
+  if ($('botOff')) $('botOff').addEventListener('click', function () {
+    if (!confirm('Отключить бота от сервера? Переписка с партнёрами и напоминания клиентам перестанут работать.')) return;
+    api('/dashboard/bot', { method: 'DELETE' }).then(drawBot).catch(function (e) { fail(e.message); });
+  });
+}
+
 function loadBrand() {
   api('/dashboard/brand').then(drawBrand).catch(function (e) { show(''); fail(e.message); });
 }
@@ -1794,6 +1835,10 @@ function drawBrand(data) {
     + '</div></div>'
     + '<div class="hint">Видно на странице записи, в кабинете клиента и на экране очереди.</div>'
     + '</div>';
+
+  // Бот организации (решение владельца 13.11.2026) — своей карточкой,
+  // её рисует drawBot
+  html += '<div class="card" id="botCard"><h2>Бот в Telegram</h2><div class="hint">Проверяем…</div></div>';
 
   html += '<div class="card"><h2>Адреса</h2>'
     + data.ours.map(function (item) {
@@ -1867,6 +1912,8 @@ function drawBrand(data) {
         .catch(function (e) { fail(e.message); });
     });
   }
+
+  api('/dashboard/bot').then(drawBot).catch(function () {});
 
   $('dAdd').addEventListener('click', function () {
     var name = $('dName').value.trim();

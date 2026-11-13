@@ -525,6 +525,10 @@ class SettingsDialog:
         self.token_entry = styles.create_entry(token_row, width=52)
         self.token_entry.insert(0, self.telegram.get_token())
         self.token_entry.pack(side='left')
+        org_bot = self.telegram.org_bot()
+        if org_bot:
+            # Бот на сервере — токен оттуда, меняют его в дашборде
+            self.token_entry.configure(state='disabled')
         styles.create_button(token_row, "Проверить связь", self.test_telegram,
                              'Secondary.TButton').pack(side='left', padx=(8, 0))
         self.telegram_status = ttk.Label(content, text="", font=(styles.DEFAULT_FONT, 9),
@@ -532,6 +536,10 @@ class SettingsDialog:
                                          foreground=styles.COLORS['text_secondary'],
                                          wraplength=620, justify='left')
         self.telegram_status.pack(anchor='w', pady=(0, 8))
+        if org_bot:
+            self.telegram_status.config(
+                text=f"Бот @{org_bot} работает на сервере: сообщения ему забирает сервер, "
+                     f"список людей приходит при обмене. Менять — в дашборде → «Оформление».")
 
         self._section(content, "2. Люди — кто нажал «Старт» у бота")
         self._hint(content,

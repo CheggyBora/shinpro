@@ -316,6 +316,12 @@ class PushOut(BaseModel):
     # шлёт им сводку по смене, склад и покраску вдобавок к своим чатам
     staff_reports: dict = {}
 
+    # Бот организации на сервере (решение владельца 13.11.2026): цех берёт
+    # его токен и список людей отсюда и сам телеграм не опрашивает —
+    # {'username', 'token'} или пусто, если бот не на сервере
+    org_bot: dict = {}
+    telegram_people: List[dict] = []
+
 
 # ----------------------------------------------------------------------
 # Что цех забирает вниз
@@ -767,6 +773,13 @@ def push(payload: PushIn, db: Session = Depends(get_db),
     _drop_old_snapshots(db, shop.id)
     from app.services.staff_service import report_usernames
     result.staff_reports = report_usernames(db, shop.account_id)
+    from app.models import Account
+    account = db.get(Account, shop.account_id) if shop.account_id else None
+    if account is not None and account.telegram_bot_token:
+        from app.services import telegram
+        result.org_bot = {'username': account.telegram_bot_username or '',
+                          'token': account.telegram_bot_token}
+        result.telegram_people = telegram.people(db, account)
     return result
 
 

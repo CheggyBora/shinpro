@@ -63,6 +63,12 @@ def _split(value):
 
 
 def token_of(db, shop):
+    """Бот организации на сервере — он; нет — бот из программы на точке."""
+    if shop is not None and getattr(shop, 'account_id', None):
+        from app.models import Account
+        account = db.get(Account, shop.account_id)
+        if account is not None and account.telegram_bot_token:
+            return account.telegram_bot_token
     return (shop_settings.get(db, 'telegram_token', shop=shop) or '').strip()
 
 

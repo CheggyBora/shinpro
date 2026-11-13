@@ -37,6 +37,11 @@ RECIPIENTS_KEY = 'telegram_recipients'
 OFFSET_KEY = 'telegram_updates_offset'
 # Кому из «Доступа» дашборда какие отчёты: {отчёт: [ники]}. Присылает сервер
 STAFF_REPORTS_KEY = 'telegram_staff_reports'
+# Бот организации на сервере (решение владельца 13.11.2026): имя бота и
+# кто ему писал — присылает сервер при обмене. Пока бот на сервере,
+# программа телеграм не опрашивает: сообщения забирает сервер
+ORG_BOT_KEY = 'telegram_org_bot'
+SERVER_PEOPLE_KEY = 'telegram_server_people'
 
 
 class TelegramError(Exception):
@@ -232,12 +237,24 @@ class TelegramService:
         отправлять — решает владелец галочкой.
 
         Возвращает (сколько новых, сколько всего написавших).
+
+        Бот на сервере — список берём тот, что сервер прислал при обмене:
+        спросить телеграм самим нельзя, сообщения уходят серверу.
         """
-        updates = self._call('getUpdates', {
-            'offset': self._offset(),
-            'timeout': 0,
-            'allowed_updates': '["message"]',
-        }) or []
+        if self.org_bot():
+            try:
+                updates = [{'message': {'chat': {'id': p.get('chat_id'),
+                                                 'first_name': p.get('name') or '',
+                                                 'username': p.get('username') or ''}}}
+                           for p in json.loads(self._settings().get(SERVER_PEOPLE_KEY, '') or '[]')]
+            except ValueError:
+                updates = []
+        else:
+            updates = self._call('getUpdates', {
+                'offset': self._offset(),
+                'timeout': 0,
+                'allowed_updates': '["message"]',
+            }) or []
 
         known = {r.chat_id: r for r in self.get_recipients()}
         order = self.get_recipients()
@@ -271,7 +288,7 @@ class TelegramService:
             known[chat_id] = fresh
             added += 1
 
-        if last is not None:
+        if last is not None and not self.org_bot():
             # +1, иначе телеграм отдаст то же самое ещё раз
             self._settings().set(OFFSET_KEY, last + 1, commit=False)
 
@@ -300,7 +317,8 @@ class TelegramService:
     def save_settings(self, token, chat_id):
         """Токен и один получатель — короткий путь для простого случая."""
         settings = self._settings()
-        settings.set(TOKEN_KEY, (token or '').strip(), commit=False)
+        if not self.org_bot():
+            settings.set(TOKEN_KEY, (token or '').strip(), commit=False)
 
         chat_id = (chat_id or '').strip()
         if chat_id:
@@ -310,7 +328,32 @@ class TelegramService:
             settings.set(CHAT_KEY, '')
 
     def save_token(self, token):
+        # Бот на сервере — токен оттуда, менять его здесь нельзя
+        if self.org_bot():
+            return
         self._settings().set(TOKEN_KEY, (token or '').strip())
+
+    def org_bot(self):
+        """Имя бота организации на сервере, если он там; иначе пусто."""
+        return (self._settings().get(ORG_BOT_KEY, '') or '').strip()
+
+    def adopt_org_bot(self, bot, people):
+        """
+        Что прислал сервер про бота: {'username', 'token'} и кто писал.
+        Пусто — бот не на сервере, программа снова сама спрашивает телеграм.
+        """
+        settings = self._settings()
+        if bot and bot.get('token'):
+            if settings.get(TOKEN_KEY, '') != bot['token']:
+                settings.set(TOKEN_KEY, bot['token'], commit=False)
+            settings.set(ORG_BOT_KEY, bot.get('username') or 'бот', commit=False)
+            settings.set(SERVER_PEOPLE_KEY, json.dumps(people or [], ensure_ascii=False), commit=False)
+            self.db.commit()
+            self.fetch_people()
+            self.db.commit()
+        elif settings.get(ORG_BOT_KEY, ''):
+            settings.set(ORG_BOT_KEY, '', commit=False)
+            settings.set(SERVER_PEOPLE_KEY, '')
 
     # ------------------------------------------------------------------
     # Запросы

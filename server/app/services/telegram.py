@@ -114,9 +114,63 @@ def set_webhook(account, base_url):
     url = f"{base_url.rstrip('/')}/telegram/{account.telegram_secret}"
     return call(account.telegram_bot_token, 'setWebhook', {
         'url': url,
-        'allowed_updates': ['message'],
+        'allowed_updates': ['message', 'callback_query'],
         'drop_pending_updates': True,
     })
+
+
+def disconnect_bot(db, account):
+    """Отключить бота от сервера: телеграм перестаёт слать сюда сообщения."""
+    if account.telegram_bot_token:
+        try:
+            call(account.telegram_bot_token, 'deleteWebhook', {'drop_pending_updates': False})
+        except TelegramError:
+            pass
+    account.telegram_bot_token = None
+    account.telegram_bot_username = None
+    db.commit()
+    return account
+
+
+# ----------------------------------------------------------------------
+# Кто писал боту (решение владельца 13.11.2026)
+# ----------------------------------------------------------------------
+
+def _name_of(chat):
+    parts = [chat.get('first_name') or '', chat.get('last_name') or '']
+    name = ' '.join(p for p in parts if p).strip()
+    return name or chat.get('title') or ''
+
+
+def remember_chat(db, account, chat):
+    """Запомнить, кто писал боту: цех получит список при обмене."""
+    from app.models import TelegramChat
+    chat_id = str(chat.get('id') or '').strip()
+    if not chat_id:
+        return None
+    row = db.query(TelegramChat).filter(TelegramChat.account_id == account.id,
+                                        TelegramChat.chat_id == chat_id).first()
+    if row is None:
+        row = TelegramChat(account_id=account.id, chat_id=chat_id)
+        db.add(row)
+    username = (chat.get('username') or '').strip().lower()
+    if username:
+        row.username = username[:64]
+    name = _name_of(chat)
+    if name:
+        row.name = name[:200]
+    row.last_at = shop_now()
+    db.commit()
+    return row
+
+
+def people(db, account):
+    """Кто писал боту: [{'chat_id', 'username', 'name'}] — для цеха."""
+    from app.models import TelegramChat
+    rows = db.query(TelegramChat).filter(TelegramChat.account_id == account.id).order_by(
+        TelegramChat.id).all()
+    return [{'chat_id': r.chat_id, 'username': r.username or '', 'name': r.name or ''}
+            for r in rows]
 
 
 def send_message(account, chat_id, text, buttons=None):
@@ -296,6 +350,15 @@ def handle_update(db, account, update):
     if not chat_id:
         return None
 
+    # Бот на сервере — кто ему пишет, цех узнаёт отсюда (раньше сам, через
+    # getUpdates). Личные переписки, не группы-шум: группу тоже запомним —
+    # туда владелец может слать сводку
+    try:
+        remember_chat(db, account, chat)
+    except Exception as e:
+        db.rollback()
+        log.warning(f'Бот: не запомнили чат {chat_id}: {e}')
+
     if text.startswith('/start'):
         parts = text.split(maxsplit=1)
         code = parts[1].strip() if len(parts) > 1 else ''
@@ -310,9 +373,10 @@ def handle_update(db, account, update):
             return client
 
         send_message(account, chat_id,
-                     'Чтобы получать напоминания, откройте кабинет на '
-                     'сайте шиномонтажа и нажмите «Напоминать в Telegram». '
-                     'Ссылка оттуда приведёт сюда уже с кодом.')
+                     'Здравствуйте! Бот подключён — сообщения от шиномонтажа '
+                     'будут приходить сюда.\n\n'
+                     'Если вы клиент и хотите напоминания о записи — откройте '
+                     'кабинет на сайте шиномонтажа и нажмите «Напоминать в Telegram».')
         return None
 
     if text.startswith('/stop'):
