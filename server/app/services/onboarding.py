@@ -28,7 +28,7 @@ from app.config import settings
 from app.models import Account, Shop, AccountDomain, ConnectCode, ConnectAttempt, StaffUser
 from app.models.account import ROLE_LK, ROLE_ADMIN, DOMAIN_ACTIVE, KIND_OWN
 from app.models.staff import ROLE_OWNER
-from app.services import billing, tenancy
+from app.services import shop_settings, billing, tenancy
 from app.utils import (now as shop_now, normalize_phone, is_valid_phone,
                        format_phone)
 
@@ -380,6 +380,8 @@ def point_out(db, shop):
         'is_active': shop.is_active,
         'state': state, 'state_title': title,
         'last_sync_at': shop.last_sync_at.isoformat() if shop.last_sync_at else None,
+        # Копия базы цеха на сервере (13.11.2026): когда пришла последняя
+        'backup_at': shop_settings.get(db, 'backup_last_at', shop=shop),
         'code': code_out(db, shop, row),
     }
 

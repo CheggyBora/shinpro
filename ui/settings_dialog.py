@@ -387,6 +387,10 @@ class SettingsDialog:
                              'Secondary.TButton').pack(side='left')
         styles.create_button(sync_row, "Обменяться сейчас", self.run_sync,
                              'Secondary.TButton').pack(side='left', padx=(8, 0))
+        # Компьютер сломался — на новом: код подключения, потом это
+        # (решение владельца 13.11.2026)
+        styles.create_button(sync_row, "Восстановить с сервера…", self.restore_from_server,
+                             'Secondary.TButton').pack(side='left', padx=(8, 0))
 
         self.sync_status = ttk.Label(sync_row, text="",
                                      font=(styles.DEFAULT_FONT, 9),
@@ -1544,6 +1548,49 @@ class SettingsDialog:
         if answer.get('lk_url'):
             lines.append(f"\nЗапись для клиентов: {answer['lk_url']}")
         messagebox.showinfo("Подключено", '\n'.join(lines), parent=self.dialog)
+        # Новый компьютер с пустой базой — предложить поднять копию с сервера
+        try:
+            from models import WorkOrder
+            if not self.db.query(WorkOrder).count():
+                self.restore_from_server(fresh=True)
+        except Exception:
+            self.db.rollback()
+
+    def restore_from_server(self, fresh=False):
+        """Поднять базу из последней копии на сервере; текущая — рядом, damaged."""
+        from config import get_db_file_path
+        from services import cloud_backup
+        try:
+            info = cloud_backup.latest_info()
+        except Exception as e:
+            if not fresh:
+                messagebox.showerror("Восстановить с сервера", str(e), parent=self.dialog)
+            return
+        if not info:
+            if not fresh:
+                messagebox.showinfo("Восстановить с сервера", "Копий базы на сервере нет.",
+                                    parent=self.dialog)
+            return
+        question = (f"На сервере есть копия базы от {info['taken']}.\n\n"
+                    + ("Это новый компьютер? Восстановить — вернутся наряды, клиенты, прайс, "
+                       "сотрудники, склад, касса." if fresh else
+                       "Заменить ею текущую базу? Всё, что сделано после этой копии, пропадёт. "
+                       "Текущая база останется рядом с пометкой damaged.")
+                    + "\n\nПосле восстановления программа закроется — откройте её снова.")
+        if not messagebox.askyesno("Восстановить с сервера", question, parent=self.dialog):
+            return
+        try:
+            path = get_db_file_path()
+            if not path:
+                raise cloud_backup.BackupError('База не в файле — восстановить нечего')
+            self.db.close()
+            cloud_backup.restore(path)
+        except Exception as e:
+            messagebox.showerror("Восстановить с сервера", f"Не получилось: {e}", parent=self.dialog)
+            return
+        messagebox.showinfo("Восстановить с сервера",
+                            "Готово. Программа закроется — откройте её снова.", parent=self.dialog)
+        os._exit(0)
 
     def test_sync(self):
         if not self.sync_url.get().strip() or not self.sync_key.get().strip():

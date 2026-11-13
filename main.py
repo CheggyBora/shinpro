@@ -78,6 +78,15 @@ if __name__ == "__main__":
     except Exception as e:
         log.error(f"Ошибка инициализации БД: {e}")
 
+    # Копия базы — ещё и на сервер (не чаще раза в три часа): умрёт диск —
+    # базу поднимут на новом компьютере (решение владельца 13.11.2026)
+    try:
+        from services import cloud_backup
+        if db_file:
+            cloud_backup.upload_in_background(db_file)
+    except Exception as e:
+        log.error(f"Копия базы на сервер не запущена: {e}")
+
     root = tk.Tk()
     set_app_icon(root)
     app = MainWindow(root)

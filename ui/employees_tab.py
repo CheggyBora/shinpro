@@ -1194,6 +1194,14 @@ class EmployeesTab:
             except Exception as e:
                 log.error(f"Сводку по смене отправить не удалось: {e}")
 
+            # Смена закрыта — копия базы на сервер, всегда
+            try:
+                from config import get_db_file_path
+                from services import cloud_backup
+                cloud_backup.upload_in_background(get_db_file_path(), force=True)
+            except Exception as e:
+                log.error(f"Копия базы на сервер не запущена: {e}")
+
             # Формируем информационное окно
             dialog = tk.Toplevel(self.frame)
             dialog.title("Смена закрыта")

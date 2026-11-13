@@ -2032,7 +2032,8 @@ function pointRow(point, codePath) {
   var kind = point.state === 'online' ? 'ok' : (point.state === 'offline' ? 'bad' : 'warn');
   var about = point.state === 'waiting'
     ? (point.code ? 'код ' + point.code.code + ' до ' + stampText(point.code.expires_at) : 'кода нет')
-    : 'обмен ' + stampText(point.last_sync_at);
+    : 'обмен ' + stampText(point.last_sync_at)
+      + (point.backup_at ? ' · копия базы ' + stampText(point.backup_at) : ' · копии базы на сервере нет');
   return '<div class="row"><div class="main"><b>' + escape(point.name)
     + ' <span class="tag ' + kind + '">' + escape(point.state_title) + '</span></b>'
     + '<span>' + escape(about) + '</span></div>'
