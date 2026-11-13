@@ -41,6 +41,9 @@ class WorkOrderItem(Base):
     # Исполнители этой строки, если её делал не тот, кто в наряде
     # (решение владельца 13.11.2026): «7» или «3,4». Пусто — как в наряде
     employee_ids = Column(String(200), nullable=True)
+    # Строка — работа у партнёра (задача календаря с этим uid): мастерам
+    # не начисляется, зарплата — по правилу самой работы
+    partner_task_uid = Column(String(40), nullable=True)
 
     work_order = relationship("WorkOrder", backref="items")
     service = relationship("Service", backref="order_items")

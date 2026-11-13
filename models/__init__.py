@@ -18,11 +18,12 @@ from .appointment import Appointment
 from .live_queue import LiveQueueEntry
 from .booking_posts import BookingPosts
 from .paint import PaintOption
-from .calendar import CalendarTask, Counterparty, TelegramOutbox
+from .calendar import CalendarTask, Counterparty, TelegramOutbox, PartnerOffering
 from .stock import StockItem, ServiceMaterial, StockMove
 from .cash import CashOrder
 
 __all__ = [
+    'PartnerOffering',
     'PaintOption',
     'Employee',
     'EmployeeRole',

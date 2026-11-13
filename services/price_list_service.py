@@ -67,8 +67,10 @@ class PriceListService:
         """Скрытые позиции — те, у которых не осталось ни одной видимой строки."""
         visible = {name for (name,) in self.db.query(Service.name).filter(
             Service.direction == direction, Service.is_active.isnot(False)).distinct()}
+        # Работы у партнёров — свои строки, в скрытых прайса им не место
         names = {name for (name,) in self.db.query(Service.name).filter(
-            Service.direction == direction, Service.is_active.is_(False)).distinct()}
+            Service.direction == direction, Service.is_active.is_(False),
+            Service.is_partner.isnot(True)).distinct()}
         return sorted(names - visible)
 
     def exists(self, name, direction):

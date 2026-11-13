@@ -99,8 +99,57 @@ class CalendarTask(Base):
     # правка ещё не ушла
     synced_at = Column(DateTime(timezone=True), nullable=True)
 
+    # --- Работа у партнёра (решения владельца 13.11.2026) -------------
+    # Сварка, покраска, заказ шин — делает контрагент, деньги клиента
+    # идут через наряд, партнёру платим отдельно. Пусто — обычная задача
+    partner_kind = Column(String(10), nullable=True)      # work / paint / tires
+    partner_status = Column(String(12), nullable=True)    # см. services/partner_service
+    our_price = Column(Float, nullable=True)              # с клиента — в наряде и чеке
+    partner_price = Column(Float, nullable=True)          # партнёру — только в задаче и отчётах
+    order_id = Column(Integer, nullable=True)             # наряд, где строка работы
+    # Нужно ли «да» клиента на цену (покраска, шины): после цены партнёра —
+    # «Согласование с клиентом»
+    needs_client = Column(Boolean, nullable=True)
+    # Зарплата с работы: кому (none / creator / people), как (margin_all —
+    # вся маржа, price_pct — % от нашей цены, margin_pct — % от маржи,
+    # fixed — ₽), сколько; кто оформил — его номер
+    salary_to = Column(String(10), nullable=True)
+    salary_mode = Column(String(12), nullable=True)
+    salary_value = Column(Float, nullable=True)
+    salary_people = Column(String(100), nullable=True)
+    creator_id = Column(Integer, nullable=True)
+    # Оплата партнёру: cash — РКО, noncash — с расчётного счёта, other —
+    # нигде не учитывается
+    pay_method = Column(String(10), nullable=True)
+    pay_note = Column(String(300), nullable=True)
+    paid_at = Column(DateTime(timezone=True), nullable=True)
+
     def __repr__(self):
         return f"<Задача {self.due_date} {self.due_time or ''} {self.category}: {self.title}>"
+
+
+class PartnerOffering(Base):
+    """
+    Постоянная услуга контрагента (решение владельца 13.11.2026):
+    «Сварка диска» у «Сварки Плюс» — наша цена и его цена по умолчанию,
+    кому и сколько начислять. В наряде её выбирают из списка — всё
+    подставляется само и меняется для конкретной работы.
+    """
+    __tablename__ = 'partner_offerings'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    uid = Column(String(40), nullable=False, unique=True, index=True, default=new_uid)
+    counterparty_uid = Column(String(40), nullable=False, index=True)
+    name = Column(String(200), nullable=False)
+    kind = Column(String(10), nullable=False, default='work', server_default='work')
+    our_price = Column(Float, nullable=True)
+    partner_price = Column(Float, nullable=True)
+    salary_to = Column(String(10), nullable=True)
+    salary_mode = Column(String(12), nullable=True)
+    salary_value = Column(Float, nullable=True)
+    salary_people = Column(String(100), nullable=True)
+    deleted = Column(Boolean, nullable=False, default=False)
+    updated_at = Column(DateTime(timezone=True), default=get_moscow_time)
 
 
 class Counterparty(Base):

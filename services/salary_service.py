@@ -94,6 +94,9 @@ class SalaryService:
             direction = getattr(item, 'direction', None) or 'tire'
             if direction == directions.SHOP:
                 continue
+            # Работа у партнёра — делали не мастера: начисляется по её правилу
+            if getattr(item, 'partner_task_uid', None):
+                continue
             if getattr(item, 'is_goods', False) and \
                     directions.salary_base(self.db, direction) != 'revenue':
                 continue
@@ -232,9 +235,38 @@ class SalaryService:
                     'shared': len(who), 'amount': round(amount, 2), 'direction': direction})
         self._admins(order, people)
         self._shop(order, people)
+        self._partners(order, people)
         for share in people.values():
             share.pop('raw', None)
         return people, nobody
+
+    def _partners(self, order, people):
+        """
+        Работы у партнёров — по правилу каждой работы (решение владельца
+        13.11.2026): кому и как. Маржа без цены партнёра — 0 сейчас,
+        досчитается, когда цену впишут (PartnerService.settle_late).
+        """
+        from services.order_service import OrderService
+        from services.partner_service import PartnerService, ST_REFUSED
+
+        partners = PartnerService(self.db)
+        for item in self.db.query(WorkOrderItem).filter(
+                WorkOrderItem.work_order_id == order.id,
+                WorkOrderItem.partner_task_uid.isnot(None)).order_by(WorkOrderItem.id).all():
+            task = partners.job(item.partner_task_uid)
+            if task is None or task.partner_status == ST_REFUSED:
+                continue
+            total = OrderService.item_total(item)
+            name = item.service.name if item.service else task.title
+            accrued = partners.accrual(task, total)
+            for employee_id, amount, info in accrued:
+                line = {'name': 'Партнёр: ' + name, 'base': round(total, 2),
+                        'amount': round(amount, 2), 'shared': len(accrued),
+                        'direction': getattr(item, 'direction', None) or 'tire',
+                        'partner_uid': task.uid}
+                if info.get('pending'):
+                    line['pending'] = True
+                self._add(people, employee_id, amount, line)
 
     def _shop(self, order, people):
         """
