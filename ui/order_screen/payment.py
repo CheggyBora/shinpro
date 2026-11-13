@@ -63,7 +63,7 @@ class OrderPaymentMixin:
         
         dialog = tk.Toplevel(self.frame)
         dialog.title("Оплата")
-        dialog.geometry("440x420")
+        dialog.geometry("440x480")
         dialog.configure(bg=styles.COLORS['bg'])
         styles.center_window(dialog, self.frame.winfo_toplevel())
         
@@ -312,3 +312,9 @@ class OrderPaymentMixin:
         pay_button = styles.create_button(button_frame, "Оплатить", pay_and_print, 'Success.TButton')
         pay_button.pack(side='left', fill='x', expand=True, padx=(0, 5))
         styles.create_button(button_frame, "Просмотр", preview_only, 'Primary.TButton').pack(side='left', fill='x', expand=True, padx=(5, 0))
+        # QR для отзыва (решение владельца 13.11.2026): показать клиенту на
+        # экране — он сканирует и оставляет отзыв на картах или сайте
+        from ui.review_qr import show as show_review_qr
+        styles.create_button(content, "QR для отзыва — показать клиенту",
+                             lambda: show_review_qr(dialog, self.db),
+                             'Secondary.TButton').pack(fill='x', pady=(8, 0))

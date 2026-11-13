@@ -105,6 +105,18 @@ with TestClient(app) as http:
     http.post('/sync/push', headers=KEY, json={'visits': [visit(3, True)]})
     check('повторный обмен того же наряда — не дубль', len(reviews()) == 1)
 
+    print('\n=== QR для отзыва ===')
+    link = http.get('/sync/review-link', headers=KEY).json()
+    check('программа получает адрес страницы и что ссылки есть',
+          '/otzyv/' in link['url'] and link['url'].startswith('https://') and link['has_links'], str(link))
+    slug = link['url'].rsplit('/', 1)[1]
+    page = http.get(f'/otzyv/{slug}')
+    check('страница открывается без входа', page.status_code == 200 and 'Оставьте отзыв' in page.text)
+    data = http.get(f'/public/review/{slug}').json()
+    check('на странице — две кнопки: Яндекс Карты и сайт',
+          [l['title'] for l in data['links']] == ['Яндекс Карты', 'Наш сайт'], str(data))
+    check('чужой адрес — 404', http.get('/public/review/net-takogo').status_code == 404)
+
 print('-' * 60)
 if _failures:
     print(f'ПРОВАЛЕНО ПРОВЕРОК: {len(_failures)}')
