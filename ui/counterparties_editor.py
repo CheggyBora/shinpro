@@ -69,6 +69,24 @@ class CounterpartiesEditor:
                              'Secondary.TButton').pack(side='left', padx=(6, 0))
         styles.create_button(buttons, 'Удалить', self.delete,
                              'Secondary.TButton').pack(side='left', padx=(6, 0))
+        # Постоянные услуги партнёра (решение владельца 13.11.2026): цены и
+        # начисление по умолчанию — в наряде подставятся сами
+        styles.create_label(right, 'Его услуги (работы у партнёра)', 'Card.TLabel').pack(
+            anchor='w', pady=(14, 4))
+        self.offerings = ttk.Treeview(right, columns=('name', 'our', 'theirs', 'salary'),
+                                      show='headings', height=4)
+        for key, title, width in (('name', 'Услуга', 180), ('our', 'Наша', 70),
+                                  ('theirs', 'Его', 70), ('salary', 'Зарплата', 200)):
+            self.offerings.heading(key, text=title)
+            self.offerings.column(key, width=width)
+        self.offerings.pack(fill='x')
+        self.offerings.bind('<Double-1>', lambda e: self.edit_offering())
+        offer_buttons = ttk.Frame(right, style='White.TFrame')
+        offer_buttons.pack(fill='x', pady=(4, 0))
+        for title, command in (('+ Услуга', self.add_offering), ('Изменить', self.edit_offering),
+                               ('Убрать', self.remove_offering), ('+ Работа у партнёра', self.new_job)):
+            styles.create_button(offer_buttons, title, command,
+                                 'Compact.Secondary.TButton').pack(side='left', padx=(0, 6))
         styles.create_label(right, 'Задачи и поставки', 'Card.TLabel').pack(anchor='w', pady=(14, 4))
         self.tasks = tk.Listbox(right, height=6, font=styles.FONTS['small'],
                                 bg=styles.COLORS['bg_subtle'], relief='flat',
@@ -105,11 +123,75 @@ class CounterpartiesEditor:
                 value = getattr(row, key)
                 entry.insert(0, '@' + value if key == 'telegram' else value)
         self._telegram_hint(row)
+        self._fill_offerings()
         self.tasks.delete(0, tk.END)
         if row is not None:
             for task in self.service.tasks_of_counterparty(row.uid):
                 mark = '✓ ' if task.done_at else ''
                 self.tasks.insert(tk.END, f'{mark}{task.due_date:%d.%m.%y} · {task.title}')
+
+    def _fill_offerings(self):
+        from services import partner_service as ps
+        from ui.partner_ui import money
+        if not hasattr(self, 'offerings'):
+            return
+        self.offerings.delete(*self.offerings.get_children())
+        if self.current is None:
+            return
+        for offer in ps.PartnerService(self.db).offerings(self.current.uid):
+            if (offer.salary_to or ps.SAL_NONE) == ps.SAL_NONE:
+                salary = 'никому'
+            else:
+                how = ps.MODE_TITLES.get(offer.salary_mode, '')
+                value = '' if offer.salary_mode == ps.MODE_MARGIN_ALL else f' {offer.salary_value or 0:g}'
+                salary = f'{ps.SALARY_TO_TITLES.get(offer.salary_to, "")}: {how}{value}'
+            self.offerings.insert('', 'end', iid=offer.uid, values=(
+                offer.name, money(offer.our_price), money(offer.partner_price), salary))
+
+    def _need_party(self):
+        if self.current is None:
+            messagebox.showinfo('Контрагенты', 'Сначала выберите или сохраните контрагента',
+                                parent=self.window)
+            return False
+        return True
+
+    def add_offering(self):
+        if not self._need_party():
+            return
+        from ui.partner_ui import OfferingDialog
+        OfferingDialog(self.window, self.db, self.current.uid, on_saved=self._fill_offerings)
+
+    def edit_offering(self):
+        chosen = self.offerings.selection()
+        if not chosen or not self._need_party():
+            return
+        from services.partner_service import PartnerService
+        from ui.partner_ui import OfferingDialog
+        OfferingDialog(self.window, self.db, self.current.uid,
+                       PartnerService(self.db).offering(chosen[0]), on_saved=self._fill_offerings)
+
+    def remove_offering(self):
+        chosen = self.offerings.selection()
+        if not chosen:
+            return
+        from services.partner_service import PartnerService
+        service = PartnerService(self.db)
+        offer = service.offering(chosen[0])
+        if offer and messagebox.askyesno('Услуги партнёра', f'Убрать «{offer.name}»?', parent=self.window):
+            service.delete_offering(offer)
+            self._fill_offerings()
+
+    def new_job(self):
+        if not self._need_party():
+            return
+        from ui.partner_ui import JobDialog
+        uid = self.current.uid
+        dialog = JobDialog(self.window, self.db, on_saved=lambda task: self.refresh(select_uid=uid))
+        if getattr(dialog, 'parties', None):
+            index = next((i for i, p in enumerate(dialog.parties) if p.uid == uid), -1)
+            if index >= 0:
+                dialog.party.current(index)
+                dialog._party_changed()
 
     def _telegram_hint(self, row):
         from services.telegram_service import TelegramService

@@ -193,6 +193,10 @@ class PaintTab:
                              'Secondary.TButton').pack(fill='x', pady=(10, 0))
         styles.create_button(inner, "Оформить покраску", self.place_order,
                              'Primary.TButton').pack(fill='x', pady=(6, 0))
+        # Красит партнёр (решение владельца 13.11.2026): посчитали здесь —
+        # отправили партнёру на цену — согласовали с клиентом
+        styles.create_button(inner, "Через партнёра…", self.via_partner,
+                             'Secondary.TButton').pack(fill='x', pady=(6, 0))
 
     # ------------------------------------------------------------------
     # Счёт
@@ -259,6 +263,26 @@ class PaintTab:
             if wanted and any(row['diameter'] == wanted for row in self.service.sizes()):
                 self.diameter.set(wanted)
                 self.recalc()
+
+    def via_partner(self):
+        """Покраска у партнёра: работа с ценой с калькулятора, наряд — сам."""
+        from services.partner_service import KIND_PAINT
+        from ui.partner_ui import JobDialog
+        quote = self.current_quote()
+        if not quote['lines']:
+            messagebox.showerror("Покраска", "Выберите размер диска")
+            return
+        extras = [line['name'] for line in quote['lines'][1:]]
+        name = f"Покраска дисков R{self.diameter.get()} × {self.wheels.get()}"
+        owner = self.owner
+        JobDialog(self.frame, self.db, kind=KIND_PAINT, our_price=quote['total'], name=name,
+                  note=', '.join(extras) if extras else None, plate=self.plate.get() or None,
+                  client_name=owner.name if owner else None,
+                  client_phone=owner.phone if owner else None,
+                  on_saved=lambda task: messagebox.showinfo(
+                      "Покраска", f"Оформлено: работа у партнёра, наряд №{task.order_id}. "
+                                  f"Дальше — цена партнёра и «да» клиента в карточке работы.",
+                      parent=self.frame))
 
     def place_order(self):
         """

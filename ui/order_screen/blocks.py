@@ -18,7 +18,18 @@ from services import directions
 
 COLUMNS = ('Услуга', 'Кол-во', 'Цена', 'Скидка', 'Итого', 'Кто')
 COLORS = {directions.TIRE: ('#1d4ed8', '#dbeafe'), directions.WASH: ('#0f766e', '#ccfbf1'),
-          directions.SHOP: ('#be185d', '#fce7f3')}
+          directions.SHOP: ('#be185d', '#fce7f3'), 'partner': ('#5b21b6', '#ede9fe')}
+# Работы у партнёров — свой блок (решение владельца 13.11.2026)
+PARTNER = 'partner'
+BLOCK_TITLES = {PARTNER: 'Работы у партнёров'}
+
+
+def block_of(item):
+    """В каком блоке строка: работа у партнёра — в своём, остальное — по направлению."""
+    if getattr(item, 'partner_task_uid', None):
+        return PARTNER
+    return getattr(item, 'direction', None) or 'tire'
+
 
 
 def _plural(n):
@@ -97,8 +108,9 @@ class OrderBlocksMixin:
     def _is_collapsed(self, direction, have):
         if direction in self.collapsed_by_hand:
             return self.collapsed_by_hand[direction]
-        # Товары магазина видны всегда: их немного, и их надо видеть в чеке
-        if direction == directions.SHOP:
+        # Товары магазина и работы партнёров видны всегда: их немного, и
+        # их надо видеть в чеке
+        if direction in (directions.SHOP, PARTNER):
             return False
         return len(have) > 1 and direction != self._mode()
 
@@ -119,6 +131,8 @@ class OrderBlocksMixin:
         self._has_shop = sale or self._shop_lines()
         if self._has_shop:
             self._block(directions.SHOP, have + [directions.SHOP])
+        if self._partner_lines():
+            self._block(PARTNER, have + [PARTNER])
         # Подпись мастеров нужна всегда (её обновляет таймер), даже когда
         # блока шиномонтажа нет
         if not hasattr(self, 'employees_label') or not self.employees_label.winfo_exists():
@@ -135,6 +149,12 @@ class OrderBlocksMixin:
             if shop:
                 styles.create_button(row, '+ Товар из магазина', self.add_from_shop,
                                      'Compact.Secondary.TButton').pack(side='left', padx=(0, 6))
+        if self.order.status != 'paid' and not sale:
+            if not (missing or shop):
+                row = ttk.Frame(self.blocks_holder, style='White.TFrame')
+                row.pack(anchor='w', fill='x', pady=(6, 0))
+            styles.create_button(row, '+ Работа у партнёра', self.add_partner_job,
+                                 'Compact.Secondary.TButton').pack(side='left', padx=(0, 6))
         # Совместимость: правка строк работает с «текущей» таблицей
         if self.trees:
             self.items_tree = next(iter(self.trees.values()))
@@ -164,11 +184,13 @@ class OrderBlocksMixin:
             label.pack(side='left', padx=(8, 0))
             return label
 
-        tk.Label(head, text=directions.TITLES[direction].upper(), bg=bg, fg=fg,
+        tk.Label(head, text=(BLOCK_TITLES.get(direction) or directions.TITLES[direction]).upper(), bg=bg, fg=fg,
                  font=(styles.DEFAULT_FONT, 10, 'bold')).pack(side='left', padx=(10, 2), pady=4)
         open_order = self.order.status != 'paid'
 
-        if direction == directions.SHOP:
+        if direction == PARTNER:
+            note('только наша цена · двойной щелчок — карточка')
+        elif direction == directions.SHOP:
             note('товары · кто продал — двойной щелчок по «Продал»' if directions.shop_pay_on(self.db)
                  else 'товары')
             if open_order and directions.admin_shop_on(self.db) and self._many_admins():
@@ -216,7 +238,7 @@ class OrderBlocksMixin:
         summary.pack(side='right', padx=(0, 10))
         # Услуги «чужого» направления — списком: кнопки сверху показывают
         # только выбранное в переключателе
-        if open_order and direction != self._mode() and direction != directions.SHOP:
+        if open_order and direction != self._mode() and direction not in (directions.SHOP, PARTNER):
             add = tk.Label(head, text=f'+ услуга {"мойки" if direction == directions.WASH else "шиномонтажа"}',
                            bg='#ffffff', fg=styles.COLORS['primary'], cursor='hand2',
                            font=(styles.DEFAULT_FONT, 9), padx=8, pady=1,
@@ -235,7 +257,11 @@ class OrderBlocksMixin:
             tree.column(column, width=width, anchor=anchor)
         # Кто делал — только у мойки: её начисляют тому, кто мыл. У
         # магазина — кто продал
-        if direction == directions.SHOP:
+        if direction == PARTNER:
+            tree.heading('Кто', text='Статус')
+            tree.column('Услуга', width=200)
+            tree.column('Кто', width=170)
+        elif direction == directions.SHOP:
             tree.heading('Кто', text='Продал')
             if not directions.shop_pay_on(self.db):
                 tree.configure(displaycolumns=COLUMNS[:5])
@@ -272,6 +298,23 @@ class OrderBlocksMixin:
             return 'Мойщики: выбрать ▾'
         return 'Мойщики: ' + ', '.join(short_name(self.db, i) for i in ids) + ' ▾'
 
+    def _partner_lines(self):
+        from models import WorkOrderItem
+        return self.db.query(WorkOrderItem).filter(
+            WorkOrderItem.work_order_id == self.order.id,
+            WorkOrderItem.partner_task_uid.isnot(None)).first() is not None
+
+    def add_partner_job(self):
+        from ui.partner_ui import JobDialog
+        JobDialog(self.frame, self.db, order=self.order, on_saved=lambda task: self._after_shop())
+
+    def open_partner_job(self, item):
+        from services.partner_service import PartnerService
+        from ui.partner_ui import JobCard
+        task = PartnerService(self.db).job(item.partner_task_uid)
+        if task is not None:
+            JobCard(self.frame, self.db, task, on_change=self._after_shop)
+
     def _shop_lines(self):
         from models import WorkOrderItem
         return self.db.query(WorkOrderItem).filter(
@@ -295,7 +338,7 @@ class OrderBlocksMixin:
     def refresh_block_summaries(self, items):
         from services.order_service import OrderService
         for direction, parts in self.block_parts.items():
-            mine = [i for i in items if (getattr(i, 'direction', None) or 'tire') == direction]
+            mine = [i for i in items if block_of(i) == direction]
             total = sum(OrderService.item_total(i) for i in mine)
             n = len(mine)
             parts['summary'].config(text=f'{n} {_plural(n)} · {total:,.0f} ₽'.replace(',', ' '))

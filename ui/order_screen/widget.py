@@ -387,6 +387,10 @@ class OrderWidget(OrderItemsMixin, OrderPaymentMixin, OrderTimingMixin, OrderBlo
             self.db.rollback()
             return
         for task in tasks:
+            partner = bool(getattr(task, 'partner_kind', None))
+            # Работа партнёра этого наряда — в его блоке «Работы у партнёров»
+            if partner and task.order_id == self.order.id:
+                continue
             fg, bg = CATEGORY_COLORS.get(task.category, CATEGORY_COLORS['work'])
             row = tk.Frame(self.tasks_box, bg=bg)
             row.pack(anchor='w', fill='x', pady=(6, 0))
@@ -398,8 +402,10 @@ class OrderWidget(OrderItemsMixin, OrderPaymentMixin, OrderTimingMixin, OrderBlo
                              font=(styles.DEFAULT_FONT, 10))
             label.pack(side='left', padx=8, pady=4)
             label.bind('<Button-1>', lambda e, t=task: self._edit_task(t))
-            styles.create_button(row, "Сделано", lambda t=task: self._task_done(t),
-                                 'Compact.Secondary.TButton').pack(side='right', padx=4, pady=2)
+            # У работы партнёра «Сделано» нет: у неё свои статусы, карточка — по щелчку
+            if not partner:
+                styles.create_button(row, "Сделано", lambda t=task: self._task_done(t),
+                                     'Compact.Secondary.TButton').pack(side='right', padx=4, pady=2)
 
     def _edit_task(self, task):
         from ui.task_dialog import open_task

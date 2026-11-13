@@ -94,6 +94,13 @@ class OrderItemsMixin:
         selected = self.items_tree.selection()
         if not selected:
             return
+        # Работа у партнёра — карточка работы, где бы ни щёлкнули
+        item_id = int(self.items_tree.item(selected[0])['tags'][0])
+        partner_item = next((i for i in self.order_service.get_order_items(self.order.id)
+                             if i.id == item_id and getattr(i, 'partner_task_uid', None)), None)
+        if partner_item is not None:
+            self.open_partner_job(partner_item)
+            return
         
         # Название (#1) у ремонта и правки — переотметить колёса.
         # Редактируем "Кол-во" (#2), "Цена" (#3) или "Скидка %" (#4)
@@ -364,7 +371,12 @@ class OrderItemsMixin:
                 who = ', '.join(short_name(self.db, i) for i in washers)
             elif _directions.assigned(self.db, getattr(item, 'direction', None) or 'tire'):
                 who = employee_name(self.db, item.employee_id) if item.employee_id else 'выбрать ▾'
-            tree = trees.get(getattr(item, 'direction', None) or 'tire') or next(iter(trees.values()))
+            from ui.order_screen.blocks import block_of, PARTNER
+            if block_of(item) == PARTNER:
+                from services.partner_service import PartnerService, STATUS_TITLES
+                job = PartnerService(self.db).job(item.partner_task_uid)
+                who = STATUS_TITLES.get(job.partner_status, '') if job is not None else ''
+            tree = trees.get(block_of(item)) or next(iter(trees.values()))
             tree.insert('', 'end', values=(
                 item_title(item),
                 item.quantity,

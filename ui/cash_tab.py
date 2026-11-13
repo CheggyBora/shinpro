@@ -37,6 +37,10 @@ class CashTab:
                              'Secondary.TButton').pack(side='right')
         styles.create_button(top, '+ Приходный', lambda: self.new_order(KIND_IN),
                              'Primary.TButton').pack(side='right', padx=(0, 6))
+        # Оплата партнёрам (решение владельца 13.11.2026): что ждёт денег,
+        # оплатить пачкой — РКО, безнал или другое
+        styles.create_button(top, 'Оплата партнёрам…', self.open_partners,
+                             'Secondary.TButton').pack(side='right', padx=(0, 6))
         self.shift_var = tk.StringVar()
         self.shift_box = ttk.Combobox(top, textvariable=self.shift_var, state='readonly', width=34)
         self.shift_box.pack(side='right', padx=(0, 12))
@@ -154,6 +158,11 @@ class CashTab:
         self.load(keep=True)
         if self.on_changed:
             self.on_changed()
+
+    def open_partners(self):
+        from ui.partner_ui import PartnersWindow
+        window = PartnersWindow(self.frame, self.db)
+        window.dialog.bind('<Destroy>', lambda e: self.load(keep=True))
 
     def new_order(self, kind):
         if self.service.current_shift() is None:

@@ -30,6 +30,10 @@ KIND_TITLES = {KIND_TASK: 'Задача', KIND_NOTE: 'Комментарий'}
 
 
 def open_task(parent, db, task=None, on_saved=None, **defaults):
+    # Работа у партнёра — своя карточка: статусы, цены, оплата партнёру
+    if task is not None and getattr(task, 'partner_kind', None):
+        from ui.partner_ui import JobCard
+        return JobCard(parent, db, task, on_change=on_saved)
     return TaskDialog(parent, db, task, on_saved, defaults)
 
 
